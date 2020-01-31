@@ -1,0 +1,103 @@
+commit a59d92fe11637d2a62f71bda9024481cbb9956c5
+Author: Mario Limonciello <mario.limonciello@dell.com>
+Date:   Mon Oct 14 08:44:39 2019 -0500
+
+    fu-engine: Read all releases and convert versions when comparing
+    
+    Fixes matching ESRT version to metadata version for UEFI
+    
+    Cherry-picked from 91d36095e12f2486c774d38eeabcc5b0ddfb0685
+
+diff --git a/src/fu-common-version.c b/src/fu-common-version.c
+index cd732a38..e4a11002 100644
+--- a/src/fu-common-version.c
++++ b/src/fu-common-version.c
+@@ -214,6 +214,31 @@ fu_common_version_ensure_semver (const gchar *version)
+  */
+ gchar *
+ fu_common_version_parse (const gchar *version)
++{
++	return fu_common_version_parse_from_format (version, FWUPD_VERSION_FORMAT_TRIPLET);
++}
++
++/**
++ * fu_common_version_parse_from_format
++ * @version: A version number
++ * @fmt: A FwupdVersionFormat
++ *
++ * Returns a dotted decimal version string from a version string using fmt.
++ * The supported formats are:
++ *
++ * - Dotted decimal, e.g. "1.2.3"
++ * - Base 16, a hex number *with* a 0x prefix, e.g. "0x10203"
++ * - Base 10, a string containing just [0-9], e.g. "66051"
++ * - Date in YYYYMMDD format, e.g. 20150915
++ *
++ * Anything with a '.' or that doesn't match [0-9] or 0x[a-f,0-9] is considered
++ * a string and returned without modification.
++ *
++ * Returns: A version number, e.g. "1.0.3"
++ *
++ */
++gchar *
++fu_common_version_parse_from_format (const gchar *version, FwupdVersionFormat fmt)
+ {
+ 	const gchar *version_noprefix = version;
+ 	gchar *endptr = NULL;
+@@ -246,7 +271,7 @@ fu_common_version_parse (const gchar *version)
+ 		return g_strdup (version);
+ 	if (tmp == 0)
+ 		return g_strdup (version);
+-	return fu_common_version_from_uint32 ((guint32) tmp, FWUPD_VERSION_FORMAT_TRIPLET);
++	return fu_common_version_from_uint32 ((guint32) tmp, fmt);
+ }
+ 
+ /**
+diff --git a/src/fu-common-version.h b/src/fu-common-version.h
+index 7899da2d..c25b37ac 100644
+--- a/src/fu-common-version.h
++++ b/src/fu-common-version.h
+@@ -18,6 +18,8 @@ gchar		*fu_common_version_from_uint32	(guint32	 val,
+ gchar		*fu_common_version_from_uint16	(guint16	 val,
+ 						 FwupdVersionFormat kind);
+ gchar		*fu_common_version_parse	(const gchar	*version);
++gchar		*fu_common_version_parse_from_format	(const gchar	*version,
++							 FwupdVersionFormat	fmt);
+ gchar		*fu_common_version_ensure_semver (const gchar	*version);
+ FwupdVersionFormat	 fu_common_version_guess_format	(const gchar	*version);
+ gboolean	 fu_common_version_verify_format	(const gchar	*version,
+diff --git a/src/fu-engine.c b/src/fu-engine.c
+index 814d15a6..0139c8e5 100644
+--- a/src/fu-engine.c
++++ b/src/fu-engine.c
+@@ -842,14 +842,27 @@ fu_engine_verify (FuEngine *self, const gchar *device_id, GError **error)
+ 	/* try again with the system metadata */
+ 	if (release == NULL) {
+ 		GPtrArray *guids = fu_device_get_guids (device);
++		FwupdVersionFormat fmt = fu_device_get_version_format (device);
+ 		for (guint i = 0; i < guids->len; i++) {
+ 			const gchar *guid = g_ptr_array_index (guids, i);
+ 			g_autofree gchar *xpath2 = NULL;
++			g_autoptr(GPtrArray) releases = NULL;
+ 			xpath2 = g_strdup_printf ("components/component/"
+ 						  "provides/firmware[@type='flashed'][text()='%s']/"
+-						  "../../releases/release[@version='%s']",
+-						  guid, version);
+-			release = xb_silo_query_first (self->silo, xpath2, NULL);
++						  "../../releases/release",
++						  guid);
++			releases = xb_silo_query (self->silo, xpath2, 0, error);
++			if (releases == NULL)
++				return FALSE;
++			for (guint j = 0; j < releases->len; j++) {
++				XbNode *rel = g_ptr_array_index (releases, j);
++				const gchar *rel_ver = xb_node_get_attr (rel, "version");
++				g_autofree gchar *tmp_ver = fu_common_version_parse_from_format (rel_ver, fmt);
++				if (fu_common_vercmp (tmp_ver, version) == 0) {
++					release = g_object_ref (rel);
++					break;
++				}
++			}
+ 			if (release != NULL)
+ 				break;
+ 		}

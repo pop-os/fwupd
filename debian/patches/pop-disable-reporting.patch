@@ -1,0 +1,38 @@
+Index: fwupd/libfwupd/fwupd-self-test.c
+===================================================================
+--- fwupd.orig/libfwupd/fwupd-self-test.c
++++ fwupd/libfwupd/fwupd-self-test.c
+@@ -157,7 +157,7 @@ fwupd_remote_download_func (void)
+ 	g_assert (fwupd_remote_get_metadata_uri (remote) != NULL);
+ 	g_assert (fwupd_remote_get_metadata_uri_sig (remote) != NULL);
+ 	g_assert_cmpstr (fwupd_remote_get_title (remote), ==, "Linux Vendor Firmware Service");
+-	g_assert_cmpstr (fwupd_remote_get_report_uri (remote), ==, "https://fwupd.org/lvfs/firmware/report");
++	g_assert_cmpstr (fwupd_remote_get_report_uri (remote), ==, NULL);
+ 	g_assert_cmpstr (fwupd_remote_get_filename_cache (remote), ==,
+ 			 LOCALSTATEDIR "/lib/fwupd/remotes.d/lvfs/metadata.xml.gz");
+ 	g_assert_cmpstr (fwupd_remote_get_filename_cache_sig (remote), ==,
+Index: fwupd/data/remotes.d/lvfs-testing.conf
+===================================================================
+--- fwupd.orig/data/remotes.d/lvfs-testing.conf
++++ fwupd/data/remotes.d/lvfs-testing.conf
+@@ -5,7 +5,7 @@ Enabled=false
+ Title=Linux Vendor Firmware Service (testing)
+ Keyring=gpg
+ MetadataURI=https://cdn.fwupd.org/downloads/firmware-testing.xml.gz
+-ReportURI=https://fwupd.org/lvfs/firmware/report
++#ReportURI=https://fwupd.org/lvfs/firmware/report
+ Username=
+ Password=
+ OrderBefore=lvfs,fwupd
+Index: fwupd/data/remotes.d/lvfs.conf
+===================================================================
+--- fwupd.orig/data/remotes.d/lvfs.conf
++++ fwupd/data/remotes.d/lvfs.conf
+@@ -5,6 +5,6 @@ Enabled=true
+ Title=Linux Vendor Firmware Service
+ Keyring=gpg
+ MetadataURI=https://cdn.fwupd.org/downloads/firmware.xml.gz
+-ReportURI=https://fwupd.org/lvfs/firmware/report
++#ReportURI=https://fwupd.org/lvfs/firmware/report
+ OrderBefore=fwupd
+ ApprovalRequired=false

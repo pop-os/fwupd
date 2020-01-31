@@ -1,0 +1,10 @@
+0001-Relax-the-certificate-time-checks-in-the-self-tests-.patch
+0001-trivial-libfwupd-skip-tests-if-machine-id-is-empty-t.patch
+meson-0.45-bc.patch
+0001-Only-check-the-vendor-ID-if-the-device-has-one-set.patch
+0001-dont-semver-conversion.patch
+0001-version-handling.patch
+0001-plain_support_in_version.patch
+
+pop-disable-reporting.patch
+pop-self-test-fix.patch

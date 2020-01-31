@@ -3,13 +3,13 @@ Upstream-Name: fwupd
 Source: https://github.com/hughsie/fwupd
 
 Files: *
-Copyright: 1999 Free Software Foundation, Inc.
-	   Aleksander Morgado <aleksander@aleksander.es>
+Copyright: Aleksander Morgado <aleksander@aleksander.es>
 	   Christian J. Kellner <christian@kellner.me>
 	   Dell Inc.
 	   Dell, Inc.
 	   Google, Inc.
 	   Intel Corporation.
+	   Kalev Lember <klember@redhat.com>
 	   Mario Limonciello <mario.limonciello@dell.com>
 	   Max Ehrlich max.ehr@gmail.com
 	   Peichen Huang <peichenhuang@tw.synaptics.com>

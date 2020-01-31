@@ -1,0 +1,38 @@
+From d0fd614bb9023ea7c8f831fc6bfe122a3dbc9032 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@dell.com>
+Date: Tue, 24 Sep 2019 10:29:22 -0500
+Subject: [PATCH] trivial: libfwupd: skip tests if machine-id is empty too
+
+Ubuntu's buildds seem to have changed and this is causing test suite
+failures.
+---
+ libfwupd/fwupd-self-test.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+Index: fwupd-1.2.10/libfwupd/fwupd-self-test.c
+===================================================================
+--- fwupd-1.2.10.orig/libfwupd/fwupd-self-test.c
++++ fwupd-1.2.10/libfwupd/fwupd-self-test.c
+@@ -504,6 +504,8 @@ fwupd_has_system_bus (void)
+ static void
+ fwupd_common_machine_hash_func (void)
+ {
++	gsize sz = 0;
++	g_autofree gchar *buf = NULL;
+ 	g_autofree gchar *mhash1 = NULL;
+ 	g_autofree gchar *mhash2 = NULL;
+ 	g_autoptr(GError) error = NULL;
+@@ -512,6 +514,13 @@ fwupd_common_machine_hash_func (void)
+ 		g_test_skip ("Missing /etc/machine-id");
+ 		return;
+ 	}
++	if (!g_file_get_contents ("/etc/machine-id", &buf, &sz, &error))
++		return;
++
++	if (sz == 0) {
++		g_test_skip ("Empty /etc/machine-id");
++		return;
++	}
+ 
+ 	mhash1 = fwupd_build_machine_id ("salt1", &error);
+ 	g_assert_no_error (error);

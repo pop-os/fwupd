@@ -1,6 +1,7 @@
 Source: fwupd
 Priority: optional
-Maintainer: Debian EFI <debian-efi@lists.debian.org>
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Debian EFI <debian-efi@lists.debian.org>
 Uploaders: Steve McIntyre <93sam@debian.org>,
            Daniel Jared Dominguez <jared.dominguez@dell.com>,
            Matthias Klumpp <mak@debian.org>,
@@ -33,10 +34,10 @@ Depends: ${misc:Depends},
          ${shlibs:Depends},
          shared-mime-info
 Recommends: python3,
-	    bolt,
-	    tpm2-tools,
-	    tpm2-abrmd,
 	    fwupd-signed
+Suggests: bolt,
+	  tpm2-tools,
+	  tpm2-abrmd,
 Breaks: gir1.2-dfu-1.0 (<< 0.9.7-1),
 	libdfu1 (<< 0.9.7-1),
 	libdfu-dev (<< 0.9.7-1)

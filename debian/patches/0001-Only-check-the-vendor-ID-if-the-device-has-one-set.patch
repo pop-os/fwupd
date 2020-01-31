@@ -1,0 +1,28 @@
+From 004a0624d05211e8436060bb7af6b0c6f2d805a3 Mon Sep 17 00:00:00 2001
+From: Richard Hughes <richard@hughsie.com>
+Date: Mon, 9 Dec 2019 10:30:19 +0000
+Subject: [PATCH] Only check the vendor ID if the device has one set
+
+This means we don't get a weird error if the metadata sets a vendor-id, but the
+device does not.
+---
+ src/fu-engine.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/fu-engine.c b/src/fu-engine.c
+index d07843c3..814d15a6 100644
+--- a/src/fu-engine.c
++++ b/src/fu-engine.c
+@@ -1058,7 +1058,8 @@ fu_engine_check_requirement_firmware (FuEngine *self, XbNode *req,
+ 	}
+ 
+ 	/* vendor ID */
+-	if (g_strcmp0 (xb_node_get_text (req), "vendor-id") == 0) {
++	if (g_strcmp0 (xb_node_get_text (req), "vendor-id") == 0 &&
++	    fu_device_get_vendor_id (device) != NULL) {
+ 		const gchar *version = fu_device_get_vendor_id (device);
+ 		if (!fu_engine_require_vercmp (req, version, &error_local)) {
+ 			if (g_strcmp0 (xb_node_get_attr (req, "compare"), "ge") == 0) {
+-- 
+2.20.1
+

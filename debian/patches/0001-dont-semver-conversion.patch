@@ -1,0 +1,94 @@
+commit dfa9edcc487cc174c475bdc712f3c1965bcdfac3
+Author: Richard Hughes <richard@hughsie.com>
+Date:   Wed Dec 4 15:05:12 2019 +0000
+
+    Do not do semver conversion in fu_common_vercmp()
+    
+    We don't know the version format, and so it's impossible to do it reliably --
+    just do it in the caller where we *do* know the FuDevice version format.
+    
+    Cherry-picked from 1fbcb1a1808adebbe80a9c45f156bb695b02fb43
+
+--- a/src/fu-common-version.c
++++ b/src/fu-common-version.c
+@@ -347,8 +347,8 @@
+ 
+ /**
+  * fu_common_vercmp:
+- * @version_a: the release version, e.g. 1.2.3
+- * @version_b: the release version, e.g. 1.2.3.1
++ * @version_a: the semver release version, e.g. 1.2.3
++ * @version_b: the semver release version, e.g. 1.2.3.1
+  *
+  * Compares version numbers for sorting.
+  *
+@@ -360,8 +360,6 @@
+ fu_common_vercmp (const gchar *version_a, const gchar *version_b)
+ {
+ 	guint longest_split;
+-	g_autofree gchar *str_a = NULL;
+-	g_autofree gchar *str_b = NULL;
+ 	g_auto(GStrv) split_a = NULL;
+ 	g_auto(GStrv) split_b = NULL;
+ 
+@@ -374,10 +372,8 @@
+ 		return 0;
+ 
+ 	/* split into sections, and try to parse */
+-	str_a = fu_common_version_parse (version_a);
+-	str_b = fu_common_version_parse (version_b);
+-	split_a = g_strsplit (str_a, ".", -1);
+-	split_b = g_strsplit (str_b, ".", -1);
++	split_a = g_strsplit (version_a, ".", -1);
++	split_b = g_strsplit (version_b, ".", -1);
+ 	longest_split = MAX (g_strv_length (split_a), g_strv_length (split_b));
+ 	for (guint i = 0; i < longest_split; i++) {
+ 		gchar *endptr_a = NULL;
+--- a/src/fu-install-task.c
++++ b/src/fu-install-task.c
+@@ -111,10 +111,11 @@
+ {
+ 	const gchar *tmp;
+ 	const gchar *version;
+-	const gchar *version_release;
++	const gchar *version_release_raw;
+ 	const gchar *version_lowest;
+ 	gboolean matches_guid = FALSE;
+ 	gint vercmp;
++	g_autofree gchar *version_release = NULL;
+ 	g_autoptr(GError) error_local = NULL;
+ 	g_autoptr(GPtrArray) provides = NULL;
+ 	g_autoptr(XbNode) release = NULL;
+@@ -209,8 +210,8 @@
+ 	}
+ 
+ 	/* is this a downgrade or re-install */
+-	version_release = xb_node_get_attr (release, "version");
+-	if (version_release == NULL) {
++	version_release_raw = xb_node_get_attr (release, "version");
++	if (version_release_raw == NULL) {
+ 		g_set_error_literal (error,
+ 				     FWUPD_ERROR,
+ 				     FWUPD_ERROR_INVALID_FILE,
+@@ -273,6 +274,8 @@
+ 	}
+ 
+ 	/* check semver */
++	version_release = fu_common_version_parse_from_format (version_release_raw,
++							       fu_device_get_version_format (self->device));
+ 	vercmp = fu_common_vercmp (version, version_release);
+ 	if (vercmp == 0 && (flags & FWUPD_INSTALL_FLAG_ALLOW_REINSTALL) == 0) {
+ 		g_set_error (error,
+--- a/src/fu-self-test.c
++++ b/src/fu-self-test.c
+@@ -3620,10 +3620,6 @@
+ 	g_assert_cmpint (fu_common_vercmp ("1.2.3", "1.2.3"), ==, 0);
+ 	g_assert_cmpint (fu_common_vercmp ("001.002.003", "001.002.003"), ==, 0);
+ 
+-	/* same, not dotted decimal */
+-	g_assert_cmpint (fu_common_vercmp ("1.2.3", "0x1020003"), ==, 0);
+-	g_assert_cmpint (fu_common_vercmp ("0x10203", "0x10203"), ==, 0);
+-
+ 	/* upgrade and downgrade */
+ 	g_assert_cmpint (fu_common_vercmp ("1.2.3", "1.2.4"), <, 0);
+ 	g_assert_cmpint (fu_common_vercmp ("001.002.000", "001.002.009"), <, 0);

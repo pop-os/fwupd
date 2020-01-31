@@ -1,15 +1,65 @@
-fwupd (1.2.10-2) unstable; urgency=medium
+fwupd (1.2.10-1ubuntu2~ubuntu18.04.3pop1) bionic; urgency=medium
 
-  [ Steve McIntyre ]
-  * Add Built-Using for the fwupd-*-signed packages. Closes: #932757
+  * Backport for Pop!_OS
 
- -- Steve McIntyre <93sam@debian.org>  Mon, 22 Jul 2019 17:38:23 -0300
+ -- Michael Aaron Murphy <michael@system76.com>  Fri, 31 Jan 2020 11:02:49 -0700
+
+fwupd (1.2.10-1ubuntu2~ubuntu18.04.3) bionic; urgency=medium
+
+  * d/p/0001-dont-semver-conversion.patch, d/p/0001-version-handling.patch
+    d/p/0001-plain_support_in_version.patch:
+    backport regression fix that we can install firmware with the same
+    without --allow-reinstall in command line. the patch already merged
+    in upstream 1.2.X branch. (LP: #1820768)
+
+ -- Yuan-Chen Cheng <yc.cheng@canonical.com>  Thu, 09 Jan 2020 16:25:38 +0800
+
+fwupd (1.2.10-1ubuntu2~ubuntu18.04.2) bionic; urgency=medium
+
+  * d/p/0001-trivial-libfwupd-skip-tests-if-machine-id-is-empty-t.patch:
+    - Only check the vendor ID if the device has one set  (LP: #1856896)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Thu, 19 Dec 2019 13:13:48 +1300
+
+fwupd (1.2.10-1ubuntu2~ubuntu18.04.1) bionic; urgency=medium
+
+  * Backport to bionic (LP: #1820768)
+    - meson-0.45-bc.patch: Fix build with meson 0.45
+
+  [ Steve Langasek ]
+  * Drop added Recommends: on bolt which is not in flavor seeds and adds a
+    new service.
+
+ -- Yuan-Chen Cheng <yc.cheng@canonical.com>  Fri, 25 Oct 2019 16:38:06 +0800
+
+fwupd (1.2.10-1ubuntu2) eoan; urgency=medium
+
+  * Backport a patch from upstream to relax expired cert checks
+    in self tests to fix FTBFS (LP: #184375)
+  * Add a patch to skip some self tests if /etc/machine-id exists
+    but is empty (LP: #184375)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 24 Sep 2019 09:24:22 -0500
+
+fwupd (1.2.10-1ubuntu1) eoan; urgency=medium
+
+  * Merge with debian unstable.
+    - Remainining changes: downgrade tpm2-tools/tpm2-abrmd to Suggests.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 15 Jul 2019 14:13:33 -0500
 
 fwupd (1.2.10-1) unstable; urgency=medium
 
   * New upstream version (1.2.10)
 
  -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 15 Jul 2019 13:58:47 -0500
+
+fwupd (1.2.9-1ubuntu1) eoan; urgency=medium
+
+  * Merge with debian unstable.
+    - Remainining changes: downgrade tpm2-tools/tpm2-abrmd to Suggests.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 12 Jul 2019 16:07:38 -0500
 
 fwupd (1.2.9-1) unstable; urgency=medium
 

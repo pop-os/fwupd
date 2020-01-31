@@ -1,0 +1,86 @@
+From b4627629cdaadd1a75d7c650b7c5973fcd18dfb0 Mon Sep 17 00:00:00 2001
+From: Richard Hughes <richard@hughsie.com>
+Date: Thu, 1 Aug 2019 09:45:25 +0100
+Subject: [PATCH] Relax the certificate time checks in the self tests for the
+ legacy certificate
+
+One test verifies a firmware with a signature from the old LVFS which was
+hosted on secure-lvfs.rhcloud.com and used the original PKCS-7 key. This key
+had a two year validity (expiring today, ohh the naivety...) rather than the
+newer fwupd.org key which expires in the year 2058.
+
+For this specific test only, disable the certificate time checks to fix CI.
+
+Fixes https://github.com/hughsie/fwupd/issues/1264
+---
+ src/fu-keyring-pkcs7.c | 10 +++++++++-
+ src/fu-keyring.h       |  6 ++++--
+ src/fu-self-test.c     |  3 ++-
+ 3 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/src/fu-keyring-pkcs7.c b/src/fu-keyring-pkcs7.c
+index 6dc944ed..a42feaa7 100644
+--- a/src/fu-keyring-pkcs7.c
++++ b/src/fu-keyring-pkcs7.c
+@@ -642,6 +642,14 @@ fu_keyring_pkcs7_verify_data (FuKeyring *keyring,
+ 	for (gint i = 0; i < count; i++) {
+ 		gnutls_pkcs7_signature_info_st info;
+ 		gint64 signing_time = 0;
++		gnutls_certificate_verify_flags verify_flags = 0;
++
++		/* use with care */
++		if (flags & FU_KEYRING_VERIFY_FLAG_DISABLE_TIME_CHECKS) {
++			g_debug ("WARNING: disabling time checks");
++			verify_flags |= GNUTLS_VERIFY_DISABLE_TIME_CHECKS;
++			verify_flags |= GNUTLS_VERIFY_DISABLE_TRUSTED_TIME_CHECKS;
++		}
+ 
+ 		/* verify the data against the detached signature */
+ 		if (flags & FU_KEYRING_VERIFY_FLAG_USE_CLIENT_CERT) {
+@@ -652,7 +660,7 @@ fu_keyring_pkcs7_verify_data (FuKeyring *keyring,
+ 						  0,    /* vdata_size */
+ 						  i,    /* index */
+ 						  &datum, /* data */
+-						  0);   /* flags */
++						  verify_flags);
+ 		}
+ 		if (rc < 0) {
+ 			g_set_error (error,
+diff --git a/src/fu-keyring.h b/src/fu-keyring.h
+index 39819ca4..2f20e35e 100644
+--- a/src/fu-keyring.h
++++ b/src/fu-keyring.h
+@@ -20,12 +20,14 @@ G_DECLARE_DERIVABLE_TYPE (FuKeyring, fu_keyring, FU, KEYRING, GObject)
+  * FuKeyringVerifyFlags:
+  * @FU_KEYRING_VERIFY_FLAG_NONE:		No flags set
+  * @FU_KEYRING_VERIFY_FLAG_USE_CLIENT_CERT:	Use client certificate to verify
++ * @FU_KEYRING_VERIFY_FLAG_DISABLE_TIME_CHECKS:	Disable checking of validity periods
+  *
+  * The flags to use when interacting with a keyring
+  **/
+ typedef enum {
+-	FU_KEYRING_VERIFY_FLAG_NONE		= 0,
+-	FU_KEYRING_VERIFY_FLAG_USE_CLIENT_CERT	= 1 << 1,
++	FU_KEYRING_VERIFY_FLAG_NONE			= 0,
++	FU_KEYRING_VERIFY_FLAG_USE_CLIENT_CERT		= 1 << 1,
++	FU_KEYRING_VERIFY_FLAG_DISABLE_TIME_CHECKS	= 1 << 2,
+ 	/*< private >*/
+ 	FU_KEYRING_VERIFY_FLAG_LAST
+ } FuKeyringVerifyFlags;
+diff --git a/src/fu-self-test.c b/src/fu-self-test.c
+index 363f644e..24b12110 100644
+--- a/src/fu-self-test.c
++++ b/src/fu-self-test.c
+@@ -2628,7 +2628,8 @@ fu_keyring_pkcs7_func (void)
+ 	g_assert_no_error (error);
+ 	g_assert_nonnull (blob_sig);
+ 	result_pass = fu_keyring_verify_data (keyring, blob_pass, blob_sig,
+-					      FU_KEYRING_VERIFY_FLAG_NONE, &error);
++					      FU_KEYRING_VERIFY_FLAG_DISABLE_TIME_CHECKS,
++					      &error);
+ 	g_assert_no_error (error);
+ 	g_assert_nonnull (result_pass);
+ 	g_assert_cmpint (fu_keyring_result_get_timestamp (result_pass), >= , 1502871248);
+-- 
+2.20.1
+

@@ -1,6 +1,8 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 
+export CCACHE_DISABLE=1
+
 export LC_ALL := C.UTF-8
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 export DEB_LDFLAGS_MAINT_STRIP=-Wl,-Bsymbolic-functions
