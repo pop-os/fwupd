@@ -4,3 +4,7 @@ Restrictions: needs-root
 Tests: libfwupd-dev
 Depends: build-essential, libfwupd-dev, pkg-config
 Restrictions: allow-stderr, superficial
+
+Tests: libfwupdplugin-dev
+Depends: build-essential, libfwupdplugin-dev, pkg-config
+Restrictions: allow-stderr, superficial
