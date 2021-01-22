@@ -26,6 +26,7 @@ subdir('logitech-hidpp')
 subdir('optionrom')
 subdir('superio')
 subdir('synaptics-rmi')
+subdir('system76-launch')
 subdir('thelio-io')
 subdir('wacom-raw')
 endif
