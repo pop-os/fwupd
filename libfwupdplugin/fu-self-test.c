@@ -4797,6 +4797,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{strstrip}", fu_strstrip_func);
 	g_test_add_func("/fwupd/common{endian}", fu_common_endian_func);
 	g_test_add_func("/fwupd/common{bytes-get-data}", fu_common_bytes_get_data_func);
+	// Requires 'sysctl kernel.unprivileged_userns_clone=1': g_test_add_func("/fwupd/common{firmware-builder}", fu_common_firmware_builder_func);
 	g_test_add_func("/fwupd/common{kernel-lockdown}", fu_common_kernel_lockdown_func);
 	g_test_add_func("/fwupd/common{strsafe}", fu_strsafe_func);
 	g_test_add_func("/fwupd/efi-load-option", fu_efi_load_option_func);
