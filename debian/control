@@ -69,7 +69,7 @@ Vcs-Browser: https://salsa.debian.org/efi-team/fwupd
 
 Package: libfwupdplugin1
 Section: libs
-Architecture: linux-any
+Architecture: amd64
 Depends: ${misc:Depends},
          ${shlibs:Depends}
 Multi-Arch: same
@@ -84,7 +84,7 @@ Description: Firmware update daemon plugin library
 
 Package: libfwupd2
 Section: libs
-Architecture: linux-any
+Architecture: amd64
 Depends: ${misc:Depends},
          ${shlibs:Depends}
 Multi-Arch: same
@@ -98,7 +98,7 @@ Description: Firmware update daemon library
  This package provides the library used by the daemon.
 
 Package: fwupd
-Architecture: linux-any
+Architecture: amd64
 Depends: ${misc:Depends},
          ${shlibs:Depends},
          shared-mime-info
@@ -131,7 +131,7 @@ Description: Firmware update daemon
  See <https://github.com/fwupd/fwupd> for details
 
 Package: fwupd-tests
-Architecture: linux-any
+Architecture: amd64
 Depends: ${misc:Depends},
          ${shlibs:Depends},
          ca-certificates,
@@ -171,7 +171,7 @@ Description: Firmware update daemon documentation (HTML format)
  uses fwupd.
 
 Package: libfwupd-dev
-Architecture: linux-any
+Architecture: amd64
 Multi-Arch: same
 Depends: libfwupd2 (= ${binary:Version}),
          gir1.2-fwupd-2.0 (= ${binary:Version}),
@@ -193,7 +193,7 @@ Description: development files for libfwupd
  This package provides the development files for libfwupd
 
 Package: gir1.2-fwupd-2.0
-Architecture: linux-any
+Architecture: amd64
 Multi-Arch: same
 Depends: ${misc:Depends},
          ${gir:Depends}
@@ -205,7 +205,7 @@ Description: GObject introspection data for libfwupd
  dynamic bindings.
 
 Package: libfwupdplugin-dev
-Architecture: linux-any
+Architecture: amd64
 Multi-Arch: same
 Depends: libfwupdplugin1 (= ${binary:Version}),
          gir1.2-fwupdplugin-1.0 (= ${binary:Version}),
@@ -232,7 +232,7 @@ Description: development files for libfwupdplugin
  This package provides the development files for libfwupdplugin
 
 Package: gir1.2-fwupdplugin-1.0
-Architecture: linux-any
+Architecture: amd64
 Multi-Arch: same
 Depends: ${misc:Depends},
          ${gir:Depends}
@@ -245,20 +245,6 @@ Description: GObject introspection data for libfwupdplugin
 
 Package: fwupd-amd64-signed-template
 Architecture: amd64
-Depends: ${shlibs:Depends}, ${misc:Depends}, make | build-essential | dpkg-dev
-Description: Template for signed fwupd package
- This package is used to control code signing by the Debian signing
- service.
-
-Package: fwupd-i386-signed-template
-Architecture: i386
-Depends: ${shlibs:Depends}, ${misc:Depends}, make | build-essential | dpkg-dev
-Description: Template for signed fwupd package
- This package is used to control code signing by the Debian signing
- service.
-
-Package: fwupd-armhf-signed-template
-Architecture: armhf
 Depends: ${shlibs:Depends}, ${misc:Depends}, make | build-essential | dpkg-dev
 Description: Template for signed fwupd package
  This package is used to control code signing by the Debian signing
