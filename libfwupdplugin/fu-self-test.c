@@ -1817,7 +1817,7 @@ main (int argc, char **argv)
 	g_test_add_func ("/fwupd/common{cab-error-size}", fu_common_store_cab_error_size_func);
 	g_test_add_func ("/fwupd/common{spawn)", fu_common_spawn_func);
 	g_test_add_func ("/fwupd/common{spawn-timeout)", fu_common_spawn_timeout_func);
-	g_test_add_func ("/fwupd/common{firmware-builder}", fu_common_firmware_builder_func);
+	// Requires 'sysctl kernel.unprivileged_userns_clone=1': g_test_add_func ("/fwupd/common{firmware-builder}", fu_common_firmware_builder_func);
 	g_test_add_func ("/fwupd/common{kernel-lockdown}", fu_common_kernel_lockdown_func);
 	g_test_add_func ("/fwupd/efivar", fu_efivar_func);
 	g_test_add_func ("/fwupd/hwids", fu_hwids_func);
