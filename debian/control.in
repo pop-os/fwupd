@@ -174,3 +174,10 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, make | build-essential | dpkg-dev
 Description: Template for signed fwupd package
  This package is used to control code signing by the Debian signing
  service.
+
+Package: fwupd-signed
+Architecture: amd64
+Depends: fwupd (= ${binary:Version})
+Description: Placeholder for signed fwupd package
+ This package is a placeholder for the signed fwupd package, which cannot be
+ generated without the Canonical UEFI signing key.
