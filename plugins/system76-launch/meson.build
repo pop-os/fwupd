@@ -18,6 +18,7 @@ shared_module('fu_plugin_system76_launch',
   install : true,
   install_dir: plugin_dir,
   link_with : [
+    fwupd,
     fwupdplugin,
   ],
   c_args : cargs,
