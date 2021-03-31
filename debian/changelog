@@ -1,3 +1,9 @@
+fwupd (1.5.8-0ubuntu1pop0) focal; urgency=medium
+
+  * Pop!_OS patches
+
+ -- Jeremy Soller <jeremy@system76.com>  Wed, 31 Mar 2021 14:03:08 -0600
+
 fwupd (1.5.8-0ubuntu1) hirsute; urgency=medium
 
   * New upstream version (1.5.8)
