@@ -753,10 +753,9 @@ fu_plugin_has_custom_flag (FuPlugin *self, const gchar *flag)
 	for (guint i = 0; i < hwids->len; i++) {
 		const gchar *hwid = g_ptr_array_index (hwids, i);
 		const gchar *value;
-		g_autofree gchar *key = g_strdup_printf ("HwId=%s", hwid);
 
 		/* does prefixed quirk exist */
-		value = fu_quirks_lookup_by_id (priv->quirks, key, FU_QUIRKS_FLAGS);
+		value = fu_quirks_lookup_by_id (priv->quirks, hwid, FU_QUIRKS_FLAGS);
 		if (value != NULL) {
 			g_auto(GStrv) quirks = g_strsplit (value, ",", -1);
 			if (g_strv_contains ((const gchar * const *) quirks, flag))
@@ -1808,6 +1807,29 @@ fu_common_string_uncamelcase (const gchar *str)
 }
 
 /**
+ * fu_plugin_add_possible_quirk_key:
+ * @self: a #FuPlugin
+ * @possible_key: A quirk string, e.g. `DfuVersion`
+ *
+ * Adds a possible quirk key. If added by a plugin it should be namespaced
+ * using the plugin name, where possible.
+ *
+ * Plugins can use this method only in fu_plugin_init()
+ *
+ * Since: 1.5.8
+ **/
+void
+fu_plugin_add_possible_quirk_key (FuPlugin *self, const gchar *possible_key)
+{
+	FuPluginPrivate *priv = GET_PRIVATE (self);
+	g_return_if_fail (FU_IS_PLUGIN (self));
+	g_return_if_fail (possible_key != NULL);
+	if (priv->quirks == NULL)
+		return;
+	fu_quirks_add_possible_key (priv->quirks, possible_key);
+}
+
+/**
  * fu_plugin_add_firmware_gtype:
  * @self: a #FuPlugin
  * @id: (nullable): An optional string describing the type, e.g. "ihex"
@@ -2312,6 +2334,12 @@ fu_plugin_runner_activate (FuPlugin *self, FuDevice *device, GError **error)
 
 	/* update with correct flags */
 	fu_device_remove_flag (device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION);
+
+	/* allow it to be updatable again */
+	if (fu_device_has_flag (device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
+		fu_device_remove_flag (device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN);
+		fu_device_add_flag (device, FWUPD_DEVICE_FLAG_UPDATABLE);
+	}
 	fu_device_set_modified (device, (guint64) g_get_real_time () / G_USEC_PER_SEC);
 	return TRUE;
 }

@@ -27,6 +27,7 @@
 #include "fwupd-resources.h"
 #include "fwupd-security-attr-private.h"
 
+#include "fu-backend.h"
 #include "fu-cabinet.h"
 #include "fu-common-cab.h"
 #include "fu-common.h"
@@ -127,6 +128,8 @@ enum {
 static guint signals[SIGNAL_LAST] = { 0 };
 
 G_DEFINE_TYPE (FuEngine, fu_engine, G_TYPE_OBJECT)
+
+#define FU_ENGINE_BATTERY_LEVEL_THRESHOLD	10 /* % */
 
 static void
 fu_engine_emit_changed (FuEngine *self)
@@ -2621,6 +2624,19 @@ fu_engine_device_prepare (FuEngine *self,
 		g_prefix_error (error, "failed to open device for prepare: ");
 		return FALSE;
 	}
+
+	/* check battery level is sane -- if the device needs a higher
+	 * threshold then it can be checked in FuDevice->prepare() */
+	if (fu_device_get_battery_level (device) > 0 &&
+	    fu_device_get_battery_level (device) < FU_ENGINE_BATTERY_LEVEL_THRESHOLD) {
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_BATTERY_LEVEL_TOO_LOW,
+			     "battery level is too low: %u%%",
+			     fu_device_get_battery_level (device));
+		return FALSE;
+	}
+
 	return fu_device_prepare (device, flags, error);
 }
 
@@ -5110,6 +5126,12 @@ fu_engine_plugins_setup (FuEngine *self)
 	for (guint i = 0; i < plugins->len; i++) {
 		g_autoptr(GError) error = NULL;
 		FuPlugin *plugin = g_ptr_array_index (plugins, i);
+		if (fu_plugin_has_flag (plugin, FWUPD_PLUGIN_FLAG_REQUIRE_HWID)) {
+			fu_plugin_add_flag (plugin, FWUPD_PLUGIN_FLAG_DISABLED);
+			g_message ("disabling plugin %s because no HwId",
+				   fu_plugin_get_name (plugin));
+			continue;
+		}
 		if (!fu_plugin_runner_startup (plugin, &error)) {
 			fu_plugin_add_flag (plugin, FWUPD_PLUGIN_FLAG_DISABLED);
 			if (g_error_matches (error,
@@ -5389,7 +5411,7 @@ fu_engine_add_device (FuEngine *self, FuDevice *device)
 
 	/* does the device not have an assigned protocol */
 	if (fu_device_has_flag (device, FWUPD_DEVICE_FLAG_UPDATABLE) &&
-	    fu_device_get_protocol (device) == NULL) {
+	    fu_device_get_protocols (device)->len == 0) {
 		g_warning ("device %s [%s] does not define an update protocol",
 			   fu_device_get_id (device),
 			   fu_device_get_name (device));
@@ -5716,7 +5738,7 @@ fu_engine_ensure_security_attrs_tainted (FuEngine *self)
 	fu_security_attrs_append (self->host_security_attrs, attr);
 	for (guint i = 0; i < disabled->len; i++) {
 		const gchar *name_tmp = g_ptr_array_index (disabled, i);
-		if (g_strcmp0 (name_tmp, "test") != 0 &&
+		if (!g_str_has_prefix (name_tmp, "test") &&
 		    g_strcmp0 (name_tmp, "invalid") != 0) {
 			disabled_plugins = TRUE;
 			break;
@@ -5991,16 +6013,16 @@ fu_engine_backend_device_removed_cb (FuBackend *backend, FuDevice *device, FuEng
 	if (g_getenv ("FWUPD_PROBE_VERBOSE") != NULL) {
 		g_debug ("%s removed %s",
 			 fu_backend_get_name (backend),
-			 fu_device_get_physical_id (device));
+			 fu_device_get_backend_id (device));
 	}
 
 	/* go through each device and remove any that match */
 	devices = fu_device_list_get_all (self->device_list);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device_tmp = g_ptr_array_index (devices, i);
-		if (g_strcmp0 (fu_device_get_physical_id (device_tmp),
-			       fu_device_get_physical_id (device)) == 0) {
-			g_debug ("auto-removing GUsbDevice");
+		if (g_strcmp0 (fu_device_get_backend_id (device_tmp),
+			       fu_device_get_backend_id (device)) == 0) {
+			g_debug ("auto-removing backend device");
 			fu_device_list_remove (self->device_list, device_tmp);
 		}
 	}
@@ -6022,7 +6044,7 @@ fu_engine_backend_device_added_cb (FuBackend *backend, FuDevice *device, FuEngin
 	fu_device_set_quirks (device, self->quirks);
 	if (!fu_device_probe (device, &error_local)) {
 		g_warning ("failed to probe device %s: %s",
-			   fu_device_get_physical_id (device),
+			   fu_device_get_backend_id (device),
 			   error_local->message);
 		return;
 	}
@@ -6053,7 +6075,7 @@ fu_engine_backend_device_added_cb (FuBackend *backend, FuDevice *device, FuEngin
 				continue;
 			}
 			g_warning ("failed to add device %s: %s",
-				   fu_device_get_physical_id (device),
+				   fu_device_get_backend_id (device),
 				   error->message);
 			continue;
 		}
@@ -6105,11 +6127,48 @@ fu_engine_backend_device_changed_cb (FuBackend *backend, FuDevice *device, FuEng
 }
 
 static void
+fu_engine_load_quirks_for_hwid (FuEngine *self, const gchar *hwid)
+{
+	FuPlugin *plugin;
+	const gchar *value;
+	g_auto(GStrv) plugins = NULL;
+
+	/* does prefixed quirk exist */
+	value = fu_quirks_lookup_by_id (self->quirks, hwid, FU_QUIRKS_PLUGIN);
+	if (value == NULL)
+		return;
+	plugins = g_strsplit (value, ",", -1);
+	for (guint i = 0; plugins[i] != NULL; i++) {
+		g_autoptr(GError) error_local = NULL;
+		plugin = fu_plugin_list_find_by_name (self->plugin_list,
+						      plugins[i], &error_local);
+		if (plugin == NULL) {
+			g_debug ("no %s plugin for HwId %s: %s",
+				 plugins[i], hwid, error_local->message);
+			continue;
+		}
+		g_debug ("enabling %s due to HwId %s", plugins[i], hwid);
+		fu_plugin_remove_flag (plugin, FWUPD_PLUGIN_FLAG_REQUIRE_HWID);
+	}
+}
+
+static void
 fu_engine_load_quirks (FuEngine *self, FuQuirksLoadFlags quirks_flags)
 {
+	GPtrArray *hwids = fu_hwids_get_guids (self->hwids);
 	g_autoptr(GError) error = NULL;
-	if (!fu_quirks_load (self->quirks, quirks_flags, &error))
+
+	/* rebuild silo if required */
+	if (!fu_quirks_load (self->quirks, quirks_flags, &error)) {
 		g_warning ("Failed to load quirks: %s", error->message);
+		return;
+	}
+
+	/* search each hwid */
+	for (guint i = 0; i < hwids->len; i++) {
+		const gchar *hwid = g_ptr_array_index (hwids, i);
+		fu_engine_load_quirks_for_hwid (self, hwid);
+	}
 }
 
 static void
@@ -6369,15 +6428,11 @@ fu_engine_load (FuEngine *self, FuEngineLoadFlags flags, GError **error)
 	if ((self->app_flags & FU_APP_FLAGS_NO_IDLE_SOURCES) == 0)
 		fu_idle_set_timeout (self->idle, fu_config_get_idle_timeout (self->config));
 
-	/* load quirks, SMBIOS and the hwids */
+	/* load SMBIOS and the hwids */
 	if (flags & FU_ENGINE_LOAD_FLAG_HWINFO) {
 		fu_engine_load_smbios (self);
 		fu_engine_load_hwids (self);
 	}
-	/* on a read-only filesystem don't care about the cache GUID */
-	if (flags & FU_ENGINE_LOAD_FLAG_READONLY)
-		quirks_flags |= FU_QUIRKS_LOAD_FLAG_READONLY_FS;
-	fu_engine_load_quirks (self, quirks_flags);
 
 	/* load AppStream metadata */
 	if (!fu_engine_load_metadata_store (self, flags, error)) {
@@ -6425,6 +6480,11 @@ fu_engine_load (FuEngine *self, FuEngineLoadFlags flags, GError **error)
 		g_prefix_error (error, "Failed to load plugins: ");
 		return FALSE;
 	}
+
+	/* on a read-only filesystem don't care about the cache GUID */
+	if (flags & FU_ENGINE_LOAD_FLAG_READONLY)
+		quirks_flags |= FU_QUIRKS_LOAD_FLAG_READONLY_FS;
+	fu_engine_load_quirks (self, quirks_flags);
 
 	/* watch the device list for updates and proxy */
 	g_signal_connect (self->device_list, "added",

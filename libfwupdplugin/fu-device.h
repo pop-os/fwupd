@@ -143,6 +143,7 @@ FuDevice	*fu_device_new				(void);
 #define fu_device_has_flag(d,v)			fwupd_device_has_flag(FWUPD_DEVICE(d),v)
 #define fu_device_has_instance_id(d,v)		fwupd_device_has_instance_id(FWUPD_DEVICE(d),v)
 #define fu_device_has_vendor_id(d,v)		fwupd_device_has_vendor_id(FWUPD_DEVICE(d),v)
+#define fu_device_has_protocol(d,v)		fwupd_device_has_protocol(FWUPD_DEVICE(d),v)
 #define fu_device_add_checksum(d,v)		fwupd_device_add_checksum(FWUPD_DEVICE(d),v)
 #define fu_device_add_release(d,v)		fwupd_device_add_release(FWUPD_DEVICE(d),v)
 #define fu_device_add_icon(d,v)			fwupd_device_add_icon(FWUPD_DEVICE(d),v)
@@ -160,6 +161,7 @@ FuDevice	*fu_device_new				(void);
 #define fu_device_set_update_state(d,v)		fwupd_device_set_update_state(FWUPD_DEVICE(d),v)
 #define fu_device_set_vendor(d,v)		fwupd_device_set_vendor(FWUPD_DEVICE(d),v)
 #define fu_device_add_vendor_id(d,v)		fwupd_device_add_vendor_id(FWUPD_DEVICE(d),v)
+#define fu_device_add_protocol(d,v)		fwupd_device_add_protocol(FWUPD_DEVICE(d),v)
 #define fu_device_set_version_raw(d,v)		fwupd_device_set_version_raw(FWUPD_DEVICE(d),v)
 #define fu_device_set_version_lowest_raw(d,v)	fwupd_device_set_version_lowest_raw(FWUPD_DEVICE(d),v)
 #define fu_device_set_version_bootloader_raw(d,v)	fwupd_device_set_version_bootloader_raw(FWUPD_DEVICE(d),v)
@@ -190,6 +192,7 @@ FuDevice	*fu_device_new				(void);
 #define fu_device_get_version_lowest_raw(d)	fwupd_device_get_version_lowest_raw(FWUPD_DEVICE(d))
 #define fu_device_get_version_bootloader_raw(d)	fwupd_device_get_version_bootloader_raw(FWUPD_DEVICE(d))
 #define fu_device_get_vendor_ids(d)		fwupd_device_get_vendor_ids(FWUPD_DEVICE(d))
+#define fu_device_get_protocols(d)		fwupd_device_get_protocols(FWUPD_DEVICE(d))
 #define fu_device_get_flashes_left(d)		fwupd_device_get_flashes_left(FWUPD_DEVICE(d))
 #define fu_device_get_install_duration(d)	fwupd_device_get_install_duration(FWUPD_DEVICE(d))
 
@@ -204,6 +207,7 @@ FuDevice	*fu_device_new				(void);
  * @FU_DEVICE_INTERNAL_FLAG_MD_SET_VERFMT:		Set the device version format from the metadata if available
  * @FU_DEVICE_INTERNAL_FLAG_MD_SET_ICON:		Set the device icon from the metadata if available
  * @FU_DEVICE_INTERNAL_FLAG_RETRY_OPEN:			Retry the device open up to 5 times if it fails
+ * @FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID:		Match GUIDs on device replug where the physical and logical IDs will be different
  *
  * The device internal flags.
  **/
@@ -217,6 +221,7 @@ typedef enum {
 	FU_DEVICE_INTERNAL_FLAG_MD_SET_VERFMT		= (1llu << 5),	/* Since: 1.5.5 */
 	FU_DEVICE_INTERNAL_FLAG_MD_SET_ICON		= (1llu << 6),	/* Since: 1.5.5 */
 	FU_DEVICE_INTERNAL_FLAG_RETRY_OPEN		= (1llu << 7),	/* Since: 1.5.5 */
+	FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID	= (1llu << 8),	/* Since: 1.5.8 */
 	/*< private >*/
 	FU_DEVICE_INTERNAL_FLAG_UNKNOWN			= G_MAXUINT64,
 } FuDeviceInternalFlags;
@@ -284,10 +289,15 @@ void		 fu_device_set_physical_id		(FuDevice	*self,
 const gchar	*fu_device_get_logical_id		(FuDevice	*self);
 void		 fu_device_set_logical_id		(FuDevice	*self,
 							 const gchar	*logical_id);
+const gchar	*fu_device_get_backend_id		(FuDevice	*self);
+void		 fu_device_set_backend_id		(FuDevice	*self,
+							 const gchar	*backend_id);
 const gchar	*fu_device_get_proxy_guid		(FuDevice	*self);
 void		 fu_device_set_proxy_guid		(FuDevice	*self,
 							 const gchar	*proxy_guid);
+G_DEPRECATED_FOR(fu_device_get_protocols)
 const gchar	*fu_device_get_protocol			(FuDevice	*self);
+G_DEPRECATED_FOR(fu_device_add_protocol)
 void		 fu_device_set_protocol			(FuDevice	*self,
 							 const gchar	*protocol);
 guint		 fu_device_get_priority			(FuDevice	*self);
@@ -319,6 +329,9 @@ guint64		 fu_device_get_firmware_size_max	(FuDevice	*self);
 guint		 fu_device_get_progress			(FuDevice	*self);
 void		 fu_device_set_progress			(FuDevice	*self,
 							 guint		 progress);
+guint		 fu_device_get_battery_level		(FuDevice	*self);
+void		 fu_device_set_battery_level		(FuDevice	*self,
+							 guint		 battery_level);
 void		 fu_device_set_progress_full		(FuDevice	*self,
 							 gsize		 progress_done,
 							 gsize		 progress_total);

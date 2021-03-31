@@ -12,6 +12,7 @@ deprecated="FWUPD_DEVICE_FLAG_NO_AUTO_INSTANCE_IDS
             FWUPD_DEVICE_FLAG_ONLY_SUPPORTED
             FWUPD_DEVICE_FLAG_MD_SET_NAME
             FWUPD_DEVICE_FLAG_MD_SET_VERFMT
+            FWUPD_DEVICE_FLAG_NO_GUID_MATCHING
             FWUPD_DEVICE_FLAG_MD_SET_ICON"
 for val in $deprecated; do
     if grep -- $val plugins/*/*.c ; then
@@ -32,6 +33,11 @@ fi
 git config tar.tar.xz.command "xz -c"
 mkdir -p build && pushd build
 rm -rf *
+
+if [ "$QUBES" = "true" ]; then
+    QUBES_MACRO=(--define "qubes_packages 1")
+fi
+
 meson .. \
     -Dgtkdoc=true \
     -Dman=true \
@@ -65,7 +71,7 @@ if [ -n "$CI" ]; then
 fi
 
 #build RPM packages
-rpmbuild -ba build/fwupd.spec
+rpmbuild -ba "${QUBES_MACRO[@]}" build/fwupd.spec
 
 #if invoked outside of CI
 if [ ! -f /.dockerenv ]; then

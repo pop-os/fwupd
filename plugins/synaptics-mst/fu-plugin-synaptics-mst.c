@@ -132,7 +132,7 @@ fu_plugin_backend_device_added (FuPlugin *plugin, FuDevice *device, GError **err
 	if (locker == NULL)
 		return FALSE;
 
-	/* for DeviceKind=system devices */
+	/* for SynapticsMstDeviceKind=system devices */
 	fu_synaptics_mst_device_set_system_type (FU_SYNAPTICS_MST_DEVICE (dev),
 						fu_plugin_get_dmi_value (plugin, FU_HWIDS_KEY_PRODUCT_SKU));
 
@@ -177,6 +177,7 @@ fu_plugin_init (FuPlugin *plugin)
 	fu_plugin_add_udev_subsystem (plugin, "drm");	/* used for uevent only */
 	fu_plugin_add_udev_subsystem (plugin, "drm_dp_aux_dev");
 	fu_plugin_add_firmware_gtype (plugin, NULL, FU_TYPE_SYNAPTICS_MST_FIRMWARE);
+	fu_plugin_add_possible_quirk_key (plugin, "SynapticsMstDeviceKind");
 }
 
 void

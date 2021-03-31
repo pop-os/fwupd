@@ -1,59 +1,59 @@
 # N13xWU
-[HwId=992f1bc7-f8ee-567a-88dd-30e5158d72ed]
+[992f1bc7-f8ee-567a-88dd-30e5158d72ed]
 SuperioChipsets=IT8587
 
 # W740SU
-[HwId=f00d8c4e-dce2-51c3-89d6-6cbc5fc5cdbb]
+[f00d8c4e-dce2-51c3-89d6-6cbc5fc5cdbb]
 SuperioChipsets=IT8587
 
-# Star Lite Mk III
-[HwId=23fe120a-f9e1-590d-9e6b-4a2a9274b293]
+# Star LabTop Mk III (HwId)
+[013b60e5-1023-5bee-8ae5-14cae21377b7]
 SuperioChipsets=IT8987
 InstallDuration=20
 
-# Star LabTop Mk IV
-[HwId=baf1d04e-fd16-5e6a-93cc-1c23d171f879]
+# Star LabTop Mk IV (HwId)
+[baf1d04e-fd16-5e6a-93cc-1c23d171f879]
 SuperioChipsets=IT8987
 InstallDuration=20
 
-# Star LabTop Mk3
-[HwId=3dc52d2c-9e9b-5ba5-b10d-9ba1eb11dacc]
+# Star Lite Mk II (HwId)
+[013b60e5-1023-5bee-8ae5-14cae21377b7]
 SuperioChipsets=IT8987
 InstallDuration=20
 
-# Star Lite Mk2
-[HwId=d1a64840-4307-58fb-a62c-de28a07c0151]
+# Star Lite Mk III (HwId)
+[d5521faa-c50b-5d64-971d-8fd400030c51]
 SuperioChipsets=IT8987
 InstallDuration=20
 
-[SuperIO=IT8510]
-Id=0x8510
-Port=0x2e
+[SuperIO-IT8510]
+SuperioId=0x8510
+SuperioPort=0x2e
 
-[SuperIO=IT8511]
-Id=0x8511
-Port=0x2e
+[SuperIO-IT8511]
+SuperioId=0x8511
+SuperioPort=0x2e
 
-[SuperIO=IT8512]
-Id=0x8512
-Port=0x2e
+[SuperIO-IT8512]
+SuperioId=0x8512
+SuperioPort=0x2e
 
-[SuperIO=IT8513]
-Id=0x8513
-Port=0x2e
+[SuperIO-IT8513]
+SuperioId=0x8513
+SuperioPort=0x2e
 
-[SuperIO=IT8516]
-Id=0x8516
-Port=0x2e
+[SuperIO-IT8516]
+SuperioId=0x8516
+SuperioPort=0x2e
 
-[SuperIO=IT8518]
-Id=0x8518
-Port=0x2e
+[SuperIO-IT8518]
+SuperioId=0x8518
+SuperioPort=0x2e
 
-[SuperIO=IT8587]
-Id=0x8587
-Port=0x2e
+[SuperIO-IT8587]
+SuperioId=0x8587
+SuperioPort=0x2e
 
-[SuperIO=IT8987]
-Id=0x8987
-Port=0x4e
+[SuperIO-IT8987]
+SuperioId=0x8987
+SuperioPort=0x4e

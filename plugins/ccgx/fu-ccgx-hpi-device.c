@@ -70,9 +70,9 @@ fu_ccgx_hpi_device_to_string (FuDevice *device, guint idt, GString *str)
 	fu_common_string_append_kx (str, idt, "EpBulkOut", self->ep_bulk_out);
 	fu_common_string_append_kx (str, idt, "EpIntrIn", self->ep_intr_in);
 	if (self->flash_row_size > 0)
-		fu_common_string_append_kx (str, idt, "FlashRowSize", self->flash_row_size);
+		fu_common_string_append_kx (str, idt, "CcgxFlashRowSize", self->flash_row_size);
 	if (self->flash_size > 0)
-		fu_common_string_append_kx (str, idt, "FlashSize", self->flash_size);
+		fu_common_string_append_kx (str, idt, "CcgxFlashSize", self->flash_size);
 }
 
 typedef struct {
@@ -1486,7 +1486,7 @@ fu_ccgx_hpi_device_set_quirk_kv (FuDevice *device,
 				     "invalid SiliconId");
 		return FALSE;
 	}
-	if (g_strcmp0 (key, "FlashRowSize") == 0) {
+	if (g_strcmp0 (key, "CcgxFlashRowSize") == 0) {
 		guint64 tmp = fu_common_strtoull (value);
 		if (tmp < G_MAXUINT32) {
 			self->flash_row_size = tmp;
@@ -1495,10 +1495,10 @@ fu_ccgx_hpi_device_set_quirk_kv (FuDevice *device,
 		g_set_error_literal (error,
 				     G_IO_ERROR,
 				     G_IO_ERROR_INVALID_DATA,
-				     "invalid FlashRowSize");
+				     "invalid CcgxFlashRowSize");
 		return FALSE;
 	}
-	if (g_strcmp0 (key, "FlashSize") == 0) {
+	if (g_strcmp0 (key, "CcgxFlashSize") == 0) {
 		guint64 tmp = fu_common_strtoull (value);
 		if (tmp < G_MAXUINT32) {
 			self->flash_size = tmp;
@@ -1507,17 +1507,17 @@ fu_ccgx_hpi_device_set_quirk_kv (FuDevice *device,
 		g_set_error_literal (error,
 				     G_IO_ERROR,
 				     G_IO_ERROR_INVALID_DATA,
-				     "invalid FlashSize");
+				     "invalid CcgxFlashSize");
 		return FALSE;
 	}
-	if (g_strcmp0 (key, "ImageKind") == 0) {
+	if (g_strcmp0 (key, "CcgxImageKind") == 0) {
 		self->fw_image_type = fu_ccgx_fw_image_type_from_string (value);
 		if (self->fw_image_type != FW_IMAGE_TYPE_UNKNOWN)
 			return TRUE;
 		g_set_error_literal (error,
 				     G_IO_ERROR,
 				     G_IO_ERROR_INVALID_DATA,
-				     "invalid ImageKind");
+				     "invalid CcgxImageKind");
 		return FALSE;
 	}
 	g_set_error_literal (error,
@@ -1585,11 +1585,12 @@ fu_ccgx_hpi_device_init (FuCcgxHpiDevice *self)
 	self->ep_bulk_out = PD_I2C_USB_EP_BULK_OUT;
 	self->ep_bulk_in = PD_I2C_USB_EP_BULK_IN;
 	self->ep_intr_in = PD_I2C_USB_EP_INTR_IN;
-	fu_device_set_protocol (FU_DEVICE (self), "com.cypress.ccgx");
+	fu_device_add_protocol (FU_DEVICE (self), "com.cypress.ccgx");
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
+	fu_device_add_internal_flag (FU_DEVICE (self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_retry_set_delay (FU_DEVICE (self), HPI_CMD_RETRY_DELAY);
 
 	/* we can recover the I²C link using reset */

@@ -429,6 +429,8 @@ fu_thunderbolt_device_setup_controller (FuDevice *device, GError **error)
 		fu_device_remove_flag (device, FWUPD_DEVICE_FLAG_SKIPS_RESTART);
 		/* control the order of activation (less relevant; install too though) */
 		fu_device_add_flag (device, FWUPD_DEVICE_FLAG_INSTALL_PARENT_FIRST);
+	} else {
+		fu_device_add_internal_flag (device, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	}
 
 	return TRUE;
@@ -663,6 +665,8 @@ fu_thunderbolt_device_prepare_firmware (FuDevice *device,
 	if (nvmem == NULL)
 		return NULL;
 	controller_fw = g_file_load_bytes (nvmem, NULL, NULL, error);
+	if (controller_fw == NULL)
+		return NULL;
 	if (!fu_firmware_parse (FU_FIRMWARE (firmware_old), controller_fw, flags, error))
 		return NULL;
 	if (fu_thunderbolt_firmware_is_host (FU_THUNDERBOLT_FIRMWARE (firmware)) !=
@@ -786,7 +790,7 @@ fu_thunderbolt_device_init (FuThunderboltDevice *self)
 {
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_icon (FU_DEVICE (self), "thunderbolt");
-	fu_device_set_protocol (FU_DEVICE (self), "com.intel.thunderbolt");
+	fu_device_add_protocol (FU_DEVICE (self), "com.intel.thunderbolt");
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_PAIR);
 }
 

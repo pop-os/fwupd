@@ -1,3 +1,11 @@
+fwupd (1.5.8-0ubuntu1) hirsute; urgency=medium
+
+  * New upstream version (1.5.8)
+  * Backport a patch to fix SBAT (LP: #1921539)
+  * Drop all other patches, upstream.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 26 Mar 2021 14:07:35 -0500
+
 fwupd (1.5.7-3) unstable; urgency=medium
 
   * Backport a patch to fix regression in fwupdtool activate

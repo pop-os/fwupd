@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version : '1.5.7',
+  version : '1.5.8',
   license : 'LGPL-2.1+',
   meson_version : '>=0.47.0',
   default_options : ['warning_level=2', 'c_std=c99'],
@@ -376,7 +376,7 @@ if build_standalone and get_option('plugin_uefi_capsule')
   conf.set_quoted('EFI_MACHINE_TYPE_NAME', EFI_MACHINE_TYPE_NAME)
   r = run_command([python3, 'po/test-deps'])
   if r.returncode() != 0
-    error(r.stderr())
+    error(r.stdout())
   endif
 endif
 

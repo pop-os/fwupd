@@ -762,7 +762,7 @@ fu_engine_requirements_other_device_func (gconstpointer user_data)
 	/* set up a different device */
 	fu_device_set_id (device2, "id2");
 	fu_device_add_vendor_id (device2, "USB:FFFF");
-	fu_device_set_protocol (device2, "com.acme");
+	fu_device_add_protocol (device2, "com.acme");
 	fu_device_set_name (device2, "Secondary firmware");
 	fu_device_set_version_format (device2, FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_set_version (device2, "4.5.6");
@@ -823,7 +823,7 @@ fu_engine_requirements_protocol_check_func (gconstpointer user_data)
 	fu_engine_set_silo (engine, silo_empty);
 
 	fu_device_set_id (device1, "NVME");
-	fu_device_set_protocol (device1, "com.acme");
+	fu_device_add_protocol (device1, "com.acme");
 	fu_device_set_name (device1, "NVME device");
 	fu_device_add_vendor_id (device1, "ACME");
 	fu_device_set_version_format (device1, FWUPD_VERSION_FORMAT_TRIPLET);
@@ -833,7 +833,7 @@ fu_engine_requirements_protocol_check_func (gconstpointer user_data)
 	fu_engine_add_device (engine, device1);
 
 	fu_device_set_id (device2, "UEFI");
-	fu_device_set_protocol (device2, "org.bar");
+	fu_device_add_protocol (device2, "org.bar");
 	fu_device_set_name (device2, "UEFI device");
 	fu_device_add_vendor_id (device2, "ACME");
 	fu_device_set_version_format (device2, FWUPD_VERSION_FORMAT_TRIPLET);
@@ -918,7 +918,7 @@ fu_engine_requirements_parent_device_func (gconstpointer user_data)
 	/* set up a parent device */
 	fu_device_set_id (device1, "parent");
 	fu_device_add_vendor_id (device1, "USB:FFFF");
-	fu_device_set_protocol (device1, "com.acme");
+	fu_device_add_protocol (device1, "com.acme");
 	fu_device_set_name (device1, "parent");
 	fu_device_set_version_format (device1, FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_set_version (device1, "1.2.3");
@@ -944,103 +944,6 @@ fu_engine_requirements_parent_device_func (gconstpointer user_data)
 }
 
 static void
-fu_engine_device_priority_func (gconstpointer user_data)
-{
-	FuDevice *device;
-	g_autoptr(FuDevice) device1 = fu_device_new ();
-	g_autoptr(FuDevice) device2 = fu_device_new ();
-	g_autoptr(FuDevice) device3 = fu_device_new ();
-	g_autoptr(FuDevice) device4 = fu_device_new ();
-	g_autoptr(FuDevice) device5 = fu_device_new ();
-	g_autoptr(GPtrArray) devices = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new (FU_APP_FLAGS_NONE);
-	g_autoptr(GError) error = NULL;
-	g_autoptr(XbSilo) silo_empty = xb_silo_new ();
-
-	/* no metadata in daemon */
-	fu_engine_set_silo (engine, silo_empty);
-
-	/* add low prio then high then low */
-	fu_device_set_id (device1, "id1");
-	fu_device_add_vendor_id (device1, "USB:FFFF");
-	fu_device_set_protocol (device1, "com.acme");
-	fu_device_set_priority (device1, 0);
-	fu_device_set_plugin (device1, "udev");
-	fu_device_add_instance_id (device1, "GUID1");
-	fu_device_convert_instance_ids (device1);
-	fu_engine_add_device (engine, device1);
-	fu_device_set_id (device2, "id2");
-	fu_device_add_vendor_id (device2, "USB:FFFF");
-	fu_device_set_protocol (device2, "com.acme");
-	fu_device_set_priority (device2, 1);
-	fu_device_set_plugin (device2, "redfish");
-	fu_device_add_instance_id (device2, "GUID1");
-	fu_device_set_name (device2, "123");
-	fu_device_convert_instance_ids (device2);
-	fu_engine_add_device (engine, device2);
-	fu_device_set_id (device3, "id3");
-	fu_device_add_vendor_id (device3, "USB:FFFF");
-	fu_device_set_protocol (device3, "com.acme");
-	fu_device_set_priority (device3, 0);
-	fu_device_set_plugin (device3, "uefi_capsule");
-	fu_device_add_instance_id (device3, "GUID1");
-	fu_device_convert_instance_ids (device3);
-	fu_engine_add_device (engine, device3);
-
-	/* get the high prio device */
-	device = fu_engine_get_device (engine, "867d5f8110f8aa79dd63d7440f21724264f10430", &error);
-	g_assert_no_error (error);
-	g_assert_cmpint (fu_device_get_priority (device), ==, 1);
-	g_clear_object (&device);
-
-	/* the now-removed low-prio device */
-	device = fu_engine_get_device (engine, "4e89d81a2e6fb4be2578d245fd8511c1f4ad0b58", &error);
-	g_assert_error (error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND);
-	g_assert_null (device);
-	g_clear_error (&error);
-
-	/* the never-added 2nd low-prio device */
-	device = fu_engine_get_device (engine, "c48feddbbcfee514f530ce8f7f2dccd98b6cc150", &error);
-	g_assert_error (error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND);
-	g_assert_null (device);
-	g_clear_error (&error);
-
-	/* add extra devices that should sort */
-	fu_device_set_id (device4, "id4");
-	fu_device_add_vendor_id (device4, "USB:FFFF");
-	fu_device_set_protocol (device4, "com.acme");
-	fu_device_set_priority (device4, 0);
-	fu_device_set_plugin (device4, "redfish");
-	fu_device_add_instance_id (device4, "GUID4");
-	fu_device_set_name (device4, "BCD");
-	fu_device_convert_instance_ids (device4);
-	fu_engine_add_device (engine, device4);
-	fu_device_set_id (device5, "id5");
-	fu_device_add_vendor_id (device5, "USB:FFFF");
-	fu_device_set_protocol (device5, "com.acme");
-	fu_device_set_priority (device5, 0);
-	fu_device_set_plugin (device5, "uefi_capsule");
-	fu_device_add_instance_id (device5, "GUID5");
-	fu_device_set_name (device5, "ABC");
-	fu_device_convert_instance_ids (device5);
-	fu_engine_add_device (engine, device5);
-
-	/* make sure the devices are all sorted properly */
-	devices = fu_engine_get_devices (engine, &error);
-	g_assert_no_error (error);
-	g_assert_nonnull (devices);
-	g_assert_cmpint (devices->len, ==, 3);
-
-	/* first should be top priority device */
-	device = g_ptr_array_index (devices, 0);
-	g_assert_cmpstr (fu_device_get_name (device), ==, "123");
-	device = g_ptr_array_index (devices, 1);
-	g_assert_cmpstr (fu_device_get_name (device), ==, "ABC");
-	device = g_ptr_array_index (devices, 2);
-	g_assert_cmpstr (fu_device_get_name (device), ==, "BCD");
-}
-
-static void
 fu_engine_device_parent_func (gconstpointer user_data)
 {
 	g_autoptr(FuDevice) device1 = fu_device_new ();
@@ -1055,7 +958,7 @@ fu_engine_device_parent_func (gconstpointer user_data)
 	/* add child */
 	fu_device_set_id (device1, "child");
 	fu_device_add_vendor_id (device2, "USB:FFFF");
-	fu_device_set_protocol (device2, "com.acme");
+	fu_device_add_protocol (device2, "com.acme");
 	fu_device_add_instance_id (device1, "child-GUID-1");
 	fu_device_add_parent_guid (device1, "parent-GUID");
 	fu_device_convert_instance_ids (device1);
@@ -1064,7 +967,7 @@ fu_engine_device_parent_func (gconstpointer user_data)
 	/* parent */
 	fu_device_set_id (device2, "parent");
 	fu_device_add_vendor_id (device2, "USB:FFFF");
-	fu_device_set_protocol (device2, "com.acme");
+	fu_device_add_protocol (device2, "com.acme");
 	fu_device_add_instance_id (device2, "parent-GUID");
 	fu_device_set_vendor (device2, "oem");
 	fu_device_convert_instance_ids (device2);
@@ -1117,13 +1020,13 @@ fu_engine_partial_hash_func (gconstpointer user_data)
 	/* add two dummy devices */
 	fu_device_set_id (device1, "device1");
 	fu_device_add_vendor_id (device1, "USB:FFFF");
-	fu_device_set_protocol (device1, "com.acme");
+	fu_device_add_protocol (device1, "com.acme");
 	fu_device_set_plugin (device1, "test");
 	fu_device_add_guid (device1, "12345678-1234-1234-1234-123456789012");
 	fu_engine_add_device (engine, device1);
 	fu_device_set_id (device2, "device21");
 	fu_device_add_vendor_id (device2, "USB:FFFF");
-	fu_device_set_protocol (device2, "com.acme");
+	fu_device_add_protocol (device2, "com.acme");
 	fu_device_set_plugin (device2, "test");
 	fu_device_set_equivalent_id (device2, "b92f5b7560b84ca005a79f5a15de3c003ce494cf");
 	fu_device_add_guid (device2, "87654321-1234-1234-1234-123456789012");
@@ -1196,7 +1099,7 @@ fu_engine_device_unlock_func (gconstpointer user_data)
 	/* add a dummy device */
 	fu_device_set_id (device, "UEFI-dummy-dev0");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_add_guid (device, "2d47f29b-83a2-4f31-a2e8-63474f4d4c2e");
 	fu_device_add_flag (device, FWUPD_DEVICE_FLAG_LOCKED);
 	fu_device_set_version_format (device, FWUPD_VERSION_FORMAT_PLAIN);
@@ -1247,7 +1150,7 @@ fu_engine_require_hwid_func (gconstpointer user_data)
 	/* add a dummy device */
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_set_version_format (device, FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_set_version (device, "1.2.2");
 	fu_device_add_guid (device, "12345678-1234-1234-1234-123456789012");
@@ -1384,7 +1287,7 @@ fu_engine_downgrade_func (gconstpointer user_data)
 	fu_device_set_version (device, "1.2.3");
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_set_name (device, "Test Device");
 	fu_device_add_guid (device, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 	fu_device_add_flag (device, FWUPD_DEVICE_FLAG_UPDATABLE);
@@ -1499,7 +1402,7 @@ fu_engine_install_duration_func (gconstpointer user_data)
 	fu_device_set_version (device, "1.2.3");
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_add_guid (device, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 	fu_device_set_install_duration (device, 999);
 	fu_device_add_flag (device, FWUPD_DEVICE_FLAG_UPDATABLE);
@@ -1569,7 +1472,7 @@ fu_engine_history_func (gconstpointer user_data)
 	fu_device_set_version (device, "1.2.2");
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_set_name (device, "Test Device");
 	fu_device_set_plugin (device, "test");
 	fu_device_add_guid (device, "12345678-1234-1234-1234-123456789012");
@@ -1696,7 +1599,7 @@ fu_engine_multiple_rels_func (gconstpointer user_data)
 	fu_device_set_version (device, "1.2.2");
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_set_name (device, "Test Device");
 	fu_device_set_plugin (device, "test");
 	fu_device_add_guid (device, "12345678-1234-1234-1234-123456789012");
@@ -1767,7 +1670,7 @@ fu_engine_history_inherit (gconstpointer user_data)
 	fu_device_set_version (device, "1.2.2");
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_set_name (device, "Test Device");
 	fu_device_set_plugin (device, "test");
 	fu_device_add_guid (device, "12345678-1234-1234-1234-123456789012");
@@ -1829,7 +1732,7 @@ fu_engine_history_inherit (gconstpointer user_data)
 	device = fu_device_new ();
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_set_name (device, "Test Device");
 	fu_device_add_guid (device, "12345678-1234-1234-1234-123456789012");
 	fu_device_set_version_format (device, FWUPD_VERSION_FORMAT_TRIPLET);
@@ -1878,7 +1781,7 @@ fu_engine_history_error_func (gconstpointer user_data)
 	fu_device_set_version (device, "1.2.2");
 	fu_device_set_id (device, "test_device");
 	fu_device_add_vendor_id (device, "USB:FFFF");
-	fu_device_set_protocol (device, "com.acme");
+	fu_device_add_protocol (device, "com.acme");
 	fu_device_set_name (device, "Test Device");
 	fu_device_set_plugin (device, "test");
 	fu_device_add_guid (device, "12345678-1234-1234-1234-123456789012");
@@ -2048,11 +1951,13 @@ fu_device_list_replug_auto_func (gconstpointer user_data)
 
 	/* fake child devices */
 	fu_device_set_id (device1, "device1");
+	fu_device_add_internal_flag (device1, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_physical_id (device1, "ID");
 	fu_device_set_plugin (device1, "self-test");
 	fu_device_set_remove_delay (device1, FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_add_child (parent, device1);
 	fu_device_set_id (device2, "device2");
+	fu_device_add_internal_flag (device2, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_physical_id (device2, "ID"); /* matches */
 	fu_device_set_plugin (device2, "self-test");
 	fu_device_set_remove_delay (device2, FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
@@ -2105,12 +2010,14 @@ fu_device_list_replug_user_func (gconstpointer user_data)
 
 	/* fake devices */
 	fu_device_set_id (device1, "device1");
+	fu_device_add_internal_flag (device1, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_instance_id (device1, "foo");
 	fu_device_add_instance_id (device1, "bar");
 	fu_device_set_plugin (device1, "self-test");
 	fu_device_set_remove_delay (device1, FU_DEVICE_REMOVE_DELAY_USER_REPLUG);
 	fu_device_convert_instance_ids (device1);
 	fu_device_set_id (device2, "device2");
+	fu_device_add_internal_flag (device2, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_instance_id (device2, "baz");
 	fu_device_add_instance_id (device2, "bar"); /* matches */
 	fu_device_set_plugin (device2, "self-test");
@@ -2173,6 +2080,7 @@ fu_device_list_compatible_func (gconstpointer user_data)
 	fu_device_add_vendor_id (device1, "USB:0x20A0");
 	fu_device_set_version_format (device1, FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_set_version (device1, "1.2.3");
+	fu_device_add_internal_flag (device1, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_instance_id (device1, "foobar");
 	fu_device_add_instance_id (device1, "bootloader");
 	fu_device_set_remove_delay (device1, 100);
@@ -2186,6 +2094,7 @@ fu_device_list_compatible_func (gconstpointer user_data)
 	fu_device_set_id (device2, "device2");
 	fu_device_set_plugin (device2, "plugin-for-bootloader");
 	fu_device_add_instance_id (device2, "bootloader");
+	fu_device_add_internal_flag (device2, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_convert_instance_ids (device2);
 
 	/* verify only a changed event was generated */
@@ -3218,8 +3127,6 @@ main (int argc, char **argv)
 			      fu_engine_requirements_version_format_func);
 	g_test_add_data_func ("/fwupd/engine{device-auto-parent}", self,
 			      fu_engine_device_parent_func);
-	g_test_add_data_func ("/fwupd/engine{device-priority}", self,
-			      fu_engine_device_priority_func);
 	g_test_add_data_func ("/fwupd/engine{install-duration}", self,
 			      fu_engine_install_duration_func);
 	g_test_add_data_func ("/fwupd/engine{generate-md}", self,

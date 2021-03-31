@@ -48,6 +48,11 @@ These devices use several different generation schemes, e.g.
  * MST Hub: `MST-panamera-vmm5331-259`
  * Thunderbolt Controller: `TBT-00d4b070`
 
+Update Behavior
+---------------
+
+All devices will be updated the next time the usb-c plug from the dock is unplugged from the host.
+
 Vendor ID Security
 ------------------
 

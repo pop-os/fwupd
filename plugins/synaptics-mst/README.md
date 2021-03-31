@@ -18,12 +18,20 @@ GUID Generation
 
 These devices use custom GUID values, e.g.
 
+ * `MST-$(board-ID)`
  * `MST-$(device_kind)-$(chip-ID)-$(board-ID)`
  * `MST-$(device_kind)-$(board-ID)`
  * `MST-$(device_kind)`
 
 Please refer to the plugin source for more details about how the GUID is
 constructed for specific hardware.
+
+Update Behavior
+---------------
+
+The firmware is deployed when the device is in normal runtime mode, and the
+device will reset when the new firmware has been written. On some hardware the
+MST device may not enumerate if there is no monitor actually plugged in.
 
 Vendor ID Security
 ------------------

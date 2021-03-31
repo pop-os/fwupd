@@ -1,0 +1,29 @@
+From d99074c3741ca9d30802d419d997bb90e24ea96a Mon Sep 17 00:00:00 2001
+From: Steve McIntyre <93sam@debian.org>
+Date: Fri, 26 Mar 2021 15:06:08 +0000
+Subject: [PATCH] Tweak the SBAT output for a vendor string
+
+The format is meant to be "<project>.<vendor>" with a period as a
+separator.
+
+Signed-off-by: Steve McIntyre <93sam@debian.org>
+---
+ plugins/uefi-capsule/efi/generate_sbat.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plugins/uefi-capsule/efi/generate_sbat.py b/plugins/uefi-capsule/efi/generate_sbat.py
+index 18f7c4c7..1f12ca11 100755
+--- a/plugins/uefi-capsule/efi/generate_sbat.py
++++ b/plugins/uefi-capsule/efi/generate_sbat.py
+@@ -51,7 +51,7 @@ def _generate_sbat(args):
+ 
+         # distro specifics, falling back to the project defaults
+         sfd.write(
+-            "{0}-{1},{2},{3},{4},{5},{6}\n".format(
++            "{0}.{1},{2},{3},{4},{5},{6}\n".format(
+                 args.project_name,
+                 args.sbat_distro_id,
+                 args.sbat_distro_generation or args.sbat_generation,
+-- 
+2.25.1
+

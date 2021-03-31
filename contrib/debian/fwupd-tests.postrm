@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+#DEBHELPER#
+
+if [ "$1" = remove -o "$1" = purge ]; then
+	if [ -f /etc/fwupd/daemon.conf ]; then
+		if [ "$CI" = "true" ]; then
+			sed "s,^DisabledPlugins=,DisabledPlugins=test;invalid," -i /etc/fwupd/daemon.conf
+		else
+			echo "To disable test suite, modify /etc/fwupd/daemon.conf"
+		fi
+	fi
+fi

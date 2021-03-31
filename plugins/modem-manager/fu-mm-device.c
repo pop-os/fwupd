@@ -214,7 +214,7 @@ fu_mm_device_probe_default (FuDevice *device, GError **error)
 				break;
 			}
 		}
-		fu_device_set_protocol (device, "com.google.fastboot");
+		fu_device_add_protocol (device, "com.google.fastboot");
 	}
 	if (self->update_methods & MM_MODEM_FIRMWARE_UPDATE_METHOD_QMI_PDC) {
 		for (guint i = 0; i < n_ports; i++) {
@@ -225,8 +225,8 @@ fu_mm_device_probe_default (FuDevice *device, GError **error)
 			}
 		}
 		/* only set if fastboot wasn't already set */
-		if (fu_device_get_protocol (device) == NULL)
-			fu_device_set_protocol (device, "com.qualcomm.qmi_pdc");
+		if (fu_device_get_protocols (device)->len == 0)
+			fu_device_add_protocol (device, "com.qualcomm.qmi_pdc");
 	}
 	mm_modem_port_info_array_free (ports, n_ports);
 
@@ -761,6 +761,7 @@ fu_mm_device_init (FuMmDevice *self)
 {
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_USE_RUNTIME_VERSION);
+	fu_device_add_internal_flag (FU_DEVICE (self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_summary (FU_DEVICE (self), "Mobile broadband device");
 	fu_device_add_icon (FU_DEVICE (self), "network-modem");

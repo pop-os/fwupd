@@ -159,10 +159,11 @@ gboolean
 fu_synaptics_rmi_device_write (FuSynapticsRmiDevice *self,
 			       guint16 addr,
 			       GByteArray *req,
+			       FuSynapticsRmiDeviceFlags flags,
 			       GError **error)
 {
 	FuSynapticsRmiDeviceClass *klass_rmi = FU_SYNAPTICS_RMI_DEVICE_GET_CLASS (self);
-	return klass_rmi->write (self, addr, req, error);
+	return klass_rmi->write (self, addr, req, flags, error);
 }
 
 gboolean
@@ -176,6 +177,13 @@ fu_synaptics_rmi_device_set_page (FuSynapticsRmiDevice *self, guint8 page, GErro
 		return FALSE;
 	priv->current_page = page;
 	return TRUE;
+}
+
+void		 
+fu_synaptics_rmi_device_set_iepmode (FuSynapticsRmiDevice *self, gboolean iepmode)
+{
+	FuSynapticsRmiDevicePrivate *priv = GET_PRIVATE (self);
+	priv->in_iep_mode = iepmode;
 }
 
 gboolean
@@ -194,7 +202,9 @@ fu_synaptics_rmi_device_reset (FuSynapticsRmiDevice *self, GError **error)
 	g_autoptr(GByteArray) req = g_byte_array_new ();
 
 	fu_byte_array_append_uint8 (req, RMI_F01_CMD_DEVICE_RESET);
-	if (!fu_synaptics_rmi_device_write (self, priv->f01->command_base, req, error))
+	if (!fu_synaptics_rmi_device_write (self, priv->f01->command_base, req,
+					    FU_SYNAPTICS_RMI_DEVICE_FLAG_ALLOW_FAILURE,
+					    error))
 		return FALSE;
 	g_usleep (1000 * RMI_F01_DEFAULT_RESET_DELAY_MS);
 	return TRUE;
@@ -745,7 +755,9 @@ fu_synaptics_rmi_device_write_bootloader_id (FuSynapticsRmiDevice *self, GError 
 	g_byte_array_append (bootloader_id_req, priv->flash.bootloader_id, sizeof(priv->flash.bootloader_id));
 	if (!fu_synaptics_rmi_device_write (self,
 					    priv->f34->data_base + block_data_offset,
-					    bootloader_id_req, error)) {
+					    bootloader_id_req,
+					    FU_SYNAPTICS_RMI_DEVICE_FLAG_NONE,
+					    error)) {
 		g_prefix_error (error, "failed to write bootloader_id: ");
 		return FALSE;
 	}
@@ -765,6 +777,7 @@ fu_synaptics_rmi_device_disable_irqs (FuSynapticsRmiDevice *self, GError **error
 	if (!fu_synaptics_rmi_device_write (self,
 					    priv->f01->control_base + 1,
 					    interrupt_disable_req,
+					    FU_SYNAPTICS_RMI_DEVICE_FLAG_NONE,
 					    error)) {
 		g_prefix_error (error, "failed to disable interrupts: ");
 		return FALSE;
@@ -805,7 +818,7 @@ static void
 fu_synaptics_rmi_device_init (FuSynapticsRmiDevice *self)
 {
 	FuSynapticsRmiDevicePrivate *priv = GET_PRIVATE (self);
-	fu_device_set_protocol (FU_DEVICE (self), "com.synaptics.rmi");
+	fu_device_add_protocol (FU_DEVICE (self), "com.synaptics.rmi");
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_TRIPLET);
 	priv->current_page = 0xfe;

@@ -28,6 +28,8 @@ struct _FuElantpHidDevice {
 
 G_DEFINE_TYPE (FuElantpHidDevice, fu_elantp_hid_device, FU_TYPE_UDEV_DEVICE)
 
+static gboolean fu_elantp_hid_device_detach (FuDevice *device, GError **error);
+
 static void
 fu_elantp_hid_device_to_string (FuDevice *device, guint idt, GString *str)
 {
@@ -307,6 +309,10 @@ fu_elantp_hid_device_write_firmware (FuDevice *device,
 	if (fw == NULL)
 		return FALSE;
 
+	/* detach */
+	if (!fu_elantp_hid_device_detach (device, error))
+		return FALSE;
+
 	/* write each block */
 	fu_device_set_status (device, FWUPD_STATUS_DEVICE_WRITE);
 	buf = g_bytes_get_data (fw, &bufsz);
@@ -356,7 +362,9 @@ fu_elantp_hid_device_write_firmware (FuDevice *device,
 	if (!fu_elantp_hid_device_read_cmd (self, ETP_CMD_I2C_IAP_CHECKSUM,
 					    csum_buf, sizeof(csum_buf), error))
 		return FALSE;
-	checksum_device = fu_common_read_uint16 (csum_buf, G_LITTLE_ENDIAN);
+	if (!fu_common_read_uint16_safe (csum_buf, sizeof(csum_buf), 0x0,
+					 &checksum_device, G_LITTLE_ENDIAN, error))
+		return FALSE;
 	if (checksum != checksum_device) {
 		g_set_error (error,
 			     FWUPD_ERROR,
@@ -550,7 +558,7 @@ fu_elantp_hid_device_init (FuElantpHidDevice *self)
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_set_summary (FU_DEVICE (self), "Elan Touchpad");
 	fu_device_add_icon (FU_DEVICE (self), "input-touchpad");
-	fu_device_set_protocol (FU_DEVICE (self), "tw.com.emc.elantp");
+	fu_device_add_protocol (FU_DEVICE (self), "tw.com.emc.elantp");
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_HEX);
 	fu_device_set_priority (FU_DEVICE (self), 1); /* better than i2c */
 	fu_udev_device_set_flags (FU_UDEV_DEVICE (self),
@@ -573,7 +581,6 @@ fu_elantp_hid_device_class_init (FuElantpHidDeviceClass *klass)
 	object_class->finalize = fu_elantp_hid_device_finalize;
 	klass_device->to_string = fu_elantp_hid_device_to_string;
 	klass_device->attach = fu_elantp_hid_device_attach;
-	klass_device->detach = fu_elantp_hid_device_detach;
 	klass_device->set_quirk_kv = fu_elantp_hid_device_set_quirk_kv;
 	klass_device->setup = fu_elantp_hid_device_setup;
 	klass_device->reload = fu_elantp_hid_device_setup;

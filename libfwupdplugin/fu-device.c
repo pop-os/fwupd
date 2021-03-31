@@ -39,6 +39,7 @@ typedef struct {
 	gchar				*equivalent_id;
 	gchar				*physical_id;
 	gchar				*logical_id;
+	gchar				*backend_id;
 	gchar				*proxy_guid;
 	FuDevice			*alternate;
 	FuDevice			*proxy;		/* noref */
@@ -49,6 +50,7 @@ typedef struct {
 	GRWLock				 parent_guids_mutex;
 	guint				 remove_delay;	/* ms */
 	guint				 progress;
+	guint				 battery_level;
 	gint				 order;
 	guint				 priority;
 	guint				 poll_id;
@@ -74,8 +76,10 @@ typedef struct {
 enum {
 	PROP_0,
 	PROP_PROGRESS,
+	PROP_BATTERY_LEVEL,
 	PROP_PHYSICAL_ID,
 	PROP_LOGICAL_ID,
+	PROP_BACKEND_ID,
 	PROP_QUIRKS,
 	PROP_PROXY,
 	PROP_LAST
@@ -94,11 +98,17 @@ fu_device_get_property (GObject *object, guint prop_id,
 	case PROP_PROGRESS:
 		g_value_set_uint (value, priv->progress);
 		break;
+	case PROP_BATTERY_LEVEL:
+		g_value_set_uint (value, priv->battery_level);
+		break;
 	case PROP_PHYSICAL_ID:
 		g_value_set_string (value, priv->physical_id);
 		break;
 	case PROP_LOGICAL_ID:
 		g_value_set_string (value, priv->logical_id);
+		break;
+	case PROP_BACKEND_ID:
+		g_value_set_string (value, priv->backend_id);
 		break;
 	case PROP_QUIRKS:
 		g_value_set_object (value, priv->quirks);
@@ -121,11 +131,17 @@ fu_device_set_property (GObject *object, guint prop_id,
 	case PROP_PROGRESS:
 		fu_device_set_progress (self, g_value_get_uint (value));
 		break;
+	case PROP_BATTERY_LEVEL:
+		fu_device_set_battery_level (self, g_value_get_uint (value));
+		break;
 	case PROP_PHYSICAL_ID:
 		fu_device_set_physical_id (self, g_value_get_string (value));
 		break;
 	case PROP_LOGICAL_ID:
 		fu_device_set_logical_id (self, g_value_get_string (value));
+		break;
+	case PROP_BACKEND_ID:
+		fu_device_set_backend_id (self, g_value_get_string (value));
 		break;
 	case PROP_QUIRKS:
 		fu_device_set_quirks (self, g_value_get_object (value));
@@ -168,6 +184,8 @@ fu_device_internal_flag_to_string (FuDeviceInternalFlags flag)
 		return "ensure-semver";
 	if (flag == FU_DEVICE_INTERNAL_FLAG_RETRY_OPEN)
 		return "retry-open";
+	if (flag == FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID)
+		return "replug-match-guid";
 	return NULL;
 }
 
@@ -1146,7 +1164,9 @@ fu_device_set_quirk_kv (FuDevice *self,
 		return TRUE;
 	}
 	if (g_strcmp0 (key, FU_QUIRKS_PROTOCOL) == 0) {
-		fu_device_set_protocol (self, value);
+		g_auto(GStrv) sections = g_strsplit (value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_protocol (self, sections[i]);
 		return TRUE;
 	}
 	if (g_strcmp0 (key, FU_QUIRKS_VERSION) == 0) {
@@ -2050,6 +2070,55 @@ fu_device_set_logical_id (FuDevice *self, const gchar *logical_id)
 }
 
 /**
+ * fu_device_get_backend_id:
+ * @self: A #FuDevice
+ *
+ * Gets the ID set for the device as recognised by the backend. This is typically
+ * a Linux sysfs path or USB platform ID. If unset, it also falls back to the
+ * physical ID as this may be the same value.
+ *
+ * Returns: a string value, or %NULL if never set.
+ *
+ * Since: 1.5.8
+ **/
+const gchar *
+fu_device_get_backend_id (FuDevice *self)
+{
+	FuDevicePrivate *priv = GET_PRIVATE (self);
+	g_return_val_if_fail (FU_IS_DEVICE (self), NULL);
+	if (priv->backend_id != NULL)
+		return priv->backend_id;
+	return priv->physical_id;
+}
+
+/**
+ * fu_device_set_backend_id:
+ * @self: A #FuDevice
+ * @backend_id: a string, e.g. `dev2`
+ *
+ * Sets the backend ID on the device. This is designed to disambiguate devices
+ * with the same physical ID. This is typically a Linux sysfs path or USB
+ * platform ID.
+ *
+ * Since: 1.5.8
+ **/
+void
+fu_device_set_backend_id (FuDevice *self, const gchar *backend_id)
+{
+	FuDevicePrivate *priv = GET_PRIVATE (self);
+	g_return_if_fail (FU_IS_DEVICE (self));
+
+	/* not changed */
+	if (g_strcmp0 (priv->backend_id, backend_id) == 0)
+		return;
+
+	g_free (priv->backend_id);
+	priv->backend_id = g_strdup (backend_id);
+	priv->device_id_valid = FALSE;
+	g_object_notify (G_OBJECT (self), "backend-id");
+}
+
+/**
  * fu_device_get_proxy_guid:
  * @self: A #FuDevice
  *
@@ -2105,7 +2174,10 @@ const gchar *
 fu_device_get_protocol (FuDevice *self)
 {
 	g_return_val_if_fail (FU_IS_DEVICE (self), NULL);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 	return fwupd_device_get_protocol (FWUPD_DEVICE (self));
+#pragma GCC diagnostic pop
 }
 
 /**
@@ -2121,7 +2193,7 @@ void
 fu_device_set_protocol (FuDevice *self, const gchar *protocol)
 {
 	g_return_if_fail (FU_IS_DEVICE (self));
-	fwupd_device_set_protocol (FWUPD_DEVICE (self), protocol);
+	fwupd_device_add_protocol (FWUPD_DEVICE (self), protocol);
 }
 
 /**
@@ -2206,6 +2278,13 @@ fu_device_add_flag (FuDevice *self, FwupdDeviceFlags flag)
 	if (flag & FWUPD_DEVICE_FLAG_INSTALL_ALL_RELEASES)
 		flag |= FWUPD_DEVICE_FLAG_VERSION_CHECK_REQUIRED;
 	fwupd_device_add_flag (FWUPD_DEVICE (self), flag);
+
+	/* activatable devices shouldn't be allowed to update again until activated */
+	/* don't let devices be updated until activated */
+	if (flag & FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION) {
+		fwupd_device_remove_flag (FWUPD_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE);
+		fwupd_device_add_flag (FWUPD_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN);
+	}
 }
 
 static void
@@ -2467,6 +2546,46 @@ fu_device_sleep_with_progress (FuDevice *self, guint delay_secs)
 	}
 }
 
+/**
+ * fu_device_get_battery_level:
+ * @self: A #FuDevice
+ *
+ * Returns the battery level.
+ *
+ * Returns: value in percent
+ *
+ * Since: 1.5.8
+ **/
+guint
+fu_device_get_battery_level (FuDevice *self)
+{
+	FuDevicePrivate *priv = GET_PRIVATE (self);
+	g_return_val_if_fail (FU_IS_DEVICE (self), 0);
+	return priv->battery_level;
+}
+
+/**
+ * fu_device_set_battery_level:
+ * @self: A #FuDevice
+ * @battery_level: the percentage value
+ *
+ * Sets the battery level, or 0 for invalid. Setting this allows fwupd to show
+ * a warning if the device change is too low to perform the update.
+ *
+ * Since: 1.5.8
+ **/
+void
+fu_device_set_battery_level (FuDevice *self, guint battery_level)
+{
+	FuDevicePrivate *priv = GET_PRIVATE (self);
+	g_return_if_fail (FU_IS_DEVICE (self));
+	g_return_if_fail (battery_level <= 100);
+	if (priv->battery_level == battery_level)
+		return;
+	priv->battery_level = battery_level;
+	g_object_notify (G_OBJECT (self), "battery-level");
+}
+
 static void
 fu_device_add_string (FuDevice *self, guint idt, GString *str)
 {
@@ -2492,10 +2611,14 @@ fu_device_add_string (FuDevice *self, guint idt, GString *str)
 		fu_common_string_append_kv (str, idt + 1, "PhysicalId", priv->physical_id);
 	if (priv->logical_id != NULL)
 		fu_common_string_append_kv (str, idt + 1, "LogicalId", priv->logical_id);
+	if (priv->backend_id != NULL)
+		fu_common_string_append_kv (str, idt + 1, "BackendId", priv->backend_id);
 	if (priv->proxy != NULL)
 		fu_common_string_append_kv (str, idt + 1, "ProxyId", fu_device_get_id (priv->proxy));
 	if (priv->proxy_guid != NULL)
 		fu_common_string_append_kv (str, idt + 1, "ProxyGuid", priv->proxy_guid);
+	if (priv->battery_level != 0)
+		fu_common_string_append_ku (str, idt + 1, "BatteryLevel", priv->battery_level);
 	if (priv->size_min > 0) {
 		g_autofree gchar *sz = g_strdup_printf ("%" G_GUINT64_FORMAT, priv->size_min);
 		fu_common_string_append_kv (str, idt + 1, "FirmwareSizeMin", sz);
@@ -2530,7 +2653,7 @@ fu_device_add_string (FuDevice *self, guint idt, GString *str)
 		}
 		if (tmp2->len > 0)
 			g_string_truncate (tmp2, tmp2->len - 1);
-		fu_common_string_append_kv (str, idt + 1, "PrivateFlags", tmp2->str);
+		fu_common_string_append_kv (str, idt + 1, "InternalFlags", tmp2->str);
 	}
 
 	/* subclassed */
@@ -3446,6 +3569,8 @@ fu_device_incorporate (FuDevice *self, FuDevice *donor)
 		fu_device_set_physical_id (self, priv_donor->physical_id);
 	if (priv->logical_id == NULL && priv_donor->logical_id != NULL)
 		fu_device_set_logical_id (self, priv_donor->logical_id);
+	if (priv->backend_id == NULL && priv_donor->backend_id != NULL)
+		fu_device_set_backend_id (self, priv_donor->backend_id);
 	if (priv->proxy == NULL && priv_donor->proxy != NULL)
 		fu_device_set_proxy (self, priv_donor->proxy);
 	if (priv->proxy_guid == NULL && priv_donor->proxy_guid != NULL)
@@ -3552,11 +3677,22 @@ fu_device_class_init (FuDeviceClass *klass)
 				     G_PARAM_STATIC_NAME);
 	g_object_class_install_property (object_class, PROP_LOGICAL_ID, pspec);
 
+	pspec = g_param_spec_string ("backend-id", NULL, NULL, NULL,
+				     G_PARAM_READWRITE |
+				     G_PARAM_STATIC_NAME);
+	g_object_class_install_property (object_class, PROP_BACKEND_ID, pspec);
+
 	pspec = g_param_spec_uint ("progress", NULL, NULL,
 				   0, 100, 0,
 				   G_PARAM_READWRITE |
 				   G_PARAM_STATIC_NAME);
 	g_object_class_install_property (object_class, PROP_PROGRESS, pspec);
+
+	pspec = g_param_spec_uint ("battery-level", NULL, NULL,
+				   0, 100, 0,
+				   G_PARAM_READWRITE |
+				   G_PARAM_STATIC_NAME);
+	g_object_class_install_property (object_class, PROP_BATTERY_LEVEL, pspec);
 
 	pspec = g_param_spec_object ("quirks", NULL, NULL,
 				     FU_TYPE_QUIRKS,
@@ -3610,6 +3746,7 @@ fu_device_finalize (GObject *object)
 	g_free (priv->equivalent_id);
 	g_free (priv->physical_id);
 	g_free (priv->logical_id);
+	g_free (priv->backend_id);
 	g_free (priv->proxy_guid);
 
 	G_OBJECT_CLASS (fu_device_parent_class)->finalize (object);

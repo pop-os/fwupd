@@ -510,9 +510,9 @@ fu_plugin_quirks_func (void)
 	/* exact */
 	tmp = fu_plugin_lookup_quirk_by_id (plugin, "USB\\VID_0A5C&PID_6412", "Flags");
 	g_assert_cmpstr (tmp, ==, "ignore-runtime");
-	tmp = fu_plugin_lookup_quirk_by_id (plugin, "ACME Inc.=True", "Test");
+	tmp = fu_plugin_lookup_quirk_by_id (plugin, "ACME Inc.=True", "Name");
 	g_assert_cmpstr (tmp, ==, "awesome");
-	tmp = fu_plugin_lookup_quirk_by_id (plugin, "CORP*", "Test");
+	tmp = fu_plugin_lookup_quirk_by_id (plugin, "CORP*", "Name");
 	g_assert_cmpstr (tmp, ==, "town");
 	tmp = fu_plugin_lookup_quirk_by_id (plugin, "baz", "Unfound");
 	g_assert_cmpstr (tmp, ==, NULL);
@@ -540,7 +540,7 @@ fu_plugin_quirks_performance_func (void)
 	/* lookup */
 	g_timer_reset (timer);
 	for (guint j = 0; j < 1000; j++) {
-		const gchar *group = "DeviceInstanceId=USB\\VID_0BDA&PID_1100";
+		const gchar *group = "USB\\VID_0BDA&PID_1100";
 		for (guint i = 0; keys[i] != NULL; i++) {
 			const gchar *tmp = fu_quirks_lookup_by_id (quirks, group, keys[i]);
 			g_assert_cmpstr (tmp, !=, NULL);

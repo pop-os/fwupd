@@ -625,14 +625,14 @@ fu_ccgx_dmc_device_set_quirk_kv (FuDevice *device,
 {
 	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE (device);
 
-	if (g_strcmp0 (key, "ImageKind") == 0) {
+	if (g_strcmp0 (key, "CcgxImageKind") == 0) {
 		self->fw_image_type = fu_ccgx_fw_image_type_from_string (value);
 		if (self->fw_image_type != FW_IMAGE_TYPE_UNKNOWN)
 			return TRUE;
 		g_set_error_literal (error,
 				     G_IO_ERROR,
 				     G_IO_ERROR_INVALID_DATA,
-				     "invalid ImageKind");
+				     "invalid CcgxImageKind");
 		return FALSE;
 	}
 	g_set_error_literal (error,
@@ -647,11 +647,12 @@ fu_ccgx_dmc_device_init (FuCcgxDmcDevice *self)
 {
 	self->ep_intr_in = DMC_INTERRUPT_PIPE_ID;
 	self->ep_bulk_out = DMC_BULK_PIPE_ID;
-	fu_device_set_protocol (FU_DEVICE (self), "com.cypress.ccgx.dmc");
+	fu_device_add_protocol (FU_DEVICE (self), "com.cypress.ccgx.dmc");
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_QUAD);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
+	fu_device_add_internal_flag (FU_DEVICE (self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 }
 
 static void

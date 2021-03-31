@@ -730,19 +730,19 @@ fu_synaptics_cxaudio_device_set_quirk_kv (FuDevice *device,
 					GError **error)
 {
 	FuSynapticsCxaudioDevice *self = FU_SYNAPTICS_CXAUDIO_DEVICE (device);
-	if (g_strcmp0 (key, "ChipIdBase") == 0) {
+	if (g_strcmp0 (key, "CxaudioChipIdBase") == 0) {
 		self->chip_id_base = fu_common_strtoull (value);
 		return TRUE;
 	}
-	if (g_strcmp0 (key, "IsSoftwareResetSupported") == 0) {
+	if (g_strcmp0 (key, "CxaudioSoftwareReset") == 0) {
 		self->sw_reset_supported = fu_common_strtoull (value);
 		return TRUE;
 	}
-	if (g_strcmp0 (key, "EepromPatchValidAddr") == 0) {
+	if (g_strcmp0 (key, "CxaudioPatch1ValidAddr") == 0) {
 		self->eeprom_patch_valid_addr = fu_common_strtoull (value);
 		return TRUE;
 	}
-	if (g_strcmp0 (key, "EepromPatch2ValidAddr") == 0) {
+	if (g_strcmp0 (key, "CxaudioPatch2ValidAddr") == 0) {
 		self->eeprom_patch2_valid_addr = fu_common_strtoull (value);
 		return TRUE;
 	}
@@ -761,7 +761,7 @@ fu_synaptics_cxaudio_device_init (FuSynapticsCxaudioDevice *self)
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_install_duration (FU_DEVICE (self), 3); /* seconds */
-	fu_device_set_protocol (FU_DEVICE (self), "com.synaptics.cxaudio");
+	fu_device_add_protocol (FU_DEVICE (self), "com.synaptics.cxaudio");
 	fu_device_retry_set_delay (FU_DEVICE (self), 100); /* ms */
 	fu_device_set_remove_delay (FU_DEVICE (self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 }

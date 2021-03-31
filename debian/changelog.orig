@@ -1,0 +1,1143 @@
+fwupd (1.5.7-3pop0) focal; urgency=medium
+
+  * Pop!_OS patches
+
+ -- Jeremy Soller <jeremy@system76.com>  Tue, 30 Mar 2021 09:54:36 -0600
+
+fwupd (1.5.7-3) unstable; urgency=medium
+
+  * Backport a patch to fix regression in fwupdtool activate
+  * Backport a patch to fix activatable devices getting stuck in an update loop
+  * Rebuild to pick up new signing keys.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 11 Mar 2021 16:16:53 -0600
+
+fwupd (1.5.7-2) unstable; urgency=medium
+
+  * Backport a patch to fix FTBFS on armhf for SBAT
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 23 Feb 2021 17:25:50 -0600
+
+fwupd (1.5.7-1) unstable; urgency=medium
+
+  * New upstream version (1.5.7)
+    - Fixes issues with SBAT on UEFI.
+  * Fixes dependencies for -dev packages:
+    Closes: #980691, #980684
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 23 Feb 2021 09:03:46 -0600
+
+fwupd (1.5.6-1) unstable; urgency=medium
+
+  [ Steve McIntyre ]
+  * Fix up Uploaders for the -signed packages - remove Jared, add Matthias
+
+  [ Mario Limonciello ]
+  * New upstream version (1.5.6)
+  * drop all upstream patches
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 16 Feb 2021 10:54:08 -0600
+
+fwupd (1.5.5-2) unstable; urgency=medium
+
+  * fwupd.postinst: Adjust to read /etc/os-release instead of `/etc/lsb-release`
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 19 Jan 2021 15:48:55 -0600
+
+fwupd (1.5.5-1) unstable; urgency=medium
+
+  * New upstream version (1.5.5)
+  * trivial: debian: migrate uefi->uefi_capsule in uefi.conf
+  * trivial: debian: fix modules-load.d directory
+  * trivial: debian: add dbus to recommends (Closes: #980049)
+  * Backport 2 patches for continual "Unknown" message on new connections
+  * trivial: debian: read /etc/lsb-release instead of dpkg-dev (Closes: #977860, #977861, #970783)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 19 Jan 2021 12:50:02 -0600
+
+fwupd (1.5.3-2) unstable; urgency=medium
+
+  * trivial: debian: only install fwupd-msr.conf if needed
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 08 Dec 2020 10:45:45 -0600
+
+fwupd (1.5.3-1) unstable; urgency=medium
+
+  * New upstream version (1.5.3)
+  * Drop all patches (upstream)
+  * Follow defaults for nvme and redfish plugins (don't need efivar now)
+  * debian/control:
+    - Drop libsoup build dependency
+    - Add libcurl build dependency
+    - Add systemd build dependency
+  * Migrate debian/fwupd.preinst content to debian/fwupd.maintscript
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 08 Dec 2020 08:30:56 -0600
+
+fwupd (1.5.1-5) unstable; urgency=medium
+
+  * Backport patch to fix ppc64el autopkgtest failure
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 19 Nov 2020 00:36:17 -0600
+
+fwupd (1.5.1-4) unstable; urgency=medium
+
+  * trivial: debian: disable downloading from LVFS in autopkgtest
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 16 Nov 2020 17:07:15 -0600
+
+fwupd (1.5.1-3) unstable; urgency=medium
+
+  * Add breaks for fwupdate 12-7 (Closes: #960688)
+  * trivial: debian: add git to fwupdate-tests dependencies
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 16 Nov 2020 10:48:48 -0600
+
+fwupd (1.5.1-2) unstable; urgency=medium
+
+  [ Mario Limonciello ]
+  * Backport a patch to indicate if packages are supported or not
+  * backport a patch to fix autopkgtests on ppc64el
+  * trivial: debian: don't hardcode paths in libexec
+  * trivial: debian: disable msr plugin on all !x86
+
+  [ Jessica Clarke ]
+  * debian: Check DEB_HOST_ARCH_CPU not DEB_HOST_ARCH for MSR plugin
+  * debian: Prefer Makefile substitution over shell substitution
+  * debian: Use if/else rather than overriding default values
+  * debian: Drop pointless dh_shlibdeps override
+  * debian: Check for valgrind in Makefile not shell and don't hard-code path
+  * debian: Fix dangerous lack of set -e
+  * debian: Fix another instance of unusual ifeq syntax
+  * debian: Build up CONFARGS list rather than individual variables
+  * debian: Fix another dangerous missing set -e
+  * debian: Use uniform spacing around semicolons
+  * debian: Avoid looking like a set -e is missing
+  * debian: Remove unnecessary ./ use
+  * debian: Add quotes around glob
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 16 Nov 2020 09:31:32 -0600
+
+fwupd (1.5.1-1) unstable; urgency=medium
+
+  * New upstream version (1.5.1)
+  * Drop backported patches
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 13 Nov 2020 10:17:32 -0600
+
+fwupd (1.4.6-2) unstable; urgency=medium
+
+  * Add udisks2 to recommends
+  * Backport a patch to fix a crash when udisks2 is missing (Closes: #970054)
+  * Disable flashrom for ia64
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 10 Sep 2020 19:41:01 -0500
+
+fwupd (1.4.6-1) unstable; urgency=medium
+
+  * New upstream version (1.4.6)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 09 Sep 2020 10:37:37 -0500
+
+fwupd (1.4.5-1) unstable; urgency=medium
+
+  * New upstream version (1.4.5)
+  * Drop flashrom patch, now upstream
+  * Regenerate control file
+    - Refresh dependencies for 1.4.x
+    - Drop Jared as uploader
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 30 Jul 2020 08:33:22 -0500
+
+fwupd (1.3.11-2) unstable; urgency=medium
+
+  * Stop generating debian/control automatically at build time
+  * Add build-dep on libflashrom-dev
+
+ -- Steve McIntyre <93sam@debian.org>  Thu, 23 Jul 2020 21:54:00 +0100
+
+fwupd (1.3.11-1) unstable; urgency=medium
+
+  * New upstream stable release:
+    - Add more module types for the Dell dock
+    - Fix the TPM PCR0 calculation
+    - Check for free space after cleaning up ESP
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 18 Jun 2020 10:46:14 -0500
+
+fwupd (1.3.10-1) unstable; urgency=medium
+
+  * New upstream stable release:
+    - Actually reload the DFU device after upgrade has completed
+    - Capture the dock SKU in report metadata
+    - Correctly set the Logitech device protocol
+    - Do not use shim for non-secure boot configurations
+    - Ensure that the DeviceID is set for child devices
+    - Fix an error when detaching MSP430
+    - Fix the DeviceID set by GetDetails
+    - Force the prometheus minor version from 0x02 to 0x01 to fix updates
+    - Parse the CSR firmware as a DFU file
+    - Prevent dell-dock updates to occur via synaptics-mst plugin
+    - Rather than hardcoding thunderbolt to PCI slot numbers, use domain in GUID
+    - Remove a dock device from the whitelist that is never going to be updated
+    - Validate that gpgme_op_verify_result() returned at least one signature
+    - Wait for the cxaudio device to reboot after writing firmware
+  * Drop following patches, now incorporated upstream:
+    - Thunderbolt: create correct GUID for dual controller devices
+    - CSR: Fix parsing
+    - Motd: Fix refresh target to be network.target
+    - Logitech: Fix error in logs on unsigned devices and set protocol for
+      signed devices properly.
+    - Fix a FTBFS on empty /etc/machine-id in some buildd environments.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 09 Jun 2020 09:44:53 -0500
+
+fwupd (1.3.9-4) unstable; urgency=medium
+
+  * Backport a handful of patches from 1_3_X branch:
+    - Thunderbolt: create correct GUID for dual controller devices
+    - CSR: Fix parsing
+    - Motd: Fix refresh target to be network.target
+    - Logitech: Fix error in logs on unsigned devices and set protocol for
+      signed devices properly.
+    - Fix a FTBFS on empty /etc/machine-id in some buildd environments.
+      (LP: #1870051)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 01 Apr 2020 13:43:21 -0500
+
+fwupd (1.3.9-3) unstable; urgency=medium
+
+  * Backport a patch from upstream to not use shim on non-secure boot installs.
+    - Helps avoid hitting a shim regression.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 23 Mar 2020 09:39:16 -0500
+
+fwupd (1.3.9-2) unstable; urgency=medium
+
+  * Backport a patch to correct an error with shutdown script.
+  * Enable flashrom plugin for Debian.
+    - This is turned off for Ubuntu for now since flashrom is in universe.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 05 Mar 2020 20:03:03 -0600
+
+fwupd (1.3.9-1) unstable; urgency=medium
+
+  [ Mario Limonciello ]
+  * New upstream stable release (1.3.9)
+    - Moves some binaries from usr/libexec into usr/bin
+    - Adds fish completion script.
+    - Inhibit all power management actions using logind when updating
+  * Bug fixes:
+    - Always check for PLAIN when doing vercmp() operations
+    - Always return AppStream markup for remote agreements
+    - Apply UEFI capsule update even with single valid capsule
+    - Check the device protocol before de-duping devices
+    - Copy the version and format from donor device in get-details
+    - Correctly append the release to devices in `fwupdtool get-details`
+    - Decrease minimum battery requirement to 10%
+    - Discard the reason upgrades aren't available
+    - Do not fail loading in /etc/machine-id is not available
+    - Fix a critical warning when installing some firmware
+    - For the `get-details` command make sure to always show devices
+    - Set the MSP430 version format to pair
+    - Switch off the ATA verbose logging by default
+    - Use unknown for version format by default on get-details
+  * Drop all existing patches.
+
+  [ Laurent Bigonville ]
+  * debian/control.in: Add libglib2.0-doc to Build-Depends-Indep
+  * Move the daemons from /usr/lib/fwupd to /usr/libexec/fwupd
+  * debian/*.symbols: Add the Build-Depends-Package field
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 04 Mar 2020 10:32:33 -0600
+
+fwupd (1.3.8-1) unstable; urgency=medium
+
+  * New upstream version (1.3.8)
+  * Drop all existing patches
+  * Backport patches for:
+   - battery level threshold adjustment (30%->10%)
+   - A logic error with report uploading
+  * Update standards version
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 14 Feb 2020 09:41:27 -0600
+
+fwupd (1.3.7-3) unstable; urgency=medium
+
+  * Backport some patches from upstream.
+    - Revert a commit to fix UEFI updates hanging on many Dell systems.
+    - Adjust motd output to contain more whitespace
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 10 Feb 2020 12:55:12 -0600
+
+fwupd (1.3.7-2) unstable; urgency=medium
+
+  * Backport a patch to fix fwupd-refresh.service (Fixes: #950407, Fixes: #950408)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sun, 02 Feb 2020 08:41:33 -0600
+
+fwupd (1.3.7-1) unstable; urgency=medium
+
+  * New upstream version (1.3.7)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 31 Jan 2020 07:52:16 -0600
+
+fwupd (1.3.6-1) unstable; urgency=medium
+
+  * New upstream version (1.3.6)
+    - Fixes shutdown failed with exit 2 (Fixes: #947205)
+    - Fixes motd issue, requires newer systemd though as well (Fixes: #943343)
+  * Drop all patches from previous upload, now upstream.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 30 Dec 2019 17:23:21 -0600
+
+fwupd (1.3.5-1) unstable; urgency=medium
+
+  * New upstream version (1.3.5)
+  * Introduce new binary packages for new library libfwupdplugin,
+    allowing out of tree plugin builds.
+  * trivial: debian: remove obj-* built files to fix back to back builds
+  * trivial: ci: debian: enable verbose daemon logging for failure analysis
+  * Backport some patches to improve autopkgtest debugging
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sun, 01 Dec 2019 07:22:47 -0600
+
+fwupd (1.3.4-1) unstable; urgency=medium
+
+  * New upstream version (1.3.4)
+  * d/c: Only include TSS dependencies on architectures building EFI plugin.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 22 Nov 2019 10:14:13 -0600
+
+fwupd (1.3.3-3) unstable; urgency=medium
+
+  * Backport a patch to allow confined snaps to activate fwupd
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 12 Nov 2019 12:41:57 -0600
+
+fwupd (1.3.3-2) unstable; urgency=medium
+
+  * backport a patch to fix fastboot plugin on DW5821e
+  * backport a patch to only use mingw-w64-tools in archs with EFI
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 12 Nov 2019 12:41:55 -0600
+
+fwupd (1.3.3-1) unstable; urgency=medium
+
+  * New upstream version (1.3.3)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 01 Nov 2019 12:34:24 -0500
+
+fwupd (1.3.2-5) unstable; urgency=medium
+
+  * Backport patch to skip transient self test failure in polling
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 22 Oct 2019 10:05:24 -0500
+
+fwupd (1.3.2-4) unstable; urgency=medium
+
+  * Disable fwupd-refresh.service by default (Closes: #942630)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sun, 20 Oct 2019 17:14:08 -0500
+
+fwupd (1.3.2-3) unstable; urgency=medium
+
+  * backport patch for fwupd-refresh: don't try to enable LVFS if disabled
+    (Closes: #942568)
+  * fwupd-refresh: backport a series of patches that essentially turns off motd
+    refresh unless running on a very new systemd (v243) due to systemd v242 bug.
+    (Closes: #942567)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 18 Oct 2019 09:50:55 -0500
+
+fwupd (1.3.2-2) unstable; urgency=medium
+
+  * cleanup symlink from broken 1.3.2-1 if fwupd-refresh was started
+  * backport path for fwupd-refresh: fix a clash with fwupd.service (Closes: #941360)
+    (Closes: #941661)
+  * debian/control*: Update for fwupdate transition
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 03 Oct 2019 15:52:23 -0500
+
+fwupd (1.3.2-1) unstable; urgency=medium
+
+  * New upstream version (1.3.2)
+    - Allow not prompting for metadata every time (Closes: #941048)
+    - Avoid resetting display every login with Dell docks (LP: #1793965)
+    - Provides a network service file (Closes: #921820)
+    - Description is clearer (Closes: #911505)
+    - Wacom failures don't occur (Closes: #915794)
+    - Xbox360 controllers keep working (Closes: #920012)
+  * Uses libtss2-dev at build time and switches to TSS for runtime rather than
+    tpm2-tools/tpm2-abrmd.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 26 Sep 2019 09:16:02 -0500
+
+fwupd (1.2.10-2) unstable; urgency=medium
+
+  [ Steve McIntyre ]
+  * Add Built-Using for the fwupd-*-signed packages. Closes: #932757
+
+ -- Steve McIntyre <93sam@debian.org>  Mon, 22 Jul 2019 17:38:23 -0300
+
+fwupd (1.2.10-1) unstable; urgency=medium
+
+  * New upstream version (1.2.10)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 15 Jul 2019 13:58:47 -0500
+
+fwupd (1.2.9-1) unstable; urgency=medium
+
+  * New upstream version (1.2.9)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 12 Jul 2019 14:25:32 -0500
+
+fwupd (1.2.6-1) unstable; urgency=medium
+
+  * New upstream version (1.2.6)
+  * debian/control:
+    - Add new build depends related to Modem Manager
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 01 Apr 2019 21:18:14 -0500
+
+fwupd (1.2.5-2) unstable; urgency=medium
+
+  * debian/gen_signing_json: Update the format of the json metadata to
+    match new requirements:
+    + Move all the data under a new top-level "packages" key
+    + Add an empty "trusted_certs" key - our binaries do not do any
+      further verification with an embedded key.
+
+ -- Steve McIntyre <93sam@debian.org>  Mon, 25 Mar 2019 00:32:07 +0000
+
+fwupd (1.2.5-1) unstable; urgency=medium
+
+  * New upstream version (1.2.5)
+  * Drop all patches, upstream
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 26 Feb 2019 16:30:52 -0600
+
+fwupd (1.2.4-3) unstable; urgency=medium
+
+  * Backport a patch from master that fixes FTBFS with newer glib
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 15 Feb 2019 08:06:55 -0600
+
+fwupd (1.2.4-2) unstable; urgency=medium
+
+  * debian: explicitly depend on shared-mime-info
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 14 Feb 2019 21:21:46 -0600
+
+fwupd (1.2.4-1) unstable; urgency=medium
+
+  * New upstream version
+  * refresh build dependencies
+  * Recommends on tpm2 stack to read PCR values
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 06 Feb 2019 20:31:24 -0600
+
+fwupd (1.1.4-1) unstable; urgency=medium
+
+  * New upstream version
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 07 Nov 2018 11:30:14 -0600
+
+fwupd (1.1.3-2) unstable; urgency=medium
+
+  * Move location of fwupd-SIGNARCH-signed.install to proper directory
+    to fix generation of signed packages.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sat, 13 Oct 2018 14:17:07 -0500
+
+fwupd (1.1.3-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 12 Oct 2018 13:18:46 -0500
+
+fwupd (1.1.2-1) unstable; urgency=medium
+
+  * New upstream release
+    - Fixes ESP autodetection for autofs (Closes: #906216)
+    - Adds missing signing bits (Closes: #906599)
+  * debian/rules:
+    - Pass -a into dh_missing (Closes: #906357)
+  * debian/control:
+    - Recommends for bolt for new thunderbolt power API
+    - Build depends on Noto fonts instead of Dejavu fonts
+  * Drop all patches.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 10 Sep 2018 11:42:03 -0500
+
+fwupd (1.1.1-1) unstable; urgency=medium
+
+  * New upstream release.
+    - Adds support for more Synaptics and Intel hardware.
+    - Fixes firmware update on some UEFI implementations (Closes: #905570)
+  * debian/
+    - contrib: debian: regenerate control on clean
+    - refresh debian/{control,copyright} for upstream fixes
+    - drop all patches, upstream.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 13 Aug 2018 08:08:53 -0500
+
+fwupd (1.1.0-7) unstable; urgency=medium
+
+  * Correct another syntax error in SB signing template (Closes: #905482)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sun, 05 Aug 2018 08:34:37 -0500
+
+fwupd (1.1.0-6) unstable; urgency=medium
+
+  * correct secure boot signing template name (Closes: #905471)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sun, 05 Aug 2018 00:06:30 -0500
+
+fwupd (1.1.0-5) unstable; urgency=medium
+
+  * Fix secure boot signing template version string (Closes: #905468)
+  * Refresh debian/copyright (Closes: #904671)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sat, 04 Aug 2018 22:37:36 -0500
+
+fwupd (1.1.0-4) unstable; urgency=medium
+
+  * debian/rules: dynamically install EFI binaries
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sat, 04 Aug 2018 19:43:44 -0500
+
+fwupd (1.1.0-3) unstable; urgency=medium
+
+  * debian/rules: use pkg-config to determine when to turn on redfish and UEFI
+    - Fixes FTBFS due to redfish on other architectures.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sat, 04 Aug 2018 17:04:27 -0500
+
+fwupd (1.1.0-2) unstable; urgency=medium
+
+  * Fix the filename of the signed archive used for secure boot on Ubuntu
+  * Only build uefi plugin on supported architectures
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Sat, 04 Aug 2018 11:27:24 -0500
+
+fwupd (1.1.0-1) unstable; urgency=medium
+
+  [ Steve Mcintyre ]
+  * Initial support for UEFI Secure Boot in Debian infrastructure
+    + When building, also generate a fwupdate-$ARCH-signed-template package
+      which contains metadata needed by the Debian signing service. This
+      will end up being turned into a new source package including a signed
+      version of the fwupdate binary.
+
+  [ Mario Limonciello ]
+  * New upstream version (1.1.0)
+  * Drop patches merged upstream.
+  * debian/control:
+    - Add a patch from upstream that will add gnu-efi to dependencies
+    - No longer recommends for fwupdate as it has been merged into fwupd.
+  * Adjust infrastructure for fwupdate signed package to be used by fwupd signed
+    package
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 12 Jul 2018 08:28:32 -0500
+
+fwupd (1.0.8-1) unstable; urgency=medium
+
+  * New upstream version (1.0.8)
+    - Adds new fwupdtool
+    - License is now LGPL 2.1
+    - Drops colorhug dependency (built in now)
+    - refresh symbols
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 07 Jun 2018 08:16:22 -0500
+
+fwupd (1.0.7-1) unstable; urgency=medium
+
+  * New upstream version (1.0.7)
+  * /debian changes:
+    - ignore library-not-linked-against-libc
+    - Remove unused override in debian/lintian/fwupd
+    - rename tag for debian/source/lintian-overrides
+    - Adjust to use https in debian/copyright
+    - Bump debian/compat to 10
+    - Update control version
+    - update standards version
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 30 Apr 2018 13:11:17 -0500
+
+fwupd (1.0.6-2) unstable; urgency=medium
+
+  [ Mario Limonciello ]
+  * New upstream version (1.0.6)
+  * Move git repo from alioth to salsa.d.o
+  * contrib/ci: Detect machine type when generating debian/control
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 12 Mar 2018 07:30:30 -0500
+
+fwupd (1.0.5-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Build depend on fwupdate 10-3 for efivar 34 transition.
+  * Drop previous patch, now upstream.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 14 Feb 2018 15:39:54 -0600
+
+fwupd (1.0.4-3) unstable; urgency=medium
+
+  * Revert previous patch (still didn't help with autopkgtest).
+  * Introduce a different patch for helping autopkgtest failures.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 29 Jan 2018 14:36:56 -0600
+
+fwupd (1.0.4-2) unstable; urgency=medium
+
+  * Backport a patch that should fix autopkgtest failures.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 26 Jan 2018 10:37:40 -0600
+
+fwupd (1.0.4-1) unstable; urgency=medium
+
+  * New upstream version.
+  * New build dependency: libjson-glib-dev (>= 1.1.1)
+  * Update symbols
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 25 Jan 2018 07:53:03 -0600
+
+fwupd (1.0.3-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Drop patch for appstream glib 0.7.4 dependency
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 09 Jan 2018 10:49:51 -0600
+
+fwupd (1.0.2-1) unstable; urgency=medium
+
+  * New upstream version
+  * Drop patch for doing libsmbios on only supported architectures,
+    now upstream.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 28 Nov 2017 09:36:57 -0600
+
+fwupd (1.0.1-2) unstable; urgency=medium
+
+  * Only do libsmbios-dev build-depend on supported architectures
+  * debci: remove unnecessary dbus start command
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 09 Nov 2017 18:30:18 -0600
+
+fwupd (1.0.1-1) unstable; urgency=medium
+
+  * New upstream version (1.0.1)
+  * Generate debian/control dynamically based on XML build dependencies
+    declared from upstream CI builder.
+  * Drop all patches, upstream.
+  * debian: re-generate debian/control in clean rule
+  * Build depend on appstream-glib 0.7.4.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 09 Nov 2017 12:49:07 -0600
+
+fwupd (1.0.0-5) unstable; urgency=medium
+
+  * debian/debci: shuffle dependency location
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 31 Oct 2017 15:25:23 -0500
+
+fwupd (1.0.0-4) unstable; urgency=medium
+
+  * debian/debci: add explicit dependency on policykit-1 for the test
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 25 Oct 2017 10:47:14 -0500
+
+fwupd (1.0.0-3) unstable; urgency=medium
+
+  * minor correction to changelog
+  * debci: use the needs-root restriction
+  * debian: update standards version
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 24 Oct 2017 16:21:54 -0500
+
+fwupd (1.0.0-2) unstable; urgency=medium
+
+  * Backport a patch from upstream which fixes FTBFS
+    on alpha and hppa (Closes: #879022)
+  * Don't use dpkg-reconfigure in CI script.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 18 Oct 2017 10:16:22 -0500
+
+fwupd (1.0.0-1) unstable; urgency=medium
+
+  [ Mario Limonciello ]
+  * new upstream version (1.0.0)
+  * remove /etc/fwupd.conf on upgrade
+  * fix missing-call-to-dpkg-maintscript-helper
+  * update debci configuration
+  * drop libebitdo transitional packages
+  * try to fix debci
+  * update standards version
+  * explicitly set section for libfwupd2
+  * run systemd in postinst (Closes: #877991)
+  * Drop patches.
+
+  [ Richard Hughes ]
+  * Do not install the libdfu helper library
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 16 Oct 2017 09:12:03 -0500
+
+fwupd (0.9.7-2) unstable; urgency=medium
+
+  * Backport a patch to fix FTBFS on big endian architectures.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 01 Sep 2017 17:00:23 -0500
+
+fwupd (0.9.7-1) unstable; urgency=medium
+
+  [ Mario Limonciello ]
+  * New upstream version (0.9.7)
+
+  [ Mario Limonciello ]
+  * trivial: debian: clarify why installed tests get installed in a generic
+    directory (Closes: #872458)
+  * trivial: fix some insignificant debian linitan warnings
+  * trivial: debian: add autopkgtest tests to run the CI suite
+
+  [ Max Ehrlich ]
+  * Add a python script to create fwupd compatible cab files
+    from Microsoft .exe files
+
+  [ Christian Kellner ]
+  * tbtfwu: remove references to legacy thunderbolt plugin
+
+  [ Mario Limonciello ]
+  * trivial: debian: update for --enable-synaptics
+  * trivial: debian: only modify /etc/fwupd.conf in CI context
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 01 Sep 2017 09:40:28 -0500
+
+fwupd (0.9.6-1) unstable; urgency=medium
+
+  [ Richard Hughes ]
+  * trivial: post release version bump
+  * trivial: Fix the colord version check in the example spec file
+  * Add --version option to fwupdmgr
+  * uefi: Fix crash when the product name is NULL
+  * trivial: Never compare a string against zero to avoid warnings
+  * unifying: Don't log a warning when an unknown report is parsed
+  * trivial: Include all the GTypes in the generated docs
+  * Check all the device GUIDs against the blacklist when added
+  * Fix a hang on 32 bit computers
+  * trivial: Fix a -Wsign-compare warning on 32 bit
+  * trivial: Fix spelling of delimiter
+  * trivial: Make fu_dell_detect_dock() slightly more NULL-deref safe
+  * libdfu: Fix a crash if elf32_newehdr() fails
+  * trivial: Remove or downgrade some superfluous warnings
+  * trivial: Fix self tests after downgrading warnings commit
+  * Run the plugin coldplug methods in a predictable order
+  * trivial: Fix a tiny leak in the Dell plugin
+  * dell: Fix the last of the memory leaks in the self tests
+  * Use new GUsb functionality to fix flashing Unifying devices
+  * unifying: Fix trivial error handler warning
+  * trivial: Allow setting the unifying bootloader address for self tests
+  * unifying: Make sure the percentage completion goes from 0% to 100%
+  * trivial: Fix two tiny leaks in fwupdmgr
+  * Support embedded devices with local firmware metadata
+  * Rename the thunderbolt plugin to tbtfwu
+  * trivial: Use warning_level in the top level meson file
+  * libdfu: Add DfuPatch
+  * Release fwupd 0.9.6
+
+  [ Mario Limonciello ]
+  * trivial: debian: Add libcairo-dev to build-dependencies
+  * Display UEFI firmware type
+  * trivial: Adjust get-devices output order
+  * Include optional git checkout information in --version
+  * trivial: set FWUPD_GIT_DESCRIBE even if git isn't installed
+  * uefi,dell: make error messages from installing capsules useful
+  * uefi: record boot variables to system log during updates (#152)
+  * trivial: uefi: whitespace
+  * dell, uefi: Display all errors recorded by efi_error tracing, not just
+    the first one
+  * uefi: test for kernel support during coldplug
+  * trivial: back the requirement on appstream-glib to 0.6.9
+  * trivial: packaging: lower appstream-glib requirements to match meson.build
+  * trivial: correct version comparison for polkit 0.114 in meson.build
+  * policy: fix compilation on a variety of configurations
+  * trivial: debian: back off polkit-1 dependency
+  * trivial: Add a Dockerfile for Ubuntu zesty (17.04)
+  * trivial: move compilation instructions to github wiki
+  * Default to "en" for UEFI capsule graphics
+  * trivial: debian: move DFU introspection to it's own package
+  * trivial: debian: correct some linitian errors about fwupd-tests
+  * trivial: debian: add missing dh-strip-nondeterminism dependency
+  * trivial: debian: update standards version
+  * trivial: debian: remove transient items on purge (Closes: #868464, #868465)
+  * trivial: debian: recusively cleanup on purge
+  * trivial: fix various spelling errors
+  * debian: run lintian as part of CI
+  * Add capability to enable test suite via /etc/fwupd.conf
+  * rpm: enable test suite via /etc/fwupd.conf
+  * debian: enable test suite via /etc/fwupd.conf
+  * trivial: clarify delimitter in use for fwupd.conf is a semicolon
+  * trivial: adjust get-details and get-devices output Display Name output
+  * trivial: set engine back to idle
+  * Correct a memory leak in Dell plugin (Fixes #158)
+  * trivial: fix some more memory leaks in dell plugin (#158)
+  * dell: use plugin hash table instead
+  * Revert "trivial: fix some more memory leaks in dell plugin (#158)"
+  * trivial: debian: correct duplicate descriptions in control file
+  * fix some more memory leaks in dell plugin (#158)
+  * Add information about compile-time dependency versions
+  * Drop all patches in debian/patches
+
+  [ Patrick Ohly ]
+  * meson: introspection optional
+
+  [ Chris Lee ]
+  * Make flashing ebitdo devices actually work
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Wed, 16 Aug 2017 16:28:04 -0500
+
+fwupd (0.9.5-2) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Matthias Klumpp <mak@debian.org>  Wed, 16 Aug 2017 22:34:46 +0200
+
+fwupd (0.9.5-1) experimental; urgency=medium
+
+  [ Mario Limonciello ]
+  * New upstream version (0.9.5)
+  * deb packaging: cleaner locale fix
+  * fix typo in contrib/debian/rules
+  * Adjust debian dependencies
+  * split out the test suite to it's own package
+  * use dpkg-divert to adjust the launch script for CI testing
+  * Fix long changelog in 0.9.4-1
+  * move DFU introspection to it's own package
+  * add missing dh-strip-nondeterminism dependency
+  * debian: update standards version
+  * Backport fix to build capsule graphics in right language
+  * Backport patch to allow enabling test suite via conf file.
+
+  [ Richard Hughes ]
+  * Add an AppStream metainfo file
+  * Add an installed test for verification
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 17 Jul 2017 12:23:40 -0500
+
+fwupd (0.9.4-1) experimental; urgency=medium
+
+  * New upstream version (0.9.4)
+  * Drop all existging patches (now upstream)
+  * Backport a patch to fix test suite.
+  * Correct a cleanup rule
+  * Drop intltool build dependency
+  * Re-enable PIE for builds
+  * Add additional build dependencies that will be needed for generating
+    capsule graphics
+  * debian/control: sort build-dependencies
+  * Drop packaging from debian/, it will be git mv'ed from contrib/ upstream
+  * Move Debian packaging from contrib/ upstream
+  * Set locale to C.UTF-8 during build to fix unicode file error.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 15 Jun 2017 08:59:17 -0500
+
+fwupd (0.9.2-6) experimental; urgency=medium
+
+  [ Iain Lane ]
+  * debian/rules: Use debhelper's built in meson support.
+    (Closes: #863822)
+
+  [ Mario Limonciello ]
+  * Move the daemon back out of multiarch directory.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 05 Jun 2017 13:13:17 -0500
+
+fwupd (0.9.2-5) experimental; urgency=medium
+
+  * Disable DELL plugin on non x86
+  * Correct permissions on polkit rules
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 26 May 2017 08:52:57 -0500
+
+fwupd (0.9.2-4) experimental; urgency=medium
+
+  * Explicitly depend upon >= debhelper 10.3 to ensure
+    it's pulled from experimental on buildd too.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 25 May 2017 21:04:08 -0500
+
+fwupd (0.9.2-3) experimental; urgency=medium
+
+  * add explicit dep on policykit-1 0.105-17 to fix FTBFS due ITS rules
+  * use dh_missing as dh_install --fail-missing is deprecated
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 25 May 2017 16:19:23 -0500
+
+fwupd (0.9.2-2) experimental; urgency=medium
+
+  * Explicit dependency upon systemd too.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 25 May 2017 11:25:37 -0500
+
+fwupd (0.9.2-1) experimental; urgency=medium
+
+  * New upstream version (0.9.2) (Closes: #863250)
+  * drop debian/patches
+  * Add support for meson build system
+    - Specify sysconfdir and libexecdir
+    - call tests with ninja
+    - Add local state directory while building
+  * Require newer gettext for building.
+  * Add 0.6.13 as libappstream-glib minimum version
+  * Bump udev b-d to 231 for systemd confinement changes
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 25 May 2017 10:04:30 -0500
+
+fwupd (0.8.2-2) unstable; urgency=medium
+
+  * Backport patch to fix detection of Dell systems
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 26 May 2017 10:59:02 -0500
+
+fwupd (0.8.2-1) unstable; urgency=medium
+
+  [ Richard Hughes ]
+  * trivial: post release version bump
+  * trivial: Sync example spec file with downstream
+  * Add DFU quirk for SIMtrace
+  * Add DFU quirk for OpenPICC
+  * Create directories in /var/cache as required
+  * trivial: Fix the log domains in two plugins
+  * trivial: No not list the API version indexes
+  * trivial: Don't change the documentation output every time the version changes
+  * trivial: Fix the last -Wpointer-sign warning
+  * trivial: Change the name of a generated file
+  * trivial: Remove non-warning flags from the CFLAGS
+  * Use a 60 second timeout on all client downloads
+  * Support proxy servers in fwupdmgr
+  * Set the source origin when saving metadata
+  * Add a config option to allow runtime disabling plugins by name
+  * Fix the Requires lines in the dfu pkg-config file
+  * Release fwupd 0.8.2
+
+  [ Mario Limonciello ]
+  * trivial: install /var/lib/fwupd in make install (#94)
+  * trivial: allow configuring ESP location (#94)
+  * trivial: make valgrind an optional build dependency
+  * trivial: make /boot/efi an optional ReadWritePath (#97)
+  * trivial: set synaptics error message in more scenarios
+  * Drop upstream patches.
+
+  [ Shea Levy ]
+  * Only try to mkdir the localstatedir if we have the right permissions (#96)
+
+  [ AsciiWolf ]
+  * Update Czech translation
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 20 Apr 2017 10:37:23 -0500
+
+fwupd (0.8.1-3) unstable; urgency=medium
+
+  * Backport upstream commit to make valgrind optional (Closes: #856344)
+  * Backport upstream commit to make /boot/efi optional to start
+    fwupd.service.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 28 Feb 2017 08:30:56 -0600
+
+fwupd (0.8.1-2) unstable; urgency=medium
+
+  * Disable optional thunderbolt support until ITP is done.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 27 Feb 2017 14:01:13 -0600
+
+fwupd (0.8.1-1) unstable; urgency=medium
+
+  * New upstream version (0.8.1).
+    - Fixes systemd confinement crashes (Closes: #856145) (LP: #1663548)
+  * loosen dependencies on libefivar-dev and libfwup-dev
+  * Optionally enable thunderbolt
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 27 Feb 2017 08:33:23 -0600
+
+fwupd (0.8.0-2) unstable; urgency=medium
+
+  * Only build synaptics on supported arch (fixes FTBFS)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Fri, 10 Feb 2017 11:58:18 -0600
+
+fwupd (0.8.0-1) unstable; urgency=medium
+
+  * New upstream version (0.8.0)
+  * Refresh symbols.
+  * Drop all now upstream patches.
+  * Enable build hardening flags
+  * Drop valgind build dependency from m68k
+  * Fix fwupd process leaking into dbus cgroup
+    (Closes: #845406)
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Thu, 09 Feb 2017 14:04:38 -0600
+
+fwupd (0.7.4-2) unstable; urgency=medium
+
+  * Backport a patch to make sure that appstream metadata validates
+    properly. (Closes: #837765)
+  * Drop armel from libfwup-dev build dependency architecture list.
+  * Drop valgrind build dependency for mipsel, mips64el, armhf, and armel
+    where it is segfaulting.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Tue, 11 Oct 2016 10:17:09 -0500
+
+fwupd (0.7.4-1) unstable; urgency=medium
+
+  * New upstream version (0.7.4)
+  * Update symbols file.
+  * drop binary patches
+  * Drop existing upstream patches
+  * Add a patch that verifies providers are called with proper mode
+  * debian/control:
+  - Update dell email addresses (_ -> .)
+  - Add an explicit build dependency on new version of efivar
+  - Add build dep on gir1.2-appstreamglib-1.0
+  * debian/rules:
+  - Adjust architectures that tests are run for missing valgrind
+  -  Add autoconf archive to build-depends (Closes: 837826)
+  -  Adjust daemon install path to be non multi-arch (Closes: #808831)
+  * Backport patch to make sure test suite runs without sysfs
+    bind mounted.
+  * Mark fwupd-doc package as Multi-Arch: foreign.
+
+ -- Mario Limonciello <mario.limonciello@dell.com>  Mon, 03 Oct 2016 14:55:16 -0500
+
+fwupd (0.7.3-1) unstable; urgency=medium
+
+  * New upstream version (0.7.3)
+  * debian/rules: Adjust launch of test suite due to 4eb527
+  * Drop wheel/sudo patch, and instead make change in debian/rules at build.
+  * Update Vcs-Git URL to secure URL
+  * Update standards version
+  * Add libsmbios-dev to build dependencies for Dell features
+  * Drop gtk-doc documentation into new package fwupd-doc
+  * Add new packages for lib0bitdo support
+  * require building against libfwup 7
+  * Backport patch to allow building on older appstream-glib
+  * Add a lintian override for fuzzing tests
+  * add gir:depends for libdfu1
+  * don't install ebitdo-tool helper tool
+  * Backport patches for s390x failures.
+    - include binary patch of example.elf
+  * set libsmbios to i386/amd64 only
+  * Add lintian override for systemd services missing Install.
+  * Add libelf-dev to build-depends.
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Thu, 01 Sep 2016 13:00:30 -0500
+
+fwupd (0.7.2-1) unstable; urgency=medium
+
+  [ Mario Limonciello ]
+  * New upstream version (0.7.2)
+  * Drop unnecessary patches now upstream.
+  * Add gobject-introspection to build dependencies
+
+  [ Michael Biebl ]
+  * Split GObject introspection files into a separate package
+    named gir1.2-fwupd-1.0. (Fixes: #826743)
+
+  [ Jurica Stanojkovic ]
+  * Disable test suite on mips to prevent FTBFS.
+    Fixes: #826251)
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Tue, 28 Jun 2016 08:45:42 -0500
+
+fwupd (0.7.0-1) unstable; urgency=medium
+
+  * New upstream version (0.7.0)
+  * Install static app-info file for fwupd
+  * Drop alienware version quirk table patch included upstream
+  * Update headers installed for libdfu-dev
+  * Use correct dpkg-architecture variable to apply
+    -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
+  * Block builds on test suite failures
+  * update libgusb requirement in debian/control
+  * update symbols
+  * Backport commits from upstream to fix problems on big endian
+  * Backport commit to remove requirement for gnupg 2.1
+  * Backport UEFI naming to DMI Product Name from master.
+  * Set HOME to current directory for the test suite to run properly on buildd
+  * Stop gpg-agent process that persists after test suite run (Closes: #820669)
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Sun, 17 Apr 2016 23:32:05 -0500
+
+fwupd (0.6.3-1) unstable; urgency=medium
+
+  * New upstream release (0.6.3)
+  * Enable quirked firmware versions on Alienware as well
+  * Conditionally enable colorhug if a new enough version is available.
+    This will allow for easier backporting in the future
+  * update standards version
+  * Only build against libfwup-dev on x86 and arm architectures
+  * add armel to supported architectures too
+  * Explicitly turn off UEFI if libfwup-dev wasn't installed to fix FTBFS
+    on these other architectures.
+  * Fix FTBFS on powerpc related to GPGME
+  * Update build-depends to libasppstream-glib-dev 0.5.10
+  * Add symbols files for libfwupd and libdfu1
+  * Adjust build depends to ensure building with at least gnupg 2.1.0
+  * Add libtool-bin into build-depends
+  * Re-enable test suite (but don't block additional failures)
+  * Include plugins not compiled in as providers in install
+  * Install static app-info file for fwupd
+  * Use dh_install --fail-missing to catch other things added upstream
+    at build time
+  * Backport patches from upstream that fix the test suite as a non-root user
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Thu, 31 Mar 2016 08:59:34 -0500
+
+fwupd (0.6.2-1) unstable; urgency=medium
+
+  * New upstream release (0.6.2)
+    - Fixes for Dell HW versions and UEFI get-results.
+  * Set polkit rules to be effective with proper group (Closes: #808832)
+  * Add rules compatible with polkit 0.105. (Closes: #808833)
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Mon, 15 Feb 2016 08:37:19 -0600
+
+fwupd (0.6.0-1) unstable; urgency=medium
+
+  * New upstream release (0.6.0)
+    - Adds support for DFU based flashing.
+  * Generate libdfu* packages for the newly included libdfu support
+  * Update copyright for current source
+  * Rename fwupd-dev to the more conventionally named libfwupd-dev
+  * update appstream-glib version requirement
+  * add gtk-doc-tools to build depends and cleanup after using them.
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Tue, 08 Dec 2015 13:05:50 -0600
+
+fwupd (0.5.4-1) unstable; urgency=medium
+
+  * New upstream release (0.5.4).
+    - Adds support for compiling against fwupdate 0.5.
+  * Fix FTBFS on armhf by passing -D_FILE_OFFSET_BITS=64 as well.
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Thu, 03 Dec 2015 10:51:48 -0600
+
+fwupd (0.5.3-2) unstable; urgency=medium
+
+  * Add build dependency on udev.  (Closes: #804279)
+  * Fix hardening flags.
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Sat, 07 Nov 2015 11:33:31 -0600
+
+fwupd (0.5.3-1) unstable; urgency=medium
+
+  * New upstream release (0.5.3)
+  * Drop all patches, now upstream.
+  * debian/control: Update build dependencies for new upstream version.
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Thu, 05 Nov 2015 23:23:19 -0600
+
+fwupd (0.1.5-1) unstable; urgency=low
+
+  * Initial release (Closes: #793446)
+
+ -- Mario Limonciello <mario_limonciello@dell.com>  Wed, 30 Sep 2015 17:04:40 -0500

@@ -265,11 +265,12 @@ static void
 fu_hailuck_bl_device_init (FuHailuckBlDevice *self)
 {
 	fu_device_set_firmware_size (FU_DEVICE (self), 0x4000);
-	fu_device_set_protocol (FU_DEVICE (self), "com.hailuck.kbd");
+	fu_device_add_protocol (FU_DEVICE (self), "com.hailuck.kbd");
 	fu_device_set_name (FU_DEVICE (self), "Keyboard [bootloader]");
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_internal_flag (FU_DEVICE (self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_icon (FU_DEVICE (self), "input-keyboard");
 	fu_hid_device_add_flag (FU_HID_DEVICE (self), FU_HID_DEVICE_FLAG_NO_KERNEL_REBIND);
 	fu_device_set_remove_delay (FU_DEVICE (self),

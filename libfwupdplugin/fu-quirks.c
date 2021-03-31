@@ -52,6 +52,8 @@ struct _FuQuirks
 {
 	GObject			 parent_instance;
 	FuQuirksLoadFlags	 load_flags;
+	GHashTable		*possible_keys;
+	GPtrArray		*invalid_keys;
 	XbSilo			*silo;
 };
 
@@ -66,6 +68,8 @@ fu_quirks_build_group_key (const gchar *group)
 	for (guint i = 0; guid_prefixes[i] != NULL; i++) {
 		if (g_str_has_prefix (group, guid_prefixes[i])) {
 			gsize len = strlen (guid_prefixes[i]);
+			g_warning ("using %s in quirk files is deprecated!",
+				   guid_prefixes[i]);
 			if (fwupd_guid_is_valid (group + len))
 				return g_strdup (group + len);
 			return fwupd_guid_hash_string (group + len);
@@ -73,16 +77,19 @@ fu_quirks_build_group_key (const gchar *group)
 	}
 
 	/* fallback */
-	return g_strdup (group);
+	if (fwupd_guid_is_valid (group))
+		return g_strdup (group);
+	return fwupd_guid_hash_string (group);
 }
 
 static GInputStream *
-fu_quirks_convert_quirk_to_xml_cb (XbBuilderSource *self,
+fu_quirks_convert_quirk_to_xml_cb (XbBuilderSource *source,
 				   XbBuilderSourceCtx *ctx,
 				   gpointer user_data,
 				   GCancellable *cancellable,
 				   GError **error)
 {
+	FuQuirks *self = FU_QUIRKS (user_data);
 	g_autofree gchar *xml = NULL;
 	g_auto(GStrv) groups = NULL;
 	g_autoptr(GBytes) bytes = NULL;
@@ -106,6 +113,16 @@ fu_quirks_convert_quirk_to_xml_cb (XbBuilderSource *self,
 		g_auto(GStrv) keys = NULL;
 		g_autofree gchar *group_id = NULL;
 		g_autoptr(XbBuilderNode) bn = NULL;
+
+		/* sanity check group */
+		if (g_str_has_prefix (groups[i], "HwID") ||
+		    g_str_has_prefix (groups[i], "DeviceInstanceID") ||
+		    g_str_has_prefix (groups[i], "GUID")) {
+			g_warning ("invalid group name '%s'", groups[i]);
+			continue;
+		}
+
+		/* get all KVs for the entry */
 		keys = g_key_file_get_keys (kf, groups[i], NULL, error);
 		if (keys == NULL)
 			return NULL;
@@ -113,6 +130,17 @@ fu_quirks_convert_quirk_to_xml_cb (XbBuilderSource *self,
 		bn = xb_builder_node_insert (root, "device", "id", group_id, NULL);
 		for (guint j = 0; keys[j] != NULL; j++) {
 			g_autofree gchar *value = NULL;
+
+			/* sanity check key */
+			if (g_hash_table_lookup (self->possible_keys, keys[j]) == NULL) {
+				if (!g_ptr_array_find_with_equal_func (self->invalid_keys,
+								       keys[j],
+								       g_str_equal,
+								       NULL)) {
+					g_ptr_array_add (self->invalid_keys,
+							 g_strdup (keys[j]));
+				}
+			}
 			value = g_key_file_get_value (kf, groups[i], keys[j], error);
 			if (value == NULL)
 				return NULL;
@@ -175,11 +203,11 @@ fu_quirks_add_quirks_for_path (FuQuirks *self, XbBuilder *builder,
 #if LIBXMLB_CHECK_VERSION(0,1,15)
 		xb_builder_source_add_simple_adapter (source, "text/plain,.quirk",
 						      fu_quirks_convert_quirk_to_xml_cb,
-						      NULL, NULL);
+						      self, NULL);
 #else
 		xb_builder_source_add_adapter (source, "text/plain,.quirk",
 					       fu_quirks_convert_quirk_to_xml_cb,
-					       NULL, NULL);
+					       self, NULL);
 #endif
 		if (!xb_builder_source_load_file (source, file,
 						  XB_BUILDER_SOURCE_FLAG_WATCH_FILE |
@@ -195,6 +223,14 @@ fu_quirks_add_quirks_for_path (FuQuirks *self, XbBuilder *builder,
 
 	/* success */
 	return TRUE;
+}
+
+static gint
+fu_quirks_strcasecmp_cb (gconstpointer a, gconstpointer b)
+{
+	const gchar *entry1 = *((const gchar **) a);
+	const gchar *entry2 = *((const gchar **) b);
+	return g_ascii_strcasecmp (entry1, entry2);
 }
 
 static gboolean
@@ -235,7 +271,19 @@ fu_quirks_check_silo (FuQuirks *self, GError **error)
 	if (self->load_flags & FU_QUIRKS_LOAD_FLAG_READONLY_FS)
 		compile_flags |= XB_BUILDER_COMPILE_FLAG_IGNORE_GUID;
 	self->silo = xb_builder_ensure (builder, file, compile_flags, NULL, error);
-	return self->silo != NULL;
+	if (self->silo == NULL)
+		return FALSE;
+
+	/* dump warnings to console, just once */
+	if (self->invalid_keys->len > 0) {
+		g_autofree gchar *str = NULL;
+		g_ptr_array_sort (self->invalid_keys, fu_quirks_strcasecmp_cb);
+		str = fu_common_strjoin_array (",", self->invalid_keys);
+		g_warning ("invalid key names: %s", str);
+	}
+
+	/* success */
+	return TRUE;
 }
 
 /**
@@ -413,6 +461,24 @@ fu_quirks_load (FuQuirks *self, FuQuirksLoadFlags load_flags, GError **error)
 	return fu_quirks_check_silo (self, error);
 }
 
+/**
+ * fu_quirks_add_possible_key:
+ * @self: A #FuQuirks
+ * @possible_key: A key name, e.g. `Flags`
+ *
+ * Adds a possible quirk key. If added by a plugin it should be namespaced
+ * using the plugin name, where possible.
+ *
+ * Since: 1.5.8
+ **/
+void
+fu_quirks_add_possible_key (FuQuirks *self, const gchar *possible_key)
+{
+	g_return_if_fail (FU_IS_QUIRKS (self));
+	g_return_if_fail (possible_key != NULL);
+	g_hash_table_add (self->possible_keys, g_strdup (possible_key));
+}
+
 static void
 fu_quirks_class_init (FuQuirksClass *klass)
 {
@@ -423,6 +489,35 @@ fu_quirks_class_init (FuQuirksClass *klass)
 static void
 fu_quirks_init (FuQuirks *self)
 {
+	self->possible_keys = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+	self->invalid_keys = g_ptr_array_new_with_free_func (g_free);
+
+	/* built in */
+	fu_quirks_add_possible_key (self, FU_QUIRKS_BRANCH);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_CHILDREN);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_COUNTERPART_GUID);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_FIRMWARE_SIZE);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_FIRMWARE_SIZE_MAX);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_FIRMWARE_SIZE_MIN);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_FLAGS);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_GTYPE);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_GUID);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_ICON);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_INSTALL_DURATION);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_NAME);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_PARENT_GUID);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_PLUGIN);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_PRIORITY);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_PROTOCOL);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_PROXY_GUID);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_REMOVE_DELAY);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_SUMMARY);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_UPDATE_IMAGE);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_UPDATE_MESSAGE);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_VENDOR);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_VENDOR_ID);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_VERSION);
+	fu_quirks_add_possible_key (self, FU_QUIRKS_VERSION_FORMAT);
 }
 
 static void
@@ -431,6 +526,8 @@ fu_quirks_finalize (GObject *obj)
 	FuQuirks *self = FU_QUIRKS (obj);
 	if (self->silo != NULL)
 		g_object_unref (self->silo);
+	g_hash_table_unref (self->possible_keys);
+	g_ptr_array_unref (self->invalid_keys);
 	G_OBJECT_CLASS (fu_quirks_parent_class)->finalize (obj);
 }
 

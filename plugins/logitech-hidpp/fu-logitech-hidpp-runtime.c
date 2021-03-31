@@ -234,11 +234,11 @@ fu_logitech_hidpp_runtime_setup_internal (FuDevice *device, GError **error)
 		if ((self->version_bl_major == 0x01 && config[8] >= 0x04) ||
 		    (self->version_bl_major == 0x03 && config[8] >= 0x02)) {
 			self->signed_firmware = TRUE;
-			fu_device_set_protocol (device, "com.logitech.unifyingsigned");
+			fu_device_add_protocol (device, "com.logitech.unifyingsigned");
 		}
 	}
 	if (!self->signed_firmware)
-		fu_device_set_protocol (device, "com.logitech.unifying");
+		fu_device_add_protocol (device, "com.logitech.unifying");
 
 	/* enable HID++ notifications */
 	if (!fu_logitech_hidpp_runtime_enable_notifications (self, error)) {
@@ -327,6 +327,7 @@ static void
 fu_logitech_hidpp_runtime_init (FuLogitechHidPpRuntime *self)
 {
 	fu_device_add_flag (FU_DEVICE (self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_internal_flag (FU_DEVICE (self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_version_format (FU_DEVICE (self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_add_icon (FU_DEVICE (self), "preferences-desktop-keyboard");
 	fu_device_set_name (FU_DEVICE (self), "Unifying Receiver");
