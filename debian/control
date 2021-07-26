@@ -1,0 +1,264 @@
+Source: fwupd
+Priority: optional
+Maintainer: Debian EFI <debian-efi@lists.debian.org>
+Uploaders: Steve McIntyre <93sam@debian.org>,
+           Matthias Klumpp <mak@debian.org>,
+           Mario Limonciello <mario.limonciello@dell.com>
+Build-Depends:
+	fwupd-unsigned-dev,
+	bash-completion,
+	bubblewrap,
+	debhelper (>= 12),
+	dh-strip-nondeterminism,
+	fontconfig,
+	fonts-noto,
+	gcab,
+	gettext (>= 0.19.8.1),
+	gir1.2-pango-1.0,
+	gnu-efi [amd64 arm64 armhf i386],
+	gnutls-bin,
+	gnutls-dev,
+	gobject-introspection,
+	gtk-doc-tools,
+	libarchive-dev,
+	libcairo-dev,
+	libcairo-gobject2,
+	libcurl4-gnutls-dev,
+	libefiboot-dev [amd64 arm64 armhf i386],
+	libefivar-dev [amd64 arm64 armhf i386],
+	libelf-dev,
+	libflashrom-dev [!ia64],
+	libfreetype6-dev,
+	libgcab-dev,
+	libgirepository1.0-dev,
+	libglib2.0-dev (>= 2.45.8),
+	libgudev-1.0-dev,
+	libgusb-dev (>= 0.3.4),
+	libjcat-dev,
+	libjson-glib-dev (>= 1.1.1),
+	libmbim-glib-dev,
+	libmm-glib-dev,
+	libpci-dev,
+	libpolkit-gobject-1-dev,
+	libprotobuf-c-dev,
+	libqmi-glib-dev,
+	libsmbios-dev [i386 amd64],
+	libsqlite3-dev,
+	libsystemd-dev,
+	libtool-bin,
+	libtss2-dev,
+	libxmlb-dev (>= 0.1.13),
+	locales,
+	meson,
+	mingw-w64-tools [amd64 arm64 armhf i386],
+	pkg-config,
+	policykit-1 (>> 0.105-14),
+	protobuf-c-compiler,
+	python3-gi-cairo,
+	python3-jinja2,
+	python3-requests,
+	python3-toml,
+	python3-typogrify,
+	shared-mime-info,
+	systemd (>= 231),
+	udev,
+	umockdev,
+	valac,
+	valgrind [!ia64 !riscv64 !x32 !mips !sparc64 !sh4 !ppc64 !powerpcspe !hppa !alpha !mips64el !armhf !armel !mipsel !m68k],
+Build-Depends-Indep: libglib2.0-doc <!nodoc>
+Standards-Version: 4.5.0
+Section: admin
+Homepage: https://github.com/fwupd/fwupd
+Vcs-Git: https://salsa.debian.org/efi-team/fwupd.git
+Vcs-Browser: https://salsa.debian.org/efi-team/fwupd
+
+Package: libfwupdplugin4
+Section: libs
+Architecture: linux-any
+Depends: ${misc:Depends},
+         ${shlibs:Depends}
+Multi-Arch: same
+Description: Firmware update daemon plugin library
+ fwupd is a daemon to allow session software to update device firmware.
+ You can either use a GUI software manager like GNOME Software to view and
+ apply updates, the command-line tool or the system D-Bus interface directly.
+ Firmware updates are supported for a variety of technologies.
+ See <https://github.com/fwupd/fwupd> for details
+ .
+ This package provides the library for the interface between daemon and plugins.
+
+Package: libfwupd2
+Section: libs
+Architecture: linux-any
+Depends: ${misc:Depends},
+         ${shlibs:Depends}
+Multi-Arch: same
+Description: Firmware update daemon library
+ fwupd is a daemon to allow session software to update device firmware.
+ You can either use a GUI software manager like GNOME Software to view and
+ apply updates, the command-line tool or the system D-Bus interface directly.
+ Firmware updates are supported for a variety of technologies.
+ See <https://github.com/fwupd/fwupd> for details
+ .
+ This package provides the library used by the daemon.
+
+Package: fwupd
+Architecture: linux-any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         shared-mime-info
+Recommends: python3,
+	    bolt,
+	    dbus,
+	    secureboot-db,
+	    udisks2,
+	    fwupd-unsigned,
+	    fwupd-signed
+Suggests: gir1.2-fwupd-2.0
+Provides: fwupdate
+Conflicts: fwupdate-amd64-signed,
+	   fwupdate-i386-signed,
+	   fwupdate-arm64-signed,
+	   fwupdate-armhf-signed
+Breaks: gir1.2-dfu-1.0 (<< 0.9.7-1),
+	libdfu1 (<< 0.9.7-1),
+	fwupdate (<< 12-7),
+	libdfu-dev (<< 0.9.7-1)
+Replaces: gir1.2-dfu-1.0 (<< 0.9.7-1),
+	  libdfu1 (<< 0.9.7-1),
+	  libdfu-dev (<< 0.9.7-1),
+	  fwupdate (<< 12-7)
+Multi-Arch: foreign
+Description: Firmware update daemon
+ fwupd is a daemon to allow session software to update device firmware.
+ You can either use a GUI software manager like GNOME Software to view and
+ apply updates, the command-line tool or the system D-Bus interface directly.
+ Firmware updates are supported for a variety of technologies.
+ See <https://github.com/fwupd/fwupd> for details
+
+Package: fwupd-tests
+Architecture: linux-any
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         ca-certificates,
+         dbus-x11,
+         fwupd,
+         gnome-desktop-testing,
+         policykit-1,
+         python3,
+         python3-gi,
+         python3-requests,
+Breaks: fwupd (<< 0.9.4-1)
+Replaces: fwupd (<< 0.9.4-1)
+Multi-Arch: foreign
+Description: Test suite for firmware update daemon
+ fwupd is a daemon to allow session software to update device firmware.
+ You can either use a GUI software manager like GNOME Software to view and
+ apply updates, the command-line tool or the system D-Bus interface directly.
+ Firmware updates are supported for a variety of technologies.
+ See <https://github.com/fwupd/fwupd> for details
+ .
+ This package provides a set of installed tests that can be run to validate
+ the daemon in a continuous integration system.
+
+Package: fwupd-doc
+Section: doc
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends},
+Description: Firmware update daemon documentation (HTML format)
+ fwupd is a daemon to allow session software to update device firmware.
+ You can either use a GUI software manager like GNOME Software to view and
+ apply updates, the command-line tool or the system D-Bus interface directly.
+ Firmware updates are supported for a variety of technologies.
+ See <https://github.com/fwupd/fwupd> for details
+ .
+ This package provides development documentation for creating a package that
+ uses fwupd.
+
+Package: libfwupd-dev
+Architecture: linux-any
+Multi-Arch: same
+Depends: libfwupd2 (= ${binary:Version}),
+         gir1.2-fwupd-2.0 (= ${binary:Version}),
+         libcurl4-gnutls-dev,
+         libglib2.0-dev (>= 2.45.8),
+         libjcat-dev,
+         libjson-glib-dev (>= 1.1.1),
+         ${misc:Depends}
+Breaks: fwupd-dev (<< 0.5.4-2~)
+Replaces: fwupd-dev (<< 0.5.4-2~)
+Section: libdevel
+Description: development files for libfwupd
+ fwupd is a daemon to allow session software to update device firmware.
+ You can either use a GUI software manager like GNOME Software to view and
+ apply updates, the command-line tool or the system D-Bus interface directly.
+ Firmware updates are supported for a variety of technologies.
+ See <https://github.com/fwupd/fwupd> for details
+ .
+ This package provides the development files for libfwupd
+
+Package: gir1.2-fwupd-2.0
+Architecture: linux-any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         ${gir:Depends}
+Section: introspection
+Description: GObject introspection data for libfwupd
+ This package provides the introspection data for libfwupd.
+ .
+ It can be used by packages using the GIRepository format to generate
+ dynamic bindings.
+
+Package: libfwupdplugin-dev
+Architecture: linux-any
+Multi-Arch: same
+Depends: libfwupdplugin4 (= ${binary:Version}),
+         gir1.2-fwupdplugin-1.0 (= ${binary:Version}),
+         libarchive-dev,
+         libcurl4-gnutls-dev,
+         libfwupd-dev (= ${binary:Version}),
+         libgcab-dev,
+         libglib2.0-dev (>= 2.45.8),
+         libgudev-1.0-dev,
+         libgusb-dev (>= 0.3.5),
+         libjcat-dev,
+         libjson-glib-dev (>= 1.1.1),
+         libxmlb-dev (>= 0.1.13),
+         valgrind [!ia64 !riscv64 !x32 !mips !sparc64 !sh4 !ppc64 !powerpcspe !hppa !alpha !mips64el !armhf !armel !mipsel !m68k],
+         ${misc:Depends}
+Section: libdevel
+Description: development files for libfwupdplugin
+ fwupd is a daemon to allow session software to update device firmware.
+ You can either use a GUI software manager like GNOME Software to view and
+ apply updates, the command-line tool or the system D-Bus interface directly.
+ Firmware updates are supported for a variety of technologies.
+ See <https://github.com/fwupd/fwupd> for details
+ .
+ This package provides the development files for libfwupdplugin
+
+Package: gir1.2-fwupdplugin-1.0
+Architecture: linux-any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         ${gir:Depends}
+Section: introspection
+Description: GObject introspection data for libfwupdplugin
+ This package provides the introspection data for libfwupdplugin.
+ .
+ It can be used by packages using the GIRepository format to generate
+ dynamic bindings.
+
+Package: fwupd-amd64-signed-template
+Architecture: linux-any
+Depends: ${shlibs:Depends}, ${misc:Depends}, make | build-essential | dpkg-dev
+Description: Template for signed fwupd package
+ This package is used to control code signing by the Debian signing
+ service.
+
+Package: fwupd-signed
+Architecture: linux-any
+Depends: fwupd (= ${binary:Version})
+Description: Placeholder for signed fwupd package
+ This package is a placeholder for the signed fwupd package, which cannot be
+ generated without the Canonical UEFI signing key.
