@@ -1,3 +1,9 @@
+fwupd (1.5.11-0ubuntu2pop1) focal; urgency=medium
+
+  * Pop!_OS patches
+
+ -- Michael Aaron Murphy <mmstick@pm.me>  Mon, 26 Jul 2021 13:54:42 -0600
+
 fwupd (1.5.11-0ubuntu1~21.04.1) hirsute; urgency=medium
 
   * New upstream version (1.5.11) to support Dell dock USB4 module.
