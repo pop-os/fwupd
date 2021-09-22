@@ -1,3 +1,9 @@
+fwupd (1.5.11-0ubuntu2pop1.1) focal; urgency=medium
+
+  * Rebuild on Focal to fix "no signature method in results"
+
+ -- Michael Aaron Murphy <mmstick@pm.me>  Wed, 22 Sep 2021 6:10:56 -0600
+
 fwupd (1.5.11-0ubuntu2pop1) focal; urgency=medium
 
   * Pop!_OS patches
