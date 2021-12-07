@@ -55,3 +55,15 @@ adduser --quiet --system --group --no-create-home --home /run/systemd \
 if [ -d /run/systemd/system ]; then
     systemctl reload dbus || true
 fi
+
+# Pop!_OS only: sign any fwupd EFI programs if keys exist
+if [ -e /etc/kernelstub/mok.crt -a -e /etc/kernelstub/mok.key ]; then
+	for efi in /usr/libexec/fwupd/efi/fwupd*.efi; do
+		echo "Signing ${efi} for Secure Boot"
+		sbsign \
+			--cert /etc/kernelstub/mok.crt \
+			--key /etc/kernelstub/mok.key \
+			--output "${efi}.signed"
+			"${efi}"
+	done
+fi
