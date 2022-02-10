@@ -76,7 +76,8 @@ Vcs-Browser: https://salsa.debian.org/efi-team/fwupd
 Package: libfwupdplugin5
 Section: libs
 Architecture: linux-any
-Depends: ${misc:Depends},
+Depends: libfwupd2 (= ${binary:Version}),
+         ${misc:Depends},
          ${shlibs:Depends}
 Multi-Arch: same
 Description: Firmware update daemon plugin library
@@ -105,7 +106,9 @@ Description: Firmware update daemon library
 
 Package: fwupd
 Architecture: linux-any
-Depends: ${misc:Depends},
+Depends: libfwupd2 (= ${binary:Version}),
+         libfwupdplugin5 (= ${binary:Version}),
+         ${misc:Depends},
          ${shlibs:Depends},
          shared-mime-info
 Recommends: python3,

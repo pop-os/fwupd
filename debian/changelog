@@ -1,3 +1,11 @@
+fwupd (1.7.4-2) unstable; urgency=medium
+
+  * Add hard dependencies on libfwupd2 and libfwupdplugin5 built with
+    us. Symbols suggest things should work, but maybe not. :-(
+    Closes: #1003664
+
+ -- Steve McIntyre <93sam@debian.org>  Thu, 10 Feb 2022 00:13:57 +0000
+
 fwupd (1.7.4-1) unstable; urgency=medium
 
   * New upstream version (1.7.4)
