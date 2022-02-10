@@ -618,7 +618,7 @@ fu_device_retry_full(FuDevice *self,
 	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
 	g_return_val_if_fail(func != NULL, FALSE);
 	g_return_val_if_fail(count >= 1, FALSE);
-	g_return_val_if_fail(error != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	for (guint i = 0;; i++) {
 		g_autoptr(GError) error_local = NULL;
@@ -1614,7 +1614,7 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_REMOVE_DELAY) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT64, error))
+		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT, error))
 			return FALSE;
 		fu_device_set_remove_delay(self, tmp);
 		return TRUE;
@@ -2546,13 +2546,17 @@ fu_device_ensure_inhibits(FuDevice *self)
 		g_signal_handler_block(self, priv->notify_flags_handler_id);
 
 	/* was okay -> not okay */
-	if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE) && nr_inhibits > 0) {
+	if (nr_inhibits > 0) {
 		g_autofree gchar *reasons_str = NULL;
 		g_autoptr(GList) values = g_hash_table_get_values(priv->inhibits);
 		g_autoptr(GPtrArray) reasons = g_ptr_array_new();
 
-		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE);
-		fu_device_add_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN);
+		/* updatable -> updatable-hidden -- which is required as devices might have
+		 * inhibits and *not* be automatically updatable */
+		if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE)) {
+			fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE);
+			fu_device_add_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN);
+		}
 
 		/* update update error */
 		for (GList *l = values; l != NULL; l = l->next) {
@@ -2561,12 +2565,11 @@ fu_device_ensure_inhibits(FuDevice *self)
 		}
 		reasons_str = fu_common_strjoin_array(", ", reasons);
 		fu_device_set_update_error(self, reasons_str);
-	}
-
-	/* not okay -> is okay */
-	if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN) && nr_inhibits == 0) {
-		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN);
-		fu_device_add_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE);
+	} else {
+		if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
+			fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN);
+			fu_device_add_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE);
+		}
 		fu_device_set_update_error(self, NULL);
 	}
 
@@ -3359,6 +3362,8 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 		fu_common_string_append_kv(str, idt + 1, "ProxyId", fu_device_get_id(priv->proxy));
 	if (priv->proxy_guid != NULL)
 		fu_common_string_append_kv(str, idt + 1, "ProxyGuid", priv->proxy_guid);
+	if (priv->remove_delay != 0)
+		fu_common_string_append_ku(str, idt + 1, "RemoveDelay", priv->remove_delay);
 	if (priv->custom_flags != NULL)
 		fu_common_string_append_kv(str, idt + 1, "CustomFlags", priv->custom_flags);
 	if (priv->battery_level != FU_BATTERY_VALUE_INVALID)

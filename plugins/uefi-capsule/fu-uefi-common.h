@@ -9,6 +9,10 @@
 
 #include <fwupdplugin.h>
 
+#ifdef HAVE_EFI_TIME_T
+#include <efivar/efivar.h>
+#endif
+
 #include <glib.h>
 
 #define EFI_CAPSULE_HEADER_FLAGS_PERSIST_ACROSS_RESET  0x00010000
@@ -17,6 +21,7 @@
 
 #define EFI_OS_INDICATIONS_FILE_CAPSULE_DELIVERY_SUPPORTED 0x0000000000000004ULL
 
+#ifndef HAVE_EFI_TIME_T
 typedef struct __attribute__((__packed__)) {
 	guint16 year;
 	guint8 month;
@@ -30,6 +35,7 @@ typedef struct __attribute__((__packed__)) {
 	guint8 daylight;
 	guint8 pad2;
 } efi_time_t;
+#endif
 
 typedef struct __attribute__((__packed__)) {
 	fwupd_guid_t guid;
@@ -60,6 +66,11 @@ typedef struct __attribute__((__packed__)) {
 /* the biggest size SPI part currently seen */
 #define FU_UEFI_COMMON_REQUIRED_ESP_FREE_SPACE (32 * 1024 * 1024)
 
+gchar *
+fu_uefi_get_fallback_app_path(FuDevice *device,
+			      const gchar *esp_path,
+			      const gchar *cmd,
+			      GError **error);
 gchar *
 fu_uefi_get_esp_app_path(FuDevice *device, const gchar *esp_path, const gchar *cmd, GError **error);
 gchar *

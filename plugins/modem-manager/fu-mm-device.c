@@ -551,6 +551,15 @@ fu_mm_device_probe(FuDevice *device, GError **error)
 static gboolean
 fu_mm_device_io_open_qcdm(FuMmDevice *self, GError **error)
 {
+	/* sanity check */
+	if (self->port_qcdm == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "no QCDM port provided for filename");
+		return FALSE;
+	}
+
 	/* open device */
 	self->io_channel = fu_io_channel_new_file(self->port_qcdm, error);
 	if (self->io_channel == NULL)
@@ -695,6 +704,15 @@ fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, G
 static gboolean
 fu_mm_device_io_open(FuMmDevice *self, GError **error)
 {
+	/* sanity check */
+	if (self->port_at == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "no AT port provided for filename");
+		return FALSE;
+	}
+
 	/* open device */
 	self->io_channel = fu_io_channel_new_file(self->port_at, error);
 	if (self->io_channel == NULL)
@@ -1547,28 +1565,39 @@ fu_mm_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 }
 
 static gboolean
-fu_mm_device_setup(FuDevice *device, GError **error)
+fu_mm_device_setup_branch_at(FuMmDevice *self, GError **error)
 {
-	FuMmDevice *self = FU_MM_DEVICE(device);
 	g_autoptr(FuDeviceLocker) locker = NULL;
 
 	/* Create IO channel to send AT commands to the modem */
-	locker = fu_device_locker_new_full(device,
+	locker = fu_device_locker_new_full(self,
 					   (FuDeviceLockerFunc)fu_mm_device_io_open,
 					   (FuDeviceLockerFunc)fu_mm_device_io_close,
 					   error);
 	if (locker == NULL)
 		return FALSE;
-	/*
-	 * firmware branch AT command may fail if not implemented,
-	 * clear error if not supported
-	 */
+
+	/* firmware branch AT command may fail if not implemented,
+	 * clear error if not supported */
 	if (self->branch_at != NULL) {
 		g_autoptr(GError) error_branch = NULL;
 		if (!fu_mm_device_at_cmd(self, self->branch_at, TRUE, &error_branch))
 			g_debug("unable to get firmware branch: %s", error_branch->message);
 	}
 
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_mm_device_setup(FuDevice *device, GError **error)
+{
+	FuMmDevice *self = FU_MM_DEVICE(device);
+
+	if (self->port_at != NULL) {
+		if (!fu_mm_device_setup_branch_at(self, error))
+			return FALSE;
+	}
 	if (fu_device_get_branch(device) != NULL)
 		g_debug("using firmware branch: %s", fu_device_get_branch(device));
 	else
@@ -1595,6 +1624,7 @@ fu_mm_device_init(FuMmDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_USE_RUNTIME_VERSION);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_VERFMT);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_summary(FU_DEVICE(self), "Mobile broadband device");
 	fu_device_add_icon(FU_DEVICE(self), "network-modem");

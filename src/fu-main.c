@@ -12,6 +12,7 @@
 #include <gio/gunixfdlist.h>
 #include <glib-unix.h>
 #include <glib/gi18n.h>
+#include <glib/gstdio.h>
 #include <locale.h>
 #include <xmlb.h>
 #ifdef HAVE_MALLOC_H
@@ -77,6 +78,7 @@ typedef struct {
 	PolkitAuthority *authority;
 #endif
 	guint owner_id;
+	guint process_quit_id;
 	FuEngine *engine;
 	gboolean update_in_progress;
 	gboolean pending_sigterm;
@@ -238,6 +240,12 @@ fu_main_create_request(FuMainPrivate *priv, const gchar *sender, GError **error)
 	uid_t calling_uid = 0;
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(GVariant) value = NULL;
+
+	/* if using FWUPD_DBUS_SOCKET... */
+	if (sender == NULL) {
+		fu_engine_request_set_device_flags(request, FWUPD_DEVICE_FLAG_TRUSTED);
+		return g_steal_pointer(&request);
+	}
 
 	g_return_val_if_fail(sender != NULL, NULL);
 
@@ -961,7 +969,11 @@ fu_main_install_with_helper(FuMainAuthHelper *helper_ref, GError **error)
 static FuSenderItem *
 fu_main_ensure_sender_item(FuMainPrivate *priv, const gchar *sender)
 {
-	FuSenderItem *sender_item;
+	FuSenderItem *sender_item = NULL;
+
+	/* operating in point-to-point mode */
+	if (sender == NULL)
+		sender = "";
 	sender_item = g_hash_table_lookup(priv->sender_items, sender);
 	if (sender_item == NULL) {
 		sender_item = g_new0(FuSenderItem, 1);
@@ -980,6 +992,32 @@ fu_main_device_id_valid(const gchar *device_id, GError **error)
 		return TRUE;
 	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "invalid device ID: %s", device_id);
 	return FALSE;
+}
+
+static gboolean
+fu_main_schedule_process_quit_cb(gpointer user_data)
+{
+	FuMainPrivate *priv = (FuMainPrivate *)user_data;
+
+	g_debug("daemon asked to quit, shutting down");
+	priv->process_quit_id = 0;
+	g_main_loop_quit(priv->loop);
+	return G_SOURCE_REMOVE;
+}
+
+static void
+fu_main_schedule_process_quit(FuMainPrivate *priv)
+{
+	/* busy? */
+	if (priv->update_in_progress) {
+		g_warning("asked to quit during a firmware update, ignoring");
+		return;
+	}
+
+	/* allow the daemon to respond to the request, then quit */
+	if (priv->process_quit_id != 0)
+		g_source_remove(priv->process_quit_id);
+	priv->process_quit_id = g_idle_add(fu_main_schedule_process_quit_cb, priv);
 }
 
 static void
@@ -1163,6 +1201,18 @@ fu_main_daemon_method_call(GDBusConnection *connection,
 #else
 		fu_main_authorize_set_blocked_firmware_cb(NULL, NULL, g_steal_pointer(&helper));
 #endif /* HAVE_POLKIT */
+		return;
+	}
+	if (g_strcmp0(method_name, "Quit") == 0) {
+		if (!fu_engine_request_has_device_flag(request, FWUPD_DEVICE_FLAG_TRUSTED)) {
+			g_dbus_method_invocation_return_error_literal(invocation,
+								      FWUPD_ERROR,
+								      FWUPD_ERROR_PERMISSION_DENIED,
+								      "Permission denied");
+			return;
+		}
+		fu_main_schedule_process_quit(priv);
+		g_dbus_method_invocation_return_value(invocation, NULL);
 		return;
 	}
 	if (g_strcmp0(method_name, "SelfSign") == 0) {
@@ -1849,18 +1899,15 @@ fu_main_daemon_get_property(GDBusConnection *connection_,
 }
 
 static void
-fu_main_on_bus_acquired_cb(GDBusConnection *connection, const gchar *name, gpointer user_data)
+fu_main_register_object(FuMainPrivate *priv)
 {
-	FuMainPrivate *priv = (FuMainPrivate *)user_data;
 	guint registration_id;
-	g_autoptr(GError) error = NULL;
 	static const GDBusInterfaceVTable interface_vtable = {fu_main_daemon_method_call,
 							      fu_main_daemon_get_property,
 							      NULL};
 
-	priv->connection = g_object_ref(connection);
 	registration_id =
-	    g_dbus_connection_register_object(connection,
+	    g_dbus_connection_register_object(priv->connection,
 					      FWUPD_DBUS_PATH,
 					      priv->introspection_daemon->interfaces[0],
 					      &interface_vtable,
@@ -1868,6 +1915,16 @@ fu_main_on_bus_acquired_cb(GDBusConnection *connection, const gchar *name, gpoin
 					      NULL,  /* user_data_free_func */
 					      NULL); /* GError** */
 	g_assert(registration_id > 0);
+}
+
+static void
+fu_main_dbus_bus_acquired_cb(GDBusConnection *connection, const gchar *name, gpointer user_data)
+{
+	FuMainPrivate *priv = (FuMainPrivate *)user_data;
+	g_autoptr(GError) error = NULL;
+
+	priv->connection = g_object_ref(connection);
+	fu_main_register_object(priv);
 
 	/* connect to D-Bus directly */
 	priv->proxy_uid = g_dbus_proxy_new_sync(priv->connection,
@@ -1886,13 +1943,13 @@ fu_main_on_bus_acquired_cb(GDBusConnection *connection, const gchar *name, gpoin
 }
 
 static void
-fu_main_on_name_acquired_cb(GDBusConnection *connection, const gchar *name, gpointer user_data)
+fu_main_dbus_name_acquired_cb(GDBusConnection *connection, const gchar *name, gpointer user_data)
 {
 	g_debug("acquired name: %s", name);
 }
 
 static void
-fu_main_on_name_lost_cb(GDBusConnection *connection, const gchar *name, gpointer user_data)
+fu_main_dbus_name_lost_cb(GDBusConnection *connection, const gchar *name, gpointer user_data)
 {
 	FuMainPrivate *priv = (FuMainPrivate *)user_data;
 	if (priv->update_in_progress) {
@@ -1901,6 +1958,27 @@ fu_main_on_name_lost_cb(GDBusConnection *connection, const gchar *name, gpointer
 	}
 	g_warning("another service has claimed the dbus name %s", name);
 	g_main_loop_quit(priv->loop);
+}
+
+static void
+fu_main_dbus_connection_closed_cb(GDBusConnection *connection,
+				  gboolean remote_peer_vanished,
+				  GError *error,
+				  gpointer user_data)
+{
+	FuMainPrivate *priv = (FuMainPrivate *)user_data;
+	g_debug("client connection closed: %s", error != NULL ? error->message : "unknown");
+	g_clear_object(&priv->connection);
+}
+
+static gboolean
+fu_main_dbus_new_connection_cb(GDBusServer *server, GDBusConnection *connection, gpointer user_data)
+{
+	FuMainPrivate *priv = (FuMainPrivate *)user_data;
+	g_set_object(&priv->connection, connection);
+	g_signal_connect(connection, "closed", G_CALLBACK(fu_main_dbus_connection_closed_cb), priv);
+	fu_main_register_object(priv);
+	return TRUE;
 }
 
 static gboolean
@@ -1990,6 +2068,8 @@ static void
 fu_main_private_free(FuMainPrivate *priv)
 {
 	g_hash_table_unref(priv->sender_items);
+	if (priv->process_quit_id != 0)
+		g_source_remove(priv->process_quit_id);
 	if (priv->loop != NULL)
 		g_main_loop_unref(priv->loop);
 	if (priv->owner_id > 0)
@@ -2034,6 +2114,7 @@ main(int argc, char *argv[])
 {
 	gboolean immediate_exit = FALSE;
 	gboolean timed_exit = FALSE;
+	const gchar *socket_filename = g_getenv("FWUPD_DBUS_SOCKET");
 	const GOptionEntry options[] = {
 	    {"timed-exit",
 	     '\0',
@@ -2160,15 +2241,42 @@ main(int argc, char *argv[])
 	}
 
 	/* own the object */
-	priv->owner_id = g_bus_own_name(G_BUS_TYPE_SYSTEM,
-					FWUPD_DBUS_SERVICE,
-					G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT |
-					    G_BUS_NAME_OWNER_FLAGS_REPLACE,
-					fu_main_on_bus_acquired_cb,
-					fu_main_on_name_acquired_cb,
-					fu_main_on_name_lost_cb,
-					priv,
-					NULL);
+	if (socket_filename != NULL) {
+		g_autofree gchar *address = g_strdup_printf("unix:path=%s", socket_filename);
+		g_autofree gchar *guid = g_dbus_generate_guid();
+		g_autoptr(GDBusServer) server = NULL;
+
+		/* this must be owned by root */
+#ifndef HAVE_SYSTEMD
+		g_unlink(socket_filename);
+#endif
+		server = g_dbus_server_new_sync(address,
+						G_DBUS_SERVER_FLAGS_AUTHENTICATION_ALLOW_ANONYMOUS,
+						guid,
+						NULL,
+						NULL,
+						&error);
+
+		if (server == NULL) {
+			g_printerr("Failed to create D-Bus server: %s\n", error->message);
+			return EXIT_FAILURE;
+		}
+		g_dbus_server_start(server);
+		g_signal_connect(server,
+				 "new-connection",
+				 G_CALLBACK(fu_main_dbus_new_connection_cb),
+				 priv);
+	} else {
+		priv->owner_id = g_bus_own_name(G_BUS_TYPE_SYSTEM,
+						FWUPD_DBUS_SERVICE,
+						G_BUS_NAME_OWNER_FLAGS_ALLOW_REPLACEMENT |
+						    G_BUS_NAME_OWNER_FLAGS_REPLACE,
+						fu_main_dbus_bus_acquired_cb,
+						fu_main_dbus_name_acquired_cb,
+						fu_main_dbus_name_lost_cb,
+						priv,
+						NULL);
+	}
 
 	/* Only timeout and close the mainloop if we have specified it
 	 * on the command line */

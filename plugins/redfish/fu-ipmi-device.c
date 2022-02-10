@@ -22,6 +22,9 @@
 
 #define FU_IPMI_DEVICE_TIMEOUT 1500 /* ms */
 
+#define FU_IPMI_TRANSACTION_RETRY_COUNT 5
+#define FU_IPMI_TRANSACTION_RETRY_DELAY 200 /* ms */
+
 /* not defined in linux/ipmi_msgdefs.h */
 #define IPMI_SET_USER_ACCESS   0x43
 #define IPMI_SET_USER_NAME     0x45
@@ -32,6 +35,24 @@
 #define IPMI_PASSWORD_ENABLE_USER   0x01
 #define IPMI_PASSWORD_SET_PASSWORD  0x02
 #define IPMI_PASSWORD_TEST_PASSWORD 0x03
+
+/* these are not provided in ipmi_msgdefs.h */
+#define IPMI_INVALID_COMMAND_ON_LUN_ERR	    0xC2
+#define IPMI_OUT_OF_SPACE_ERR		    0xC4
+#define IPMI_CANCELLED_OR_INVALID_ERR	    0xC5
+#define IPMI_OUT_OF_RANGE_ERR		    0xC9
+#define IPMI_CANNOT_RETURN_DATA_ERR	    0xCA
+#define IPMI_NOT_FOUND_ERR		    0xCB
+#define IPMI_INVALID_DATA_FIELD_ERR	    0xCC
+#define IPMI_COMMAND_ILLEGAL_ERR	    0xCD
+#define IPMI_RESPONSE_NOT_PROVIDED_ERR	    0xCE
+#define IPMI_DUPLICATED_REQUEST_ERR	    0xCF
+#define IPMI_SDR_IN_UPDATE_MODE_ERR	    0xD0
+#define IPMI_DEVICE_IN_UPDATE_MODE_ERR	    0xD1
+#define IPMI_INITIALIZATION_IN_PROGRESS_ERR 0xD2
+#define IPMI_DESTINATION_UNAVAILABLE_ERR    0xD3
+#define IPMI_INSUFFICIENT_PRIVILEGE_ERR	    0xD4
+#define IPMI_COMMAND_DISABLED_ERR	    0xD6
 
 struct _FuIpmiDevice {
 	FuUdevDevice parent_instance;
@@ -179,23 +200,88 @@ fu_ipmi_device_errcode_to_string(guint8 errcode)
 		return "nak-on-write";
 	if (errcode == IPMI_ERR_UNSPECIFIED)
 		return "unspecified";
-	return "unspecified";
+	/* these are not defined in ipmi_msgdefs.h but used in reality */
+	if (errcode == IPMI_INVALID_COMMAND_ON_LUN_ERR)
+		return "invalid-command-on-lun";
+	if (errcode == IPMI_OUT_OF_SPACE_ERR)
+		return "out-of-space";
+	if (errcode == IPMI_CANCELLED_OR_INVALID_ERR)
+		return "cancelled-or-invalid";
+	if (errcode == IPMI_OUT_OF_RANGE_ERR)
+		return "out-of-range";
+	if (errcode == IPMI_CANNOT_RETURN_DATA_ERR)
+		return "cannot-return-data";
+	if (errcode == IPMI_NOT_FOUND_ERR)
+		return "not-found";
+	if (errcode == IPMI_INVALID_DATA_FIELD_ERR)
+		return "invalid-data-field";
+	if (errcode == IPMI_COMMAND_ILLEGAL_ERR)
+		return "command-illegal";
+	if (errcode == IPMI_RESPONSE_NOT_PROVIDED_ERR)
+		return "response-not-provided";
+	if (errcode == IPMI_DUPLICATED_REQUEST_ERR)
+		return "duplicated-request";
+	if (errcode == IPMI_SDR_IN_UPDATE_MODE_ERR)
+		return "sdr-in-update-mode";
+	if (errcode == IPMI_DEVICE_IN_UPDATE_MODE_ERR)
+		return "device-in-update-mode";
+	if (errcode == IPMI_INITIALIZATION_IN_PROGRESS_ERR)
+		return "initialization-in-progress";
+	if (errcode == IPMI_DESTINATION_UNAVAILABLE_ERR)
+		return "destination-unavailable";
+	if (errcode == IPMI_INSUFFICIENT_PRIVILEGE_ERR)
+		return "insufficient-privilege";
+	if (errcode == IPMI_COMMAND_DISABLED_ERR)
+		return "command-disabled";
+	return "unknown";
 }
 
 static gboolean
-fu_ipmi_device_transaction(FuIpmiDevice *self,
-			   guint8 netfn,
-			   guint8 cmd,
-			   const guint8 *req_buf,
-			   gsize req_bufsz,
-			   guint8 *resp_buf, /* optional */
-			   gsize resp_bufsz,
-			   gsize *resp_len, /* optional, out */
-			   gint timeout_ms,
-			   GError **error)
+fu_ipmi_device_errcode_to_error(guint8 errcode, GError **error)
 {
+	/* success */
+	if (errcode == IPMI_CC_NO_ERROR)
+		return TRUE;
+
+	/* data not found, seemingly Lenovo specific */
+	if (errcode == IPMI_INVALID_DATA_FIELD_ERR || errcode == IPMI_NOT_FOUND_ERR) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_NOT_FOUND,
+			    "CC error: %s [0x%02X]",
+			    fu_ipmi_device_errcode_to_string(errcode),
+			    errcode);
+		return FALSE;
+	}
+
+	/* fallback */
+	g_set_error(error,
+		    G_IO_ERROR,
+		    G_IO_ERROR_FAILED,
+		    "CC error: %s [0x%02X]",
+		    fu_ipmi_device_errcode_to_string(errcode),
+		    errcode);
+	return FALSE;
+}
+
+typedef struct {
+	guint8 netfn;
+	guint8 cmd;
+	const guint8 *req_buf;
+	gsize req_bufsz;
+	guint8 *resp_buf;
+	gsize resp_bufsz;
+	gsize *resp_len;
+	gint timeout_ms;
+} FuIpmiDeviceTransactionHelper;
+
+static gboolean
+fu_ipmi_device_transaction_cb(FuDevice *device, gpointer user_data, GError **error)
+{
+	FuIpmiDevice *self = FU_IPMI_DEVICE(device);
+	FuIpmiDeviceTransactionHelper *helper = (FuIpmiDeviceTransactionHelper *)user_data;
 	GPollFD pollfds[1];
-	gsize resp_buf2sz = resp_bufsz + 1;
+	gsize resp_buf2sz = helper->resp_bufsz + 1;
 	gsize resp_len2 = 0;
 	g_autoptr(GTimer) timer = g_timer_new();
 	g_autoptr(FuDeviceLocker) lock = NULL;
@@ -205,7 +291,12 @@ fu_ipmi_device_transaction(FuIpmiDevice *self,
 	if (lock == NULL)
 		return FALSE;
 
-	if (!fu_ipmi_device_send(self, netfn, cmd, req_buf, req_bufsz, error))
+	if (!fu_ipmi_device_send(self,
+				 helper->netfn,
+				 helper->cmd,
+				 helper->req_buf,
+				 helper->req_bufsz,
+				 error))
 		return FALSE;
 
 	pollfds[0].fd = fu_udev_device_get_fd(FU_UDEV_DEVICE(self));
@@ -217,7 +308,9 @@ fu_ipmi_device_transaction(FuIpmiDevice *self,
 		glong seq = 0;
 		gint rc;
 
-		rc = g_poll(pollfds, 1, timeout_ms - (g_timer_elapsed(timer, NULL) * 1000.f));
+		rc = g_poll(pollfds,
+			    1,
+			    helper->timeout_ms - (g_timer_elapsed(timer, NULL) * 1000.f));
 		if (rc < 0) {
 			g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "poll() error %m");
 			return FALSE;
@@ -228,8 +321,8 @@ fu_ipmi_device_transaction(FuIpmiDevice *self,
 				    G_IO_ERROR_FAILED,
 				    "timeout waiting for response "
 				    "(netfn %d, cmd %d)",
-				    netfn,
-				    cmd);
+				    helper->netfn,
+				    helper->cmd);
 			return FALSE;
 		}
 
@@ -256,7 +349,7 @@ fu_ipmi_device_transaction(FuIpmiDevice *self,
 				"expected %ld, got %ld",
 				self->seq,
 				seq);
-			if (g_timer_elapsed(timer, NULL) * 1000.f >= timeout_ms) {
+			if (g_timer_elapsed(timer, NULL) * 1000.f >= helper->timeout_ms) {
 				g_set_error_literal(error,
 						    G_IO_ERROR,
 						    G_IO_ERROR_FAILED,
@@ -264,39 +357,63 @@ fu_ipmi_device_transaction(FuIpmiDevice *self,
 				return FALSE;
 			}
 		} else {
-			if (resp_buf2[0] != IPMI_CC_NO_ERROR) {
-				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_FAILED,
-					    "CC error: %s [%02x]",
-					    fu_ipmi_device_errcode_to_string(resp_buf2[0]),
-					    resp_buf2[0]);
+			if (!fu_ipmi_device_errcode_to_error(resp_buf2[0], error))
 				return FALSE;
-			}
-			if (resp_buf != NULL) {
-				if (!fu_memcpy_safe(resp_buf,
-						    resp_bufsz,
+			if (helper->resp_buf != NULL) {
+				if (!fu_memcpy_safe(helper->resp_buf,
+						    helper->resp_bufsz,
 						    0x0, /* dst */
 						    resp_buf2,
 						    resp_buf2sz,
 						    0x01, /* src */
-						    resp_bufsz,
+						    helper->resp_bufsz,
 						    error))
 					return FALSE;
 			}
-			if (resp_len != NULL)
-				*resp_len = resp_len2 - 1;
+			if (helper->resp_len != NULL)
+				*helper->resp_len = resp_len2 - 1;
 			if (g_getenv("FWUPD_REDFISH_VERBOSE") != NULL) {
 				g_debug("IPMI netfn: %02x->%02x, cmd: %02x->%02x",
-					netfn,
+					helper->netfn,
 					resp_netfn,
-					cmd,
+					helper->cmd,
 					resp_cmd);
 			}
 			break;
 		}
 	}
 	return TRUE;
+}
+
+static gboolean
+fu_ipmi_device_transaction(FuIpmiDevice *self,
+			   guint8 netfn,
+			   guint8 cmd,
+			   const guint8 *req_buf,
+			   gsize req_bufsz,
+			   guint8 *resp_buf, /* optional */
+			   gsize resp_bufsz,
+			   gsize *resp_len, /* optional, out */
+			   gint timeout_ms,
+			   GError **error)
+{
+	FuIpmiDeviceTransactionHelper helper = {
+	    .netfn = netfn,
+	    .cmd = cmd,
+	    .req_buf = req_buf,
+	    .req_bufsz = req_bufsz,
+	    .resp_buf = resp_buf,
+	    .resp_bufsz = resp_bufsz,
+	    .resp_len = resp_len,
+	    .timeout_ms = timeout_ms,
+	};
+	fu_device_retry_add_recovery(FU_DEVICE(self), G_IO_ERROR, G_IO_ERROR_NOT_FOUND, NULL);
+	return fu_device_retry_full(FU_DEVICE(self),
+				    fu_ipmi_device_transaction_cb,
+				    FU_IPMI_TRANSACTION_RETRY_COUNT,
+				    FU_IPMI_TRANSACTION_RETRY_DELAY,
+				    &helper,
+				    error);
 }
 
 static gboolean

@@ -437,6 +437,35 @@ fu_smbios_dt_func(void)
 }
 
 static void
+fu_smbios_dt_fallback_func(void)
+{
+	const gchar *str;
+	gboolean ret;
+	g_autofree gchar *path = NULL;
+	g_autoptr(FuSmbios) smbios = fu_smbios_new();
+	g_autoptr(GError) error = NULL;
+
+	path = g_test_build_filename(G_TEST_DIST, "tests", "devicetree-fallback", "base", NULL);
+	ret = fu_smbios_setup_from_path(smbios, path, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	if (g_getenv("FWUPD_VERBOSE") != NULL) {
+		g_autofree gchar *dump = fu_smbios_to_string(smbios);
+		g_debug("%s", dump);
+	}
+
+	/* get vendor */
+	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_SYSTEM, 0x04, &error);
+	g_assert_no_error(error);
+	g_assert_cmpstr(str, ==, "solidrun");
+
+	/* get model */
+	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_SYSTEM, 0x05, &error);
+	g_assert_no_error(error);
+	g_assert_cmpstr(str, ==, "honeycomb");
+}
+
+static void
 fu_smbios_class_func(void)
 {
 	g_autofree gchar *path = g_test_build_filename(G_TEST_DIST, "tests", "dmi", "class", NULL);
@@ -1774,6 +1803,28 @@ fu_device_inhibit_func(void)
 	fu_device_set_battery_level(device, 95);
 	g_assert_true(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
 	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
+}
+
+static void
+fu_device_inhibit_updateable_func(void)
+{
+	g_autoptr(FuDevice) device = fu_device_new();
+
+	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
+	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
+	g_assert_cmpstr(fu_device_get_update_error(device), ==, NULL);
+
+	/* first one */
+	fu_device_inhibit(device, "needs-activation", "Device is pending activation");
+	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
+	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
+	g_assert_cmpstr(fu_device_get_update_error(device), ==, "Device is pending activation");
+
+	/* activated, but still not updatable */
+	fu_device_uninhibit(device, "needs-activation");
+	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
+	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
+	g_assert_cmpstr(fu_device_get_update_error(device), ==, NULL);
 }
 
 #define TEST_FLAG_FOO (1 << 0)
@@ -3923,6 +3974,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/smbios", fu_smbios_func);
 	g_test_add_func("/fwupd/smbios3", fu_smbios3_func);
 	g_test_add_func("/fwupd/smbios{dt}", fu_smbios_dt_func);
+	g_test_add_func("/fwupd/smbios{dt-fallback}", fu_smbios_dt_fallback_func);
 	g_test_add_func("/fwupd/smbios{class}", fu_smbios_class_func);
 	g_test_add_func("/fwupd/firmware", fu_firmware_func);
 	g_test_add_func("/fwupd/firmware{common}", fu_firmware_common_func);
@@ -3950,6 +4002,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/device{flags}", fu_device_flags_func);
 	g_test_add_func("/fwupd/device{custom-flags}", fu_device_private_flags_func);
 	g_test_add_func("/fwupd/device{inhibit}", fu_device_inhibit_func);
+	g_test_add_func("/fwupd/device{inhibit-updateable}", fu_device_inhibit_updateable_func);
 	g_test_add_func("/fwupd/device{parent}", fu_device_parent_func);
 	g_test_add_func("/fwupd/device{children}", fu_device_children_func);
 	g_test_add_func("/fwupd/device{incorporate}", fu_device_incorporate_func);

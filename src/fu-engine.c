@@ -19,6 +19,12 @@
 #endif
 #include <errno.h>
 
+#ifdef _WIN32
+#include <sysinfoapi.h>
+#include <winerror.h>
+#include <winreg.h>
+#endif
+
 #include "fwupd-common-private.h"
 #include "fwupd-enums-private.h"
 #include "fwupd-error.h"
@@ -123,6 +129,7 @@ struct _FuEngine {
 	gboolean loaded;
 	gchar *host_security_id;
 	FuSecurityAttrs *host_security_attrs;
+	GPtrArray *local_monitors; /* (element-type GFileMonitor) */
 };
 
 enum {
@@ -463,6 +470,76 @@ fu_engine_request_get_localized_xpath(FuEngineRequest *request, const gchar *ele
 	return g_string_free(xpath, FALSE);
 }
 
+/* add any client-side BKC tags */
+static gboolean
+fu_engine_add_local_release_metadata(FuEngine *self,
+				     FuDevice *dev,
+				     FwupdRelease *rel,
+				     GError **error)
+{
+	GPtrArray *guids = fu_device_get_guids(dev);
+	g_autoptr(XbQuery) query = NULL;
+	g_autoptr(GError) error_query = NULL;
+
+	/* prepare query with bound GUID parameter */
+	query = xb_query_new_full(self->silo,
+				  "local/components/component[@merge='append']/provides/"
+				  "firmware[text()=?]/../../releases/release[@version=?]/../../"
+				  "tags/tag",
+				  XB_QUERY_FLAG_OPTIMIZE | XB_QUERY_FLAG_USE_INDEXES,
+				  &error_query);
+	if (query == NULL) {
+		if (g_error_matches(error_query, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT))
+			return TRUE;
+		g_propagate_error(error, g_steal_pointer(&error_query));
+		return FALSE;
+	}
+
+	/* use prepared query for each GUID */
+	for (guint i = 0; i < guids->len; i++) {
+		const gchar *guid = g_ptr_array_index(guids, i);
+		g_autoptr(GError) error_local = NULL;
+		g_autoptr(GPtrArray) tags = NULL;
+#if LIBXMLB_CHECK_VERSION(0, 3, 0)
+		g_auto(XbQueryContext) context = XB_QUERY_CONTEXT_INIT();
+#endif
+
+		/* bind GUID and then query */
+#if LIBXMLB_CHECK_VERSION(0, 3, 0)
+		xb_value_bindings_bind_str(xb_query_context_get_bindings(&context), 0, guid, NULL);
+		xb_value_bindings_bind_str(xb_query_context_get_bindings(&context),
+					   1,
+					   fwupd_release_get_version(rel),
+					   NULL);
+		tags = xb_silo_query_with_context(self->silo, query, &context, &error_local);
+#else
+		if (!xb_query_bind_str(query, 0, guid, error)) {
+			g_prefix_error(error, "failed to bind GUID: ");
+			return FALSE;
+		}
+		if (!xb_query_bind_str(query, 1, fwupd_release_get_version(rel), error)) {
+			g_prefix_error(error, "failed to bind version: ");
+			return FALSE;
+		}
+		tags = xb_silo_query_full(self->silo, query, &error_local);
+#endif
+		if (tags == NULL) {
+			if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_FOUND) ||
+			    g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT))
+				continue;
+			g_propagate_error(error, g_steal_pointer(&error_local));
+			return FALSE;
+		}
+		for (guint j = 0; j < tags->len; j++) {
+			XbNode *tag = g_ptr_array_index(tags, j);
+			fwupd_release_add_tag(rel, xb_node_get_text(tag));
+		}
+	}
+
+	/* success */
+	return TRUE;
+}
+
 static gboolean
 fu_engine_set_release_from_appstream(FuEngine *self,
 				     FuEngineRequest *request,
@@ -536,6 +613,9 @@ fu_engine_set_release_from_appstream(FuEngine *self,
 		if (remote == NULL)
 			g_warning("no remote found for release %s", version_rel);
 	}
+	tmp = xb_node_query_text(component, "../custom/value[@key='LVFS::Distributor']", NULL);
+	if (g_strcmp0(tmp, "community") == 0)
+		fwupd_release_add_flag(rel, FWUPD_RELEASE_FLAG_IS_COMMUNITY);
 	artifact = xb_node_query_first(release, "artifacts/artifact", NULL);
 	if (artifact != NULL) {
 		if (!fu_engine_set_release_from_artifact(self, rel, remote, artifact, error))
@@ -555,6 +635,17 @@ fu_engine_set_release_from_appstream(FuEngine *self,
 			    "<p>Some of the platform secrets may be invalidated when "
 			    "updating this firmware. Please ensure you have the volume "
 			    "recovery key before continuing.</p>");
+		}
+		if (fwupd_release_has_flag(rel, FWUPD_RELEASE_FLAG_IS_COMMUNITY) &&
+		    request != NULL &&
+		    !fu_engine_request_has_feature_flag(request,
+							FWUPD_FEATURE_FLAG_COMMUNITY_TEXT)) {
+			g_string_prepend(
+			    str,
+			    "<p>This firmware is provided by LVFS community "
+			    "members and is not provided (or supported) by the original "
+			    "hardware vendor. "
+			    "Installing this update may also void any device warranty.</p>");
 		}
 		if (str->len > 0)
 			fwupd_release_set_description(rel, str->str);
@@ -671,11 +762,19 @@ fu_engine_set_release_from_appstream(FuEngine *self,
 			fwupd_release_set_update_image(rel, tmp);
 		}
 	}
+	if (xb_node_get_attr(release, "date_eol") != NULL)
+		fu_device_add_flag(dev, FWUPD_DEVICE_FLAG_END_OF_LIFE);
 
 	/* sort the locations by scheme */
 	g_ptr_array_sort_with_data(fwupd_release_get_locations(rel),
 				   fu_engine_scheme_compare_cb,
 				   self);
+
+	/* add any client-side BKC tags */
+	if (!fu_engine_add_local_release_metadata(self, dev, rel, error))
+		return FALSE;
+
+	/* success */
 	return TRUE;
 }
 
@@ -741,13 +840,18 @@ gboolean
 fu_engine_modify_config(FuEngine *self, const gchar *key, const gchar *value, GError **error)
 {
 	const gchar *keys[] = {"ArchiveSizeMax",
-			       "DisabledDevices",
+			       "ApprovedFirmware",
 			       "BlockedFirmware",
+			       "DisabledDevices",
 			       "DisabledPlugins",
-			       "IdleTimeout",
-			       "VerboseDomains",
-			       "UpdateMotd",
 			       "EnumerateAllDevices",
+			       "HostBkc",
+			       "IdleTimeout",
+			       "IgnorePower",
+			       "OnlyTrusted",
+			       "UpdateMotd",
+			       "UriSchemes",
+			       "VerboseDomains",
 			       NULL};
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
@@ -2052,6 +2156,11 @@ fu_engine_get_report_metadata(FuEngine *self, GError **error)
 #else
 	fu_engine_add_report_metadata_bool(hash, "FwupdSupported", FALSE);
 #endif
+
+	/* find out what BKC is being targeted to understand "odd" upgrade paths */
+	tmp = fu_config_get_host_bkc(self->config);
+	if (tmp != NULL)
+		g_hash_table_insert(hash, g_strdup("HostBkc"), g_strdup(tmp));
 
 	/* DMI data */
 	tmp = fu_context_get_hwid_value(self->ctx, FU_HWIDS_KEY_PRODUCT_NAME);
@@ -3805,6 +3914,41 @@ fu_engine_md_refresh_devices(FuEngine *self)
 }
 
 static gboolean
+fu_engine_load_metadata_store_local(FuEngine *self,
+				    XbBuilder *builder,
+				    FuPathKind path_kind,
+				    GError **error)
+{
+	g_autofree gchar *fn = fu_common_get_path(path_kind);
+	g_autofree gchar *metadata_path = g_build_filename(fn, "local.d", NULL);
+	g_autoptr(GError) error_local = NULL;
+	g_autoptr(GPtrArray) metadata_fns = NULL;
+
+	metadata_fns = fu_common_filename_glob(metadata_path, "*.xml", &error_local);
+	if (metadata_fns == NULL) {
+		g_debug("ignoring: %s", error_local->message);
+		return TRUE;
+	}
+	for (guint i = 0; i < metadata_fns->len; i++) {
+		const gchar *path = g_ptr_array_index(metadata_fns, i);
+		g_autoptr(XbBuilderSource) source = xb_builder_source_new();
+		g_autoptr(GFile) file = g_file_new_for_path(path);
+		g_debug("loading local metadata: %s", path);
+		if (!xb_builder_source_load_file(source,
+						 file,
+						 XB_BUILDER_SOURCE_FLAG_NONE,
+						 NULL,
+						 error))
+			return FALSE;
+		xb_builder_source_set_prefix(source, "local");
+		xb_builder_import_source(builder, source);
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_engine_load_metadata_store(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 {
 	GPtrArray *remotes;
@@ -3891,6 +4035,15 @@ fu_engine_load_metadata_store(FuEngine *self, FuEngineLoadFlags flags, GError **
 		xb_builder_import_source(builder, source);
 	}
 
+	/* add any client-side data, e.g. BKC tags */
+	if (!fu_engine_load_metadata_store_local(self,
+						 builder,
+						 FU_PATH_KIND_LOCALSTATEDIR_PKG,
+						 error))
+		return FALSE;
+	if (!fu_engine_load_metadata_store_local(self, builder, FU_PATH_KIND_DATADIR_PKG, error))
+		return FALSE;
+
 	/* on a read-only filesystem don't care about the cache GUID */
 	if (flags & FU_ENGINE_LOAD_FLAG_READONLY)
 		compile_flags |= XB_BUILDER_COMPILE_FLAG_IGNORE_GUID;
@@ -3923,7 +4076,7 @@ fu_engine_config_changed_cb(FuConfig *config, FuEngine *self)
 }
 
 static void
-fu_engine_remote_list_changed_cb(FuRemoteList *remote_list, FuEngine *self)
+fu_engine_metadata_changed(FuEngine *self)
 {
 	g_autoptr(GError) error_local = NULL;
 	if (!fu_engine_load_metadata_store(self, FU_ENGINE_LOAD_FLAG_NONE, &error_local))
@@ -3937,6 +4090,12 @@ fu_engine_remote_list_changed_cb(FuRemoteList *remote_list, FuEngine *self)
 
 	/* make the UI update */
 	fu_engine_emit_changed(self);
+}
+
+static void
+fu_engine_remote_list_changed_cb(FuRemoteList *remote_list, FuEngine *self)
+{
+	fu_engine_metadata_changed(self);
 }
 
 static gint
@@ -4291,6 +4450,7 @@ fu_engine_get_result_from_component(FuEngine *self,
 	g_autoptr(FuDevice) dev = NULL;
 	g_autoptr(FwupdRelease) rel = NULL;
 	g_autoptr(GError) error_local = NULL;
+	g_autoptr(GError) error_reqs = NULL;
 	g_autoptr(GPtrArray) provides = NULL;
 	g_autoptr(GPtrArray) tags = NULL;
 	g_autoptr(XbNode) description = NULL;
@@ -4327,6 +4487,8 @@ fu_engine_get_result_from_component(FuEngine *self,
 			fu_device_set_version_raw(dev, fu_device_get_version_raw(device));
 			fu_device_set_version_format(dev, fu_device_get_version_format(device));
 			fu_device_set_version(dev, fu_device_get_version(device));
+		} else {
+			fu_device_inhibit(dev, "not-found", "Device was not found");
 		}
 
 		/* add GUID */
@@ -4355,10 +4517,12 @@ fu_engine_get_result_from_component(FuEngine *self,
 					  request,
 					  task,
 					  FWUPD_INSTALL_FLAG_IGNORE_VID_PID,
-					  error))
-		return NULL;
+					  &error_reqs)) {
+		fu_device_inhibit(dev, "failed-reqs", error_reqs->message);
+		/* continue */
+	}
 
-		/* verify trust */
+	/* verify trust */
 #if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	query = xb_query_new_full(xb_node_get_silo(component),
 				  "releases/release",
@@ -5516,6 +5680,10 @@ fu_engine_clear_results(FuEngine *self, const gchar *device_id, GError **error)
 			return FALSE;
 	}
 
+	/* if the offline update never got run, unstage it */
+	if (fu_device_get_update_state(device) == FWUPD_UPDATE_STATE_PENDING)
+		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_UNKNOWN);
+
 	/* override */
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_NOTIFIED);
 	return fu_history_modify_device(self->history, device, error);
@@ -6449,6 +6617,13 @@ fu_engine_backend_device_removed_cb(FuBackend *backend, FuDevice *device, FuEngi
 		FuDevice *device_tmp = g_ptr_array_index(devices, i);
 		if (g_strcmp0(fu_device_get_backend_id(device_tmp),
 			      fu_device_get_backend_id(device)) == 0) {
+			if (fu_device_has_internal_flag(device_tmp,
+							FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE)) {
+				g_debug("not auto-removing backend device %s [%s] due to flags",
+					fu_device_get_name(device_tmp),
+					fu_device_get_id(device_tmp));
+				continue;
+			}
 			g_debug("auto-removing backend device %s [%s]",
 				fu_device_get_name(device_tmp),
 				fu_device_get_id(device_tmp));
@@ -6739,8 +6914,9 @@ fu_engine_context_set_battery_threshold(FuContext *ctx)
 
 	vendor = fu_context_get_hwid_replace_value(ctx, FU_HWIDS_KEY_MANUFACTURER, NULL);
 	if (vendor != NULL) {
+		g_autofree gchar *vendor_guid = fwupd_guid_hash_string(vendor);
 		battery_str = g_strdup(
-		    fu_context_lookup_quirk_by_id(ctx, vendor, FU_QUIRKS_BATTERY_THRESHOLD));
+		    fu_context_lookup_quirk_by_id(ctx, vendor_guid, FU_QUIRKS_BATTERY_THRESHOLD));
 	}
 	if (battery_str == NULL)
 		minimum_battery = MINIMUM_BATTERY_PERCENTAGE_FALLBACK;
@@ -6771,6 +6947,72 @@ fu_engine_ensure_paths_exist(GError **error)
 	return TRUE;
 }
 
+static void
+fu_engine_local_metadata_changed_cb(GFileMonitor *monitor,
+				    GFile *file,
+				    GFile *other_file,
+				    GFileMonitorEvent event_type,
+				    gpointer user_data)
+{
+	FuEngine *self = FU_ENGINE(user_data);
+	fu_engine_metadata_changed(self);
+}
+
+static gboolean
+fu_engine_load_local_metadata_watches(FuEngine *self, GError **error)
+{
+	const FuPathKind path_kinds[] = {FU_PATH_KIND_DATADIR_PKG, FU_PATH_KIND_LOCALSTATEDIR_PKG};
+
+	/* add the watches even if the directory does not exist */
+	for (guint i = 0; i < G_N_ELEMENTS(path_kinds); i++) {
+		GFileMonitor *monitor;
+		GFile *file;
+		g_autoptr(GError) error_local = NULL;
+		g_autofree gchar *base = fu_common_get_path(path_kinds[i]);
+		g_autofree gchar *fn = g_build_filename(base, "local.d", NULL);
+
+		file = g_file_new_for_path(fn);
+		monitor = g_file_monitor_directory(file, G_FILE_MONITOR_NONE, NULL, &error_local);
+		if (monitor == NULL) {
+			g_warning("failed to watch %s: %s", fn, error_local->message);
+			continue;
+		}
+		g_signal_connect(monitor,
+				 "changed",
+				 G_CALLBACK(fu_engine_local_metadata_changed_cb),
+				 self);
+		g_ptr_array_add(self->local_monitors, g_steal_pointer(&monitor));
+	}
+
+	/* success */
+	return TRUE;
+}
+
+#ifdef _WIN32
+static gchar *
+fu_common_win32_registry_get_string(HKEY hkey,
+				    const gchar *subkey,
+				    const gchar *value,
+				    GError **error)
+{
+	gchar buf[255] = {'\0'};
+	DWORD bufsz = sizeof(buf);
+	LSTATUS rc;
+
+	rc = RegGetValue(hkey, subkey, value, RRF_RT_REG_SZ, NULL, (PVOID)&buf, &bufsz);
+	if (rc != ERROR_SUCCESS) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_INVAL,
+			    "Failed to get registry string %s [0x%lX]",
+			    subkey,
+			    (unsigned long)rc);
+		return NULL;
+	}
+	return g_strndup(buf, bufsz);
+}
+#endif
+
 /**
  * fu_engine_load:
  * @self: a #FuEngine
@@ -6790,9 +7032,8 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 	g_autoptr(GPtrArray) checksums_approved = NULL;
 	g_autoptr(GPtrArray) checksums_blocked = NULL;
 	g_autoptr(GError) error_quirks = NULL;
-#ifndef _WIN32
 	g_autoptr(GError) error_local = NULL;
-#endif
+
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
@@ -6820,13 +7061,18 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 		return FALSE;
 	}
 
-/* TODO: Read registry key [HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography] "MachineGuid" */
-#ifndef _WIN32
 	/* cache machine ID so we can use it from a sandboxed app */
+#ifdef _WIN32
+	self->host_machine_id =
+	    fu_common_win32_registry_get_string(HKEY_LOCAL_MACHINE,
+						"SOFTWARE\\Microsoft\\Cryptography",
+						"MachineGuid",
+						&error_local);
+#else
 	self->host_machine_id = fwupd_build_machine_id("fwupd", &error_local);
+#endif
 	if (self->host_machine_id == NULL)
 		g_debug("failed to build machine-id: %s", error_local->message);
-#endif
 
 	/* ensure these exist before starting */
 	if (!fu_engine_ensure_paths_exist(error))
@@ -6910,6 +7156,10 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 		g_prefix_error(error, "Failed to load AppStream data: ");
 		return FALSE;
 	}
+
+	/* watch the local.d directories for changes */
+	if (!fu_engine_load_local_metadata_watches(self, error))
+		return FALSE;
 
 	/* add the "built-in" firmware types */
 	fu_context_add_firmware_gtype(self->ctx, "raw", FU_TYPE_FIRMWARE);
@@ -7201,6 +7451,7 @@ fu_engine_init(FuEngine *self)
 	self->plugin_filter = g_ptr_array_new_with_free_func(g_free);
 	self->host_security_attrs = fu_security_attrs_new();
 	self->backends = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	self->local_monitors = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	self->runtime_versions = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	self->compile_versions = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 
@@ -7278,9 +7529,6 @@ fu_engine_init(FuEngine *self)
 #endif
 
 	g_hash_table_insert(self->compile_versions,
-			    g_strdup("com.redhat.fwupdate"),
-			    g_strdup("12"));
-	g_hash_table_insert(self->compile_versions,
 			    g_strdup("org.freedesktop.fwupd"),
 			    g_strdup(VERSION));
 #ifdef HAVE_GUSB
@@ -7297,6 +7545,11 @@ static void
 fu_engine_finalize(GObject *obj)
 {
 	FuEngine *self = FU_ENGINE(obj);
+
+	for (guint i = 0; i < self->local_monitors->len; i++) {
+		GFileMonitor *monitor = g_ptr_array_index(self->local_monitors, i);
+		g_file_monitor_cancel(monitor);
+	}
 
 	if (self->silo != NULL)
 		g_object_unref(self->silo);
@@ -7321,6 +7574,7 @@ fu_engine_finalize(GObject *obj)
 	g_object_unref(self->jcat_context);
 	g_ptr_array_unref(self->plugin_filter);
 	g_ptr_array_unref(self->backends);
+	g_ptr_array_unref(self->local_monitors);
 	g_hash_table_unref(self->runtime_versions);
 	g_hash_table_unref(self->compile_versions);
 	g_object_unref(self->plugin_list);

@@ -18,8 +18,6 @@
 /* amount of time to wait for ports of the same device	being exposed by kernel */
 #define FU_MM_UDEV_DEVICE_PORTS_TIMEOUT 3 /* s */
 
-typedef struct FuPluginMmInhibitedDeviceInfo FuPluginMmInhibitedDeviceInfo;
-
 struct FuPluginData {
 	MMManager *manager;
 	gboolean manager_ready;
@@ -128,6 +126,10 @@ fu_plugin_mm_udev_device_port_added(FuPlugin *plugin,
 		fu_plugin_mm_udev_device_ports_timeout_reset(plugin);
 		return;
 	}
+
+	/* device is being created, update is complete, uninhibit */
+	fu_plugin_mm_uninhibit_device(plugin);
+
 	/* create device and add to cache */
 	dev = fu_mm_device_udev_new(fu_plugin_get_context(plugin), priv->manager, priv->inhibited);
 	fu_mm_device_udev_add_port(dev, subsystem, path, ifnum);

@@ -284,26 +284,6 @@ fu_util_get_user_cache_path(const gchar *fn)
 	return g_build_filename(root, "fwupd", basename, NULL);
 }
 
-gchar *
-fu_util_get_versions(void)
-{
-	GString *string = g_string_new("");
-
-	g_string_append_printf(string, "client version:\t%s\n", SOURCE_VERSION);
-	g_string_append_printf(string, "compile-time dependency versions\n");
-#ifdef HAVE_GUSB
-	g_string_append_printf(string,
-			       "\tgusb:\t%d.%d.%d\n",
-			       G_USB_MAJOR_VERSION,
-			       G_USB_MINOR_VERSION,
-			       G_USB_MICRO_VERSION);
-#endif
-#ifdef EFIVAR_LIBRARY_VERSION
-	g_string_append_printf(string, "\tefivar:\t%s", EFIVAR_LIBRARY_VERSION);
-#endif
-	return g_string_free(string, FALSE);
-}
-
 static gboolean
 fu_util_update_shutdown(GError **error)
 {
@@ -394,6 +374,41 @@ fu_util_update_reboot(GError **error)
 	return val != NULL;
 }
 
+static gchar *
+fu_util_get_release_description_with_fallback(FwupdRelease *rel)
+{
+	g_autoptr(GString) str = g_string_new(NULL);
+
+	/* add what we've got from the vendor */
+	if (fwupd_release_get_description(rel) != NULL)
+		g_string_append(str, fwupd_release_get_description(rel));
+
+	/* add this client side to get the translations */
+	if (!fwupd_release_has_flag(rel, FWUPD_RELEASE_FLAG_IS_COMMUNITY)) {
+		g_string_append_printf(
+		    str,
+		    "<p>%s</p>",
+		    /* TRANSLATORS: the vendor did not upload this */
+		    _("This firmware is provided by LVFS community members and is not "
+		      "provided (or supported) by the original hardware vendor."));
+		g_string_append_printf(
+		    str,
+		    "<p>%s</p>",
+		    /* TRANSLATORS: if it breaks, you get to keep both pieces */
+		    _("Installing this update may also void any device warranty."));
+	}
+
+	/* this can't be from the LVFS, but the user could be installing a local file */
+	if (str->len == 0) {
+		g_string_append_printf(str,
+				       "<p>%s</p>",
+				       /* TRANSLATORS: naughty vendor */
+				       _("The vendor did not supply any release notes."));
+	}
+
+	return g_string_free(g_steal_pointer(&str), FALSE);
+}
+
 gboolean
 fu_util_prompt_warning(FwupdDevice *device,
 		       FwupdRelease *release,
@@ -401,8 +416,8 @@ fu_util_prompt_warning(FwupdDevice *device,
 		       GError **error)
 {
 	FwupdDeviceFlags flags;
-	const gchar *desc_tmp;
 	gint vercmp;
+	g_autofree gchar *desc_fb = NULL;
 	g_autoptr(GString) title = g_string_new(NULL);
 	g_autoptr(GString) str = g_string_new(NULL);
 
@@ -439,9 +454,9 @@ fu_util_prompt_warning(FwupdDevice *device,
 	}
 
 	/* description is optional */
-	desc_tmp = fwupd_release_get_description(release);
-	if (desc_tmp != NULL) {
-		g_autofree gchar *desc = fu_util_convert_description(desc_tmp, NULL);
+	desc_fb = fu_util_get_release_description_with_fallback(release);
+	if (desc_fb != NULL) {
+		g_autofree gchar *desc = fu_util_convert_description(desc_fb, NULL);
 		if (desc != NULL)
 			g_string_append_printf(str, "\n%s", desc);
 	}
@@ -1223,6 +1238,10 @@ fu_util_device_flag_to_string(guint64 device_flag)
 		/* TRANSLATORS: we might ask the user the recovery key when next booting Windows */
 		return _("Full disk encryption secrets may be invalidated when updating");
 	}
+	if (device_flag == FWUPD_DEVICE_FLAG_END_OF_LIFE) {
+		/* TRANSLATORS: the vendor is no longer supporting the device */
+		return _("End of life");
+	}
 	if (device_flag == FWUPD_DEVICE_FLAG_SKIPS_RESTART) {
 		/* skip */
 		return NULL;
@@ -1490,8 +1509,10 @@ fu_util_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		return NULL;
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_USER_WARNING)
 		return NULL;
-	if (plugin_flag == FWUPD_PLUGIN_FLAG_REQUIRE_HWID)
-		return NULL;
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_REQUIRE_HWID) {
+		/* TRANSLATORS: Plugin is active only if hardware is found */
+		return _("Enabled if hardware matches");
+	}
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_NONE) {
 		/* TRANSLATORS: Plugin is active and in use */
 		return _("Enabled");
@@ -1548,9 +1569,9 @@ fu_util_plugin_flag_to_cli_text(FwupdPluginFlags plugin_flag)
 	case FWUPD_PLUGIN_FLAG_UNKNOWN:
 	case FWUPD_PLUGIN_FLAG_CLEAR_UPDATABLE:
 	case FWUPD_PLUGIN_FLAG_USER_WARNING:
-	case FWUPD_PLUGIN_FLAG_REQUIRE_HWID:
 		return NULL;
 	case FWUPD_PLUGIN_FLAG_NONE:
+	case FWUPD_PLUGIN_FLAG_REQUIRE_HWID:
 		return fu_util_term_format(fu_util_plugin_flag_to_string(plugin_flag),
 					   FU_UTIL_TERM_COLOR_GREEN);
 	case FWUPD_PLUGIN_FLAG_DISABLED:
@@ -1645,14 +1666,58 @@ fu_util_release_urgency_to_string(FwupdReleaseUrgency release_urgency)
 	return _("Unknown");
 }
 
+static const gchar *
+fu_util_release_flag_to_string(FwupdReleaseFlags release_flag)
+{
+	if (release_flag == FWUPD_RELEASE_FLAG_NONE)
+		return NULL;
+	if (release_flag == FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD) {
+		/* TRANSLATORS: We verified the payload against the server */
+		return _("Trusted payload");
+	}
+	if (release_flag == FWUPD_RELEASE_FLAG_TRUSTED_METADATA) {
+		/* TRANSLATORS: We verified the meatdata against the server */
+		return _("Trusted metadata");
+	}
+	if (release_flag == FWUPD_RELEASE_FLAG_IS_UPGRADE) {
+		/* TRANSLATORS: version is newer */
+		return _("Is upgrade");
+	}
+	if (release_flag == FWUPD_RELEASE_FLAG_IS_DOWNGRADE) {
+		/* TRANSLATORS: version is older */
+		return _("Is downgrade");
+	}
+	if (release_flag == FWUPD_RELEASE_FLAG_BLOCKED_VERSION) {
+		/* TRANSLATORS: version cannot be installed due to policy */
+		return _("Blocked version");
+	}
+	if (release_flag == FWUPD_RELEASE_FLAG_BLOCKED_APPROVAL) {
+		/* TRANSLATORS: version cannot be installed due to policy */
+		return _("Not approved");
+	}
+	if (release_flag == FWUPD_RELEASE_FLAG_IS_ALTERNATE_BRANCH) {
+		/* TRANSLATORS: is not the main firmware stream */
+		return _("Alternate branch");
+	}
+	if (release_flag == FWUPD_RELEASE_FLAG_IS_COMMUNITY) {
+		/* TRANSLATORS: is not supported by the vendor */
+		return _("Community supported");
+	}
+
+	/* fall back for unknown types */
+	return fwupd_release_flag_to_string(release_flag);
+}
+
 gchar *
 fu_util_release_to_string(FwupdRelease *rel, guint idt)
 {
+	const gchar *title;
+	const gchar *tmp2;
 	GPtrArray *issues = fwupd_release_get_issues(rel);
 	GPtrArray *tags = fwupd_release_get_tags(rel);
 	GString *str = g_string_new(NULL);
 	guint64 flags = fwupd_release_get_flags(rel);
-	g_autoptr(GString) flags_str = g_string_new(NULL);
+	g_autofree gchar *desc_fb = NULL;
 
 	g_return_val_if_fail(FWUPD_IS_RELEASE(rel), NULL);
 
@@ -1759,21 +1824,24 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 					   fwupd_release_get_update_message(rel));
 	}
 
+	/* TRANSLATORS: release attributes */
+	title = _("Release Flags");
 	for (guint i = 0; i < 64; i++) {
+		g_autofree gchar *bullet = NULL;
 		if ((flags & ((guint64)1 << i)) == 0)
 			continue;
-		g_string_append_printf(flags_str,
-				       "%s|",
-				       fwupd_release_flag_to_string((guint64)1 << i));
+		tmp2 = fu_util_release_flag_to_string((guint64)1 << i);
+		if (tmp2 == NULL)
+			continue;
+		bullet = g_strdup_printf("• %s", tmp2);
+		fu_common_string_append_kv(str, idt + 1, title, bullet);
+		title = "";
 	}
-	if (flags_str->len > 0) {
-		g_string_truncate(flags_str, flags_str->len - 1);
-		/* TRANSLATORS: release properties */
-		fu_common_string_append_kv(str, idt + 1, _("Flags"), flags_str->str);
-	}
-	if (fwupd_release_get_description(rel) != NULL) {
+
+	desc_fb = fu_util_get_release_description_with_fallback(rel);
+	if (desc_fb != NULL) {
 		g_autofree gchar *desc = NULL;
-		desc = fu_util_convert_description(fwupd_release_get_description(rel), NULL);
+		desc = fu_util_convert_description(desc_fb, NULL);
 		if (desc == NULL)
 			desc = g_strdup(fwupd_release_get_description(rel));
 		/* TRANSLATORS: multiline description of device */
@@ -2014,6 +2082,17 @@ fu_util_security_event_to_string(FwupdSecurityAttr *attr)
 		      FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED,
 		      NULL},
 		     /* ------------------------------------------*/
+		     {"org.fwupd.hsi.Kernel.Tainted",
+		      FWUPD_SECURITY_ATTR_RESULT_TAINTED,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_TAINTED,
+		      /* TRANSLATORS: HSI event title */
+		      _("Kernel is tainted")},
+		     {"org.fwupd.hsi.Kernel.Tainted",
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_TAINTED,
+		      FWUPD_SECURITY_ATTR_RESULT_TAINTED,
+		      /* TRANSLATORS: HSI event title */
+		      _("Kernel is no longer tainted")},
+		     /* ------------------------------------------*/
 		     {"org.fwupd.hsi.Kernel.Lockdown",
 		      FWUPD_SECURITY_ATTR_RESULT_ENABLED,
 		      FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED,
@@ -2024,6 +2103,17 @@ fu_util_security_event_to_string(FwupdSecurityAttr *attr)
 		      FWUPD_SECURITY_ATTR_RESULT_ENABLED,
 		      /* TRANSLATORS: HSI event title */
 		      _("Kernel lockdown enabled")},
+		     /* ------------------------------------------*/
+		     {"org.fwupd.hsi.AcpiDmar",
+		      FWUPD_SECURITY_ATTR_RESULT_ENABLED,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED,
+		      /* TRANSLATORS: HSI event title */
+		      _("Pre-boot DMA protection is disabled")},
+		     {"org.fwupd.hsi.AcpiDmar",
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED,
+		      FWUPD_SECURITY_ATTR_RESULT_ENABLED,
+		      /* TRANSLATORS: HSI event title */
+		      _("Pre-boot DMA protection is enabled")},
 		     /* ------------------------------------------*/
 		     {"org.fwupd.hsi.Uefi.SecureBoot",
 		      FWUPD_SECURITY_ATTR_RESULT_ENABLED,
@@ -2051,6 +2141,12 @@ fu_util_security_event_to_string(FwupdSecurityAttr *attr)
 		      FWUPD_SECURITY_ATTR_RESULT_VALID,
 		      /* TRANSLATORS: HSI event title */
 		      _("A TPM PCR is now an invalid value")},
+		     /* ------------------------------------------*/
+		     {"org.fwupd.hsi.Tpm.ReconstructionPcr0",
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_FOUND,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_VALID,
+		      /* TRANSLATORS: HSI event title */
+		      _("TPM PCR0 reconstruction is invalid")},
 		     {NULL, 0, 0, NULL}};
 
 	/* sanity check */
@@ -2552,4 +2648,140 @@ fu_util_setup_interactive_console(GError **error)
 #endif
 	/* success */
 	return TRUE;
+}
+
+gboolean
+fu_util_print_builder(JsonBuilder *builder, GError **error)
+{
+	g_autofree gchar *data = NULL;
+	g_autoptr(JsonGenerator) json_generator = NULL;
+	g_autoptr(JsonNode) json_root = NULL;
+
+	/* export as a string */
+	json_root = json_builder_get_root(builder);
+	json_generator = json_generator_new();
+	json_generator_set_pretty(json_generator, TRUE);
+	json_generator_set_root(json_generator, json_root);
+	data = json_generator_to_data(json_generator, NULL);
+	if (data == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "Failed to convert to JSON string");
+		return FALSE;
+	}
+
+	/* just print */
+	g_print("%s\n", data);
+	return TRUE;
+}
+
+typedef enum {
+	FU_UTIL_DEPENDENCY_KIND_UNKNOWN,
+	FU_UTIL_DEPENDENCY_KIND_RUNTIME,
+	FU_UTIL_DEPENDENCY_KIND_COMPILE,
+} FuUtilDependencyKind;
+
+static const gchar *
+fu_util_dependency_kind_to_string(FuUtilDependencyKind dependency_kind)
+{
+	if (dependency_kind == FU_UTIL_DEPENDENCY_KIND_RUNTIME)
+		return "runtime";
+	if (dependency_kind == FU_UTIL_DEPENDENCY_KIND_COMPILE)
+		return "compile";
+	return NULL;
+}
+
+static gchar *
+fu_util_parse_project_dependency(const gchar *str, FuUtilDependencyKind *dependency_kind)
+{
+	g_return_val_if_fail(str != NULL, NULL);
+	if (g_str_has_prefix(str, "RuntimeVersion(")) {
+		gsize strsz = strlen(str);
+		if (dependency_kind != NULL)
+			*dependency_kind = FU_UTIL_DEPENDENCY_KIND_RUNTIME;
+		return g_strndup(str + 15, strsz - 16);
+	}
+	if (g_str_has_prefix(str, "CompileVersion(")) {
+		gsize strsz = strlen(str);
+		if (dependency_kind != NULL)
+			*dependency_kind = FU_UTIL_DEPENDENCY_KIND_COMPILE;
+		return g_strndup(str + 15, strsz - 16);
+	}
+	return g_strdup(str);
+}
+
+static gboolean
+fu_util_print_version_key_valid(const gchar *key)
+{
+	g_return_val_if_fail(key != NULL, FALSE);
+	if (g_str_has_prefix(key, "RuntimeVersion"))
+		return TRUE;
+	if (g_str_has_prefix(key, "CompileVersion"))
+		return TRUE;
+	return FALSE;
+}
+
+gboolean
+fu_util_project_versions_as_json(GHashTable *metadata, GError **error)
+{
+	GHashTableIter iter;
+	const gchar *key;
+	const gchar *value;
+	g_autoptr(JsonBuilder) builder = json_builder_new();
+
+	json_builder_begin_object(builder);
+	json_builder_set_member_name(builder, "Versions");
+	json_builder_begin_array(builder);
+	g_hash_table_iter_init(&iter, metadata);
+	while (g_hash_table_iter_next(&iter, (gpointer *)&key, (gpointer *)&value)) {
+		FuUtilDependencyKind dependency_kind = FU_UTIL_DEPENDENCY_KIND_UNKNOWN;
+		g_autofree gchar *project = NULL;
+
+		/* add version keys */
+		if (!fu_util_print_version_key_valid(key))
+			continue;
+		project = fu_util_parse_project_dependency(key, &dependency_kind);
+		json_builder_begin_object(builder);
+		if (dependency_kind != FU_UTIL_DEPENDENCY_KIND_UNKNOWN) {
+			json_builder_set_member_name(builder, "Type");
+			json_builder_add_string_value(
+			    builder,
+			    fu_util_dependency_kind_to_string(dependency_kind));
+		}
+		json_builder_set_member_name(builder, "AppstreamId");
+		json_builder_add_string_value(builder, project);
+		json_builder_set_member_name(builder, "Version");
+		json_builder_add_string_value(builder, value);
+		json_builder_end_object(builder);
+	}
+	json_builder_end_array(builder);
+	json_builder_end_object(builder);
+	return fu_util_print_builder(builder, error);
+}
+
+gchar *
+fu_util_project_versions_to_string(GHashTable *metadata)
+{
+	GHashTableIter iter;
+	const gchar *key;
+	const gchar *value;
+	g_autoptr(GString) str = g_string_new(NULL);
+
+	g_hash_table_iter_init(&iter, metadata);
+	while (g_hash_table_iter_next(&iter, (gpointer *)&key, (gpointer *)&value)) {
+		FuUtilDependencyKind dependency_kind = FU_UTIL_DEPENDENCY_KIND_UNKNOWN;
+		g_autofree gchar *project = NULL;
+
+		/* print version keys */
+		if (!fu_util_print_version_key_valid(key))
+			continue;
+		project = fu_util_parse_project_dependency(key, &dependency_kind);
+		g_string_append_printf(str,
+				       "%-10s%-30s%s\n",
+				       fu_util_dependency_kind_to_string(dependency_kind),
+				       project,
+				       value);
+	}
+	return g_string_free(g_steal_pointer(&str), FALSE);
 }

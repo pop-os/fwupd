@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version : '1.7.4',
+  version : '1.7.5',
   license : 'LGPL-2.1+',
   meson_version : '>=0.50.0',
   default_options : ['warning_level=2', 'c_std=c99'],
@@ -108,6 +108,9 @@ warning_flags = [
   '-Wvla',
   '-Wwrite-strings'
 ]
+if get_option('static_analysis') and host_machine.system() != 'windows'
+  warning_flags += ['-fanalyzer', '-Wno-analyzer-null-dereference']
+endif
 cc = meson.get_compiler('c')
 add_project_arguments(cc.get_supported_arguments(warning_flags), language : 'c')
 
@@ -411,6 +414,11 @@ endif
 
 if build_standalone and get_option('plugin_uefi_capsule')
   efiboot = dependency('efiboot')
+
+  efivar = dependency('efivar')
+  if cc.has_header_symbol('efivar/efivar-types.h', 'efi_time_t', dependencies : efivar)
+    conf.set('HAVE_EFI_TIME_T', '1')
+  endif
 
   efi_app_location = join_paths(libexecdir, 'fwupd', 'efi')
   conf.set_quoted('EFI_APP_LOCATION', efi_app_location)
