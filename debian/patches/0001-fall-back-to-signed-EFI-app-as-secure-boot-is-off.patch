@@ -1,0 +1,85 @@
+From 4642e7694efcf852e16b7d746a4a0f6e64f25690 Mon Sep 17 00:00:00 2001
+From: Yuan-Chen Cheng <ycheng.tw@gmail.com>
+Date: Mon, 14 Feb 2022 15:41:21 +0800
+Subject: [PATCH] fall back to signed EFI app as secure boot is off.
+
+Some distribution hopes to not install the not-signed EFI app by default.
+However, for the corner case, the user might still want to use not-signed
+one (maybe to work around bugs or do testing). This implements
+a logic that uses the not-signed EFI app as the secure boot is off, and
+if it does not exist, then we fall back to using the signed one.
+
+Also drop fwupd-unsigned from Recommends of fwupd in debian/control.
+---
+ plugins/uefi-capsule/fu-uefi-common.c | 48 +++++++++++++++++++--------
+ 2 files changed, 35 insertions(+), 14 deletions(-)
+
+diff --git a/plugins/uefi-capsule/fu-uefi-common.c b/plugins/uefi-capsule/fu-uefi-common.c
+index 7128afd55..473471b54 100644
+--- a/plugins/uefi-capsule/fu-uefi-common.c
++++ b/plugins/uefi-capsule/fu-uefi-common.c
+@@ -88,26 +88,48 @@ fu_uefi_get_esp_app_path(FuDevice *device, const gchar *esp_path, const gchar *c
+ gchar *
+ fu_uefi_get_built_app_path(GError **error)
+ {
+-	const gchar *extension = "";
+ 	const gchar *suffix;
+-	g_autofree gchar *source_path = NULL;
+ 	g_autofree gchar *prefix = NULL;
+-	if (fu_efivar_secure_boot_enabled())
+-		extension = ".signed";
++	g_autofree gchar *source_path = NULL;
++	g_autofree gchar *source_path_signed = NULL;
++	gboolean source_path_exists = FALSE;
++	gboolean source_path_signed_exists = FALSE;
++
+ 	suffix = fu_uefi_bootmgr_get_suffix(error);
+ 	if (suffix == NULL)
+ 		return NULL;
+ 	prefix = fu_common_get_path(FU_PATH_KIND_EFIAPPDIR);
+-	source_path = g_strdup_printf("%s/fwupd%s.efi%s", prefix, suffix, extension);
+-	if (!g_file_test(source_path, G_FILE_TEST_EXISTS)) {
+-		g_set_error(error,
+-			    G_IO_ERROR,
+-			    G_IO_ERROR_NOT_FOUND,
+-			    "%s cannot be found",
+-			    source_path);
+-		return NULL;
++
++	source_path = g_strdup_printf("%s/fwupd%s.efi", prefix, suffix);
++	source_path_signed = g_strdup_printf("%s.signed", source_path);
++
++	source_path_exists = g_file_test(source_path, G_FILE_TEST_EXISTS);
++	source_path_signed_exists = g_file_test(source_path_signed, G_FILE_TEST_EXISTS);
++
++	if (fu_efivar_secure_boot_enabled()) {
++		if (!source_path_signed_exists) {
++			g_set_error(error,
++				    G_IO_ERROR,
++				    G_IO_ERROR_NOT_FOUND,
++				    "%s cannot be found",
++				    source_path_signed);
++			return NULL;
++		}
++		return g_steal_pointer(&source_path_signed);
+ 	}
+-	return g_steal_pointer(&source_path);
++
++	if (source_path_exists)
++		return g_steal_pointer(&source_path);
++	if (source_path_signed_exists)
++		return g_steal_pointer(&source_path_signed);
++
++	g_set_error(error,
++		    G_IO_ERROR,
++		    G_IO_ERROR_NOT_FOUND,
++		    "%s and %s cannot be found",
++		    source_path,
++		    source_path_signed);
++	return NULL;
+ }
+ 
+ gboolean
+-- 
+2.25.1
+
