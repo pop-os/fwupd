@@ -1,0 +1,37 @@
+From f5da94c4736efdf5f8e2c1a50109c334c4392df7 Mon Sep 17 00:00:00 2001
+From: Simon Deziel <simon@sdeziel.info>
+Date: Thu, 17 Feb 2022 09:57:26 -0500
+Subject: [PATCH] systemd: don't run fwupd/fwupd-refresh in containers
+
+Signed-off-by: Simon Deziel <simon@sdeziel.info>
+---
+ data/fwupd.service.in         | 1 +
+ data/motd/fwupd-refresh.timer | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/data/fwupd.service.in b/data/fwupd.service.in
+index 6bdf3943..0095c5b5 100644
+--- a/data/fwupd.service.in
++++ b/data/fwupd.service.in
+@@ -3,6 +3,7 @@ Description=Firmware update daemon
+ Documentation=https://fwupd.org/
+ After=dbus.service
+ Before=display-manager.service
++ConditionVirtualization=!container
+ 
+ [Service]
+ Type=dbus
+diff --git a/data/motd/fwupd-refresh.timer b/data/motd/fwupd-refresh.timer
+index 5cd67ce6..c72e05a7 100644
+--- a/data/motd/fwupd-refresh.timer
++++ b/data/motd/fwupd-refresh.timer
+@@ -1,5 +1,6 @@
+ [Unit]
+ Description=Refresh fwupd metadata regularly
++ConditionVirtualization=!container
+ 
+ [Timer]
+ OnCalendar=*-*-* 6,18:00
+-- 
+2.34.1
+
