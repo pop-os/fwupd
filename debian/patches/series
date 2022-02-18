@@ -1,3 +1,6 @@
 0001-trivial-don-t-replug-if-thunderbolt-device-supports-.patch
 0001-trivial-Fix-a-logic-thinko-when-adding-the-community.patch
 0001-fall-back-to-signed-EFI-app-as-secure-boot-is-off.patch
+0001-trivial-quit-fwupdmgr-p2p.sh-on-command-failures.patch
+0002-trivial-don-t-run-systemd-check-when-running-as-a-so.patch
+0003-Don-t-let-stderr-fail-the-fwupdmgr-p2p-test.patch

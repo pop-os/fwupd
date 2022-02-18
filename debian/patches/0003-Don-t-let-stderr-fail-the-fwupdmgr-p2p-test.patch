@@ -1,0 +1,25 @@
+From fbac66b964e9ca8a6163644b65bedd987a129f02 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Fri, 18 Feb 2022 11:30:00 -0600
+Subject: [PATCH 3/3] Don't let stderr fail the fwupdmgr-p2p test
+
+---
+ data/installed-tests/fwupdmgr-p2p.sh | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/data/installed-tests/fwupdmgr-p2p.sh b/data/installed-tests/fwupdmgr-p2p.sh
+index c69474df..55825de8 100755
+--- a/data/installed-tests/fwupdmgr-p2p.sh
++++ b/data/installed-tests/fwupdmgr-p2p.sh
+@@ -1,6 +1,8 @@
+ #!/bin/sh
+ set -e
+ 
++exec 2>&1
++
+ # only run as root, possibly only in CI
+ if [ "$(id -u)" -ne 0 ]; then exit 0; fi
+ 
+-- 
+2.34.1
+
