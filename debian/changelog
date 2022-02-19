@@ -1,4 +1,4 @@
-fwupd (1.7.5-3) UNRELEASED; urgency=medium
+fwupd (1.7.5-3) unstable; urgency=medium
 
   * debian/tests:
     - Disable blocking container virtualization only for autopkgtest
