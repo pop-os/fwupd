@@ -1,3 +1,10 @@
+fwupd (1.7.5-3) UNRELEASED; urgency=medium
+
+  * debian/tests:
+    - Disable blocking container virtualization only for autopkgtest
+
+ -- Mario Limonciello <superm1@gmail.com>  Sat, 19 Feb 2022 07:21:22 -0600
+
 fwupd (1.7.5-2) unstable; urgency=medium
 
   * Backport a series of patches that fix autopkgtest failures in Debian
