@@ -62,6 +62,7 @@ struct FuUtilPrivate {
 	gboolean no_reboot_check;
 	gboolean no_unreported_check;
 	gboolean no_safety_check;
+	gboolean no_device_prompt;
 	gboolean assume_yes;
 	gboolean sign;
 	gboolean show_all;
@@ -206,9 +207,20 @@ fu_util_prompt_for_device(FuUtilPrivate *priv, GPtrArray *devices, GError **erro
 	/* exactly one */
 	if (devices_filtered->len == 1) {
 		dev = g_ptr_array_index(devices_filtered, 0);
-		/* TRANSLATORS: Device has been chosen by the daemon for the user */
-		g_print("%s: %s\n", _("Selected device"), fwupd_device_get_name(dev));
+		if (!priv->as_json) {
+			/* TRANSLATORS: device has been chosen by the daemon for the user */
+			g_print("%s: %s\n", _("Selected device"), fwupd_device_get_name(dev));
+		}
 		return g_object_ref(dev);
+	}
+
+	/* no questions */
+	if (priv->no_device_prompt) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "can't prompt for devices ");
+		return NULL;
 	}
 
 	/* TRANSLATORS: get interactive prompt */
@@ -1943,8 +1955,9 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 	gboolean supported = FALSE;
 	g_autoptr(GNode) root = g_node_new(NULL);
 	g_autofree gchar *title = fu_util_get_tree_title(priv);
-	gboolean no_updates_header = FALSE;
-	gboolean latest_header = FALSE;
+	g_autoptr(GPtrArray) devices_inhibited = g_ptr_array_new();
+	g_autoptr(GPtrArray) devices_no_support = g_ptr_array_new();
+	g_autoptr(GPtrArray) devices_no_upgrades = g_ptr_array_new();
 
 	/* are the remotes very old */
 	if (!fu_util_perhaps_refresh_remotes(priv, error))
@@ -1981,22 +1994,20 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		GNode *child;
 
 		/* not going to have results, so save a D-Bus round-trip */
-		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE))
+		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE) &&
+		    !fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN))
 			continue;
-		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_SUPPORTED)) {
-			if (!no_updates_header) {
-				/* TRANSLATORS: message letting the user know no device upgrade
-				 * available due to missing on LVFS */
-				g_printerr("%s\n",
-					   _("Devices with no available firmware updates: "));
-				no_updates_header = TRUE;
-			}
-			g_printerr(" • %s\n", fwupd_device_get_name(dev));
-			continue;
-		}
 		if (!fu_util_filter_device(priv, dev))
 			continue;
+		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_SUPPORTED)) {
+			g_ptr_array_add(devices_no_support, dev);
+			continue;
+		}
 		supported = TRUE;
+		if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
+			g_ptr_array_add(devices_inhibited, dev);
+			continue;
+		}
 
 		/* get the releases for this device and filter for validity */
 		rels = fwupd_client_get_upgrades(priv->client,
@@ -2004,15 +2015,7 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 						 priv->cancellable,
 						 &error_local);
 		if (rels == NULL) {
-			if (!latest_header) {
-				/* TRANSLATORS: message letting the user know no device upgrade
-				 * available */
-				g_printerr(
-				    "%s\n",
-				    _("Devices with the latest available firmware version:"));
-				latest_header = TRUE;
-			}
-			g_printerr(" • %s\n", fwupd_device_get_name(dev));
+			g_ptr_array_add(devices_no_upgrades, dev);
 			/* discard the actual reason from user, but leave for debugging */
 			g_debug("%s", error_local->message);
 			continue;
@@ -2026,6 +2029,35 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		}
 	}
 
+	/* devices that have no updates available for whatever reason */
+	if (devices_no_support->len > 0) {
+		/* TRANSLATORS: message letting the user know no device upgrade
+		 * available due to missing on LVFS */
+		g_printerr("%s\n", _("Devices with no available firmware updates: "));
+		for (guint i = 0; i < devices_no_support->len; i++) {
+			FwupdDevice *dev = g_ptr_array_index(devices_no_support, i);
+			g_printerr(" • %s\n", fwupd_device_get_name(dev));
+		}
+	}
+	if (devices_no_upgrades->len > 0) {
+		/* TRANSLATORS: message letting the user know no device upgrade available */
+		g_printerr("%s\n", _("Devices with the latest available firmware version:"));
+		for (guint i = 0; i < devices_no_upgrades->len; i++) {
+			FwupdDevice *dev = g_ptr_array_index(devices_no_upgrades, i);
+			g_printerr(" • %s\n", fwupd_device_get_name(dev));
+		}
+	}
+	if (devices_inhibited->len > 0) {
+		/* TRANSLATORS: the device has a reason it can't update, e.g. laptop lid closed */
+		g_printerr("%s\n", _("Devices not currently updatable:"));
+		for (guint i = 0; i < devices_inhibited->len; i++) {
+			FwupdDevice *dev = g_ptr_array_index(devices_inhibited, i);
+			g_printerr(" • %s — %s\n",
+				   fwupd_device_get_name(dev),
+				   fwupd_device_get_update_error(dev));
+		}
+	}
+
 	/* nag? */
 	if (!fu_util_perhaps_show_unreported(priv, error))
 		return FALSE;
@@ -2035,7 +2067,8 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOTHING_TO_DO,
-				    "No updatable devices");
+				    /* TRANSLATORS: this is an error string */
+				    _("No updatable devices"));
 		return FALSE;
 	}
 	/* no updates available */
@@ -2043,7 +2076,8 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOTHING_TO_DO,
-				    _("No updates available for remaining devices"));
+				    /* TRANSLATORS: this is an error string */
+				    _("No updates available"));
 		return FALSE;
 	}
 
@@ -3184,9 +3218,15 @@ fu_util_upload_security(FuUtilPrivate *priv, GPtrArray *attrs, GError **error)
 }
 
 static gboolean
-fu_util_security_as_json(FuUtilPrivate *priv, GPtrArray *attrs, GPtrArray *events, GError **error)
+fu_util_security_as_json(FuUtilPrivate *priv,
+			 GPtrArray *attrs,
+			 GPtrArray *events,
+			 GPtrArray *devices,
+			 GError **error)
 {
+	g_autoptr(GPtrArray) devices_issues = NULL;
 	g_autoptr(JsonBuilder) builder = json_builder_new();
+
 	json_builder_begin_object(builder);
 
 	/* attrs */
@@ -3208,6 +3248,27 @@ fu_util_security_as_json(FuUtilPrivate *priv, GPtrArray *attrs, GPtrArray *event
 			FwupdSecurityAttr *attr = g_ptr_array_index(attrs, i);
 			json_builder_begin_object(builder);
 			fwupd_security_attr_to_json(attr, builder);
+			json_builder_end_object(builder);
+		}
+		json_builder_end_array(builder);
+	}
+
+	/* devices */
+	devices_issues = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	for (guint i = 0; i < devices->len; i++) {
+		FwupdDevice *device = g_ptr_array_index(devices, i);
+		GPtrArray *issues = fwupd_device_get_issues(device);
+		if (issues->len == 0)
+			continue;
+		g_ptr_array_add(devices_issues, g_object_ref(device));
+	}
+	if (devices_issues->len > 0) {
+		json_builder_set_member_name(builder, "Devices");
+		json_builder_begin_array(builder);
+		for (guint i = 0; i < devices_issues->len; i++) {
+			FwupdDevice *device = g_ptr_array_index(devices_issues, i);
+			json_builder_begin_object(builder);
+			fwupd_device_to_json(device, builder);
 			json_builder_end_object(builder);
 		}
 		json_builder_end_array(builder);
@@ -3305,6 +3366,7 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	FuSecurityAttrToStringFlags flags = FU_SECURITY_ATTR_TO_STRING_FLAG_NONE;
 	g_autoptr(GPtrArray) attrs = NULL;
+	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GPtrArray) events = NULL;
 	g_autoptr(GError) error_local = NULL;
 	g_autofree gchar *str = NULL;
@@ -3338,9 +3400,14 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 		}
 	}
 
+	/* the "also" */
+	devices = fwupd_client_get_devices(priv->client, priv->cancellable, error);
+	if (devices == NULL)
+		return FALSE;
+
 	/* not for human consumption */
 	if (priv->as_json)
-		return fu_util_security_as_json(priv, attrs, events, error);
+		return fu_util_security_as_json(priv, attrs, events, devices, error);
 
 	g_print("%s \033[1m%s\033[0m\n",
 		/* TRANSLATORS: this is a string like 'HSI:2-U' */
@@ -3360,6 +3427,13 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_autofree gchar *estr = fu_util_security_events_to_string(events, flags);
 		if (estr != NULL)
 			g_print("%s\n", estr);
+	}
+
+	/* known CVEs */
+	if (devices->len > 0) {
+		g_autofree gchar *estr = fu_util_security_issues_to_string(devices);
+		if (estr != NULL)
+			g_print("%s", estr);
 	}
 
 	/* opted-out */
@@ -3695,6 +3769,16 @@ fu_util_version(FuUtilPrivate *priv, GError **error)
 	return TRUE;
 }
 
+static gboolean
+fu_util_setup_interactive(FuUtilPrivate *priv, GError **error)
+{
+	if (priv->as_json) {
+		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "using --json");
+		return FALSE;
+	}
+	return fu_util_setup_interactive_console(error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -3722,7 +3806,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &verbose,
 					 /* TRANSLATORS: command line option */
-					 _("Show extra debugging information"),
+					 N_("Show extra debugging information"),
 					 NULL},
 					{"version",
 					 '\0',
@@ -3730,7 +3814,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &version,
 					 /* TRANSLATORS: command line option */
-					 _("Show client and daemon versions"),
+					 N_("Show client and daemon versions"),
 					 NULL},
 					{"offline",
 					 '\0',
@@ -3738,7 +3822,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &offline,
 					 /* TRANSLATORS: command line option */
-					 _("Schedule installation for next reboot when possible"),
+					 N_("Schedule installation for next reboot when possible"),
 					 NULL},
 					{"allow-reinstall",
 					 '\0',
@@ -3746,7 +3830,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &allow_reinstall,
 					 /* TRANSLATORS: command line option */
-					 _("Allow reinstalling existing firmware versions"),
+					 N_("Allow reinstalling existing firmware versions"),
 					 NULL},
 					{"allow-older",
 					 '\0',
@@ -3754,7 +3838,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &allow_older,
 					 /* TRANSLATORS: command line option */
-					 _("Allow downgrading firmware versions"),
+					 N_("Allow downgrading firmware versions"),
 					 NULL},
 					{"allow-branch-switch",
 					 '\0',
@@ -3762,7 +3846,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &allow_branch_switch,
 					 /* TRANSLATORS: command line option */
-					 _("Allow switching firmware branch"),
+					 N_("Allow switching firmware branch"),
 					 NULL},
 					{"force",
 					 '\0',
@@ -3770,7 +3854,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &force,
 					 /* TRANSLATORS: command line option */
-					 _("Force the action by relaxing some runtime checks"),
+					 N_("Force the action by relaxing some runtime checks"),
 					 NULL},
 					{"assume-yes",
 					 'y',
@@ -3778,7 +3862,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->assume_yes,
 					 /* TRANSLATORS: command line option */
-					 _("Answer yes to all questions"),
+					 N_("Answer yes to all questions"),
 					 NULL},
 					{"sign",
 					 '\0',
@@ -3786,7 +3870,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->sign,
 					 /* TRANSLATORS: command line option */
-					 _("Sign the uploaded data with the client certificate"),
+					 N_("Sign the uploaded data with the client certificate"),
 					 NULL},
 					{"no-unreported-check",
 					 '\0',
@@ -3794,7 +3878,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->no_unreported_check,
 					 /* TRANSLATORS: command line option */
-					 _("Do not check for unreported history"),
+					 N_("Do not check for unreported history"),
 					 NULL},
 					{"no-metadata-check",
 					 '\0',
@@ -3802,7 +3886,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->no_metadata_check,
 					 /* TRANSLATORS: command line option */
-					 _("Do not check for old metadata"),
+					 N_("Do not check for old metadata"),
 					 NULL},
 					{"no-remote-check",
 					 '\0',
@@ -3810,7 +3894,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->no_remote_check,
 					 /* TRANSLATORS: command line option */
-					 _("Do not check if download remotes should be enabled"),
+					 N_("Do not check if download remotes should be enabled"),
 					 NULL},
 					{"no-reboot-check",
 					 '\0',
@@ -3818,7 +3902,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->no_reboot_check,
 					 /* TRANSLATORS: command line option */
-					 _("Do not check or prompt for reboot after update"),
+					 N_("Do not check or prompt for reboot after update"),
 					 NULL},
 					{"no-safety-check",
 					 '\0',
@@ -3826,7 +3910,15 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->no_safety_check,
 					 /* TRANSLATORS: command line option */
-					 _("Do not perform device safety checks"),
+					 N_("Do not perform device safety checks"),
+					 NULL},
+					{"no-device-prompt",
+					 '\0',
+					 0,
+					 G_OPTION_ARG_NONE,
+					 &priv->no_device_prompt,
+					 /* TRANSLATORS: command line option */
+					 N_("Do not prompt for devices"),
 					 NULL},
 					{"no-history",
 					 '\0',
@@ -3834,7 +3926,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &no_history,
 					 /* TRANSLATORS: command line option */
-					 _("Do not write to the history database"),
+					 N_("Do not write to the history database"),
 					 NULL},
 					{"show-all",
 					 '\0',
@@ -3842,7 +3934,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->show_all,
 					 /* TRANSLATORS: command line option */
-					 _("Show all results"),
+					 N_("Show all results"),
 					 NULL},
 					{"show-all-devices",
 					 '\0',
@@ -3850,7 +3942,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->show_all,
 					 /* TRANSLATORS: command line option */
-					 _("Show devices that are not updatable"),
+					 N_("Show devices that are not updatable"),
 					 NULL},
 					{"disable-ssl-strict",
 					 '\0',
@@ -3858,7 +3950,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->disable_ssl_strict,
 					 /* TRANSLATORS: command line option */
-					 _("Ignore SSL strict checks when downloading files"),
+					 N_("Ignore SSL strict checks when downloading files"),
 					 NULL},
 					{"ipfs",
 					 '\0',
@@ -3866,7 +3958,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &enable_ipfs,
 					 /* TRANSLATORS: command line option */
-					 _("Only use IPFS when downloading files"),
+					 N_("Only use IPFS when downloading files"),
 					 NULL},
 					{"filter",
 					 '\0',
@@ -3874,8 +3966,8 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_STRING,
 					 &filter,
 					 /* TRANSLATORS: command line option */
-					 _("Filter with a set of device flags using a ~ prefix to "
-					   "exclude, e.g. 'internal,~needs-reboot'"),
+					 N_("Filter with a set of device flags using a ~ prefix to "
+					    "exclude, e.g. 'internal,~needs-reboot'"),
 					 NULL},
 					{"json",
 					 '\0',
@@ -3883,7 +3975,7 @@ main(int argc, char *argv[])
 					 G_OPTION_ARG_NONE,
 					 &priv->as_json,
 					 /* TRANSLATORS: command line option */
-					 _("Output in JSON format"),
+					 N_("Output in JSON format"),
 					 NULL},
 					{NULL}};
 
@@ -4190,13 +4282,14 @@ main(int argc, char *argv[])
 	}
 
 	/* non-TTY consoles cannot answer questions */
-	if (!fu_util_setup_interactive_console(&error_console)) {
+	if (!fu_util_setup_interactive(priv, &error_console)) {
 		g_debug("failed to initialize interactive console: %s", error_console->message);
 		priv->no_unreported_check = TRUE;
 		priv->no_metadata_check = TRUE;
 		priv->no_reboot_check = TRUE;
 		priv->no_safety_check = TRUE;
 		priv->no_remote_check = TRUE;
+		priv->no_device_prompt = TRUE;
 	} else {
 		is_interactive = TRUE;
 	}

@@ -66,6 +66,7 @@ struct FuUtilPrivate {
 	gboolean as_json;
 	gboolean no_reboot_check;
 	gboolean no_safety_check;
+	gboolean no_device_prompt;
 	gboolean prepare_blob;
 	gboolean cleanup_blob;
 	gboolean enable_json_state;
@@ -529,9 +530,20 @@ fu_util_prompt_for_device(FuUtilPrivate *priv, GPtrArray *devices_opt, GError **
 	/* exactly one */
 	if (devices_filtered->len == 1) {
 		dev = g_ptr_array_index(devices_filtered, 0);
-		/* TRANSLATORS: Device has been chosen by the daemon for the user */
-		g_print("%s: %s\n", _("Selected device"), fu_device_get_name(dev));
+		if (!priv->as_json) {
+			/* TRANSLATORS: device has been chosen by the daemon for the user */
+			g_print("%s: %s\n", _("Selected device"), fu_device_get_name(dev));
+		}
 		return g_object_ref(dev);
+	}
+
+	/* no questions */
+	if (priv->no_device_prompt) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "can't prompt for devices");
+		return NULL;
 	}
 
 	/* TRANSLATORS: get interactive prompt */
@@ -584,8 +596,9 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GNode) root = g_node_new(NULL);
 	g_autofree gchar *title = NULL;
-	gboolean no_updates_header = FALSE;
-	gboolean latest_header = FALSE;
+	g_autoptr(GPtrArray) devices_inhibited = g_ptr_array_new();
+	g_autoptr(GPtrArray) devices_no_support = g_ptr_array_new();
+	g_autoptr(GPtrArray) devices_no_upgrades = g_ptr_array_new();
 
 	/* load engine */
 	if (!fu_util_start_engine(priv,
@@ -624,21 +637,19 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		GNode *child;
 
 		/* not going to have results, so save a engine round-trip */
-		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE))
+		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE) &&
+		    !fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN))
 			continue;
-		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_SUPPORTED)) {
-			if (!no_updates_header) {
-				g_printerr("%s\n",
-					   /* TRANSLATORS: message letting the user know no device
-					    * upgrade available due to missing on LVFS */
-					   _("Devices with no available firmware updates: "));
-				no_updates_header = TRUE;
-			}
-			g_printerr(" • %s\n", fwupd_device_get_name(dev));
-			continue;
-		}
 		if (!fu_util_filter_device(priv, dev))
 			continue;
+		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_SUPPORTED)) {
+			g_ptr_array_add(devices_no_support, dev);
+			continue;
+		}
+		if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
+			g_ptr_array_add(devices_inhibited, dev);
+			continue;
+		}
 
 		/* get the releases for this device and filter for validity */
 		rels = fu_engine_get_upgrades(priv->engine,
@@ -646,15 +657,7 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 					      fwupd_device_get_id(dev),
 					      &error_local);
 		if (rels == NULL) {
-			if (!latest_header) {
-				g_printerr(
-				    "%s\n",
-				    /* TRANSLATORS: message letting the user know no device upgrade
-				     * available */
-				    _("Devices with the latest available firmware version:"));
-				latest_header = TRUE;
-			}
-			g_printerr(" • %s\n", fwupd_device_get_name(dev));
+			g_ptr_array_add(devices_no_upgrades, dev);
 			/* discard the actual reason from user, but leave for debugging */
 			g_debug("%s", error_local->message);
 			continue;
@@ -666,6 +669,36 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 			g_node_append_data(child, g_object_ref(rel));
 		}
 	}
+
+	/* devices that have no updates available for whatever reason */
+	if (devices_no_support->len > 0) {
+		/* TRANSLATORS: message letting the user know no device upgrade
+		 * available due to missing on LVFS */
+		g_printerr("%s\n", _("Devices with no available firmware updates: "));
+		for (guint i = 0; i < devices_no_support->len; i++) {
+			FwupdDevice *dev = g_ptr_array_index(devices_no_support, i);
+			g_printerr(" • %s\n", fwupd_device_get_name(dev));
+		}
+	}
+	if (devices_no_upgrades->len > 0) {
+		/* TRANSLATORS: message letting the user know no device upgrade available */
+		g_printerr("%s\n", _("Devices with the latest available firmware version:"));
+		for (guint i = 0; i < devices_no_upgrades->len; i++) {
+			FwupdDevice *dev = g_ptr_array_index(devices_no_upgrades, i);
+			g_printerr(" • %s\n", fwupd_device_get_name(dev));
+		}
+	}
+	if (devices_inhibited->len > 0) {
+		/* TRANSLATORS: the device has a reason it can't update, e.g. laptop lid closed */
+		g_printerr("%s\n", _("Devices not currently updatable:"));
+		for (guint i = 0; i < devices_inhibited->len; i++) {
+			FwupdDevice *dev = g_ptr_array_index(devices_inhibited, i);
+			g_printerr(" • %s — %s\n",
+				   fwupd_device_get_name(dev),
+				   fwupd_device_get_update_error(dev));
+		}
+	}
+
 	/* save the device state for other applications to see */
 	if (!fu_util_save_current_state(priv, error))
 		return FALSE;
@@ -2771,6 +2804,7 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	FuSecurityAttrToStringFlags flags = FU_SECURITY_ATTR_TO_STRING_FLAG_NONE;
 	g_autoptr(FuSecurityAttrs) attrs = NULL;
 	g_autoptr(FuSecurityAttrs) events = NULL;
+	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GPtrArray) items = NULL;
 	g_autoptr(GPtrArray) events_array = NULL;
 	g_autofree gchar *str = NULL;
@@ -2822,6 +2856,16 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	events_array = fu_security_attrs_get_all(attrs);
 	if (events_array->len > 0) {
 		g_autofree gchar *estr = fu_util_security_events_to_string(events_array, flags);
+		if (estr != NULL)
+			g_print("%s\n", estr);
+	}
+
+	/* print the "also" */
+	devices = fu_engine_get_devices(priv->engine, error);
+	if (devices == NULL)
+		return FALSE;
+	if (devices->len > 0) {
+		g_autofree gchar *estr = fu_util_security_issues_to_string(devices);
 		if (estr != NULL)
 			g_print("%s\n", estr);
 	}
@@ -3096,6 +3140,16 @@ fu_util_clear_history(FuUtilPrivate *priv, gchar **values, GError **error)
 	return fu_history_remove_all(history, error);
 }
 
+static gboolean
+fu_util_setup_interactive(FuUtilPrivate *priv, GError **error)
+{
+	if (priv->as_json) {
+		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "using --json");
+		return FALSE;
+	}
+	return fu_util_setup_interactive_console(error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -3121,7 +3175,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &version,
 	     /* TRANSLATORS: command line option */
-	     _("Show client and daemon versions"),
+	     N_("Show client and daemon versions"),
 	     NULL},
 	    {"allow-reinstall",
 	     '\0',
@@ -3129,7 +3183,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &allow_reinstall,
 	     /* TRANSLATORS: command line option */
-	     _("Allow reinstalling existing firmware versions"),
+	     N_("Allow reinstalling existing firmware versions"),
 	     NULL},
 	    {"allow-older",
 	     '\0',
@@ -3137,7 +3191,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &allow_older,
 	     /* TRANSLATORS: command line option */
-	     _("Allow downgrading firmware versions"),
+	     N_("Allow downgrading firmware versions"),
 	     NULL},
 	    {"allow-branch-switch",
 	     '\0',
@@ -3145,7 +3199,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &allow_branch_switch,
 	     /* TRANSLATORS: command line option */
-	     _("Allow switching firmware branch"),
+	     N_("Allow switching firmware branch"),
 	     NULL},
 	    {"force",
 	     '\0',
@@ -3153,7 +3207,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &force,
 	     /* TRANSLATORS: command line option */
-	     _("Force the action by relaxing some runtime checks"),
+	     N_("Force the action by relaxing some runtime checks"),
 	     NULL},
 	    {"ignore-checksum",
 	     '\0',
@@ -3161,7 +3215,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &ignore_checksum,
 	     /* TRANSLATORS: command line option */
-	     _("Ignore firmware checksum failures"),
+	     N_("Ignore firmware checksum failures"),
 	     NULL},
 	    {"ignore-vid-pid",
 	     '\0',
@@ -3169,7 +3223,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &ignore_vid_pid,
 	     /* TRANSLATORS: command line option */
-	     _("Ignore firmware hardware mismatch failures"),
+	     N_("Ignore firmware hardware mismatch failures"),
 	     NULL},
 	    {"no-reboot-check",
 	     '\0',
@@ -3177,7 +3231,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->no_reboot_check,
 	     /* TRANSLATORS: command line option */
-	     _("Do not check or prompt for reboot after update"),
+	     N_("Do not check or prompt for reboot after update"),
 	     NULL},
 	    {"no-safety-check",
 	     '\0',
@@ -3185,7 +3239,15 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->no_safety_check,
 	     /* TRANSLATORS: command line option */
-	     _("Do not perform device safety checks"),
+	     N_("Do not perform device safety checks"),
+	     NULL},
+	    {"no-device-prompt",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_device_prompt,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not prompt for devices"),
 	     NULL},
 	    {"show-all",
 	     '\0',
@@ -3193,7 +3255,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->show_all,
 	     /* TRANSLATORS: command line option */
-	     _("Show all results"),
+	     N_("Show all results"),
 	     NULL},
 	    {"show-all-devices",
 	     '\0',
@@ -3201,7 +3263,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->show_all,
 	     /* TRANSLATORS: command line option */
-	     _("Show devices that are not updatable"),
+	     N_("Show devices that are not updatable"),
 	     NULL},
 	    {"plugins",
 	     '\0',
@@ -3209,7 +3271,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_STRING_ARRAY,
 	     &plugin_glob,
 	     /* TRANSLATORS: command line option */
-	     _("Manually enable specific plugins"),
+	     N_("Manually enable specific plugins"),
 	     NULL},
 	    {"plugin-whitelist",
 	     '\0',
@@ -3217,7 +3279,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_STRING_ARRAY,
 	     &plugin_glob,
 	     /* TRANSLATORS: command line option */
-	     _("Manually enable specific plugins"),
+	     N_("Manually enable specific plugins"),
 	     NULL},
 	    {"prepare",
 	     '\0',
@@ -3225,7 +3287,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->prepare_blob,
 	     /* TRANSLATORS: command line option */
-	     _("Run the plugin composite prepare routine when using install-blob"),
+	     N_("Run the plugin composite prepare routine when using install-blob"),
 	     NULL},
 	    {"cleanup",
 	     '\0',
@@ -3233,7 +3295,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->cleanup_blob,
 	     /* TRANSLATORS: command line option */
-	     _("Run the plugin composite cleanup routine when using install-blob"),
+	     N_("Run the plugin composite cleanup routine when using install-blob"),
 	     NULL},
 	    {"enable-json-state",
 	     '\0',
@@ -3241,7 +3303,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->enable_json_state,
 	     /* TRANSLATORS: command line option */
-	     _("Save device state into a JSON file between executions"),
+	     N_("Save device state into a JSON file between executions"),
 	     NULL},
 	    {"disable-ssl-strict",
 	     '\0',
@@ -3249,7 +3311,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->disable_ssl_strict,
 	     /* TRANSLATORS: command line option */
-	     _("Ignore SSL strict checks when downloading files"),
+	     N_("Ignore SSL strict checks when downloading files"),
 	     NULL},
 	    {"filter",
 	     '\0',
@@ -3257,8 +3319,8 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_STRING,
 	     &filter,
 	     /* TRANSLATORS: command line option */
-	     _("Filter with a set of device flags using a ~ prefix to "
-	       "exclude, e.g. 'internal,~needs-reboot'"),
+	     N_("Filter with a set of device flags using a ~ prefix to "
+		"exclude, e.g. 'internal,~needs-reboot'"),
 	     NULL},
 	    {"json",
 	     '\0',
@@ -3266,7 +3328,7 @@ main(int argc, char *argv[])
 	     G_OPTION_ARG_NONE,
 	     &priv->as_json,
 	     /* TRANSLATORS: command line option */
-	     _("Output in JSON format"),
+	     N_("Output in JSON format"),
 	     NULL},
 	    {NULL}};
 
@@ -3582,10 +3644,11 @@ main(int argc, char *argv[])
 	fu_util_cmd_array_sort(cmd_array);
 
 	/* non-TTY consoles cannot answer questions */
-	if (!fu_util_setup_interactive_console(&error_console)) {
+	if (!fu_util_setup_interactive(priv, &error_console)) {
 		g_debug("failed to initialize interactive console: %s", error_console->message);
 		priv->no_reboot_check = TRUE;
 		priv->no_safety_check = TRUE;
+		priv->no_device_prompt = TRUE;
 	} else {
 		priv->interactive = TRUE;
 		/* set our implemented feature set */

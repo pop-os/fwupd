@@ -154,7 +154,6 @@ class Builder:
             print("building {} into {}".format(fn_src, fn_dst))
             try:
                 argv = [
-                    "sudo",
                     "build/src/fwupdtool",
                     "firmware-build",
                     fn_src,
@@ -251,6 +250,7 @@ def _build(bld: Builder) -> None:
             "-Dbsymbolic_functions=false",
             "-Dtests=false",
             "-Dinternal_pcre=true",
+            "--force-fallback-for=libpcre",
         ],
     )
     bld.add_work_includedir("include/glib-2.0")
@@ -352,6 +352,8 @@ def _build(bld: Builder) -> None:
         Fuzzer("ebitdo"),
         Fuzzer("elanfp"),
         Fuzzer("elantp"),
+        Fuzzer("genesys-scaler", srcdir="genesys", pattern="genesys-scaler-firmware"),
+        Fuzzer("genesys-usbhub", srcdir="genesys", pattern="genesys-usbhub-firmware"),
         Fuzzer("pixart", srcdir="pixart-rf", pattern="pxi-firmware"),
         Fuzzer("redfish-smbios", srcdir="redfish", pattern="redfish-smbios"),
         Fuzzer("synaptics-prometheus", pattern="synaprom-firmware"),

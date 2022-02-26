@@ -111,6 +111,7 @@ static void
 fu_ata_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuAtaDevice *self = FU_ATA_DEVICE(device);
+	FU_DEVICE_CLASS(fu_ata_device_parent_class)->to_string(device, idt, str);
 	fu_common_string_append_kx(str, idt, "TransferMode", self->transfer_mode);
 	fu_common_string_append_kx(str, idt, "TransferBlocks", self->transfer_blocks);
 	if (self->oui != 0x0)
@@ -224,6 +225,7 @@ fu_ata_device_parse_vendor_name(FuAtaDevice *self, const gchar *name)
 			 {"726060*", 0x101c, "Western Digital"},
 			 {"CT*", 0xc0a9, "Crucial"},
 			 {"DT0*", 0x1179, "Toshiba"},
+			 {"EK0*", 0x1590, "HPE"},
 			 {"EZEX*", 0x101c, "Western Digital"},
 			 {"GB0*", 0x1590, "HPE"},
 			 {"GOODRAM*", 0x1987, "Phison"},
@@ -538,7 +540,7 @@ fu_ata_device_command(FuAtaDevice *self,
 	cdb[8] = tf->dev;
 	cdb[9] = tf->command;
 	if (g_getenv("FWUPD_ATA_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "CBD", cdb, sizeof(cdb));
+		fu_common_dump_raw(G_LOG_DOMAIN, "CDB", cdb, sizeof(cdb));
 		if (dxfer_direction == SG_DXFER_TO_DEV && dxferp != NULL) {
 			fu_common_dump_raw(G_LOG_DOMAIN, "outgoing_data", dxferp, dxfer_len);
 		}
@@ -872,6 +874,7 @@ fu_ata_device_init(FuAtaDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_INHERIT_ACTIVATION);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
 	fu_device_set_summary(FU_DEVICE(self), "ATA drive");
 	fu_device_add_icon(FU_DEVICE(self), "drive-harddisk");
 	fu_device_add_protocol(FU_DEVICE(self), "org.t13.ata");

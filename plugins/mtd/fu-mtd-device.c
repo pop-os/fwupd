@@ -28,12 +28,54 @@ fu_mtd_device_to_string(FuDevice *device, guint idt, GString *str)
 }
 
 static gboolean
+fu_mtd_device_setup(FuDevice *device, GError **error)
+{
+	GType firmware_gtype = fu_device_get_firmware_gtype(device);
+	const gchar *fn;
+	g_autoptr(FuFirmware) firmware = NULL;
+	g_autoptr(GFile) file = NULL;
+
+	/* nothing to do */
+	if (firmware_gtype == G_TYPE_INVALID)
+		return TRUE;
+
+	/* read entire contents */
+	fn = fu_udev_device_get_device_file(FU_UDEV_DEVICE(device));
+	if (fn == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "Not supported as no device file");
+		return FALSE;
+	}
+	file = g_file_new_for_path(fn);
+	firmware = g_object_new(firmware_gtype, NULL);
+	if (!fu_firmware_parse_file(firmware, file, FWUPD_INSTALL_FLAG_NONE, error))
+		return FALSE;
+
+	/* copy over the version */
+	if (fu_firmware_get_version(firmware) != NULL)
+		fu_device_set_version(device, fu_firmware_get_version(firmware));
+	if (fu_firmware_get_version_raw(firmware) != G_MAXUINT64)
+		fu_device_set_version_raw(device, fu_firmware_get_version_raw(firmware));
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_mtd_device_probe(FuDevice *device, GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
 	FuMtdDevice *self = FU_MTD_DEVICE(device);
 	const gchar *name;
+	const gchar *product;
+	const gchar *vendor;
 	guint64 flags = 0;
 	guint64 size = 0;
+	g_autofree gchar *name_safe = NULL;
+	g_autofree gchar *product_safe = NULL;
+	g_autofree gchar *vendor_safe = NULL;
 
 	/* FuUdevDevice->probe */
 	if (!FU_DEVICE_CLASS(fu_mtd_device_parent_class)->probe(device, error))
@@ -46,12 +88,42 @@ fu_mtd_device_probe(FuDevice *device, GError **error)
 	/* get name */
 	name = fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(device), "name", NULL);
 	if (name != NULL) {
-		g_autofree gchar *devid = NULL;
-		g_autofree gchar *name_safe = g_strdup(name);
-		g_strdelimit(name_safe, " /\\\"", '-');
-		devid = g_strdup_printf("MTD\\NAME_%s", name_safe);
-		fu_device_add_instance_id(FU_DEVICE(self), devid);
+		name_safe = fu_common_instance_id_strsafe(name);
+		if (name_safe != NULL) {
+			g_autofree gchar *devid = g_strdup_printf("MTD\\NAME_%s", name_safe);
+			fu_device_add_instance_id(FU_DEVICE(self), devid);
+		}
 		fu_device_set_name(FU_DEVICE(self), name);
+	}
+
+	/* set vendor ID as the BIOS vendor */
+	vendor = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER);
+	if (vendor != NULL) {
+		g_autofree gchar *vendor_id = g_strdup_printf("DMI:%s", vendor);
+		fu_device_add_vendor_id(device, vendor_id);
+		vendor_safe = fu_common_instance_id_strsafe(vendor);
+	}
+
+	/* use vendor and product as an optional instance ID prefix */
+	product = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_PRODUCT_NAME);
+	if (product != NULL)
+		product_safe = fu_common_instance_id_strsafe(product);
+	if (vendor_safe != NULL && product_safe != NULL && name_safe != NULL) {
+		g_autofree gchar *devid = NULL;
+		devid = g_strdup_printf("MTD\\VENDOR_%s&PRODUCT_%s&NAME_%s",
+					vendor_safe,
+					product_safe,
+					name_safe);
+		fu_device_add_instance_id(device, devid);
+	}
+	if (vendor_safe != NULL && name_safe != NULL) {
+		g_autofree gchar *devid = NULL;
+		devid = g_strdup_printf("MTD\\VENDOR_%s&NAME_%s", vendor_safe, name_safe);
+		fu_device_add_instance_id(device, devid);
+	}
+	if (name_safe != NULL) {
+		g_autofree gchar *devid = g_strdup_printf("MTD\\NAME_%s", name_safe);
+		fu_device_add_instance_id(FU_DEVICE(self), devid);
 	}
 
 	/* get properties about the device */
@@ -258,6 +330,11 @@ fu_mtd_device_write_firmware(FuDevice *device,
 static void
 fu_mtd_device_init(FuMtdDevice *self)
 {
+	fu_device_set_summary(FU_DEVICE(self), "Memory Technology Device");
+	fu_device_add_protocol(FU_DEVICE(self), "org.infradead.mtd");
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
+	fu_device_add_icon(FU_DEVICE(self), "drive-harddisk-solidstate");
 	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),
 				 FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE |
 				     FU_UDEV_DEVICE_FLAG_OPEN_SYNC);
@@ -268,6 +345,7 @@ fu_mtd_device_class_init(FuMtdDeviceClass *klass)
 {
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
 	klass_device->probe = fu_mtd_device_probe;
+	klass_device->setup = fu_mtd_device_setup;
 	klass_device->to_string = fu_mtd_device_to_string;
 	klass_device->write_firmware = fu_mtd_device_write_firmware;
 }

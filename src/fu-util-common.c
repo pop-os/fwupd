@@ -68,7 +68,12 @@ fu_util_using_correct_daemon(GError **error)
 #ifdef HAVE_SYSTEMD
 	g_autofree gchar *default_target = NULL;
 	g_autoptr(GError) error_local = NULL;
-	const gchar *target = fu_util_get_systemd_unit();
+	const gchar *target;
+
+	if (g_getenv("FWUPD_DBUS_SOCKET") != NULL)
+		return TRUE;
+
+	target = fu_util_get_systemd_unit();
 
 	default_target = fu_systemd_get_default_target(&error_local);
 	if (default_target == NULL) {
@@ -384,7 +389,7 @@ fu_util_get_release_description_with_fallback(FwupdRelease *rel)
 		g_string_append(str, fwupd_release_get_description(rel));
 
 	/* add this client side to get the translations */
-	if (!fwupd_release_has_flag(rel, FWUPD_RELEASE_FLAG_IS_COMMUNITY)) {
+	if (fwupd_release_has_flag(rel, FWUPD_RELEASE_FLAG_IS_COMMUNITY)) {
 		g_string_append_printf(
 		    str,
 		    "<p>%s</p>",
@@ -778,6 +783,16 @@ fu_util_release_get_name(FwupdRelease *release)
 			/* TRANSLATORS: Network Interface refers to the physical
 			 * PCI card, not the logical wired connection */
 			return g_strdup_printf(_("%s Network Interface Update"), name);
+		}
+		if (g_strcmp0(cat, "X-VideoDisplay") == 0) {
+			/* TRANSLATORS: Video Display refers to the laptop internal display or
+			 * external monitor */
+			return g_strdup_printf(_("%s Display Update"), name);
+		}
+		if (g_strcmp0(cat, "X-BaseboardManagementController") == 0) {
+			/* TRANSLATORS: BMC refers to baseboard management controller which
+			 * is the device that updates all the other firmware on the system */
+			return g_strdup_printf(_("%s BMC Update"), name);
 		}
 	}
 
@@ -1242,6 +1257,14 @@ fu_util_device_flag_to_string(guint64 device_flag)
 		/* TRANSLATORS: the vendor is no longer supporting the device */
 		return _("End of life");
 	}
+	if (device_flag == FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD) {
+		/* TRANSLATORS: firmware is verified on-device the payload using strong crypto */
+		return _("Signed Payload");
+	}
+	if (device_flag == FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD) {
+		/* TRANSLATORS: firmware payload is unsigned and it is possible to modify it */
+		return _("Unsigned Payload");
+	}
 	if (device_flag == FWUPD_DEVICE_FLAG_SKIPS_RESTART) {
 		/* skip */
 		return NULL;
@@ -1283,6 +1306,7 @@ fu_util_device_to_string(FwupdDevice *dev, guint idt)
 {
 	FwupdUpdateState state;
 	GPtrArray *guids = fwupd_device_get_guids(dev);
+	GPtrArray *issues = fwupd_device_get_issues(dev);
 	GPtrArray *vendor_ids = fwupd_device_get_vendor_ids(dev);
 	GPtrArray *instance_ids = fwupd_device_get_instance_ids(dev);
 	const gchar *tmp;
@@ -1495,6 +1519,14 @@ fu_util_device_to_string(FwupdDevice *dev, guint idt)
 			bullet = g_strdup_printf("• %s", tmp2);
 			fu_common_string_append_kv(str, idt + 1, "", bullet);
 		}
+	}
+	for (guint i = 0; i < issues->len; i++) {
+		const gchar *issue = g_ptr_array_index(issues, i);
+		fu_common_string_append_kv(str,
+					   idt + 1,
+					   /* TRANSLATORS: issue fixed with the release, e.g. CVE */
+					   i == 0 ? ngettext("Issue", "Issues", issues->len) : "",
+					   issue);
 	}
 
 	return g_string_free(g_steal_pointer(&str), FALSE);
@@ -2232,6 +2264,41 @@ fu_util_security_events_to_string(GPtrArray *events, FuSecurityAttrToStringFlags
 			g_string_append_printf(str, "%s\n", _("Host Security Events"));
 		}
 		g_string_append_printf(str, "  %s:  %s %s\n", dtstr, check, eventstr);
+	}
+
+	/* no output required */
+	if (str->len == 0)
+		return NULL;
+
+	/* success */
+	return g_string_free(g_steal_pointer(&str), FALSE);
+}
+
+gchar *
+fu_util_security_issues_to_string(GPtrArray *devices)
+{
+	g_autoptr(GString) str = g_string_new(NULL);
+
+	for (guint i = 0; i < devices->len; i++) {
+		FwupdDevice *device = g_ptr_array_index(devices, i);
+		GPtrArray *issues = fwupd_device_get_issues(device);
+		if (issues->len == 0)
+			continue;
+		if (str->len == 0) {
+			g_string_append_printf(
+			    str,
+			    "%s\n",
+			    /* TRANSLATORS: now list devices with unfixed high-priority issues */
+			    _("There are devices with issues:"));
+		}
+		g_string_append_printf(str,
+				       "\n  %s — %s:\n",
+				       fwupd_device_get_vendor(device),
+				       fwupd_device_get_name(device));
+		for (guint j = 0; j < issues->len; j++) {
+			const gchar *issue = g_ptr_array_index(issues, j);
+			g_string_append_printf(str, "   • %s\n", issue);
+		}
 	}
 
 	/* no output required */

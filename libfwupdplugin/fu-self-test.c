@@ -263,7 +263,7 @@ fu_device_name_func(void)
 	g_autoptr(FuDevice) device2 = fu_device_new();
 
 	/* vendor then name */
-	fu_device_set_vendor(device1, "Hughski");
+	fu_device_set_vendor(device1, "  Hughski  ");
 	fu_device_set_name(device1, "HUGHSKI  ColorHug(TM)__Pro  ");
 	g_assert_cmpstr(fu_device_get_vendor(device1), ==, "Hughski");
 	g_assert_cmpstr(fu_device_get_name(device1), ==, "ColorHug™ Pro");
@@ -574,6 +574,8 @@ fu_common_strsafe_func(void)
 		    {"dave\x03\x04XXX", "dave..X"},
 		    {"\x03\x03", NULL},
 		    {NULL, NULL}};
+	g_autofree gchar *id_part = fu_common_instance_id_strsafe("_ _LEN&VO&\\&");
+	g_assert_cmpstr(id_part, ==, "LEN-VO");
 	for (guint i = 0; strs[i].in != NULL; i++) {
 		g_autofree gchar *tmp = fu_common_strsafe(strs[i].in, 7);
 		g_assert_cmpstr(tmp, ==, strs[i].op);
@@ -2199,6 +2201,28 @@ fu_common_version_semver_func(void)
 		   {NULL, NULL}};
 	for (guint i = 0; map[i].old != NULL; i++) {
 		g_autofree gchar *tmp = fu_common_version_ensure_semver(map[i].old);
+		g_assert_cmpstr(tmp, ==, map[i].new);
+	}
+}
+
+static void
+fu_common_version_semver_full_func(void)
+{
+	struct {
+		const gchar *old;
+		const gchar *new;
+		FwupdVersionFormat fmt;
+	} map[] = {{"1.2.3", "1.2.3", FWUPD_VERSION_FORMAT_TRIPLET},
+		   {"1.2.3.4", "1.2.3", FWUPD_VERSION_FORMAT_TRIPLET},
+		   {"1.2", "0.1.2", FWUPD_VERSION_FORMAT_TRIPLET},
+		   {"1", "0.0.1", FWUPD_VERSION_FORMAT_TRIPLET},
+		   {"CBET1.2.3", "1.2.3", FWUPD_VERSION_FORMAT_TRIPLET},
+		   {"4.11-1190-g12d8072e6b-dirty", "4.11.1190", FWUPD_VERSION_FORMAT_TRIPLET},
+		   {"4.11-1190-g12d8072e6b-dirty", "4.11", FWUPD_VERSION_FORMAT_PAIR},
+		   {NULL, NULL}};
+	for (guint i = 0; map[i].old != NULL; i++) {
+		g_autofree gchar *tmp =
+		    fu_common_version_ensure_semver_full(map[i].old, map[i].fmt);
 		g_assert_cmpstr(tmp, ==, map[i].new);
 	}
 }
@@ -3944,6 +3968,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{strtoull}", fu_common_strtoull_func);
 	g_test_add_func("/fwupd/common{version}", fu_common_version_func);
 	g_test_add_func("/fwupd/common{version-semver}", fu_common_version_semver_func);
+	g_test_add_func("/fwupd/common{version-semver-full}", fu_common_version_semver_full_func);
 	g_test_add_func("/fwupd/common{vercmp}", fu_common_vercmp_func);
 	g_test_add_func("/fwupd/common{strstrip}", fu_common_strstrip_func);
 	g_test_add_func("/fwupd/common{endian}", fu_common_endian_func);

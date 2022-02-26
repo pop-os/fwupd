@@ -32,6 +32,9 @@
  * required (e.g. if switching from the default (DF) to generic (GC).*/
 #define FU_MM_DEVICE_REMOVE_DELAY_REPROBE 120000 /* ms */
 
+#define FU_MM_DEVICE_AT_RETRIES 3
+#define FU_MM_DEVICE_AT_DELAY	3000 /* ms */
+
 /* Amount of time for the modem to get firmware version */
 #define MAX_WAIT_TIME_SECS 150 /* s */
 
@@ -86,6 +89,8 @@ struct _FuMmDevice {
 #if MM_CHECK_VERSION(1, 17, 2)
 	FuFirehoseUpdater *firehose_updater;
 #endif
+	/* for sahara */
+	FuUsbDevice *usb_device;
 
 	/* firmware path */
 	gchar *firmware_path;
@@ -614,14 +619,21 @@ fu_mm_device_qcdm_cmd(FuMmDevice *self, const guint8 *cmd, gsize cmd_len, GError
 }
 #endif /* MM_CHECK_VERSION(1,17,2) */
 
+typedef struct {
+	const gchar *cmd;
+	gboolean has_response;
+} FuMmDeviceAtCmdHelper;
+
 static gboolean
-fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, GError **error)
+fu_mm_device_at_cmd_cb(FuDevice *device, gpointer user_data, GError **error)
 {
+	FuMmDevice *self = FU_MM_DEVICE(device);
+	FuMmDeviceAtCmdHelper *helper = (FuMmDeviceAtCmdHelper *)user_data;
 	const gchar *buf;
 	gsize bufsz = 0;
 	g_autoptr(GBytes) at_req = NULL;
 	g_autoptr(GBytes) at_res = NULL;
-	g_autofree gchar *cmd_cr = g_strdup_printf("%s\r\n", cmd);
+	g_autofree gchar *cmd_cr = g_strdup_printf("%s\r\n", helper->cmd);
 
 	/* command */
 	at_req = g_bytes_new(cmd_cr, strlen(cmd_cr));
@@ -632,13 +644,13 @@ fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, G
 				       1500,
 				       FU_IO_CHANNEL_FLAG_FLUSH_INPUT,
 				       error)) {
-		g_prefix_error(error, "failed to write %s: ", cmd);
+		g_prefix_error(error, "failed to write %s: ", helper->cmd);
 		return FALSE;
 	}
 
 	/* AT command has no response, return TRUE */
-	if (!has_response) {
-		g_debug("No response expected for AT command: '%s', assuming succeed", cmd);
+	if (!helper->has_response) {
+		g_debug("No response expected for AT command: '%s', assuming succeed", helper->cmd);
 		return TRUE;
 	}
 
@@ -649,7 +661,7 @@ fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, G
 					  FU_IO_CHANNEL_FLAG_SINGLE_SHOT,
 					  error);
 	if (at_res == NULL) {
-		g_prefix_error(error, "failed to read response for %s: ", cmd);
+		g_prefix_error(error, "failed to read response for %s: ", helper->cmd);
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_MODEM_MANAGER_VERBOSE") != NULL)
@@ -660,7 +672,7 @@ fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, G
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "failed to read valid response for %s",
-			    cmd);
+			    helper->cmd);
 		return FALSE;
 	}
 
@@ -671,13 +683,13 @@ fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, G
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "failed to read valid response for %s: %s",
-			    cmd,
+			    helper->cmd,
 			    tmp);
 		return FALSE;
 	}
 
 	/* set firmware branch if returned */
-	if (self->branch_at != NULL && g_strcmp0(cmd, self->branch_at) == 0) {
+	if (self->branch_at != NULL && g_strcmp0(helper->cmd, self->branch_at) == 0) {
 		/*
 		 * example AT+GETFWBRANCH response:
 		 *
@@ -698,7 +710,20 @@ fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, G
 		}
 	}
 
+	/* success */
 	return TRUE;
+}
+
+static gboolean
+fu_mm_device_at_cmd(FuMmDevice *self, const gchar *cmd, gboolean has_response, GError **error)
+{
+	FuMmDeviceAtCmdHelper helper = {.cmd = cmd, .has_response = has_response};
+	return fu_device_retry_full(FU_DEVICE(self),
+				    fu_mm_device_at_cmd_cb,
+				    FU_MM_DEVICE_AT_RETRIES,
+				    FU_MM_DEVICE_AT_DELAY,
+				    &helper,
+				    error);
 }
 
 static gboolean
@@ -1637,6 +1662,8 @@ static void
 fu_mm_device_finalize(GObject *object)
 {
 	FuMmDevice *self = FU_MM_DEVICE(object);
+	if (self->usb_device != NULL)
+		g_object_unref(self->usb_device);
 	if (self->attach_idle)
 		g_source_remove(self->attach_idle);
 	if (self->qmi_pdc_active_id)
@@ -1734,6 +1761,21 @@ fu_plugin_mm_inhibited_device_info_free(FuPluginMmInhibitedDeviceInfo *info)
 		g_ptr_array_unref(info->guids);
 	g_free(info->detach_fastboot_at);
 	g_free(info);
+}
+
+FuUsbDevice *
+fu_mm_device_get_usb_device(FuMmDevice *self)
+{
+	g_return_val_if_fail(FU_IS_MM_DEVICE(self), NULL);
+	return self->usb_device;
+}
+
+void
+fu_mm_device_set_usb_device(FuMmDevice *self, FuUsbDevice *usb_device)
+{
+	g_return_if_fail(FU_IS_MM_DEVICE(self));
+	g_return_if_fail(FU_IS_USB_DEVICE(usb_device));
+	g_set_object(&self->usb_device, usb_device);
 }
 
 FuMmDevice *

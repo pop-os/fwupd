@@ -300,15 +300,15 @@ fu_udev_device_probe_serio(FuUdevDevice *self, GError **error)
 	/* firmware ID */
 	tmp = g_udev_device_get_property(priv->udev_device, "SERIO_FIRMWARE_ID");
 	if (tmp != NULL) {
-		g_autofree gchar *devid = NULL;
 		g_autofree gchar *id_safe = NULL;
 		/* this prefix is not useful */
 		if (g_str_has_prefix(tmp, "PNP: "))
 			tmp += 5;
-		id_safe = g_utf8_strup(tmp, -1);
-		g_strdelimit(id_safe, " /\\\"", '-');
-		devid = g_strdup_printf("SERIO\\FWID_%s", id_safe);
-		fu_device_add_instance_id(FU_DEVICE(self), devid);
+		id_safe = fu_common_instance_id_strsafe(tmp);
+		if (id_safe != NULL) {
+			g_autofree gchar *devid = g_strdup_printf("SERIO\\FWID_%s", id_safe);
+			fu_device_add_instance_id(FU_DEVICE(self), devid);
+		}
 	}
 	return TRUE;
 }
@@ -1114,7 +1114,7 @@ fu_udev_device_set_physical_id(FuUdevDevice *self, const gchar *subsystems, GErr
 	} else if (g_strcmp0(subsystem, "usb") == 0 || g_strcmp0(subsystem, "mmc") == 0 ||
 		   g_strcmp0(subsystem, "i2c") == 0 || g_strcmp0(subsystem, "platform") == 0 ||
 		   g_strcmp0(subsystem, "scsi") == 0 || g_strcmp0(subsystem, "mtd") == 0 ||
-		   g_strcmp0(subsystem, "block") == 0) {
+		   g_strcmp0(subsystem, "block") == 0 || g_strcmp0(subsystem, "gpio") == 0) {
 		tmp = g_udev_device_get_property(udev_device, "DEVPATH");
 		if (tmp == NULL) {
 			g_set_error_literal(error,
@@ -1915,10 +1915,14 @@ fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *cons
 	g_autoptr(GList) enumerated = g_udev_client_query_by_subsystem(udev_client, subsystem);
 	for (GList *element = enumerated; element != NULL; element = element->next) {
 		g_autoptr(GUdevDevice) enumerated_device = element->data;
-		g_autoptr(GUdevDevice) enumerated_parent =
-		    g_udev_device_get_parent(enumerated_device);
-		const gchar *enumerated_parent_path =
-		    g_udev_device_get_sysfs_path(enumerated_parent);
+		g_autoptr(GUdevDevice) enumerated_parent = NULL;
+		const gchar *enumerated_parent_path;
+
+		/* get parent, if it exists */
+		enumerated_parent = g_udev_device_get_parent(enumerated_device);
+		if (enumerated_parent == NULL)
+			break;
+		enumerated_parent_path = g_udev_device_get_sysfs_path(enumerated_parent);
 
 		/* if the sysfs path of self's parent is the same as that of the
 		 * located device's parent, they are siblings */
@@ -1932,6 +1936,34 @@ fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *cons
 #endif
 
 	return g_steal_pointer(&out);
+}
+
+/**
+ * fu_udev_device_get_parent_with_subsystem
+ * @self: a #FuUdevDevice
+ * @subsystem: the name of a udev subsystem
+ *
+ * Get the device that is a parent of self and has the provided subsystem.
+ *
+ * Returns: (transfer full): device, or %NULL
+ *
+ * Since: 1.7.6
+ */
+FuUdevDevice *
+fu_udev_device_get_parent_with_subsystem(FuUdevDevice *self, const gchar *subsystem)
+{
+#ifdef HAVE_GUDEV
+	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
+	g_autoptr(GUdevDevice) device_tmp = NULL;
+
+	device_tmp = g_udev_device_get_parent_with_subsystem(priv->udev_device, subsystem, NULL);
+	if (device_tmp == NULL)
+		return NULL;
+	return fu_udev_device_new_with_context(fu_device_get_context(FU_DEVICE(self)),
+					       g_steal_pointer(&device_tmp));
+#else
+	return NULL;
+#endif
 }
 
 /**
@@ -1958,10 +1990,14 @@ fu_udev_device_get_children_with_subsystem(FuUdevDevice *self, const gchar *cons
 	g_autoptr(GList) enumerated = g_udev_client_query_by_subsystem(udev_client, subsystem);
 	for (GList *element = enumerated; element != NULL; element = element->next) {
 		g_autoptr(GUdevDevice) enumerated_device = element->data;
-		g_autoptr(GUdevDevice) enumerated_parent =
-		    g_udev_device_get_parent(enumerated_device);
-		const gchar *enumerated_parent_path =
-		    g_udev_device_get_sysfs_path(enumerated_parent);
+		g_autoptr(GUdevDevice) enumerated_parent = NULL;
+		const gchar *enumerated_parent_path;
+
+		/* get parent, if it exists */
+		enumerated_parent = g_udev_device_get_parent(enumerated_device);
+		if (enumerated_parent == NULL)
+			break;
+		enumerated_parent_path = g_udev_device_get_sysfs_path(enumerated_parent);
 
 		/* enumerated device is a child of self if its parent is the
 		 * same as self */

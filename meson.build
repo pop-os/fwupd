@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version : '1.7.5',
+  version : '1.7.6',
   license : 'LGPL-2.1+',
   meson_version : '>=0.50.0',
   default_options : ['warning_level=2', 'c_std=c99'],
@@ -224,7 +224,7 @@ if get_option('libarchive')
   conf.set('HAVE_LIBARCHIVE', '1')
 endif
 endif
-libjcat = dependency('jcat', version : '>= 0.1.0', fallback : ['libjcat', 'libjcat_dep'])
+libjcat = dependency('jcat', version : '>= 0.1.4', fallback : ['libjcat', 'libjcat_dep'])
 libjsonglib = dependency('json-glib-1.0', version : '>= 1.1.1')
 valgrind = dependency('valgrind', required: false)
 if get_option('curl')
@@ -382,6 +382,12 @@ if cc.has_header('linux/ipmi.h')
   conf.set('HAVE_LINUX_IPMI_H', '1')
 else
   have_linux_ipmi = false
+endif
+if cc.has_header_symbol('linux/gpio.h', 'GPIO_V2_LINE_FLAG_OUTPUT')
+  have_linux_gpio = true
+  conf.set('HAVE_LINUX_GPIO_H', '1')
+else
+  have_linux_gpio = false
 endif
 if cc.has_header_symbol('linux/ipmi_msgdefs.h', 'IPMI_DEVICE_IN_FW_UPDATE_ERR')
   conf.set('HAVE_IPMI_DEVICE_IN_FW_UPDATE_ERR', '1')

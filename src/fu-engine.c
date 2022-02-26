@@ -683,9 +683,16 @@ fu_engine_set_release_from_appstream(FuEngine *self,
 	if (tmp != NULL)
 		fwupd_release_set_source_url(rel, tmp);
 	if (artifact == NULL) {
-		tmp = xb_node_query_text(release, "checksum[@target='container']", NULL);
-		if (tmp != NULL)
-			fwupd_release_add_checksum(rel, tmp);
+		g_autoptr(GPtrArray) checksums = NULL;
+		checksums = xb_node_query(release, "checksum[@target='container']", 0, NULL);
+		if (checksums != NULL) {
+			for (guint i = 0; i < checksums->len; i++) {
+				XbNode *n = g_ptr_array_index(checksums, i);
+				if (xb_node_get_text(n) == NULL)
+					continue;
+				fwupd_release_add_checksum(rel, xb_node_get_text(n));
+			}
+		}
 	}
 	if (artifact == NULL) {
 		tmp64 = xb_node_query_text_as_uint(release, "size[@type='installed']", NULL);
@@ -762,7 +769,7 @@ fu_engine_set_release_from_appstream(FuEngine *self,
 			fwupd_release_set_update_image(rel, tmp);
 		}
 	}
-	if (xb_node_get_attr(release, "date_eol") != NULL)
+	if (xb_node_get_attr(component, "date_eol") != NULL)
 		fu_device_add_flag(dev, FWUPD_DEVICE_FLAG_END_OF_LIFE);
 
 	/* sort the locations by scheme */
@@ -3741,6 +3748,34 @@ fu_engine_md_refresh_device_vendor(FuEngine *self, FuDevice *device, XbNode *com
 }
 
 static void
+fu_engine_md_refresh_device_signed(FuEngine *self, FuDevice *device, XbNode *component)
+{
+	const gchar *value = NULL;
+
+	/* require data */
+	if (component == NULL)
+		return;
+
+	/* already set, possibly by a quirk */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD) ||
+	    fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD))
+		return;
+
+	/* copy 1:1 */
+	value = xb_node_query_text(component, "custom/value[@key='LVFS::DeviceIntegrity']", NULL);
+	if (value != NULL) {
+		if (g_strcmp0(value, "signed") == 0) {
+			fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
+		} else if (g_strcmp0(value, "unsigned") == 0) {
+			fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+		} else {
+			g_warning("payload value unexpected: %s, expected signed|unsigned", value);
+		}
+		fu_device_remove_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_SET_VENDOR);
+	}
+}
+
+static void
 fu_engine_md_refresh_device_icon(FuEngine *self, FuDevice *device, XbNode *component)
 {
 	const gchar *icon = NULL;
@@ -3786,6 +3821,10 @@ fu_common_device_category_to_name(const gchar *cat)
 		return "Mouse";
 	if (g_strcmp0(cat, "X-Keyboard") == 0)
 		return "Keyboard";
+	if (g_strcmp0(cat, "X-VideoDisplay") == 0)
+		return "Display";
+	if (g_strcmp0(cat, "X-BaseboardManagementController") == 0)
+		return "BMC";
 	return NULL;
 }
 
@@ -3891,6 +3930,8 @@ fu_engine_md_refresh_device_from_component(FuEngine *self, FuDevice *device, XbN
 		fu_engine_md_refresh_device_icon(self, device, component);
 	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_SET_VENDOR))
 		fu_engine_md_refresh_device_vendor(self, device, component);
+	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED))
+		fu_engine_md_refresh_device_signed(self, device, component);
 
 	/* fix the version */
 	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_SET_VERFMT))
@@ -4119,17 +4160,8 @@ fu_engine_get_newest_signature_jcat_result(GPtrArray *results, GError **error)
 	/* get the first signature, ignoring the checksums */
 	for (guint i = 0; i < results->len; i++) {
 		JcatResult *result = g_ptr_array_index(results, i);
-#if LIBJCAT_CHECK_VERSION(0, 1, 3)
 		if (jcat_result_get_method(result) == JCAT_BLOB_METHOD_SIGNATURE)
 			return g_object_ref(result);
-#else
-		guint verify_kind = 0;
-		g_autoptr(JcatEngine) engine = NULL;
-		g_object_get(result, "engine", &engine, NULL);
-		g_object_get(engine, "verify-kind", &verify_kind, NULL);
-		if (verify_kind == 2) /* SIGNATURE */
-			return g_object_ref(result);
-#endif
 	}
 
 	/* should never happen due to %JCAT_VERIFY_FLAG_REQUIRE_SIGNATURE */
@@ -6647,9 +6679,15 @@ fu_engine_backend_device_added_cb(FuBackend *backend, FuDevice *device, FuEngine
 	/* add any extra quirks */
 	fu_device_set_context(device, self->ctx);
 	if (!fu_device_probe(device, &error_local)) {
-		g_warning("failed to probe device %s: %s",
-			  fu_device_get_backend_id(device),
-			  error_local->message);
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+			g_warning("failed to probe device %s: %s",
+				  fu_device_get_backend_id(device),
+				  error_local->message);
+		} else if (g_getenv("FWUPD_PROBE_VERBOSE") != NULL) {
+			g_debug("failed to probe device %s : %s",
+				fu_device_get_backend_id(device),
+				error_local->message);
+		}
 		return;
 	}
 
@@ -7144,13 +7182,6 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 	if (flags & FU_ENGINE_LOAD_FLAG_HWINFO)
 		fu_context_load_hwinfo(self->ctx, NULL);
 
-	/* set quirks for each hwid */
-	guids = fu_context_get_hwid_guids(self->ctx);
-	for (guint i = 0; i < guids->len; i++) {
-		const gchar *hwid = g_ptr_array_index(guids, i);
-		fu_engine_load_quirks_for_hwid(self, hwid);
-	}
-
 	/* load AppStream metadata */
 	if (!fu_engine_load_metadata_store(self, flags, error)) {
 		g_prefix_error(error, "Failed to load AppStream data: ");
@@ -7217,6 +7248,13 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 	if (!fu_engine_load_plugins(self, error)) {
 		g_prefix_error(error, "Failed to load plugins: ");
 		return FALSE;
+	}
+
+	/* set quirks for each hwid */
+	guids = fu_context_get_hwid_guids(self->ctx);
+	for (guint i = 0; i < guids->len; i++) {
+		const gchar *hwid = g_ptr_array_index(guids, i);
+		fu_engine_load_quirks_for_hwid(self, hwid);
 	}
 
 	/* set up battery threshold */
@@ -7520,6 +7558,9 @@ fu_engine_init(FuEngine *self)
 #if G_USB_CHECK_VERSION(0, 3, 1)
 	fu_engine_add_runtime_version(self, "org.freedesktop.gusb", g_usb_version_string());
 #endif
+#if LIBJCAT_CHECK_VERSION(0, 1, 11)
+	fu_engine_add_runtime_version(self, "com.hughsie.libjcat", jcat_version_string());
+#endif
 
 	/* optional kernel version */
 #ifdef HAVE_UTSNAME_H
@@ -7539,6 +7580,12 @@ fu_engine_init(FuEngine *self)
 					    G_USB_MINOR_VERSION,
 					    G_USB_MICRO_VERSION));
 #endif
+	g_hash_table_insert(self->compile_versions,
+			    g_strdup("com.hughsie.libjcat"),
+			    g_strdup_printf("%i.%i.%i",
+					    JCAT_MAJOR_VERSION,
+					    JCAT_MINOR_VERSION,
+					    JCAT_MICRO_VERSION));
 }
 
 static void

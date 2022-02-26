@@ -237,6 +237,10 @@ fu_device_internal_flag_to_string(FuDeviceInternalFlags flag)
 		return "md-set-vendor";
 	if (flag == FU_DEVICE_INTERNAL_FLAG_NO_LID_CLOSED)
 		return "no-lid-closed";
+	if (flag == FU_DEVICE_INTERNAL_FLAG_NO_PROBE)
+		return "no-probe";
+	if (flag == FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED)
+		return "md-set-signed";
 	return NULL;
 }
 
@@ -297,6 +301,10 @@ fu_device_internal_flag_from_string(const gchar *flag)
 		return FU_DEVICE_INTERNAL_FLAG_MD_SET_VENDOR;
 	if (g_strcmp0(flag, "no-lid-closed") == 0)
 		return FU_DEVICE_INTERNAL_FLAG_NO_LID_CLOSED;
+	if (g_strcmp0(flag, "no-probe") == 0)
+		return FU_DEVICE_INTERNAL_FLAG_NO_PROBE;
+	if (g_strcmp0(flag, "md-set-signed") == 0)
+		return FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED;
 	return FU_DEVICE_INTERNAL_FLAG_UNKNOWN;
 }
 
@@ -1545,6 +1553,12 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 			fu_device_add_protocol(self, sections[i]);
 		return TRUE;
 	}
+	if (g_strcmp0(key, FU_QUIRKS_ISSUE) == 0) {
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_issue(self, sections[i]);
+		return TRUE;
+	}
 	if (g_strcmp0(key, FU_QUIRKS_VERSION) == 0) {
 		fu_device_set_version(self, value);
 		return TRUE;
@@ -2241,7 +2255,14 @@ fu_device_fixup_vendor_name(FuDevice *self)
 void
 fu_device_set_vendor(FuDevice *self, const gchar *vendor)
 {
-	fwupd_device_set_vendor(FWUPD_DEVICE(self), vendor);
+	g_autofree gchar *vendor_safe = NULL;
+
+	/* trim any leading and trailing spaces */
+	if (vendor != NULL)
+		vendor_safe = fu_common_strstrip(vendor);
+
+	/* proxy */
+	fwupd_device_set_vendor(FWUPD_DEVICE(self), vendor_safe);
 	fu_device_fixup_vendor_name(self);
 }
 
@@ -2297,13 +2318,8 @@ fu_device_set_name(FuDevice *self, const gchar *value)
 
 	/* overwriting? */
 	value_safe = fu_device_sanitize_name(value);
-	if (g_strcmp0(value_safe, fu_device_get_name(self)) == 0) {
-		const gchar *id = fu_device_get_id(self);
-		g_debug("%s device overwriting same name value: %s",
-			id != NULL ? id : "unknown",
-			value_safe);
+	if (g_strcmp0(value_safe, fu_device_get_name(self)) == 0)
 		return;
-	}
 
 	/* changing */
 	if (fu_device_get_name(self) != NULL) {
@@ -2411,7 +2427,9 @@ fu_device_set_version(FuDevice *self, const gchar *version)
 
 	/* sanitize if required */
 	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_ENSURE_SEMVER)) {
-		version_safe = fu_common_version_ensure_semver(version);
+		version_safe =
+		    fu_common_version_ensure_semver_full(version,
+							 fu_device_get_version_format(self));
 		if (g_strcmp0(version, version_safe) != 0)
 			g_debug("converted '%s' to '%s'", version, version_safe);
 	} else {
@@ -2960,6 +2978,12 @@ fu_device_add_flag(FuDevice *self, FwupdDeviceFlags flag)
 	if (flag & FWUPD_DEVICE_FLAG_IS_BOOTLOADER)
 		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_NEEDS_BOOTLOADER);
 
+	/* being both a signed and unsigned is invalid */
+	if (flag & FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD)
+		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	if (flag & FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD)
+		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
+
 	/* one implies the other */
 	if (flag & FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE)
 		flag |= FWUPD_DEVICE_FLAG_CAN_VERIFY;
@@ -3069,7 +3093,6 @@ fu_device_set_custom_flag(FuDevice *self, const gchar *hint)
 			priv->private_flags &= ~item->value;
 			return;
 		}
-		g_debug("no registered custom flag %s on %s", hint + 1, G_OBJECT_TYPE_NAME(self));
 		return;
 	}
 
@@ -3089,7 +3112,6 @@ fu_device_set_custom_flag(FuDevice *self, const gchar *hint)
 		priv->private_flags |= item->value;
 		return;
 	}
-	g_debug("no registered custom flag %s on %s", hint, G_OBJECT_TYPE_NAME(self));
 }
 
 /**
@@ -3373,6 +3395,12 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 					   idt + 1,
 					   "BatteryThreshold",
 					   priv->battery_threshold);
+	if (priv->firmware_gtype != G_TYPE_INVALID) {
+		fu_common_string_append_kv(str,
+					   idt + 1,
+					   "FirmwareGType",
+					   g_type_name(priv->firmware_gtype));
+	}
 	if (priv->size_min > 0) {
 		g_autofree gchar *sz = g_strdup_printf("%" G_GUINT64_FORMAT, priv->size_min);
 		fu_common_string_append_kv(str, idt + 1, "FirmwareSizeMin", sz);
@@ -4155,11 +4183,25 @@ fu_device_probe(FuDevice *self, GError **error)
 	if (priv->done_probe)
 		return TRUE;
 
+	/* device self-assigned */
+	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_NO_PROBE)) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not probing");
+		return FALSE;
+	}
+
 	/* subclassed */
 	if (klass->probe != NULL) {
 		if (!klass->probe(self, error))
 			return FALSE;
 	}
+
+	/* vfunc skipped device */
+	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_NO_PROBE)) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not probing");
+		return FALSE;
+	}
+
+	/* success */
 	priv->done_probe = TRUE;
 	return TRUE;
 }
@@ -4288,6 +4330,12 @@ fu_device_setup(FuDevice *self, GError **error)
 	if (klass->setup != NULL) {
 		if (!klass->setup(self, error))
 			return FALSE;
+	}
+
+	/* vfunc skipped device */
+	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_NO_PROBE)) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not probing");
+		return FALSE;
 	}
 
 	/* run setup on the children too (unless done already) */
