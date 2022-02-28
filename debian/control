@@ -42,6 +42,7 @@ Build-Depends:
 	libpolkit-gobject-1-dev,
 	libprotobuf-c-dev,
 	libqmi-glib-dev,
+	libqrtr-glib-dev,
 	libsmbios-dev [i386 amd64],
 	libsqlite3-dev,
 	libsystemd-dev,
