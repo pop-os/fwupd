@@ -1,10 +1,10 @@
-fwupd (1.7.6-1) UNRELEASED; urgency=medium
+fwupd (1.7.6-1) unstable; urgency=medium
 
   * New upstream version (1.7.6)
   * Drop all patches, upstream
   * Add libqrtr-glib-dev to build depends
 
- -- Mario Limonciello <superm1@gmail.com>  Sun, 27 Feb 2022 20:59:19 -0600
+ -- Mario Limonciello <superm1@gmail.com>  Sun, 27 Feb 2022 20:59:36 -0600
 
 fwupd (1.7.5-3) unstable; urgency=medium
 
