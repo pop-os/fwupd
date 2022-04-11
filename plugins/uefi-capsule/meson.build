@@ -104,6 +104,10 @@ if get_option('compat_cli')
   endif
 endif
 
+install_data(['uefi_capsule.conf'],
+  install_dir: join_paths(sysconfdir, 'fwupd')
+)
+
 # add all the .po files as inputs to watch
 ux_linguas = run_command(
   ['cat', files(join_paths(meson.project_source_root(), 'po', 'LINGUAS'))],
