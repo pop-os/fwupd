@@ -57,6 +57,10 @@ plugin_builtin_uefi_capsule = static_library('fu_plugin_uefi_capsule',
 )
 plugin_builtins += plugin_builtin_uefi_capsule
 
+install_data(['uefi_capsule.conf'],
+  install_dir: join_paths(sysconfdir, 'fwupd')
+)
+
 # add all the .po files as inputs to watch
 ux_linguas = run_command(
   ['cat', files(join_paths(meson.project_source_root(), 'po', 'LINGUAS'))],
