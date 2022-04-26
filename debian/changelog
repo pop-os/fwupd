@@ -5,7 +5,7 @@ fwupd (1.7.7-1) unstable; urgency=medium
   * Backport configuration option for systemd refresh unit user
   * Run fwupd-refresh under a dedicated fwupd-refresh user (LP: #1969976)
 
- -- Mario Limonciello <superm1@gmail.com>  Mon, 25 Apr 2022 20:43:35 -0500
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 25 Apr 2022 20:44:02 -0500
 
 fwupd (1.7.6-1) unstable; urgency=medium
 
