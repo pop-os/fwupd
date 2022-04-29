@@ -1,3 +1,9 @@
+fwupd (1.8.0-1pop0) focal; urgency=medium
+
+  * Pop!_OS backport
+
+ -- Jeremy Soller <jeremy@system76.com>  Fri, 29 Apr 2022 10:23:41 -0600
+
 fwupd (1.8.0-1) UNRELEASED; urgency=medium
 
   * New upstream version (1.8.0)
