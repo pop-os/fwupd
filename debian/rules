@@ -1,0 +1,88 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+export LC_ALL := C.UTF-8
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_LDFLAGS_MAINT_STRIP=-Wl,-Bsymbolic-functions
+
+#GPGME needs this for proper building on 32 bit archs
+ifeq ($(DEB_HOST_ARCH_BITS),32)
+	export DEB_CFLAGS_MAINT_APPEND = -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
+endif
+
+CONFARGS =
+
+ifneq ($(CI),)
+	CONFARGS += --werror
+endif
+
+ifneq ($(DEB_HOST_ARCH_CPU),ia64)
+	CONFARGS += -Dplugin_flashrom=true
+else
+	CONFARGS += -Dplugin_flashrom=false
+endif
+
+ifeq (yes,$(shell pkg-config --exists libsmbios_c && echo yes))
+	CONFARGS += -Dplugin_dell=true
+else
+	CONFARGS += -Dplugin_dell=false
+endif
+
+ifeq (yes,$(shell pkg-config --exists efivar && echo yes))
+	CONFARGS += -Dplugin_uefi_capsule=true -Defi_binary=false
+else
+	CONFARGS += -Dplugin_uefi_capsule=false
+endif
+
+ifneq ($(filter $(DEB_HOST_ARCH_CPU),i386 amd64),)
+	CONFARGS += -Dplugin_msr=true
+else
+	CONFARGS += -Dplugin_msr=false
+endif
+
+ifneq ($(QUBES_OPTION),)
+	CONFARGS += -Dqubes=true
+endif
+
+#Needs a MIR
+ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu && echo yes))
+       CONFARGS += -Dplugin_logitech_bulkcontroller=false
+endif
+
+CONFARGS += -Dplugin_dummy=true -Dplugin_powerd=false -Ddocs=gtkdoc -Dsupported_build=true
+
+%:
+	dh $@ --with gir
+
+override_dh_auto_clean:
+	rm -fr obj-*
+	rm -fr debian/build
+
+override_dh_auto_configure:
+	dh_auto_configure -- $(CONFARGS)
+
+override_dh_install:
+	find debian/tmp/usr -type f -name "*a" -print | xargs rm -f
+	sed -i 's,wheel,sudo,' debian/tmp/usr/share/polkit-1/rules.d/org.freedesktop.fwupd.rules
+	dh_install
+	#install MSR conf if needed (depending on distro)
+	[ ! -d debian/tmp/usr/lib/modules-load.d ] || dh_install -pfwupd usr/lib/modules-load.d
+	[ ! -d debian/tmp/lib/modules-load.d ] || dh_install -pfwupd lib/modules-load.d
+	dh_missing -a --fail-missing
+
+	#this is placed in fwupd-tests
+	rm -f debian/fwupd/usr/lib/*/fwupd-plugins-*/libfu_plugin_test.so
+	rm -f debian/fwupd/usr/lib/*/fwupd-plugins-*/libfu_plugin_test_ble.so
+	rm -f debian/fwupd/usr/lib/*/fwupd-plugins-*/libfu_plugin_invalid.so
+	rm -f debian/fwupd/etc/fwupd/remotes.d/fwupd-tests.conf
+
+override_dh_strip_nondeterminism:
+	dh_strip_nondeterminism -Xfirmware-example.xml.gz
+
+ifneq (yes,$(shell command -v valgrind >/dev/null 2>&1 && echo yes))
+override_dh_auto_test:
+	:
+endif
+
+override_dh_builddeb:
+	dh_builddeb
