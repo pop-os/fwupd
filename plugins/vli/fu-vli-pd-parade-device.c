@@ -649,6 +649,7 @@ fu_vli_pd_parade_device_dump_firmware(FuDevice *device, FuProgress *progress, GE
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_VERIFY);
 	fu_byte_array_set_size(fw, fu_device_get_firmware_size_max(device));
 	blocks = fu_chunk_array_mutable_new(fw->data, fw->len, 0x0, 0x0, 0x10000);
+	fu_progress_set_steps(progress, blocks->len);
 	for (guint i = 0; i < blocks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(blocks, i);
 		if (!fu_vli_pd_parade_device_block_read(self,
@@ -657,7 +658,7 @@ fu_vli_pd_parade_device_dump_firmware(FuDevice *device, FuProgress *progress, GE
 							fu_chunk_get_data_sz(chk),
 							error))
 			return NULL;
-		fu_progress_set_percentage_full(progress, i + 1, blocks->len);
+		fu_progress_step_done(progress);
 	}
 	return g_byte_array_free_to_bytes(g_steal_pointer(&fw));
 }
@@ -665,23 +666,17 @@ fu_vli_pd_parade_device_dump_firmware(FuDevice *device, FuProgress *progress, GE
 static gboolean
 fu_vli_pd_parade_device_probe(FuDevice *device, GError **error)
 {
-	FuVliPdDevice *parent = FU_VLI_PD_DEVICE(fu_device_get_parent(device));
 	FuVliPdParadeDevice *self = FU_VLI_PD_PARADE_DEVICE(device);
-	g_autofree gchar *instance_id1 = NULL;
 
 	/* get version */
 	if (!fu_vli_pd_parade_device_read_fw_ver(self, error))
 		return FALSE;
 
 	/* use header to populate device info */
-	instance_id1 = g_strdup_printf("USB\\VID_%04X&PID_%04X&I2C_%s",
-				       fu_usb_device_get_vid(FU_USB_DEVICE(parent)),
-				       fu_usb_device_get_pid(FU_USB_DEVICE(parent)),
-				       fu_vli_common_device_kind_to_string(self->device_kind));
-	fu_device_add_instance_id(device, instance_id1);
-
-	/* success */
-	return TRUE;
+	fu_device_add_instance_str(device,
+				   "I2C",
+				   fu_vli_common_device_kind_to_string(self->device_kind));
+	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", "I2C", NULL);
 }
 
 static void
@@ -703,6 +698,7 @@ fu_vli_pd_parade_device_init(FuVliPdParadeDevice *self)
 	self->page7 = 0x1E;
 	fu_device_add_icon(FU_DEVICE(self), "video-display");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_add_protocol(FU_DEVICE(self), "com.vli.i2c");
 	fu_device_set_install_duration(FU_DEVICE(self), 15); /* seconds */

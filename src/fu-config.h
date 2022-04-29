@@ -28,6 +28,8 @@ GPtrArray *
 fu_config_get_disabled_devices(FuConfig *self);
 GPtrArray *
 fu_config_get_disabled_plugins(FuConfig *self);
+GArray *
+fu_config_get_trusted_uids(FuConfig *self);
 GPtrArray *
 fu_config_get_approved_firmware(FuConfig *self);
 GPtrArray *
@@ -42,5 +44,7 @@ gboolean
 fu_config_get_ignore_power(FuConfig *self);
 gboolean
 fu_config_get_only_trusted(FuConfig *self);
+gboolean
+fu_config_get_show_device_private(FuConfig *self);
 const gchar *
 fu_config_get_host_bkc(FuConfig *self);

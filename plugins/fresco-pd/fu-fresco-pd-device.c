@@ -164,9 +164,7 @@ static gboolean
 fu_fresco_pd_device_setup(FuDevice *device, GError **error)
 {
 	FuFrescoPdDevice *self = FU_FRESCO_PD_DEVICE(device);
-	FuUsbDevice *usb_device = FU_USB_DEVICE(device);
 	guint8 ver[4] = {0x0};
-	g_autofree gchar *instance_id = NULL;
 	g_autofree gchar *version = NULL;
 
 	/* FuUsbDevice->setup */
@@ -185,14 +183,10 @@ fu_fresco_pd_device_setup(FuDevice *device, GError **error)
 
 	/* get customer ID */
 	self->customer_id = ver[1];
-	instance_id = g_strdup_printf("USB\\VID_%04X&PID_%04X&CID_%02X",
-				      fu_usb_device_get_vid(usb_device),
-				      fu_usb_device_get_pid(usb_device),
-				      self->customer_id);
-	fu_device_add_instance_id(device, instance_id);
 
-	/* success */
-	return TRUE;
+	/* add extra instance ID */
+	fu_device_add_instance_u8(device, "CID", self->customer_id);
+	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", "CID", NULL);
 }
 
 static FuFirmware *
@@ -319,7 +313,7 @@ fu_fresco_pd_device_write_firmware(FuDevice *device,
 			break;
 	}
 	g_debug("begin_addr: 0x%04x", begin_addr);
-	for (guint16 i = begin_addr + 3; i < begin_addr + 0x400; i += 3) {
+	for (guint i = begin_addr + 3; i < (guint)begin_addr + 0x400; i += 3) {
 		for (guint j = 0; j < 3; j++) {
 			if (!fu_fresco_pd_device_read_byte(self, i + j, &config[j], error)) {
 				g_prefix_error(error, "failed to read config byte %u: ", j);
@@ -423,7 +417,7 @@ fu_fresco_pd_device_set_progress(FuDevice *self, FuProgress *progress)
 static void
 fu_fresco_pd_device_init(FuFrescoPdDevice *self)
 {
-	fu_device_add_icon(FU_DEVICE(self), "audio-card");
+	fu_device_add_icon(FU_DEVICE(self), "usb-hub");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_protocol(FU_DEVICE(self), "com.frescologic.pd");

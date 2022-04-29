@@ -48,6 +48,9 @@ struct _FuIntelSpiDevice {
 
 #define PCI_BASE_ADDRESS_0 0x0010
 
+#define HSFS_FDOPSS_BIT 13 /* Flash Descriptor Override Pin-Strap Status */
+#define HSFS_FDV_BIT	14 /* Flash Descriptor Valid */
+
 /**
  * FU_INTEL_SPI_DEVICE_FLAG_ICH:
  *
@@ -303,6 +306,7 @@ fu_intel_spi_device_setup(FuDevice *device, GError **error)
 	guint64 total_size = 0;
 	guint8 comp1_density;
 	guint8 comp2_density;
+	gboolean me_is_locked;
 	guint16 reg_pr0 = fu_device_has_private_flag(device, FU_INTEL_SPI_DEVICE_FLAG_ICH)
 			      ? ICH9_REG_PR0
 			      : PCH100_REG_FPR0;
@@ -338,12 +342,14 @@ fu_intel_spi_device_setup(FuDevice *device, GError **error)
 	/* set size */
 	comp1_density = (self->components_rcd & 0x0f) >> 0;
 	if (comp1_density != 0xf)
-		total_size += 1 << (19 + comp1_density);
+		total_size += 1ull << (19 + comp1_density);
 	comp2_density = (self->components_rcd & 0xf0) >> 4;
 	if (comp2_density != 0xf)
-		total_size += 1 << (19 + comp2_density);
+		total_size += 1ull << (19 + comp2_density);
 	fu_device_set_firmware_size(device, total_size);
 
+	me_is_locked = !(self->hsfs & (1 << HSFS_FDV_BIT)) || /* assume locked if not valid */
+		       (self->hsfs & (1 << HSFS_FDOPSS_BIT)); /* use status bit if valid */
 	/* add children */
 	for (guint i = FU_IFD_REGION_BIOS; i < 4; i++) {
 		g_autoptr(FuDevice) child = NULL;
@@ -355,6 +361,10 @@ fu_intel_spi_device_setup(FuDevice *device, GError **error)
 			access = fu_ifd_region_to_access(i, self->flash_master[j - 1], TRUE);
 			fu_ifd_device_set_access(FU_IFD_DEVICE(child), j, access);
 		}
+
+		if (i == FU_IFD_REGION_ME && me_is_locked)
+			fu_device_add_flag(child, FWUPD_DEVICE_FLAG_LOCKED);
+
 		fu_device_add_child(device, child);
 	}
 
@@ -477,8 +487,6 @@ fu_intel_spi_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "IntelSpiKind") == 0) {
-		g_autofree gchar *instance_id = NULL;
-		g_autofree gchar *kind_up = NULL;
 
 		/* validate */
 		self->kind = fu_intel_spi_kind_from_string(value);
@@ -492,10 +500,8 @@ fu_intel_spi_device_set_quirk_kv(FuDevice *device,
 		}
 
 		/* get things like SPIBAR */
-		kind_up = g_ascii_strup(value, -1);
-		instance_id = g_strdup_printf("INTEL_SPI_CHIPSET\\ID_%s", kind_up);
-		fu_device_add_instance_id(device, instance_id);
-		return TRUE;
+		fu_device_add_instance_strup(device, "ID", value);
+		return fu_device_build_instance_id(device, error, "INTEL_SPI_CHIPSET", "ID", NULL);
 	}
 	if (g_strcmp0(key, "IntelSpiBarProxy") == 0) {
 		self->spibar_proxy = g_strdup(value);

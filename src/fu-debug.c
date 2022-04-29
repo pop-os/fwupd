@@ -101,6 +101,16 @@ fu_debug_handler_cb(const gchar *log_domain,
 		return;
 	}
 
+	/* plain output */
+	if (g_getenv("NO_COLOR") != NULL) {
+		if (timestamp != NULL)
+			g_printerr("%s ", timestamp);
+		if (domain != NULL)
+			g_printerr("%s ", domain->str);
+		g_printerr("%s\n", message);
+		return;
+	}
+
 	/* to screen */
 	switch (log_level) {
 	case G_LOG_LEVEL_ERROR:
@@ -186,10 +196,10 @@ fu_debug_post_parse_hook(GOptionContext *context,
 
 	/* verbose? */
 	if (self->verbose) {
-		g_setenv("FWUPD_VERBOSE", "*", TRUE);
+		(void)g_setenv("FWUPD_VERBOSE", "*", TRUE);
 	} else if (self->daemon_verbose != NULL) {
 		g_autofree gchar *str = g_strjoinv(",", self->daemon_verbose);
-		g_setenv("FWUPD_VERBOSE", str, TRUE);
+		(void)g_setenv("FWUPD_VERBOSE", str, TRUE);
 	}
 
 	/* redirect all domains to be able to change FWUPD_VERBOSE at runtime */
@@ -209,7 +219,7 @@ fu_debug_post_parse_hook(GOptionContext *context,
 			name_caps = g_ascii_strup(self->plugin_verbose[i], -1);
 			varname = g_strdup_printf("FWUPD_%s_VERBOSE", name_caps);
 			g_debug("setting %s=1", varname);
-			g_setenv(varname, "1", TRUE);
+			(void)g_setenv(varname, "1", TRUE);
 		}
 	}
 	return TRUE;

@@ -188,7 +188,6 @@ fu_logitech_hidpp_device_ping(FuLogitechHidPpDevice *self, GError **error)
 		}
 		if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_HOST_UNREACHABLE)) {
 			fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNREACHABLE);
-			fu_device_inhibit(FU_DEVICE(self), "unreachable", "device is unreachable");
 			return TRUE;
 		}
 		g_propagate_error(error, g_steal_pointer(&error_local));
@@ -197,12 +196,10 @@ fu_logitech_hidpp_device_ping(FuLogitechHidPpDevice *self, GError **error)
 
 	/* device no longer asleep */
 	fu_device_remove_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNREACHABLE);
-	fu_device_uninhibit(FU_DEVICE(self), "unreachable");
 	children = fu_device_get_children(FU_DEVICE(self));
 	for (guint i = 0; i < children->len; i++) {
 		FuDevice *radio = g_ptr_array_index(children, i);
 		fu_device_remove_flag(radio, FWUPD_DEVICE_FLAG_UNREACHABLE);
-		fu_device_uninhibit(radio, "unreachable");
 	}
 
 	/* if the device index is unset, grab it from the reply */
@@ -487,7 +484,6 @@ fu_logitech_hidpp_device_fetch_model_id(FuLogitechHidPpDevice *self, GError **er
 {
 	FuLogitechHidPpDevicePrivate *priv = GET_PRIVATE(self);
 	guint8 idx;
-	g_autofree gchar *devid = NULL;
 	g_autoptr(FuLogitechHidPpHidppMsg) msg = fu_logitech_hidpp_msg_new();
 	g_autoptr(GString) str = g_string_new(NULL);
 
@@ -512,11 +508,9 @@ fu_logitech_hidpp_device_fetch_model_id(FuLogitechHidPpDevice *self, GError **er
 	fu_logitech_hidpp_device_set_model_id(self, str->str);
 
 	/* add one more instance ID */
-	devid = g_strdup_printf("HIDRAW\\VEN_%04X&MOD_%s",
-				(guint)FU_UNIFYING_DEVICE_VID,
-				priv->model_id);
-	fu_device_add_instance_id(FU_DEVICE(self), devid);
-	return TRUE;
+	fu_device_add_instance_u16(FU_DEVICE(self), "VEN", FU_UNIFYING_DEVICE_VID);
+	fu_device_add_instance_str(FU_DEVICE(self), "MOD", priv->model_id);
+	return fu_device_build_instance_id(FU_DEVICE(self), error, "HIDRAW", "VEN", "MOD", NULL);
 }
 
 static gboolean
@@ -800,14 +794,6 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 	if (!fu_logitech_hidpp_device_fetch_model_id(self, error))
 		return FALSE;
 
-	/* get the firmware information */
-	if (!fu_logitech_hidpp_device_fetch_firmware_info(self, error))
-		return FALSE;
-
-	/* get the battery level */
-	if (!fu_logitech_hidpp_device_fetch_battery_level(self, error))
-		return FALSE;
-
 	/* try using HID++2.0 */
 	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_GET_DEVICE_NAME_TYPE);
 	if (idx != 0x00) {
@@ -873,6 +859,14 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 		fu_device_add_protocol(FU_DEVICE(self), "com.logitech.unifying");
 		fu_device_add_protocol(FU_DEVICE(self), "com.logitech.unifyingsigned");
 	}
+
+	/* get the firmware information */
+	if (!fu_logitech_hidpp_device_fetch_firmware_info(self, error))
+		return FALSE;
+
+	/* get the battery level */
+	if (!fu_logitech_hidpp_device_fetch_battery_level(self, error))
+		return FALSE;
 
 	/* poll for pings to track active state */
 	fu_device_set_poll_interval(device, FU_HIDPP_DEVICE_POLLING_INTERVAL);
@@ -1338,7 +1332,10 @@ fu_logitech_hidpp_device_finalize(GObject *object)
 }
 
 static gboolean
-fu_logitech_hidpp_device_cleanup(FuDevice *device, FwupdInstallFlags flags, GError **error)
+fu_logitech_hidpp_device_cleanup(FuDevice *device,
+				 FuProgress *progress,
+				 FwupdInstallFlags flags,
+				 GError **error)
 {
 	FuDevice *parent = fu_device_get_parent(device);
 	if (parent != NULL)

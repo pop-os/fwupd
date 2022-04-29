@@ -57,10 +57,10 @@ fu_redfish_backend_request_new(FuRedfishBackend *self)
 	curl = fu_redfish_request_get_curl(request);
 #ifdef HAVE_LIBCURL_7_62_0
 	uri = fu_redfish_request_get_uri(request);
-	curl_url_set(uri, CURLUPART_SCHEME, self->use_https ? "https" : "http", 0);
-	curl_url_set(uri, CURLUPART_HOST, self->hostname, 0);
-	curl_url_set(uri, CURLUPART_PORT, port, 0);
-	curl_easy_setopt(curl, CURLOPT_CURLU, uri);
+	(void)curl_url_set(uri, CURLUPART_SCHEME, self->use_https ? "https" : "http", 0);
+	(void)curl_url_set(uri, CURLUPART_HOST, self->hostname, 0);
+	(void)curl_url_set(uri, CURLUPART_PORT, port, 0);
+	(void)curl_easy_setopt(curl, CURLOPT_CURLU, uri);
 #else
 	uri_base =
 	    g_strdup_printf("%s://%s:%s", self->use_https ? "https" : "http", self->hostname, port);
@@ -69,18 +69,18 @@ fu_redfish_backend_request_new(FuRedfishBackend *self)
 
 	/* since DSP0266 makes Basic Authorization a requirement,
 	 * it is safe to use Basic Auth for all implementations */
-	curl_easy_setopt(curl, CURLOPT_HTTPAUTH, (glong)CURLAUTH_BASIC);
-	curl_easy_setopt(curl, CURLOPT_TIMEOUT, (glong)180);
-	curl_easy_setopt(curl, CURLOPT_USERNAME, self->username);
-	curl_easy_setopt(curl, CURLOPT_PASSWORD, self->password);
+	(void)curl_easy_setopt(curl, CURLOPT_HTTPAUTH, (glong)CURLAUTH_BASIC);
+	(void)curl_easy_setopt(curl, CURLOPT_TIMEOUT, (glong)180);
+	(void)curl_easy_setopt(curl, CURLOPT_USERNAME, self->username);
+	(void)curl_easy_setopt(curl, CURLOPT_PASSWORD, self->password);
 
 	/* setup networking */
 	user_agent = g_strdup_printf("%s/%s", PACKAGE_NAME, PACKAGE_VERSION);
-	curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent);
-	curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 60L);
+	(void)curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent);
+	(void)curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 60L);
 	if (!self->cacheck) {
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+		(void)curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+		(void)curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 	}
 
 	/* success */
@@ -284,6 +284,17 @@ fu_redfish_backend_coldplug(FuBackend *backend, GError **error)
 	return TRUE;
 }
 
+static void
+fu_redfish_backend_set_update_uri_path(FuRedfishBackend *self, const gchar *update_uri_path)
+{
+	/* not changed */
+	if (g_strcmp0(self->update_uri_path, update_uri_path) == 0)
+		return;
+
+	g_free(self->update_uri_path);
+	self->update_uri_path = g_strdup(update_uri_path);
+}
+
 static gboolean
 fu_redfish_backend_setup(FuBackend *backend, GError **error)
 {
@@ -339,8 +350,15 @@ fu_redfish_backend_setup(FuBackend *backend, GError **error)
 				    "no @odata.id string");
 		return FALSE;
 	}
-	self->update_uri_path = g_strdup(data_id);
+	fu_redfish_backend_set_update_uri_path(self, data_id);
 	return TRUE;
+}
+
+static void
+fu_redfish_backend_invalidate(FuBackend *backend)
+{
+	FuRedfishBackend *self = FU_REDFISH_BACKEND(backend);
+	g_hash_table_remove_all(self->request_cache);
 }
 
 void
@@ -421,6 +439,7 @@ fu_redfish_backend_class_init(FuRedfishBackendClass *klass)
 	FuBackendClass *klass_backend = FU_BACKEND_CLASS(klass);
 	klass_backend->coldplug = fu_redfish_backend_coldplug;
 	klass_backend->setup = fu_redfish_backend_setup;
+	klass_backend->invalidate = fu_redfish_backend_invalidate;
 	object_class->finalize = fu_redfish_backend_finalize;
 }
 
@@ -443,6 +462,12 @@ fu_redfish_backend_init(FuRedfishBackend *self)
 FuRedfishBackend *
 fu_redfish_backend_new(FuContext *ctx)
 {
-	return FU_REDFISH_BACKEND(
-	    g_object_new(FU_REDFISH_TYPE_BACKEND, "name", "redfish", "context", ctx, NULL));
+	return FU_REDFISH_BACKEND(g_object_new(FU_REDFISH_TYPE_BACKEND,
+					       "name",
+					       "redfish",
+					       "can-invalidate",
+					       TRUE,
+					       "context",
+					       ctx,
+					       NULL));
 }

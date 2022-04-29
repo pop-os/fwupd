@@ -80,6 +80,8 @@ gboolean
 fwupd_client_connect_finish(FwupdClient *self,
 			    GAsyncResult *res,
 			    GError **error) G_GNUC_WARN_UNUSED_RESULT;
+gboolean
+fwupd_client_disconnect(FwupdClient *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
 void
 fwupd_client_get_devices_async(FwupdClient *self,
 			       GCancellable *cancellable,
@@ -363,6 +365,8 @@ FwupdStatus
 fwupd_client_get_status(FwupdClient *self);
 gboolean
 fwupd_client_get_tainted(FwupdClient *self);
+gboolean
+fwupd_client_get_only_trusted(FwupdClient *self);
 gboolean
 fwupd_client_get_daemon_interactive(FwupdClient *self);
 guint

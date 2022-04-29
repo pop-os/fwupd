@@ -53,6 +53,8 @@ fwupdplugin_src = [
   'fu-ifd-common.c',              # fuzzing
   'fu-ifd-firmware.c',            # fuzzing
   'fu-ifd-image.c',               # fuzzing
+  'fu-uswid-firmware.c',          # fuzzing
+  'fu-coswid-firmware.c',         # fuzzing
   'fu-efivar.c',
   'fu-udev-device.c',
   'fu-i2c-device.c',
@@ -105,6 +107,8 @@ fwupdplugin_headers = [
   'fu-ifd-bios.h',
   'fu-ifd-common.h',
   'fu-ifd-firmware.h',
+  'fu-uswid-firmware.h',
+  'fu-coswid-firmware.h',
   'fu-ifd-image.h',
   'fu-volume.h',
   'fu-firmware.h',
@@ -142,7 +146,7 @@ fu_hash = custom_target(
   'fu-hash.h',
   input : fwupdplugin_src,
   output : 'fu-hash.h',
-  command : [python3.path(),
+  command : [python3.full_path(),
              join_paths(meson.current_source_dir(), 'fu-hash.py'),
              '@OUTPUT@', '@INPUT@']
 )
@@ -164,6 +168,8 @@ introspection_deps = [
   libxmlb,
   libjcat,
   giounix,
+  gusb,
+  gudev,
 ]
 
 pkgg_requires = [ 'gio-2.0',
@@ -175,16 +181,8 @@ pkgg_requires = [ 'gio-2.0',
                   'libgcab-1.0',
                   'xmlb',
                   'jcat',
+                  'gusb'
 ]
-
-if get_option('gusb')
-  introspection_deps += gusb
-  pkgg_requires +=  'gusb'
-endif
-
-if get_option('gudev')
-  introspection_deps += gudev
-endif
 
 library_deps = [
   introspection_deps,
@@ -193,16 +191,11 @@ library_deps = [
   libgcab,
   valgrind,
   libjcat,
+  lzma,
+  libarchive,
+  cbor,
   platform_deps,
 ]
-
-if get_option('libarchive')
-  library_deps += libarchive
-endif
-
-if get_option('lzma')
-  library_deps += lzma
-endif
 
 fwupdplugin_mapfile = 'fwupdplugin.map'
 vflag = '-Wl,--version-script,@0@/@1@'.format(meson.current_source_dir(), fwupdplugin_mapfile)
@@ -241,11 +234,11 @@ fwupdplugin_pkgg.generate(
   description : 'library for plugins to use to interact with fwupd daemon',
 )
 
-if get_option('introspection')
+if introspection.allowed()
   gir_dep = declare_dependency(sources: fwupd_gir)
   girtargets = []
   extra_args = []
-  if get_option('gusb')
+  if gusb.found()
     if gusb.type_name() == 'internal'
       girtargets += subproject('gusb').get_variable('libgusb_girtarget')[0]
     else
@@ -303,7 +296,7 @@ if get_option('introspection')
     output: 'fwupdplugin.map',
     command: [
       python3,
-      join_paths(meson.source_root(), 'contrib', 'generate-version-script.py'),
+      join_paths(meson.project_source_root(), 'contrib', 'generate-version-script.py'),
       'LIBFWUPDPLUGIN',
       '@INPUT@',
       '@OUTPUT@',

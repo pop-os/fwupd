@@ -15,6 +15,14 @@
  *
  * A chip conforming to the Common Flash Memory Interface, typically a SPI flash chip.
  *
+ * Where required, the quirks instance IDs will be added in ->setup().
+ *
+ * The defaults are set as follows, and can be overridden in quirk files:
+ *
+ * * `PageSize`: 0x100
+ * * `SectorSize`: 0x1000
+ * * `BlockSize`: 0x10000
+ *
  * See also: [class@FuDevice]
  */
 
@@ -31,6 +39,10 @@ G_DEFINE_TYPE_WITH_PRIVATE(FuCfiDevice, fu_cfi_device, FU_TYPE_DEVICE)
 enum { PROP_0, PROP_FLASH_ID, PROP_LAST };
 
 #define GET_PRIVATE(o) (fu_cfi_device_get_instance_private(o))
+
+#define FU_CFI_DEVICE_PAGE_SIZE_DEFAULT	  0x100
+#define FU_CFI_DEVICE_SECTOR_SIZE_DEFAULT 0x1000
+#define FU_CFI_DEVICE_BLOCK_SIZE_DEFAULT  0x10000
 
 static const gchar *
 fu_cfi_device_cmd_to_string(FuCfiDeviceCmd cmd)
@@ -167,44 +179,30 @@ fu_cfi_device_finalize(GObject *object)
 	G_OBJECT_CLASS(fu_cfi_device_parent_class)->finalize(object);
 }
 
-/* returns at most 4 chars from the ID, or %NULL if no different from existing ID */
-static gchar *
-fu_cfi_device_get_flash_id_jedec(FuCfiDevice *self)
-{
-	FuCfiDevicePrivate *priv = GET_PRIVATE(self);
-	if (priv->flash_id == NULL)
-		return NULL;
-	if (strlen(priv->flash_id) <= 4)
-		return NULL;
-	return g_strndup(priv->flash_id, 4);
-}
-
 static gboolean
-fu_cfi_device_probe(FuDevice *device, GError **error)
+fu_cfi_device_setup(FuDevice *device, GError **error)
 {
+	gsize flash_idsz = 0;
 	FuCfiDevice *self = FU_CFI_DEVICE(device);
 	FuCfiDevicePrivate *priv = GET_PRIVATE(self);
 
-	/* load the parameters from quirks */
-	if (priv->flash_id != NULL) {
-		g_autofree gchar *flash_id_jedec = NULL;
-		g_autofree gchar *instance_id0 = NULL;
-		g_autofree gchar *instance_id1 = NULL;
+	/* sanity check */
+	if (priv->flash_id != NULL)
+		flash_idsz = strlen(priv->flash_id);
+	if (flash_idsz == 0 || flash_idsz % 2 != 0) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "not a valid flash-id");
+		return FALSE;
+	}
 
-		/* least specific so adding first */
-		flash_id_jedec = fu_cfi_device_get_flash_id_jedec(self);
-		if (flash_id_jedec != NULL) {
-			instance_id1 = g_strdup_printf("CFI\\FLASHID_%s", flash_id_jedec);
-			fu_device_add_instance_id_full(FU_DEVICE(self),
-						       instance_id1,
-						       FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
-		}
-
-		/* this is most specific and can override keys of instance_id1 */
-		instance_id0 = g_strdup_printf("CFI\\FLASHID_%s", priv->flash_id);
-		fu_device_add_instance_id_full(FU_DEVICE(self),
-					       instance_id0,
-					       FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
+	/* typically this will add quirk strings of 2, 4, then 6 bytes */
+	for (guint i = 0; i < flash_idsz; i += 2) {
+		g_autofree gchar *flash_id = g_strndup(priv->flash_id, i + 2);
+		fu_device_add_instance_str(device, "FLASHID", flash_id);
+		if (!fu_device_build_instance_id_quirk(device, error, "CFI", "FLASHID", NULL))
+			return FALSE;
 	}
 
 	/* success */
@@ -257,7 +255,7 @@ fu_cfi_device_get_cmd(FuCfiDevice *self, FuCfiDeviceCmd cmd, guint8 *value, GErr
  *
  * This is typically set with the `CfiDevicePageSize` quirk key.
  *
- * Returns: page size in bytes, or 0 if unknown
+ * Returns: page size in bytes
  *
  * Since: 1.7.3
  **/
@@ -294,7 +292,7 @@ fu_cfi_device_set_page_size(FuCfiDevice *self, guint32 page_size)
  *
  * This is typically set with the `CfiDeviceSectorSize` quirk key.
  *
- * Returns: sector size in bytes, or 0 if unknown
+ * Returns: sector size in bytes
  *
  * Since: 1.7.3
  **/
@@ -331,7 +329,7 @@ fu_cfi_device_set_block_size(FuCfiDevice *self, guint32 block_size)
  *
  * This is typically set with the `CfiDeviceBlockSize` quirk key.
  *
- * Returns: block size in bytes, or 0 if unknown
+ * Returns: block size in bytes
  *
  * Since: 1.7.4
  **/
@@ -469,10 +467,71 @@ fu_cfi_device_to_string(FuDevice *device, guint idt, GString *str)
 		fu_common_string_append_kx(str, idt, "BlockSize", priv->block_size);
 }
 
+/**
+ * fu_cfi_device_chip_select:
+ * @self: a #FuCfiDevice
+ * @value: boolean
+ * @error: (nullable): optional return location for an error
+ *
+ * Sets the chip select value.
+ *
+ * Returns: %TRUE on success
+ *
+ * Since: 1.8.0
+ **/
+gboolean
+fu_cfi_device_chip_select(FuCfiDevice *self, gboolean value, GError **error)
+{
+	FuCfiDeviceClass *klass = FU_CFI_DEVICE_GET_CLASS(self);
+	g_return_val_if_fail(FU_IS_CFI_DEVICE(self), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+	if (klass->chip_select == NULL) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		return FALSE;
+	}
+	return klass->chip_select(self, value, error);
+}
+
+static gboolean
+fu_cfi_device_chip_select_assert(GObject *device, GError **error)
+{
+	return fu_cfi_device_chip_select(FU_CFI_DEVICE(device), TRUE, error);
+}
+
+static gboolean
+fu_cfi_device_chip_select_deassert(GObject *device, GError **error)
+{
+	return fu_cfi_device_chip_select(FU_CFI_DEVICE(device), FALSE, error);
+}
+
+/**
+ * fu_cfi_device_chip_select_locker_new:
+ * @self: a #FuCfiDevice
+ *
+ * Creates a custom device locker that asserts and deasserts the chip select signal.
+ *
+ * Returns: (transfer full): (nullable): a #FuDeviceLocker
+ *
+ * Since: 1.8.0
+ **/
+FuDeviceLocker *
+fu_cfi_device_chip_select_locker_new(FuCfiDevice *self, GError **error)
+{
+	g_return_val_if_fail(FU_IS_CFI_DEVICE(self), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+	return fu_device_locker_new_full(self,
+					 fu_cfi_device_chip_select_assert,
+					 fu_cfi_device_chip_select_deassert,
+					 error);
+}
+
 static void
 fu_cfi_device_init(FuCfiDevice *self)
 {
 	FuCfiDevicePrivate *priv = GET_PRIVATE(self);
+	priv->page_size = FU_CFI_DEVICE_PAGE_SIZE_DEFAULT;
+	priv->sector_size = FU_CFI_DEVICE_SECTOR_SIZE_DEFAULT;
+	priv->block_size = FU_CFI_DEVICE_BLOCK_SIZE_DEFAULT;
 	priv->cmds[FU_CFI_DEVICE_CMD_WRITE_STATUS] = 0x01;
 	priv->cmds[FU_CFI_DEVICE_CMD_PAGE_PROG] = 0x02;
 	priv->cmds[FU_CFI_DEVICE_CMD_READ_DATA] = 0x03;
@@ -494,7 +553,7 @@ fu_cfi_device_class_init(FuCfiDeviceClass *klass)
 	object_class->finalize = fu_cfi_device_finalize;
 	object_class->get_property = fu_cfi_device_get_property;
 	object_class->set_property = fu_cfi_device_set_property;
-	klass_device->probe = fu_cfi_device_probe;
+	klass_device->setup = fu_cfi_device_setup;
 	klass_device->to_string = fu_cfi_device_to_string;
 	klass_device->set_quirk_kv = fu_cfi_device_set_quirk_kv;
 

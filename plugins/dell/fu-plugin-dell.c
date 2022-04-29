@@ -13,9 +13,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifdef HAVE_TSS2
 #include <tss2/tss2_esys.h>
-#endif
 #include <fwupdplugin.h>
 
 #include "fu-plugin-dell.h"
@@ -539,7 +537,6 @@ fu_plugin_dell_get_results(FuPlugin *plugin, FuDevice *device, GError **error)
 	return TRUE;
 }
 
-#ifdef HAVE_TSS2
 static void
 Esys_Finalize_autoptr_cleanup(ESYS_CONTEXT *esys_context)
 {
@@ -589,12 +586,10 @@ fu_plugin_dell_get_tpm_capability(ESYS_CONTEXT *ctx, guint32 query)
 
 	return fu_common_strstrip(result);
 }
-#endif
 
 static gboolean
 fu_plugin_dell_add_tpm_model(FuDevice *dev, GError **error)
 {
-#ifdef HAVE_TSS2
 	TSS2_RC rc;
 	const gchar *base = "DELL-TPM";
 	g_autoptr(ESYS_CONTEXT) ctx = NULL;
@@ -667,7 +662,7 @@ fu_plugin_dell_add_tpm_model(FuDevice *dev, GError **error)
 	fu_device_add_instance_id(dev, v1_v2);
 	fu_device_add_instance_id(dev, v1_v2_v3);
 	fu_device_add_instance_id(dev, v1_v2_v3_v4);
-#endif
+
 	return TRUE;
 }
 
@@ -876,9 +871,9 @@ fu_plugin_dell_init(FuPlugin *plugin)
 
 	data->smi_obj = g_malloc0(sizeof(FuDellSmiObj));
 	if (g_getenv("FWUPD_DELL_VERBOSE") != NULL)
-		g_setenv("LIBSMBIOS_C_DEBUG_OUTPUT_ALL", "1", TRUE);
+		(void)g_setenv("LIBSMBIOS_C_DEBUG_OUTPUT_ALL", "1", TRUE);
 	else
-		g_setenv("TSS2_LOG", "esys+none,tcti+none", FALSE);
+		(void)g_setenv("TSS2_LOG", "esys+none,tcti+none", FALSE);
 	if (fu_dell_supported(plugin))
 		data->smi_obj->smi = dell_smi_factory(DELL_SMI_DEFAULTS);
 	data->smi_obj->fake_smbios = FALSE;

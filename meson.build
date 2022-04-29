@@ -1,7 +1,7 @@
 project('fwupd', 'c',
-  version : '1.7.7',
+  version : '1.8.0',
   license : 'LGPL-2.1+',
-  meson_version : '>=0.50.0',
+  meson_version : '>=0.60.0',
   default_options : ['warning_level=2', 'c_std=c99'],
 )
 
@@ -19,11 +19,13 @@ conf.set_quoted('PACKAGE_VERSION', fwupd_version)
 
 # get source version, falling back to package version
 git = find_program('git', required : false)
+tag = false
 if git.found()
   source_version = run_command(git, 'describe').stdout().strip()
   if source_version == ''
     source_version = fwupd_version
   endif
+  tag = run_command([git, 'describe', '--exact-match']).returncode() == 0
 else
   source_version = fwupd_version
 endif
@@ -50,7 +52,7 @@ libfwupd_lt_current = '2'
 libfwupd_lt_revision = '0'
 libfwupd_lt_age = '0'
 libfwupd_lt_version = '@0@.@1@.@2@'.format(libfwupd_lt_current, libfwupd_lt_age, libfwupd_lt_revision)
-libfwupdplugin_lt_current = '5'
+libfwupdplugin_lt_current = '6'
 libfwupdplugin_lt_revision = '0'
 libfwupdplugin_lt_age = '0'
 libfwupdplugin_lt_version = '@0@.@1@.@2@'.format(libfwupdplugin_lt_current, libfwupdplugin_lt_age, libfwupdplugin_lt_revision)
@@ -89,6 +91,7 @@ warning_flags = [
   '-Wno-missing-field-initializers',
   '-Wno-strict-aliasing',
   '-Wno-suggest-attribute=format',
+  '-Wno-unknown-warning-option',
   '-Wno-unused-parameter',
   '-Wold-style-definition',
   '-Woverride-init',
@@ -201,57 +204,59 @@ if gio.version().version_compare ('>= 2.55.0')
 endif
 gmodule = dependency('gmodule-2.0')
 if build_standalone
-if get_option('gudev')
-  gudev = dependency('gudev-1.0', version : '>= 232')
+gudev = dependency('gudev-1.0', version : '>= 232',
+                    required: get_option('gudev').disable_auto_if(host_machine.system() != 'linux'))
+if gudev.found()
   conf.set('HAVE_GUDEV', '1')
-else
-  gudev = dependency('', required : false)
 endif
-if get_option('bluez')
+bluez = get_option('bluez').disable_auto_if(host_machine.system() != 'linux')
+if bluez.allowed()
   conf.set('HAVE_BLUEZ', '1')
 endif
 if get_option('hsi')
   conf.set('HAVE_HSI', '1')
 endif
 libxmlb = dependency('xmlb', version : '>= 0.1.13', fallback : ['libxmlb', 'libxmlb_dep'])
-if get_option('gusb')
-  gusb = dependency('gusb', version : '>= 0.3.0', fallback : ['gusb', 'gusb_dep'])
+gusb = dependency('gusb', version : '>= 0.3.0', fallback : ['gusb', 'gusb_dep'], required: get_option('gusb'))
+if gusb.found()
   conf.set('HAVE_GUSB', '1')
 endif
-if get_option('sqlite')
-  sqlite = dependency('sqlite3')
+sqlite = dependency('sqlite3', required: get_option('sqlite'))
+if sqlite.found()
   conf.set('HAVE_SQLITE', '1')
 endif
-if get_option('libarchive')
-  libarchive = dependency('libarchive')
-  conf.set('HAVE_LIBARCHIVE', '1')
+libarchive = dependency('libarchive', required: get_option('libarchive'))
+if libarchive.found()
+    conf.set('HAVE_LIBARCHIVE', '1')
 endif
 endif
 libjcat = dependency('jcat', version : '>= 0.1.4', fallback : ['libjcat', 'libjcat_dep'])
 libjsonglib = dependency('json-glib-1.0', version : '>= 1.1.1')
 valgrind = dependency('valgrind', required: false)
-if get_option('curl')
-  libcurl = dependency('libcurl', version : '>= 7.56.0')
+libcurl = dependency('libcurl', version : '>= 7.56.0', required: get_option('curl'))
+if libcurl.found()
   conf.set('HAVE_LIBCURL', '1')
   if libcurl.version().version_compare('>= 7.62.0')
     conf.set('HAVE_LIBCURL_7_62_0', '1')
   endif
 endif
+polkit = dependency('polkit-gobject-1', version : '>= 0.103',
+         required: get_option('polkit').disable_auto_if(host_machine.system() != 'linux'))
+if polkit.found()
+  conf.set('HAVE_POLKIT', '1')
+  if polkit.version().version_compare('>= 0.114')
+    conf.set('HAVE_POLKIT_0_114', '1')
+  endif
+  conf.set_quoted ('POLKIT_ACTIONDIR', polkit.get_variable(pkgconfig : 'actiondir'))
+endif
 if build_daemon
-  if get_option('polkit')
-    polkit = dependency('polkit-gobject-1', version : '>= 0.103')
-    conf.set('HAVE_POLKIT', '1')
-    if polkit.version().version_compare('>= 0.114')
-      conf.set('HAVE_POLKIT_0_114', '1')
-    endif
-  conf.set_quoted ('POLKIT_ACTIONDIR', polkit.get_pkgconfig_variable('actiondir'))
-  else
+  if not polkit.found()
     warning('Polkit is disabled, the daemon will allow ALL client actions')
   endif
   udevdir = get_option('udevdir')
   if udevdir == '' and host_machine.system() == 'linux'
     udev = dependency('udev')
-    udevdir = udev.get_pkgconfig_variable('udevdir')
+    udevdir = udev.get_variable(pkgconfig : 'udevdir')
   endif
 endif
 libm = cc.find_library('m', required: false)
@@ -267,25 +272,19 @@ else
   python3 = find_program('python3.8', 'python3', 'python3.9')
 endif
 
-if get_option('gnutls')
-  gnutls = dependency('gnutls', version : '>= 3.6.0')
+gnutls = dependency('gnutls', version : '>= 3.6.0', required: get_option('gnutls'))
+if gnutls.found()
   conf.set('HAVE_GNUTLS', '1')
-else
-  if get_option('plugin_uefi_pk')
-    error('plugin_uefi_pk needs -Dgnutls=true to work')
-  endif
-  if get_option('plugin_synaptics_rmi')
-    error('plugin_synaptics_rmi needs -Dgnutls=true to work')
-  endif
 endif
 
-if get_option('lzma')
-  lzma = dependency('liblzma')
+lzma = dependency('liblzma', required: get_option('lzma'))
+if lzma.found()
   conf.set('HAVE_LZMA', '1')
-else
-  if get_option('plugin_intel_spi')
-    error('plugin_intel_spi needs -Dlzma=true to work')
-  endif
+endif
+
+cbor = dependency('libcbor', version : '>= 0.7.0', required: get_option('cbor'))
+if cbor.found()
+  conf.set('HAVE_CBOR', '1')
 endif
 
 platform_deps = []
@@ -301,10 +300,12 @@ endif
 if valgrind.found()
   conf.set('HAVE_VALGRIND', '1')
 endif
-if get_option('offline')
-  if not get_option('systemd')
-    warning('-Doffline=true requires -Dsystemd=true')
-  endif
+
+libsystemd = dependency('libsystemd',
+                        required: get_option('systemd').disable_auto_if(host_machine.system() != 'linux'))
+offline = get_option('offline').require(libsystemd.found(),
+    error_message: '-Doffline=enabled requires systemd')
+if offline.allowed()
   conf.set('HAVE_FWUPDOFFLINE', '1')
 endif
 
@@ -355,12 +356,9 @@ if cc.has_header('malloc.h')
 	 conf.set('HAVE_MALLOC_TRIM', '1')
   endif
 endif
-if cc.has_header('cpuid.h') and cc.has_header_symbol('cpuid.h', '__get_cpuid_count') and (host_cpu == 'x86' or host_cpu == 'x86_64')
+has_cpuid = cc.has_header_symbol('cpuid.h', '__get_cpuid_count', required: get_option('plugin_msr'))
+if has_cpuid
   conf.set('HAVE_CPUID_H', '1')
-else
-  if get_option('plugin_msr')
-    error('cpuid.h is required for -Dplugin_msr=true')
-  endif
 endif
 if cc.has_function('getuid')
   conf.set('HAVE_GETUID', '1')
@@ -386,18 +384,6 @@ if cc.has_header('linux/ipmi.h')
 else
   have_linux_ipmi = false
 endif
-if cc.has_header_symbol('linux/gpio.h', 'GPIO_V2_LINE_FLAG_OUTPUT')
-  have_linux_gpio = true
-  conf.set('HAVE_LINUX_GPIO_H', '1')
-else
-  have_linux_gpio = false
-endif
-if cc.has_header_symbol('linux/ipmi_msgdefs.h', 'IPMI_DEVICE_IN_FW_UPDATE_ERR')
-  conf.set('HAVE_IPMI_DEVICE_IN_FW_UPDATE_ERR', '1')
-endif
-if cc.has_header_symbol('linux/ipmi_msgdefs.h', 'IPMI_DEVICE_IN_INIT_ERR')
-  conf.set('HAVE_IPMI_DEVICE_IN_INIT_ERR', '1')
-endif
 if cc.has_header_symbol('fcntl.h', 'F_WRLCK')
   conf.set('HAVE_WRLCK', '1')
 endif
@@ -414,17 +400,10 @@ if host_machine.system() == 'freebsd'
   endif
 endif
 
-if build_standalone and get_option('plugin_tpm')
-  tpm2tss = dependency('tss2-esys', version : '>= 2.0')
-  conf.set('HAVE_TSS2', '1')
-else
-  tpm2tss = dependency('', required: false)
-endif
+efiboot = dependency('efiboot', required: get_option('plugin_uefi_capsule'))
+efivar = dependency('efivar', required: get_option('plugin_uefi_capsule'))
+if build_standalone and efiboot.found() and efivar.found()
 
-if build_standalone and get_option('plugin_uefi_capsule')
-  efiboot = dependency('efiboot')
-
-  efivar = dependency('efivar')
   if cc.has_header_symbol('efivar/efivar-types.h', 'efi_time_t', dependencies : efivar)
     conf.set('HAVE_EFI_TIME_T', '1')
   endif
@@ -457,78 +436,57 @@ if build_standalone and get_option('plugin_uefi_capsule')
   endif
 endif
 
-if build_standalone and get_option('plugin_dell')
-  libsmbios_c = dependency('libsmbios_c', version : '>= 2.4.0')
-  conf.set('HAVE_DELL', '1')
-  if not get_option('plugin_uefi_capsule')
-    error('plugin_dell also needs plugin_uefi_capsule to work')
-  endif
-endif
-
-if build_standalone and get_option('plugin_modem_manager')
-  libmm_glib = dependency('mm-glib', version : '>= 1.10.0')
-  add_project_arguments('-DMM_REQUIRED_VERSION="1.10.0"', language : 'c')
-  libqmi_glib = dependency('qmi-glib', version : '>= 1.23.1')
-  libmbim_glib = dependency('mbim-glib', version : '>= 1.22.0')
-endif
-
 if get_option('soup_session_compat')
     conf.set('SOUP_SESSION_COMPAT', '1')
 endif
 
-if build_standalone and get_option('plugin_nvme')
-  if not cc.has_header('linux/nvme_ioctl.h')
-    error('NVMe support requires kernel >= 4.4')
-  endif
-endif
-
 umockdev = dependency('umockdev-1.0', required: false)
 
-if build_standalone and get_option('plugin_flashrom')
-  libflashrom = dependency('flashrom', fallback : ['flashrom', 'flashrom_dep'])
+if build_standalone
+  libflashrom = dependency('flashrom', 
+                            fallback : ['flashrom', 'flashrom_dep'], 
+                            required: get_option('plugin_flashrom').disable_auto_if(host_machine.system() != 'linux'))
 endif
 
-if build_standalone and get_option('systemd')
-  systemd = dependency('systemd', version : '>= 211')
-  libsystemd = dependency('libsystemd')
+if libsystemd.found()
+  systemd = dependency('systemd', version : '>= 211', required: get_option('systemd'))
   conf.set('HAVE_SYSTEMD' , '1')
   conf.set('HAVE_LOGIND' , '1')
   systemd_root_prefix = get_option('systemd_root_prefix')
   if systemd_root_prefix == ''
-    systemdunitdir = systemd.get_pkgconfig_variable('systemdsystemunitdir')
-    systemdsystempresetdir = systemd.get_pkgconfig_variable('systemdsystempresetdir')
-    systemd_shutdown_dir = systemd.get_pkgconfig_variable('systemdshutdowndir')
-    systemd_modules_load_dir = systemd.get_pkgconfig_variable('modulesloaddir')
+    systemdunitdir = systemd.get_variable(pkgconfig : 'systemdsystemunitdir')
+    systemdsystempresetdir = systemd.get_variable(pkgconfig : 'systemdsystempresetdir')
+    systemd_shutdown_dir = systemd.get_variable(pkgconfig : 'systemdshutdowndir')
+    systemd_modules_load_dir = systemd.get_variable(pkgconfig : 'modulesloaddir')
   else
-    systemdunitdir = systemd.get_pkgconfig_variable('systemdsystemunitdir', define_variable: ['rootprefix', systemd_root_prefix])
-    systemdsystempresetdir = systemd.get_pkgconfig_variable('systemdsystempresetdir', define_variable: ['rootprefix', systemd_root_prefix])
+    systemdunitdir = systemd.get_variable(pkgconfig : 'systemdsystemunitdir', pkgconfig_define: ['rootprefix', systemd_root_prefix])
+    systemdsystempresetdir = systemd.get_variable(pkgconfig : 'systemdsystempresetdir', pkgconfig_define: ['rootprefix', systemd_root_prefix])
     systemd_root_prefix_varname = 'root_prefix'
     if systemd.version().version_compare('< 246')
       systemd_root_prefix_varname = 'rootprefix'
     endif
-    systemd_shutdown_dir = systemd.get_pkgconfig_variable('systemdshutdowndir', define_variable: [systemd_root_prefix_varname, systemd_root_prefix])
-    systemd_modules_load_dir = systemd.get_pkgconfig_variable('modulesloaddir', define_variable: [systemd_root_prefix_varname, systemd_root_prefix])
+    systemd_shutdown_dir = systemd.get_variable(pkgconfig : 'systemdshutdowndir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
+    systemd_modules_load_dir = systemd.get_variable(pkgconfig : 'modulesloaddir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
   endif
-else
-  libsystemd = dependency('', required: false)
 endif
 
-if build_standalone and get_option('elogind')
-  elogind = dependency('libelogind', version : '>= 211')
+elogind = dependency('systemd', 'libelogind', required: get_option('elogind'))
+if elogind.found()
   conf.set('HAVE_LOGIND' , '1')
 endif
 
-if build_standalone and get_option('consolekit')
+if get_option('consolekit').disable_auto_if(host_machine.system() != 'linux').allowed()
   conf.set('HAVE_CONSOLEKIT' , '1')
 endif
 
-if get_option('supported_build')
+if get_option('supported_build').disable_auto_if(not tag).allowed()
     conf.set('SUPPORTED_BUILD', '1')
 endif
 
 gnome = import('gnome')
 i18n = import('i18n')
 
+conf.set_quoted('FWUPD_PREFIX', prefix)
 conf.set_quoted('FWUPD_BINDIR', bindir)
 conf.set_quoted('FWUPD_LIBDIR', libdir)
 conf.set_quoted('FWUPD_LIBEXECDIR', libexecdir)
@@ -547,8 +505,8 @@ conf.set_quoted('FWUPD_PLUGINDIR', plugin_dir)
 endif
 
 # sanity check, otherwise there is not point building
-if host_machine.system() == 'windows' and not get_option('gusb')
-  error('-Dgusb=true is required for Windows build')
+if host_machine.system() == 'windows' and not gusb.found()
+  error('gusb feature is required for Windows build')
 endif
 
 conf.set_quoted('GETTEXT_PACKAGE', meson.project_name())
@@ -565,32 +523,12 @@ configure_file(
   configuration : conf
 )
 
-if build_standalone
-  plugin_deps = []
-  plugin_deps += libxmlb
-  plugin_deps += gio
-  plugin_deps += giounix
-  plugin_deps += gmodule
-  plugin_deps += gudev
-  plugin_deps += libjsonglib
-endif
-
-if get_option('gusb')
-  plugin_deps += gusb
-endif
-
-if get_option('libarchive')
-  plugin_deps += libarchive
-endif
-
-if get_option('plugin_logitech_bulkcontroller')
-    protobufc = dependency('libprotobuf-c')
-    protoc = find_program('protoc', 'protoc-c')
-    plugin_deps += protobufc
-endif
+protobufc = dependency('libprotobuf-c', required: get_option('plugin_logitech_bulkcontroller'))
+protoc = find_program('protoc', 'protoc-c', required: get_option('plugin_logitech_bulkcontroller'))
 
 root_incdir = include_directories('.')
 
+introspection = get_option('introspection').disable_auto_if(host_machine.system() != 'linux')
 if get_option('docs') == 'gtkdoc'
   gtkdocscan = find_program('gtkdoc-scan')
 elif get_option('docs') == 'docgen'
@@ -603,11 +541,11 @@ elif get_option('docs') == 'docgen'
     native: true,
     fallback: ['gi-docgen', 'dummy_dep'],
   )
-  gidocgen = find_program('gi-docgen', required: get_option('introspection'))
+  gidocgen = find_program('gi-docgen', required: introspection)
 endif
 
 subdir('libfwupd')
-if build_daemon and get_option('polkit')
+if polkit.found()
   subdir('policy')
 endif
 if build_standalone
@@ -621,7 +559,7 @@ if build_standalone
 endif
 subdir('docs')
 
-if get_option('systemd') and build_daemon
+if build_daemon and libsystemd.found()
   meson.add_install_script('meson_post_install.sh', systemdunitdir)
 endif
 
@@ -631,6 +569,6 @@ if makensis.found()
     'makensis',
     command: [
       makensis,
-      join_paths(meson.source_root(), 'contrib', 'setup-win32.nsi'),
+      join_paths(meson.project_source_root(), 'contrib', 'setup-win32.nsi'),
   ])
 endif

@@ -26,6 +26,7 @@ LIB_DEPENDS=	libcurl.so:ftp/curl \
 		libjcat.so:textproc/libjcat \
 		libjson-glib-1.0.so:devel/json-glib \
 		libprotobuf-c.so:devel/protobuf-c \
+		libcbor.so:devel/libcbor \
 		libxmlb.so:textproc/libxmlb \
 		libefiboot.so:devel/gnu-efi
 
@@ -40,22 +41,10 @@ USE_LDCONFIG=	yes
 
 SHEBANG_GLOB=	*.py
 
-MESON_ARGS=	-Dgudev=false \
+MESON_ARGS=	-Dgudev=disabled \
 		-Dplugin_amt=false \
-		-Dplugin_dell=false \
-		-Dplugin_emmc=false \
-		-Dplugin_nvme=false \
-		-Dplugin_parade_lspcon=false \
-		-Dplugin_redfish=false \
-		-Dplugin_synaptics_mst=false \
-		-Dplugin_synaptics_rmi=false \
-		-Dplugin_realtek_mst=false \
-		-Dplugin_thunderbolt=false \
-		-Dplugin_tpm=false \
-		-Dplugin_bcm57xx=false \
-		-Dplugin_ep963x=false \
-		-Dpolkit=false \
-		-Dsystemd=false \
+		-Dpolkit=disabled \
+		-Dsystemd=disabled \
 		-Doffline=false \
 		-Dtests=false \
 		-Ddocs=gtkdoc \

@@ -719,6 +719,10 @@ fu_vli_usbhub_device_ready(FuDevice *device, GError **error)
 	FuVliUsbhubDevice *self = FU_VLI_USBHUB_DEVICE(device);
 	g_autoptr(GError) error_tmp = NULL;
 
+	/* FuUsbDevice->ready */
+	if (!FU_DEVICE_CLASS(fu_vli_usbhub_device_parent_class)->ready(device, error))
+		return FALSE;
+
 	/* try to read a block of data which will fail for 813-type devices */
 	if (fu_device_has_private_flag(device, FU_VLI_USBHUB_DEVICE_FLAG_UNLOCK_LEGACY813) &&
 	    !fu_vli_device_spi_read_block(FU_VLI_DEVICE(self),
@@ -1208,7 +1212,7 @@ fu_vli_usbhub_device_set_progress(FuDevice *self, FuProgress *progress)
 static void
 fu_vli_usbhub_device_init(FuVliUsbhubDevice *self)
 {
-	fu_device_add_icon(FU_DEVICE(self), "audio-card");
+	fu_device_add_icon(FU_DEVICE(self), "usb-hub");
 	fu_device_add_protocol(FU_DEVICE(self), "com.vli.usbhub");
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PROXY_FALLBACK);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);

@@ -42,20 +42,13 @@ fu_hailuck_bl_device_attach(FuDevice *device, FuProgress *progress, GError **err
 static gboolean
 fu_hailuck_bl_device_probe(FuDevice *device, GError **error)
 {
-	g_autofree gchar *devid = NULL;
-
 	/* FuUsbDevice->probe */
 	if (!FU_DEVICE_CLASS(fu_hailuck_bl_device_parent_class)->probe(device, error))
 		return FALSE;
 
-	/* add extra keyboard-specific GUID */
-	devid = g_strdup_printf("USB\\VID_%04X&PID_%04X&MODE_KBD",
-				fu_usb_device_get_vid(FU_USB_DEVICE(device)),
-				fu_usb_device_get_pid(FU_USB_DEVICE(device)));
-	fu_device_add_instance_id(device, devid);
-
-	/* success */
-	return TRUE;
+	/* add instance ID */
+	fu_device_add_instance_str(device, "MODE", "KBD");
+	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", "MODE", NULL);
 }
 
 static gboolean
@@ -125,6 +118,7 @@ fu_hailuck_bl_device_dump_firmware(FuDevice *device, FuProgress *progress, GErro
 	/* receive data back */
 	fu_byte_array_set_size(fwbuf, fwsz);
 	chunks = fu_chunk_array_mutable_new(fwbuf->data, fwbuf->len, 0x0, 0x0, 2048);
+	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
 		if (!fu_hailuck_bl_device_read_block(self,
@@ -132,7 +126,7 @@ fu_hailuck_bl_device_dump_firmware(FuDevice *device, FuProgress *progress, GErro
 						     fu_chunk_get_data_sz(chk),
 						     error))
 			return NULL;
-		fu_progress_set_percentage_full(progress, i + 1, chunks->len);
+		fu_progress_step_done(progress);
 	}
 
 	/* success */
@@ -297,6 +291,7 @@ fu_hailuck_bl_device_init(FuHailuckBlDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_icon(FU_DEVICE(self), "input-keyboard");
 	fu_hid_device_add_flag(FU_HID_DEVICE(self), FU_HID_DEVICE_FLAG_NO_KERNEL_REBIND);

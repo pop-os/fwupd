@@ -18,16 +18,20 @@
 /* amount of time to wait for ports of the same device	being exposed by kernel */
 #define FU_MM_UDEV_DEVICE_PORTS_TIMEOUT 3 /* s */
 
+/* out-of-tree modem-power driver is unsupported */
+#define MODEM_POWER_SYSFS_PATH "/sys/class/modem-power"
+
 struct FuPluginData {
 	MMManager *manager;
 	gboolean manager_ready;
 	GUdevClient *udev_client;
+	GFileMonitor *modem_power_monitor;
 	guint udev_timeout_id;
 
 	/* when a device is inhibited from MM, we store all relevant details
 	 * ourselves to recreate a functional device object even without MM
 	 */
-	FuPluginMmInhibitedDeviceInfo *inhibited;
+	FuMmDevice *shadow_device;
 };
 
 static void
@@ -36,15 +40,16 @@ fu_plugin_mm_udev_device_removed(FuPlugin *plugin)
 	FuPluginData *priv = fu_plugin_get_data(plugin);
 	FuMmDevice *dev;
 
-	if (priv->inhibited == NULL)
+	if (priv->shadow_device == NULL)
 		return;
 
-	dev = fu_plugin_cache_lookup(plugin, priv->inhibited->physical_id);
+	dev = fu_plugin_cache_lookup(plugin,
+				     fu_device_get_physical_id(FU_DEVICE(priv->shadow_device)));
 	if (dev == NULL)
 		return;
 
 	/* once the first port is gone, consider device is gone */
-	fu_plugin_cache_remove(plugin, priv->inhibited->physical_id);
+	fu_plugin_cache_remove(plugin, fu_device_get_physical_id(FU_DEVICE(priv->shadow_device)));
 	fu_plugin_device_remove(plugin, FU_DEVICE(dev));
 
 	/* no need to wait for more ports, cancel that right away */
@@ -58,17 +63,18 @@ static void
 fu_plugin_mm_uninhibit_device(FuPlugin *plugin)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
-	g_autoptr(FuPluginMmInhibitedDeviceInfo) info = NULL;
+	g_autoptr(FuMmDevice) shadow_device = NULL;
 
 	g_clear_object(&priv->udev_client);
 
 	/* get the device removed from the plugin cache before uninhibiting */
 	fu_plugin_mm_udev_device_removed(plugin);
 
-	info = g_steal_pointer(&priv->inhibited);
-	if ((priv->manager != NULL) && (info != NULL)) {
-		g_debug("uninhibit modemmanager device with uid %s", info->inhibited_uid);
-		mm_manager_uninhibit_device_sync(priv->manager, info->inhibited_uid, NULL, NULL);
+	shadow_device = g_steal_pointer(&priv->shadow_device);
+	if (priv->manager != NULL && shadow_device != NULL) {
+		const gchar *inhibition_uid = fu_mm_device_get_inhibition_uid(shadow_device);
+		g_debug("uninhibit modemmanager device with uid %s", inhibition_uid);
+		mm_manager_uninhibit_device_sync(priv->manager, inhibition_uid, NULL, NULL);
 	}
 }
 
@@ -80,10 +86,11 @@ fu_plugin_mm_udev_device_ports_timeout(gpointer user_data)
 	FuMmDevice *dev;
 	g_autoptr(GError) error = NULL;
 
-	g_return_val_if_fail(priv->inhibited != NULL, G_SOURCE_REMOVE);
+	g_return_val_if_fail(priv->shadow_device != NULL, G_SOURCE_REMOVE);
 	priv->udev_timeout_id = 0;
 
-	dev = fu_plugin_cache_lookup(plugin, priv->inhibited->physical_id);
+	dev = fu_plugin_cache_lookup(plugin,
+				     fu_device_get_physical_id(FU_DEVICE(priv->shadow_device)));
 	if (dev != NULL) {
 		if (!fu_device_probe(FU_DEVICE(dev), &error)) {
 			g_warning("failed to probe MM device: %s", error->message);
@@ -100,7 +107,7 @@ fu_plugin_mm_udev_device_ports_timeout_reset(FuPlugin *plugin)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
 
-	g_return_if_fail(priv->inhibited != NULL);
+	g_return_if_fail(priv->shadow_device != NULL);
 	if (priv->udev_timeout_id != 0)
 		g_source_remove(priv->udev_timeout_id);
 	priv->udev_timeout_id = g_timeout_add_seconds(FU_MM_UDEV_DEVICE_PORTS_TIMEOUT,
@@ -118,18 +125,24 @@ fu_plugin_mm_udev_device_port_added(FuPlugin *plugin,
 	FuMmDevice *existing;
 	g_autoptr(FuMmDevice) dev = NULL;
 
-	g_return_if_fail(priv->inhibited != NULL);
-	existing = fu_plugin_cache_lookup(plugin, priv->inhibited->physical_id);
+	g_return_if_fail(priv->shadow_device != NULL);
+
+	existing =
+	    fu_plugin_cache_lookup(plugin,
+				   fu_device_get_physical_id(FU_DEVICE(priv->shadow_device)));
 	if (existing != NULL) {
 		/* add port to existing device */
 		fu_mm_device_udev_add_port(existing, subsystem, path, ifnum);
 		fu_plugin_mm_udev_device_ports_timeout_reset(plugin);
 		return;
 	}
+
 	/* create device and add to cache */
-	dev = fu_mm_device_udev_new(fu_plugin_get_context(plugin), priv->manager, priv->inhibited);
+	dev = fu_mm_device_udev_new(fu_plugin_get_context(plugin),
+				    priv->manager,
+				    priv->shadow_device);
 	fu_mm_device_udev_add_port(dev, subsystem, path, ifnum);
-	fu_plugin_cache_add(plugin, priv->inhibited->physical_id, dev);
+	fu_plugin_cache_add(plugin, fu_device_get_physical_id(FU_DEVICE(priv->shadow_device)), dev);
 
 	/* wait a bit before probing, in case more ports get added */
 	fu_plugin_mm_udev_device_ports_timeout_reset(plugin);
@@ -150,7 +163,7 @@ fu_plugin_mm_udev_uevent_cb(GUdevClient *udev,
 	g_autofree gchar *device_bus = NULL;
 	gint ifnum = -1;
 
-	if (action == NULL || subsystem == NULL || priv->inhibited == NULL || name == NULL)
+	if (action == NULL || subsystem == NULL || priv->shadow_device == NULL || name == NULL)
 		return TRUE;
 
 	/* ignore if loading port info fails */
@@ -162,16 +175,17 @@ fu_plugin_mm_udev_uevent_cb(GUdevClient *udev,
 		return TRUE;
 
 	/* ignore all events for ports not owned by our device */
-	if (g_strcmp0(device_sysfs_path, priv->inhibited->physical_id) != 0)
+	if (g_strcmp0(device_sysfs_path,
+		      fu_device_get_physical_id(FU_DEVICE(priv->shadow_device))) != 0)
 		return TRUE;
 
 	path = g_strdup_printf("/dev/%s", name);
 
 	if ((g_str_equal(action, "add")) || (g_str_equal(action, "change"))) {
-		g_debug("added port to inhibited modem: %s (ifnum %d)", path, ifnum);
+		g_debug("added port to shadow_device modem: %s (ifnum %d)", path, ifnum);
 		fu_plugin_mm_udev_device_port_added(plugin, subsystem, path, ifnum);
 	} else if (g_str_equal(action, "remove")) {
-		g_debug("removed port from inhibited modem: %s", path);
+		g_debug("removed port from shadow_device modem: %s", path);
 		fu_plugin_mm_udev_device_removed(plugin);
 	}
 
@@ -181,20 +195,21 @@ fu_plugin_mm_udev_uevent_cb(GUdevClient *udev,
 static gboolean
 fu_plugin_mm_inhibit_device(FuPlugin *plugin, FuDevice *device, GError **error)
 {
+	const gchar *inhibition_uid;
 	static const gchar *subsystems[] = {"tty", "usbmisc", "wwan", NULL};
 	FuPluginData *priv = fu_plugin_get_data(plugin);
-	g_autoptr(FuPluginMmInhibitedDeviceInfo) info = NULL;
+	g_autoptr(FuMmDevice) shadow_device = NULL;
 
 	fu_plugin_mm_uninhibit_device(plugin);
 
-	info = fu_plugin_mm_inhibited_device_info_new(FU_MM_DEVICE(device));
-
-	g_debug("inhibit modemmanager device with uid %s", info->inhibited_uid);
-	if (!mm_manager_inhibit_device_sync(priv->manager, info->inhibited_uid, NULL, error))
+	shadow_device = fu_mm_shadow_device_new(FU_MM_DEVICE(device));
+	inhibition_uid = fu_mm_device_get_inhibition_uid(shadow_device);
+	g_debug("inhibit modemmanager device with uid %s", inhibition_uid);
+	if (!mm_manager_inhibit_device_sync(priv->manager, inhibition_uid, NULL, error))
 		return FALSE;
 
-	/* setup inhibited device info */
-	priv->inhibited = g_steal_pointer(&info);
+	/* setup shadow_device device info */
+	priv->shadow_device = g_steal_pointer(&shadow_device);
 
 	/* only do modem port monitoring using udev if the module is expected
 	 * to reset itself into a fully different layout, e.g. a fastboot device */
@@ -208,6 +223,18 @@ fu_plugin_mm_inhibit_device(FuPlugin *plugin, FuDevice *device, GError **error)
 	}
 
 	return TRUE;
+}
+
+static void
+fu_plugin_mm_ensure_modem_power_inhibit(FuPlugin *plugin, FuDevice *device)
+{
+	if (g_file_test(MODEM_POWER_SYSFS_PATH, G_FILE_TEST_EXISTS)) {
+		fu_device_inhibit(device,
+				  "modem-power",
+				  "The modem-power kernel driver cannot be used");
+	} else {
+		fu_device_uninhibit(device, "modem-power");
+	}
 }
 
 static void
@@ -229,6 +256,7 @@ fu_plugin_mm_device_add(FuPlugin *plugin, MMObject *modem)
 		g_warning("failed to probe MM device: %s", error->message);
 		return;
 	}
+	fu_plugin_mm_ensure_modem_power_inhibit(plugin, FU_DEVICE(dev));
 	fu_plugin_device_add(plugin, FU_DEVICE(dev));
 	fu_plugin_cache_add(plugin, object_path, dev);
 	fu_plugin_cache_add(plugin, fu_device_get_physical_id(FU_DEVICE(dev)), dev);
@@ -245,23 +273,26 @@ fu_plugin_mm_device_removed_cb(MMManager *manager, MMObject *modem, FuPlugin *pl
 {
 	const gchar *object_path = mm_object_get_path(modem);
 	FuMmDevice *dev = fu_plugin_cache_lookup(plugin, object_path);
+	MMModemFirmwareUpdateMethod update_methods = MM_MODEM_FIRMWARE_UPDATE_METHOD_NONE;
+
 	if (dev == NULL)
 		return;
 	g_debug("removed modem: %s", mm_object_get_path(modem));
 
-#if MM_CHECK_VERSION(1, 17, 1)
+#if MM_CHECK_VERSION(1, 19, 1)
 	/* No information will be displayed during the upgrade process if the
 	 * device is removed, the main reason is that device is "removed" from
 	 * ModemManager, but it still exists in the system */
-	if (!(fu_mm_device_get_update_methods(FU_MM_DEVICE(dev)) &
-	      MM_MODEM_FIRMWARE_UPDATE_METHOD_MBIM_QDU)) {
+	update_methods =
+	    MM_MODEM_FIRMWARE_UPDATE_METHOD_MBIM_QDU | MM_MODEM_FIRMWARE_UPDATE_METHOD_SAHARA;
+#elif MM_CHECK_VERSION(1, 17, 1)
+	update_methods = MM_MODEM_FIRMWARE_UPDATE_METHOD_MBIM_QDU;
+#endif
+
+	if (!(fu_mm_device_get_update_methods(FU_MM_DEVICE(dev)) & update_methods)) {
 		fu_plugin_cache_remove(plugin, object_path);
 		fu_plugin_device_remove(plugin, FU_DEVICE(dev));
 	}
-#else
-	fu_plugin_cache_remove(plugin, object_path);
-	fu_plugin_device_remove(plugin, FU_DEVICE(dev));
-#endif /* MM_CHECK_VERSION(1,17,1) */
 }
 
 static void
@@ -342,11 +373,27 @@ fu_plugin_mm_coldplug(FuPlugin *plugin, GError **error)
 	return TRUE;
 }
 
+static void
+fu_plugin_mm_modem_power_changed_cb(GFileMonitor *monitor,
+				    GFile *file,
+				    GFile *other_file,
+				    GFileMonitorEvent event_type,
+				    gpointer user_data)
+{
+	FuPlugin *plugin = FU_PLUGIN(user_data);
+	GPtrArray *devices = fu_plugin_get_devices(plugin);
+	for (guint i = 0; i < devices->len; i++) {
+		FuDevice *device = g_ptr_array_index(devices, i);
+		fu_plugin_mm_ensure_modem_power_inhibit(plugin, device);
+	}
+}
+
 static gboolean
 fu_plugin_mm_startup(FuPlugin *plugin, GError **error)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
 	g_autoptr(GDBusConnection) connection = NULL;
+	g_autoptr(GFile) file = g_file_new_for_path(MODEM_POWER_SYSFS_PATH);
 
 	connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, error);
 	if (connection == NULL)
@@ -357,6 +404,15 @@ fu_plugin_mm_startup(FuPlugin *plugin, GError **error)
 					    error);
 	if (priv->manager == NULL)
 		return FALSE;
+
+	/* detect presence of unsupported modem-power driver */
+	priv->modem_power_monitor = g_file_monitor(file, G_FILE_MONITOR_NONE, NULL, error);
+	if (priv->modem_power_monitor == NULL)
+		return FALSE;
+	g_signal_connect(priv->modem_power_monitor,
+			 "changed",
+			 G_CALLBACK(fu_plugin_mm_modem_power_changed_cb),
+			 plugin);
 
 	return TRUE;
 }
@@ -380,6 +436,8 @@ fu_plugin_mm_destroy(FuPlugin *plugin)
 		g_object_unref(priv->udev_client);
 	if (priv->manager != NULL)
 		g_object_unref(priv->manager);
+	if (priv->modem_power_monitor != NULL)
+		g_object_unref(priv->modem_power_monitor);
 }
 
 static gboolean
@@ -397,7 +455,7 @@ fu_plugin_mm_detach(FuPlugin *plugin, FuDevice *device, FuProgress *progress, GE
 	 * lifetime of the FuMmDevice, because that object will only exist for
 	 * as long as the ModemManager device exists, and inhibiting will
 	 * implicitly remove the device from ModemManager. */
-	if (priv->inhibited == NULL) {
+	if (priv->shadow_device == NULL) {
 		if (!fu_plugin_mm_inhibit_device(plugin, device, error))
 			return FALSE;
 	}

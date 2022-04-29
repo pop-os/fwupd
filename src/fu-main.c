@@ -40,7 +40,7 @@
 #include "fu-debug.h"
 #include "fu-device-private.h"
 #include "fu-engine.h"
-#include "fu-install-task.h"
+#include "fu-release.h"
 #include "fu-security-attrs-private.h"
 
 #ifdef HAVE_POLKIT
@@ -284,7 +284,7 @@ fu_main_create_request(FuMainPrivate *priv, const gchar *sender, GError **error)
 		return NULL;
 	}
 	g_variant_get(value, "(u)", &calling_uid);
-	if (calling_uid == 0)
+	if (fu_engine_is_uid_trusted(priv->engine, calling_uid))
 		device_flags |= FWUPD_DEVICE_FLAG_TRUSTED;
 	fu_engine_request_set_device_flags(request, device_flags);
 
@@ -299,15 +299,17 @@ fu_main_device_array_to_variant(FuMainPrivate *priv,
 				GError **error)
 {
 	GVariantBuilder builder;
+	FwupdDeviceFlags flags = fu_engine_request_get_device_flags(request);
 
 	g_return_val_if_fail(devices->len > 0, NULL);
 	g_variant_builder_init(&builder, G_VARIANT_TYPE_ARRAY);
 
+	/* override when required */
+	if (fu_engine_get_show_device_private(priv->engine))
+		flags |= FWUPD_DEVICE_FLAG_TRUSTED;
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
-		GVariant *tmp =
-		    fwupd_device_to_variant_full(FWUPD_DEVICE(device),
-						 fu_engine_request_get_device_flags(request));
+		GVariant *tmp = fwupd_device_to_variant_full(FWUPD_DEVICE(device), flags);
 		g_variant_builder_add_value(&builder, tmp);
 	}
 	return g_variant_new("(aa{sv})", &builder);
@@ -377,9 +379,10 @@ typedef struct {
 #ifdef HAVE_POLKIT
 	PolkitSubject *subject;
 #endif
-	GPtrArray *install_tasks;
+	GPtrArray *releases;
 	GPtrArray *action_ids;
 	GPtrArray *checksums;
+	GPtrArray *errors;
 	guint64 flags;
 	GBytes *blob_cab;
 	FuMainPrivate *priv;
@@ -403,12 +406,14 @@ fu_main_auth_helper_free(FuMainAuthHelper *helper)
 		g_object_unref(helper->silo);
 	if (helper->request != NULL)
 		g_object_unref(helper->request);
-	if (helper->install_tasks != NULL)
-		g_ptr_array_unref(helper->install_tasks);
+	if (helper->releases != NULL)
+		g_ptr_array_unref(helper->releases);
 	if (helper->action_ids != NULL)
 		g_ptr_array_unref(helper->action_ids);
 	if (helper->checksums != NULL)
 		g_ptr_array_unref(helper->checksums);
+	if (helper->errors != NULL)
+		g_ptr_array_unref(helper->errors);
 	g_free(helper->device_id);
 	g_free(helper->remote_id);
 	g_free(helper->key);
@@ -476,7 +481,6 @@ fu_main_authorize_unlock_cb(GObject *source, GAsyncResult *res, gpointer user_da
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -496,6 +500,7 @@ fu_main_authorize_unlock_cb(GObject *source, GAsyncResult *res, gpointer user_da
 	}
 
 	/* success */
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -508,7 +513,6 @@ fu_main_authorize_set_approved_firmware_cb(GObject *source, GAsyncResult *res, g
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -526,6 +530,7 @@ fu_main_authorize_set_approved_firmware_cb(GObject *source, GAsyncResult *res, g
 		const gchar *csum = g_ptr_array_index(helper->checksums, i);
 		fu_engine_add_approved_firmware(helper->priv->engine, csum);
 	}
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -538,7 +543,6 @@ fu_main_authorize_set_blocked_firmware_cb(GObject *source, GAsyncResult *res, gp
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -556,6 +560,7 @@ fu_main_authorize_set_blocked_firmware_cb(GObject *source, GAsyncResult *res, gp
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
 		return;
 	}
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -569,7 +574,6 @@ fu_main_authorize_self_sign_cb(GObject *source, GAsyncResult *res, gpointer user
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -590,6 +594,7 @@ fu_main_authorize_self_sign_cb(GObject *source, GAsyncResult *res, gpointer user
 	}
 
 	/* success */
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, g_variant_new("(s)", sig));
 }
 
@@ -620,6 +625,7 @@ fu_main_modify_config_cb(GObject *source, GAsyncResult *res, gpointer user_data)
 	}
 
 	/* success */
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -646,7 +652,6 @@ fu_main_authorize_activate_cb(GObject *source, GAsyncResult *res, gpointer user_
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -672,6 +677,7 @@ fu_main_authorize_activate_cb(GObject *source, GAsyncResult *res, gpointer user_
 	}
 
 	/* success */
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -685,7 +691,6 @@ fu_main_authorize_verify_update_cb(GObject *source, GAsyncResult *res, gpointer 
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -716,6 +721,7 @@ fu_main_authorize_verify_update_cb(GObject *source, GAsyncResult *res, gpointer 
 	}
 
 	/* success */
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -728,7 +734,6 @@ fu_main_authorize_modify_remote_cb(GObject *source, GAsyncResult *res, gpointer 
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -752,6 +757,7 @@ fu_main_authorize_modify_remote_cb(GObject *source, GAsyncResult *res, gpointer 
 	}
 
 	/* success */
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -767,7 +773,6 @@ fu_main_authorize_install_cb(GObject *source, GAsyncResult *res, gpointer user_d
 	g_autoptr(PolkitAuthorizationResult) auth = NULL;
 
 	/* get result */
-	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	auth = polkit_authority_check_authorization_finish(POLKIT_AUTHORITY(source), res, &error);
 	if (!fu_main_authorization_is_valid(auth, &error)) {
 		g_dbus_method_invocation_return_gerror(helper->invocation, error);
@@ -820,13 +825,13 @@ fu_main_authorize_install_queue(FuMainAuthHelper *helper_ref)
 
 	/* all authenticated, so install all the things */
 	priv->update_in_progress = TRUE;
-	ret = fu_engine_install_tasks(helper->priv->engine,
-				      helper->request,
-				      helper->install_tasks,
-				      helper->blob_cab,
-				      progress,
-				      helper->flags,
-				      &error);
+	ret = fu_engine_install_releases(helper->priv->engine,
+					 helper->request,
+					 helper->releases,
+					 helper->blob_cab,
+					 progress,
+					 helper->flags,
+					 &error);
 	priv->update_in_progress = FALSE;
 	if (priv->pending_sigterm)
 		g_main_loop_quit(priv->loop);
@@ -836,6 +841,7 @@ fu_main_authorize_install_queue(FuMainAuthHelper *helper_ref)
 	}
 
 	/* success */
+	fu_main_set_status(helper->priv, FWUPD_STATUS_IDLE);
 	g_dbus_method_invocation_return_value(helper->invocation, NULL);
 }
 
@@ -857,11 +863,126 @@ g_ptr_array_find(GPtrArray *haystack, gconstpointer needle, guint *index_)
 #endif
 
 static gint
-fu_main_install_task_sort_cb(gconstpointer a, gconstpointer b)
+fu_main_release_sort_cb(gconstpointer a, gconstpointer b)
 {
-	FuInstallTask *task_a = *((FuInstallTask **)a);
-	FuInstallTask *task_b = *((FuInstallTask **)b);
-	return fu_install_task_compare(task_a, task_b);
+	FuRelease *release1 = *((FuRelease **)a);
+	FuRelease *release2 = *((FuRelease **)b);
+	return fu_release_compare(release1, release2);
+}
+
+static gboolean
+fu_main_install_with_helper_device(FuMainAuthHelper *helper,
+				   XbNode *component,
+				   FuDevice *device,
+				   GError **error)
+{
+	FuMainPrivate *priv = helper->priv;
+	const gchar *action_id;
+	g_autoptr(FuRelease) release = fu_release_new();
+	g_autoptr(GError) error_local = NULL;
+	g_autoptr(GPtrArray) releases = NULL;
+
+	/* is this component valid for the device */
+	fu_release_set_device(release, device);
+	fu_release_set_request(release, helper->request);
+	if (!fu_release_load(release,
+			     component,
+			     NULL,
+			     helper->flags | FWUPD_INSTALL_FLAG_FORCE,
+			     &error_local)) {
+		g_ptr_array_add(helper->errors, g_steal_pointer(&error_local));
+		return TRUE;
+	}
+	if (!fu_engine_check_requirements(priv->engine,
+					  release,
+					  helper->flags | FWUPD_INSTALL_FLAG_FORCE,
+					  &error_local)) {
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
+			g_debug("first pass requirement on %s:%s failed: %s",
+				fu_device_get_id(device),
+				xb_node_query_text(component, "id", NULL),
+				error_local->message);
+		}
+		g_ptr_array_add(helper->errors, g_steal_pointer(&error_local));
+		return TRUE;
+	}
+
+	/* possibly update version format */
+	fu_engine_md_refresh_device_from_component(priv->engine, device, component);
+
+	/* sync update message from CAB */
+	fu_device_incorporate_from_component(device, component);
+
+	/* install each intermediate release */
+	releases = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_INSTALL_ALL_RELEASES)) {
+		g_autoptr(GPtrArray) rels = NULL;
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+		g_autoptr(XbQuery) query = NULL;
+#endif
+		/* we get this one "for free" */
+		g_ptr_array_add(releases, g_object_ref(release));
+
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+		query = xb_query_new_full(xb_node_get_silo(component),
+					  "releases/release",
+					  XB_QUERY_FLAG_FORCE_NODE_CACHE,
+					  error);
+		if (query == NULL)
+			return FALSE;
+		rels = xb_node_query_full(component, query, NULL);
+#else
+		rels = xb_node_query(component, "releases/release", 0, NULL);
+#endif
+		/* add all but the the first entry */
+		for (guint i = 1; i < rels->len; i++) {
+			XbNode *rel = g_ptr_array_index(rels, i);
+			g_autoptr(FuRelease) release2 = fu_release_new();
+			g_autoptr(GError) error_loop = NULL;
+			fu_release_set_device(release2, device);
+			fu_release_set_request(release2, helper->request);
+			if (!fu_release_load(release2,
+					     component,
+					     rel,
+					     helper->flags,
+					     &error_loop)) {
+				g_ptr_array_add(helper->errors, g_steal_pointer(&error_loop));
+				continue;
+			}
+			g_ptr_array_add(releases, g_object_ref(release2));
+		}
+	} else {
+		g_ptr_array_add(releases, g_object_ref(release));
+	}
+
+	/* make a second pass */
+	for (guint i = 0; i < releases->len; i++) {
+		FuRelease *release_tmp = g_ptr_array_index(releases, i);
+		if (!fu_engine_check_requirements(priv->engine,
+						  release_tmp,
+						  helper->flags,
+						  &error_local)) {
+			g_debug("second pass requirement on %s:%s failed: %s",
+				fu_device_get_id(device),
+				xb_node_query_text(component, "id", NULL),
+				error_local->message);
+			g_ptr_array_add(helper->errors, g_steal_pointer(&error_local));
+			continue;
+		}
+		if (!fu_engine_check_trust(priv->engine, release_tmp, &error_local)) {
+			g_ptr_array_add(helper->errors, g_steal_pointer(&error_local));
+			continue;
+		}
+
+		/* get the action IDs for the valid device */
+		action_id = fu_release_get_action_id(release_tmp);
+		if (!g_ptr_array_find(helper->action_ids, action_id, NULL))
+			g_ptr_array_add(helper->action_ids, g_strdup(action_id));
+		g_ptr_array_add(helper->releases, g_object_ref(release_tmp));
+	}
+
+	/* success */
+	return TRUE;
 }
 
 static gboolean
@@ -871,7 +992,6 @@ fu_main_install_with_helper(FuMainAuthHelper *helper_ref, GError **error)
 	g_autoptr(FuMainAuthHelper) helper = helper_ref;
 	g_autoptr(GPtrArray) components = NULL;
 	g_autoptr(GPtrArray) devices_possible = NULL;
-	g_autoptr(GPtrArray) errors = NULL;
 
 	/* get a list of devices that in some way match the device_id */
 	if (g_strcmp0(helper->device_id, FWUPD_DEVICE_ID_ANY) == 0) {
@@ -902,73 +1022,25 @@ fu_main_install_with_helper(FuMainAuthHelper *helper_ref, GError **error)
 	if (components == NULL)
 		return FALSE;
 	helper->action_ids = g_ptr_array_new_with_free_func(g_free);
-	helper->install_tasks = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
-	errors = g_ptr_array_new_with_free_func((GDestroyNotify)g_error_free);
+	helper->releases = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	helper->errors = g_ptr_array_new_with_free_func((GDestroyNotify)g_error_free);
+
+	/* do any devices pass the requirements */
 	for (guint i = 0; i < components->len; i++) {
 		XbNode *component = g_ptr_array_index(components, i);
-
-		/* do any devices pass the requirements */
 		for (guint j = 0; j < devices_possible->len; j++) {
 			FuDevice *device = g_ptr_array_index(devices_possible, j);
-			const gchar *action_id;
-			g_autoptr(FuInstallTask) task = NULL;
-			g_autoptr(GError) error_local = NULL;
-
-			/* is this component valid for the device */
-			task = fu_install_task_new(device, component);
-			if (!fu_engine_check_requirements(priv->engine,
-							  helper->request,
-							  task,
-							  helper->flags | FWUPD_INSTALL_FLAG_FORCE,
-							  &error_local)) {
-				if (!g_error_matches(error_local,
-						     FWUPD_ERROR,
-						     FWUPD_ERROR_NOT_FOUND)) {
-					g_debug("first pass requirement on %s:%s failed: %s",
-						fu_device_get_id(device),
-						xb_node_query_text(component, "id", NULL),
-						error_local->message);
-				}
-				g_ptr_array_add(errors, g_steal_pointer(&error_local));
-				continue;
-			}
-
-			/* make a second pass using possibly updated version format now */
-			fu_engine_md_refresh_device_from_component(priv->engine, device, component);
-			if (!fu_engine_check_requirements(priv->engine,
-							  helper->request,
-							  task,
-							  helper->flags,
-							  &error_local)) {
-				g_debug("second pass requirement on %s:%s failed: %s",
-					fu_device_get_id(device),
-					xb_node_query_text(component, "id", NULL),
-					error_local->message);
-				g_ptr_array_add(errors, g_steal_pointer(&error_local));
-				continue;
-			}
-			if (!fu_engine_check_trust(priv->engine, task, &error_local)) {
-				g_ptr_array_add(errors, g_steal_pointer(&error_local));
-				continue;
-			}
-
-			/* if component should have an update message from CAB */
-			fu_device_incorporate_from_component(device, component);
-
-			/* get the action IDs for the valid device */
-			action_id = fu_install_task_get_action_id(task);
-			if (!g_ptr_array_find(helper->action_ids, action_id, NULL))
-				g_ptr_array_add(helper->action_ids, g_strdup(action_id));
-			g_ptr_array_add(helper->install_tasks, g_steal_pointer(&task));
+			if (!fu_main_install_with_helper_device(helper, component, device, error))
+				return FALSE;
 		}
 	}
 
 	/* order the install tasks by the device priority */
-	g_ptr_array_sort(helper->install_tasks, fu_main_install_task_sort_cb);
+	g_ptr_array_sort(helper->releases, fu_main_release_sort_cb);
 
 	/* nothing suitable */
-	if (helper->install_tasks->len == 0) {
-		GError *error_tmp = fu_common_error_array_get_best(errors);
+	if (helper->releases->len == 0) {
+		GError *error_tmp = fu_common_error_array_get_best(helper->errors);
 		g_propagate_error(error, error_tmp);
 		return FALSE;
 	}
@@ -1901,6 +1973,9 @@ fu_main_daemon_get_property(GDBusConnection *connection_,
 
 	if (g_strcmp0(property_name, "Interactive") == 0)
 		return g_variant_new_boolean(isatty(fileno(stdout)) != 0);
+
+	if (g_strcmp0(property_name, "OnlyTrusted") == 0)
+		return g_variant_new_boolean(fu_engine_get_only_trusted(priv->engine));
 
 	/* return an error */
 	g_set_error(error,

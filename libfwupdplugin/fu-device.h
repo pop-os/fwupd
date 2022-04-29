@@ -56,9 +56,11 @@ struct _FuDeviceClass {
 			     GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	gboolean (*reload)(FuDevice *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	gboolean (*prepare)(FuDevice *self,
+			    FuProgress *progress,
 			    FwupdInstallFlags flags,
 			    GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	gboolean (*cleanup)(FuDevice *self,
+			    FuProgress *progress,
 			    FwupdInstallFlags flags,
 			    GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	void (*report_metadata_pre)(FuDevice *self, GHashTable *metadata);
@@ -524,6 +526,8 @@ void
 fu_device_inhibit(FuDevice *self, const gchar *inhibit_id, const gchar *reason);
 void
 fu_device_uninhibit(FuDevice *self, const gchar *inhibit_id);
+gboolean
+fu_device_has_inhibit(FuDevice *self, const gchar *inhibit_id);
 const gchar *
 fu_device_get_physical_id(FuDevice *self);
 void
@@ -632,13 +636,11 @@ fu_device_detach_full(FuDevice *self,
 gboolean
 fu_device_reload(FuDevice *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
 gboolean
-fu_device_prepare(FuDevice *self,
-		  FwupdInstallFlags flags,
-		  GError **error) G_GNUC_WARN_UNUSED_RESULT;
+fu_device_prepare(FuDevice *self, FuProgress *progress, FwupdInstallFlags flags, GError **error)
+    G_GNUC_WARN_UNUSED_RESULT;
 gboolean
-fu_device_cleanup(FuDevice *self,
-		  FwupdInstallFlags flags,
-		  GError **error) G_GNUC_WARN_UNUSED_RESULT;
+fu_device_cleanup(FuDevice *self, FuProgress *progress, FwupdInstallFlags flags, GError **error)
+    G_GNUC_WARN_UNUSED_RESULT;
 void
 fu_device_incorporate(FuDevice *self, FuDevice *donor);
 void
@@ -699,3 +701,22 @@ gboolean
 fu_device_has_private_flag(FuDevice *self, guint64 flag);
 void
 fu_device_emit_request(FuDevice *self, FwupdRequest *request);
+
+void
+fu_device_add_instance_str(FuDevice *self, const gchar *key, const gchar *value);
+void
+fu_device_add_instance_strsafe(FuDevice *self, const gchar *key, const gchar *value);
+void
+fu_device_add_instance_strup(FuDevice *self, const gchar *key, const gchar *value);
+void
+fu_device_add_instance_u4(FuDevice *self, const gchar *key, guint8 value);
+void
+fu_device_add_instance_u8(FuDevice *self, const gchar *key, guint8 value);
+void
+fu_device_add_instance_u16(FuDevice *self, const gchar *key, guint16 value);
+void
+fu_device_add_instance_u32(FuDevice *self, const gchar *key, guint32 value);
+gboolean
+fu_device_build_instance_id(FuDevice *self, GError **error, const gchar *subsystem, ...);
+gboolean
+fu_device_build_instance_id_quirk(FuDevice *self, GError **error, const gchar *subsystem, ...);

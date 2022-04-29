@@ -66,6 +66,7 @@ typedef struct {
 	gchar *host_product;
 	gchar *host_machine_id;
 	gchar *host_security_id;
+	gboolean only_trusted;
 	GMutex proxy_mutex; /* for @proxy */
 	GDBusProxy *proxy;
 	GProxyResolver *proxy_resolver;
@@ -108,6 +109,7 @@ enum {
 	PROP_HOST_SECURITY_ID,
 	PROP_HOST_BKC,
 	PROP_INTERACTIVE,
+	PROP_ONLY_TRUSTED,
 	PROP_LAST
 };
 
@@ -421,6 +423,14 @@ fwupd_client_properties_changed_cb(GDBusProxy *proxy,
 		if (val != NULL)
 			fwupd_client_set_host_security_id(self, g_variant_get_string(val, NULL));
 	}
+	if (g_variant_dict_contains(dict, "OnlyTrusted")) {
+		g_autoptr(GVariant) val = NULL;
+		val = g_dbus_proxy_get_cached_property(proxy, "OnlyTrusted");
+		if (val != NULL) {
+			priv->only_trusted = g_variant_get_boolean(val);
+			fwupd_client_object_notify(self, "only-trusted");
+		}
+	}
 }
 
 static void
@@ -583,7 +593,7 @@ fwupd_client_curl_helper_set_proxy(FwupdClient *self, FwupdCurlHelper *helper, c
 		return;
 	}
 	if (g_strcmp0(proxies[0], "direct://") != 0)
-		curl_easy_setopt(helper->curl, CURLOPT_PROXY, proxies[0]);
+		(void)curl_easy_setopt(helper->curl, CURLOPT_PROXY, proxies[0]);
 }
 
 static FwupdCurlHelper *
@@ -606,21 +616,23 @@ fwupd_client_curl_new(FwupdClient *self, GError **error)
 		return NULL;
 	}
 	if (g_getenv("FWUPD_CURL_VERBOSE") != NULL)
-		curl_easy_setopt(helper->curl, CURLOPT_VERBOSE, 1L);
-	curl_easy_setopt(helper->curl, CURLOPT_XFERINFOFUNCTION, fwupd_client_progress_callback_cb);
-	curl_easy_setopt(helper->curl, CURLOPT_XFERINFODATA, self);
-	curl_easy_setopt(helper->curl, CURLOPT_USERAGENT, priv->user_agent);
-	curl_easy_setopt(helper->curl, CURLOPT_CONNECTTIMEOUT, 60L);
-	curl_easy_setopt(helper->curl, CURLOPT_NOPROGRESS, 0L);
-	curl_easy_setopt(helper->curl, CURLOPT_FOLLOWLOCATION, 1L);
-	curl_easy_setopt(helper->curl, CURLOPT_MAXREDIRS, 5L);
+		(void)curl_easy_setopt(helper->curl, CURLOPT_VERBOSE, 1L);
+	(void)curl_easy_setopt(helper->curl,
+			       CURLOPT_XFERINFOFUNCTION,
+			       fwupd_client_progress_callback_cb);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_XFERINFODATA, self);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_USERAGENT, priv->user_agent);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_CONNECTTIMEOUT, 60L);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_NOPROGRESS, 0L);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_FOLLOWLOCATION, 1L);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_MAXREDIRS, 5L);
 
 	/* relax the SSL checks for broken corporate proxies */
 	if (g_getenv("DISABLE_SSL_STRICT") != NULL)
-		curl_easy_setopt(helper->curl, CURLOPT_SSL_VERIFYPEER, 0L);
+		(void)curl_easy_setopt(helper->curl, CURLOPT_SSL_VERIFYPEER, 0L);
 
 	/* this disables the double-compression of the firmware.xml.gz file */
-	curl_easy_setopt(helper->curl, CURLOPT_HTTP_CONTENT_DECODING, 0L);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_HTTP_CONTENT_DECODING, 0L);
 	return g_steal_pointer(&helper);
 }
 #endif
@@ -668,6 +680,7 @@ fwupd_client_connect_get_proxy_cb(GObject *source, GAsyncResult *res, gpointer u
 	g_autoptr(GVariant) val6 = NULL;
 	g_autoptr(GVariant) val7 = NULL;
 	g_autoptr(GVariant) val8 = NULL;
+	g_autoptr(GVariant) val9 = NULL;
 	g_autoptr(GMutexLocker) locker = NULL;
 
 	proxy = g_dbus_proxy_new_finish(res, &error);
@@ -717,6 +730,9 @@ fwupd_client_connect_get_proxy_cb(GObject *source, GAsyncResult *res, gpointer u
 	val8 = g_dbus_proxy_get_cached_property(priv->proxy, "HostBkc");
 	if (val8 != NULL)
 		fwupd_client_set_host_bkc(self, g_variant_get_string(val8, NULL));
+	val9 = g_dbus_proxy_get_cached_property(priv->proxy, "OnlyTrusted");
+	if (val9 != NULL)
+		priv->only_trusted = g_variant_get_boolean(val9);
 
 	/* build client hints */
 	g_variant_builder_init(&builder, G_VARIANT_TYPE("a{ss}"));
@@ -842,6 +858,44 @@ fwupd_client_connect_finish(FwupdClient *self, GAsyncResult *res, GError **error
 	g_return_val_if_fail(g_task_is_valid(res, self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 	return g_task_propagate_boolean(G_TASK(res), error);
+}
+
+/**
+ * fwupd_client_disconnect: (skip)
+ * @self: a #FwupdClient
+ * @error: (nullable): optional return location for an error
+ *
+ * Tears down client after use. You only need to call this method if you are:
+ *
+ * - connecting to the daemon in one thread and finalizing the client in another one
+ * - to change the `FWUPD_DBUS_SOCKET` for a different peer-to-peer connection
+ * - to add or change connection hints as specified by `fwupd_client_add_hint()`
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.8.0
+ **/
+gboolean
+fwupd_client_disconnect(FwupdClient *self, GError **error)
+{
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
+	g_autoptr(GMutexLocker) locker = g_mutex_locker_new(&priv->proxy_mutex);
+
+	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	g_assert(locker != NULL);
+
+	/* sanity check */
+	if (priv->proxy == NULL) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "not connected");
+		return FALSE;
+	}
+	g_signal_handlers_disconnect_by_data(priv->proxy, self);
+	g_clear_object(&priv->proxy);
+
+	/* success */
+	return TRUE;
 }
 
 static void
@@ -3283,6 +3337,24 @@ fwupd_client_get_tainted(FwupdClient *self)
 }
 
 /**
+ * fwupd_client_get_only_trusted:
+ * @self: a #FwupdClient
+ *
+ * Gets if the daemon is verifying signatures from a trusted authority.
+ *
+ * Returns: %TRUE if the daemon is checking signatures
+ *
+ * Since: 1.8.0
+ **/
+gboolean
+fwupd_client_get_only_trusted(FwupdClient *self)
+{
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
+	return priv->only_trusted;
+}
+
+/**
  * fwupd_client_get_daemon_interactive:
  * @self: a #FwupdClient
  *
@@ -3611,6 +3683,17 @@ fwupd_client_refresh_remote_async(FwupdClient *self,
 	g_task_set_task_data(task,
 			     g_steal_pointer(&data),
 			     (GDestroyNotify)fwupd_client_refresh_remote_data_free);
+
+	/* sanity check */
+	if (fwupd_remote_get_metadata_uri_sig(remote) == NULL ||
+	    fwupd_remote_get_metadata_uri(remote) == NULL) {
+		g_task_return_new_error(task,
+					FWUPD_ERROR,
+					FWUPD_ERROR_NOT_SUPPORTED,
+					"no metadata URIs for %s",
+					fwupd_remote_get_id(remote));
+		return;
+	}
 
 	/* download signature */
 	fwupd_client_download_bytes_async(self,
@@ -4656,10 +4739,12 @@ fwupd_client_download_http(FwupdClient *self, CURL *curl, const gchar *url, GErr
 	g_autoptr(GByteArray) buf = g_byte_array_new();
 
 	fwupd_client_set_status(self, FWUPD_STATUS_DOWNLOADING);
-	curl_easy_setopt(curl, CURLOPT_URL, url);
-	curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
-	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwupd_client_download_write_callback_cb);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
+	(void)curl_easy_setopt(curl, CURLOPT_URL, url);
+	(void)curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+	(void)curl_easy_setopt(curl,
+			       CURLOPT_WRITEFUNCTION,
+			       fwupd_client_download_write_callback_cb);
+	(void)curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
 	res = curl_easy_perform(curl);
 	fwupd_client_set_status(self, FWUPD_STATUS_IDLE);
 	if (res != CURLE_OK) {
@@ -4864,11 +4949,11 @@ fwupd_client_upload_bytes_thread_cb(GTask *task,
 	gchar errbuf[CURL_ERROR_SIZE] = {'\0'};
 	g_autoptr(GByteArray) buf = g_byte_array_new();
 
-	curl_easy_setopt(helper->curl, CURLOPT_ERRORBUFFER, errbuf);
-	curl_easy_setopt(helper->curl,
-			 CURLOPT_WRITEFUNCTION,
-			 fwupd_client_download_write_callback_cb);
-	curl_easy_setopt(helper->curl, CURLOPT_WRITEDATA, buf);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_ERRORBUFFER, errbuf);
+	(void)curl_easy_setopt(helper->curl,
+			       CURLOPT_WRITEFUNCTION,
+			       fwupd_client_download_write_callback_cb);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_WRITEDATA, buf);
 	res = curl_easy_perform(helper->curl);
 	fwupd_client_set_status(self, FWUPD_STATUS_IDLE);
 	if (res != CURLE_OK) {
@@ -4956,26 +5041,26 @@ fwupd_client_upload_bytes_async(FwupdClient *self,
 	if ((flags & FWUPD_CLIENT_UPLOAD_FLAG_ALWAYS_MULTIPART) > 0 || signature != NULL) {
 		curl_mimepart *part;
 		helper->mime = curl_mime_init(helper->curl);
-		curl_easy_setopt(helper->curl, CURLOPT_MIMEPOST, helper->mime);
+		(void)curl_easy_setopt(helper->curl, CURLOPT_MIMEPOST, helper->mime);
 		part = curl_mime_addpart(helper->mime);
-		curl_mime_data(part, payload, CURL_ZERO_TERMINATED);
+		(void)curl_mime_data(part, payload, CURL_ZERO_TERMINATED);
 		curl_mime_name(part, "payload");
 		if (signature != NULL) {
 			part = curl_mime_addpart(helper->mime);
-			curl_mime_data(part, signature, CURL_ZERO_TERMINATED);
+			(void)curl_mime_data(part, signature, CURL_ZERO_TERMINATED);
 			curl_mime_name(part, "signature");
 		}
 	} else {
 		helper->headers = curl_slist_append(helper->headers, "Content-Type: text/plain");
-		curl_easy_setopt(helper->curl, CURLOPT_HTTPHEADER, helper->headers);
-		curl_easy_setopt(helper->curl, CURLOPT_POST, 1L);
-		curl_easy_setopt(helper->curl, CURLOPT_POSTFIELDSIZE, strlen(payload));
-		curl_easy_setopt(helper->curl, CURLOPT_COPYPOSTFIELDS, payload);
+		(void)curl_easy_setopt(helper->curl, CURLOPT_HTTPHEADER, helper->headers);
+		(void)curl_easy_setopt(helper->curl, CURLOPT_POST, 1L);
+		(void)curl_easy_setopt(helper->curl, CURLOPT_POSTFIELDSIZE, strlen(payload));
+		(void)curl_easy_setopt(helper->curl, CURLOPT_COPYPOSTFIELDS, payload);
 	}
 
 	fwupd_client_set_status(self, FWUPD_STATUS_IDLE);
 	g_debug("uploading to %s", url);
-	curl_easy_setopt(helper->curl, CURLOPT_URL, url);
+	(void)curl_easy_setopt(helper->curl, CURLOPT_URL, url);
 	g_task_set_task_data(task,
 			     g_steal_pointer(&helper),
 			     (GDestroyNotify)fwupd_client_curl_helper_free);
@@ -5107,6 +5192,9 @@ fwupd_client_get_property(GObject *object, guint prop_id, GValue *value, GParamS
 		break;
 	case PROP_HOST_SECURITY_ID:
 		g_value_set_string(value, priv->host_security_id);
+		break;
+	case PROP_ONLY_TRUSTED:
+		g_value_set_boolean(value, priv->only_trusted);
 		break;
 	case PROP_INTERACTIVE:
 		g_value_set_boolean(value, priv->interactive);
@@ -5416,6 +5504,20 @@ fwupd_client_class_init(FwupdClientClass *klass)
 				    NULL,
 				    G_PARAM_READABLE | G_PARAM_STATIC_NAME);
 	g_object_class_install_property(object_class, PROP_HOST_SECURITY_ID, pspec);
+
+	/**
+	 * FwupdClient:only-trusted:
+	 *
+	 * If the daemon is verifying signatures from a trusted authority.
+	 *
+	 * Since: 1.8.0
+	 */
+	pspec = g_param_spec_boolean("only-trusted",
+				     NULL,
+				     NULL,
+				     TRUE,
+				     G_PARAM_READABLE | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_ONLY_TRUSTED, pspec);
 }
 
 static void

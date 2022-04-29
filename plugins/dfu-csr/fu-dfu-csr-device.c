@@ -104,7 +104,7 @@ fu_dfu_csr_device_get_status(FuDfuCsrDevice *self, GError **error)
 	}
 
 	self->dfu_state = buf[5];
-	self->dnload_timeout = buf[2] + (((guint32)buf[3]) << 8) + (((guint32)buf[4]) << 16);
+	self->dnload_timeout = fu_common_read_uint24(&buf[2], G_LITTLE_ENDIAN);
 	g_debug("timeout=%" G_GUINT32_FORMAT, self->dnload_timeout);
 	g_debug("state=%s", fu_dfu_state_to_string(self->dfu_state));
 	g_debug("status=%s", fu_dfu_status_to_string(buf[6]));
@@ -350,7 +350,7 @@ fu_dfu_csr_device_download(FuDevice *device,
 			   GError **error)
 {
 	FuDfuCsrDevice *self = FU_DFU_CSR_DEVICE(device);
-	guint16 idx;
+	guint idx;
 	g_autoptr(GBytes) blob_empty = NULL;
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GPtrArray) chunks = NULL;
@@ -369,8 +369,17 @@ fu_dfu_csr_device_download(FuDevice *device,
 					       0x0,
 					       FU_DFU_CSR_PACKET_DATA_SIZE -
 						   FU_DFU_CSR_COMMAND_HEADER_SIZE);
+	if (chunks->len > G_MAXUINT16) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_FILE,
+			    "too many chunks for hardware: 0x%x",
+			    chunks->len);
+		return FALSE;
+	}
 
 	/* send to hardware */
+	fu_progress_set_steps(progress, chunks->len);
 	for (idx = 0; idx < chunks->len; idx++) {
 		FuChunk *chk = g_ptr_array_index(chunks, idx);
 		g_autoptr(GBytes) blob_tmp = fu_chunk_get_bytes(chk);
@@ -380,7 +389,7 @@ fu_dfu_csr_device_download(FuDevice *device,
 			return FALSE;
 
 		/* update progress */
-		fu_progress_set_percentage_full(progress, (gsize)idx + 1, (gsize)chunks->len);
+		fu_progress_step_done(progress);
 	}
 
 	/* all done */
@@ -433,6 +442,7 @@ static void
 fu_dfu_csr_device_init(FuDfuCsrDevice *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.qualcomm.dfu");
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_DFU_FIRMWARE);
 	fu_device_register_private_flag(FU_DEVICE(self),

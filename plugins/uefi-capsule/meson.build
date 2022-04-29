@@ -1,4 +1,4 @@
-if get_option('plugin_uefi_capsule')
+if efiboot.found() and efivar.found()
 
 cargs = ['-DG_LOG_DOMAIN="FuPluginUefiCapsule"']
 
@@ -34,7 +34,6 @@ shared_module('fu_plugin_uefi_capsule',
   sources : [
     'fu-plugin-uefi-capsule.c',
     'fu-uefi-bgrt.c',
-    'fu-ucs2.c',
     'fu-uefi-bootmgr.c',
     'fu-uefi-common.c',
     'fu-uefi-cod-device.c',
@@ -72,7 +71,6 @@ fwupdate = executable(
   sources : [
     'fu-uefi-tool.c',
     'fu-uefi-bgrt.c',
-    'fu-ucs2.c',
     'fu-uefi-bootmgr.c',
     'fu-uefi-common.c',
     'fu-uefi-device.c',
@@ -119,26 +117,26 @@ install_data(['uefi_capsule.conf'],
 
 # add all the .po files as inputs to watch
 ux_linguas = run_command(
-  'cat', files(join_paths(meson.source_root(), 'po', 'LINGUAS')),
+  'cat', files(join_paths(meson.project_source_root(), 'po', 'LINGUAS')),
 ).stdout().strip().split('\n')
 ux_capsule_pofiles = []
 foreach ux_lingua : ux_linguas
-  ux_capsule_pofiles += join_paths(meson.source_root(), 'po', '@0@.po'.format(ux_lingua))
+  ux_capsule_pofiles += join_paths(meson.project_source_root(), 'po', '@0@.po'.format(ux_lingua))
 endforeach
 
 if get_option('plugin_uefi_capsule_splash')
   # add the archive of pregenerated images
   custom_target('ux-capsule-tar',
     input : [
-      join_paths(meson.source_root(), 'po', 'LINGUAS'),
+      join_paths(meson.project_source_root(), 'po', 'LINGUAS'),
       join_paths(meson.current_source_dir(), 'make-images.py'),
       ux_capsule_pofiles,
     ],
     output : 'uefi-capsule-ux.tar.xz',
     command : [
-      python3.path(),
+      python3.full_path(),
       join_paths(meson.current_source_dir(), 'make-images.py'),
-      '--podir', join_paths(meson.source_root(), 'po'),
+      '--podir', join_paths(meson.project_source_root(), 'po'),
       '--label', 'Installing firmware update…',
       '--out', '@OUTPUT@',
     ],
@@ -166,7 +164,6 @@ if get_option('tests')
       'fu-uefi-grub-device.c',
       'fu-uefi-devpath.c',
       'fu-uefi-update-info.c',
-      'fu-ucs2.c',
       backend_srcs,
     ],
     include_directories : [

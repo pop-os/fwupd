@@ -30,6 +30,7 @@ struct _FuConfig {
 	GPtrArray *blocked_firmware;  /* (element-type utf-8) */
 	GPtrArray *uri_schemes;	      /* (element-type utf-8) */
 	GPtrArray *filenames;	      /* (element-type utf-8) */
+	GArray *trusted_uids;	      /* (elementy type guint64) */
 	guint64 archive_size_max;
 	guint idle_timeout;
 	gchar *host_bkc;
@@ -37,6 +38,7 @@ struct _FuConfig {
 	gboolean enumerate_all_devices;
 	gboolean ignore_power;
 	gboolean only_trusted;
+	gboolean show_device_private;
 };
 
 G_DEFINE_TYPE(FuConfig, fu_config, G_TYPE_OBJECT)
@@ -57,6 +59,7 @@ fu_config_reload(FuConfig *self, GError **error)
 	g_auto(GStrv) blocked_firmware = NULL;
 	g_auto(GStrv) uri_schemes = NULL;
 	g_auto(GStrv) devices = NULL;
+	g_auto(GStrv) uids = NULL;
 	g_auto(GStrv) plugins = NULL;
 	g_autofree gchar *domains = NULL;
 	g_autofree gchar *host_bkc = NULL;
@@ -64,6 +67,7 @@ fu_config_reload(FuConfig *self, GError **error)
 	g_autoptr(GError) error_update_motd = NULL;
 	g_autoptr(GError) error_ignore_power = NULL;
 	g_autoptr(GError) error_only_trusted = NULL;
+	g_autoptr(GError) error_show_device_private = NULL;
 	g_autoptr(GError) error_enumerate_all = NULL;
 	g_autoptr(GByteArray) buf = g_byte_array_new();
 
@@ -188,7 +192,7 @@ fu_config_reload(FuConfig *self, GError **error)
 	/* get the domains to run in verbose */
 	domains = g_key_file_get_string(keyfile, "fwupd", "VerboseDomains", NULL);
 	if (domains != NULL && domains[0] != '\0')
-		g_setenv("FWUPD_VERBOSE", domains, TRUE);
+		(void)g_setenv("FWUPD_VERBOSE", domains, TRUE);
 
 	/* whether to update the motd on changes */
 	self->update_motd =
@@ -223,10 +227,35 @@ fu_config_reload(FuConfig *self, GError **error)
 		self->only_trusted = TRUE;
 	}
 
+	/* whether to show private device data, e.g. serial numbers */
+	self->show_device_private = g_key_file_get_boolean(keyfile,
+							   "fwupd",
+							   "ShowDevicePrivate",
+							   &error_show_device_private);
+	if (!self->show_device_private && error_show_device_private != NULL) {
+		g_debug("failed to read ShowDevicePrivate key: %s",
+			error_show_device_private->message);
+		self->show_device_private = TRUE;
+	}
+
 	/* fetch host best known configuration */
 	host_bkc = g_key_file_get_string(keyfile, "fwupd", "HostBkc", NULL);
 	if (host_bkc != NULL && host_bkc[0] != '\0')
 		self->host_bkc = g_steal_pointer(&host_bkc);
+
+	/* get trusted uids */
+	g_array_set_size(self->trusted_uids, 0);
+	uids = g_key_file_get_string_list(keyfile,
+					  "fwupd",
+					  "TrustedUids",
+					  NULL, /* length */
+					  NULL);
+	if (uids != NULL) {
+		for (guint i = 0; uids[i] != NULL; i++) {
+			guint64 val = fu_common_strtoull(uids[i]);
+			g_array_append_val(self->trusted_uids, val);
+		}
+	}
 
 	return TRUE;
 }
@@ -319,6 +348,13 @@ fu_config_get_disabled_devices(FuConfig *self)
 	return self->disabled_devices;
 }
 
+GArray *
+fu_config_get_trusted_uids(FuConfig *self)
+{
+	g_return_val_if_fail(FU_IS_CONFIG(self), NULL);
+	return self->trusted_uids;
+}
+
 GPtrArray *
 fu_config_get_blocked_firmware(FuConfig *self)
 {
@@ -386,6 +422,13 @@ fu_config_get_only_trusted(FuConfig *self)
 }
 
 gboolean
+fu_config_get_show_device_private(FuConfig *self)
+{
+	g_return_val_if_fail(FU_IS_CONFIG(self), FALSE);
+	return self->show_device_private;
+}
+
+gboolean
 fu_config_get_enumerate_all_devices(FuConfig *self)
 {
 	g_return_val_if_fail(FU_IS_CONFIG(self), FALSE);
@@ -431,6 +474,7 @@ fu_config_init(FuConfig *self)
 	self->disabled_plugins = g_ptr_array_new_with_free_func(g_free);
 	self->approved_firmware = g_ptr_array_new_with_free_func(g_free);
 	self->blocked_firmware = g_ptr_array_new_with_free_func(g_free);
+	self->trusted_uids = g_array_new(FALSE, FALSE, sizeof(guint64));
 	self->uri_schemes = g_ptr_array_new_with_free_func(g_free);
 	self->monitors = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 }
@@ -451,6 +495,7 @@ fu_config_finalize(GObject *obj)
 	g_ptr_array_unref(self->approved_firmware);
 	g_ptr_array_unref(self->blocked_firmware);
 	g_ptr_array_unref(self->uri_schemes);
+	g_array_unref(self->trusted_uids);
 	g_free(self->host_bkc);
 
 	G_OBJECT_CLASS(fu_config_parent_class)->finalize(obj);

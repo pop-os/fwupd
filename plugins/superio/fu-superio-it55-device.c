@@ -59,6 +59,7 @@ fu_superio_it55_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuSuperioDevice->to_string */
 	FU_DEVICE_CLASS(fu_superio_it55_device_parent_class)->to_string(device, idt, str);
 
+	fu_common_string_append_kv(str, idt, "PrjName", self->prj_name);
 	fu_common_string_append_kx(str, idt, "AutoloadAction", self->autoload_action);
 }
 
@@ -236,6 +237,7 @@ fu_superio_it55_device_get_firmware(FuDevice *device, FuProgress *progress, GErr
 	g_autofree guint8 *buf = NULL;
 
 	buf = g_malloc0(fwsize);
+	fu_progress_set_steps(progress, block_count);
 	for (guint i = 0; i < block_count; ++i) {
 		if (!fu_superio_device_ec_write_cmd(self, SIO_CMD_EC_READ_BLOCK, error) ||
 		    !fu_superio_device_ec_write_cmd(self, i, error))
@@ -244,9 +246,8 @@ fu_superio_it55_device_get_firmware(FuDevice *device, FuProgress *progress, GErr
 		for (guint j = 0; j < BLOCK_SIZE; ++j, ++offset) {
 			if (!fu_superio_device_ec_read_data(self, &buf[offset], error))
 				return NULL;
-
-			fu_progress_set_percentage_full(progress, (gsize)i + 1, (gsize)block_count);
 		}
+		fu_progress_step_done(progress);
 	}
 
 	return g_bytes_new_take(g_steal_pointer(&buf), fwsize);
@@ -618,7 +619,6 @@ fu_superio_it55_device_init(FuEcIt55Device *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ONLY_OFFLINE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	/* version string example: 1.07.02TR1 */
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 }

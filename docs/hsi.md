@@ -351,8 +351,9 @@ To meet HSI-1 on systems that run this test, the result must be `valid`. *[v1.5.
 - [Intel CSME Security Review Cumulative Update](https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00086.html)
 
 <a id="org.fwupd.hsi.IntelDci.Enabled"></a>
+<a id="org.fwupd.hsi.PlatformDebugEnabled"></a>
 
-### [Intel DCI](#org.fwupd.hsi.IntelDci.Enabled)
+### [Intel DCI](#org.fwupd.hsi.PlatformDebugEnabled)
 
 Newer Intel CPUs support debugging over USB3 via a proprietary Direct Connection Interface (DCI) with the use of off-the-shelf hardware.
 
@@ -366,27 +367,48 @@ This makes privilege escalation from user to root possible, and also modifying S
 
 To meet HSI-1 on systems that run this test, the result must be `not-enabled`. *[v1.5.0]*
 
+Note: this attribute was previously known as org.fwupd.hsi.IntelDci.Enabled in 1.5.0, but was renamed in 1.8.0 to support other vendors.
+
 **References:**
 
 - [Intel Direct Connect Interface](https://www.intel.co.uk/content/www/uk/en/support/articles/000029393/processors.html)
 - [Chipsec 4xxlp register definitions](https://github.com/chipsec/chipsec/blob/master/chipsec/cfg/8086/pch_4xxlp.xml#L270)
 - [RISC-V EDK PCH register definitions](https://github.com/riscv/riscv-edk2-platforms/blob/85a50de1b459d1d6644a402081120770aa6dd8c7/Silicon/Intel/CoffeelakeSiliconPkg/Pch/Include/Register/PchRegsDci.h)
 
-<a id="org.fwupd.hsi.IntelDci.Locked"></a>
+<a id="org.fwupd.hsi.PlatformFused"></a>
 
-### [Intel DCI](#org.fwupd.hsi.IntelDci.Locked)
+### [Part is fused](#org.fwupd.hsi.PlatformFused)
 
-Newer Intel CPUs support debugging over USB3 via a proprietary Direct Connection Interface (DCI) with the use of off-the-shelf hardware.
+When fuses are blown in parts from some manufacturers the hardware will enforce protections against
+tampering or accessing of certain registers.
 
-**Impact:** A local attacker with root access would be able to enable DCI. This would allow them full access to all registers and memory in the system, and is able to make changes.
-This allows using SMM to write to system firmware for a persistent backdoor.
+**Impact:** If using an unfused part, the platform's overall security will be decreased.
 
 **Possible results:**
 
-- `locked`: CPU debugging has been disabled
-- `not-locked`: is is still possible to enable CPU debugging
+- `locked`: device is fused
+- `not-locked`: device is not fused
 
-To meet HSI-2 on systems that run this test, the result must be `locked`. *[v1.5.0]*
+To meet HSI-1 on systems that run this test, the result must be `locked`. *[v1.8.0]*
+
+<a id="org.fwupd.hsi.IntelDci.Locked"></a>
+<a id="org.fwupd.hsi.PlatformDebugLocked"></a>
+
+### [Part is debug locked](#org.fwupd.hsi.PlatformDebugLocked)
+
+Some devices support a concept of whether a part has been unlocked for debugging using proprietary hardware.  Such parts allow access to registers that are typically restricted when parts are fused.
+On Intel systems access to this interface is done via a proprietary Direct Connection Interface (DCI).
+
+**Impact:** If using a debug unlocked part, the platform's overall security will be decreased as an attacker may have elevated access to registers and memory within the system and can potentially enable persistent backdoors.
+
+**Possible results:**
+
+- `locked`: device is locked
+- `not-locked`: device is not not locked
+
+To meet HSI-2 on systems that run this test, the result must be `locked`. *[v1.8.0]*
+
+Note: this attribute was previously known as org.fwupd.hsi.IntelDci.Locked in 1.5.0, but was renamed in 1.8.0 to support other vendors.
 
 **References:**
 
@@ -437,14 +459,16 @@ To meet HSI-2 on systems that run this test, the result must be `valid`. *[v1.5.
 - [Linux Kernel TPM Documentation](https://www.kernel.org/doc/html/latest/security/tpm/tpm_event_log.html)
 
 <a id="org.fwupd.hsi.AcpiDmar"></a>
+<a id="org.fwupd.hsi.PrebootDma"></a>
 
-### [Pre-boot DMA protection](#org.fwupd.hsi.AcpiDmar)
+### [Pre-boot DMA protection](#org.fwupd.hsi.PrebootDma)
 
 The IOMMU on modern systems is used to mitigate against DMA attacks.
 All I/O for devices capable of DMA is mapped into a private virtual memory region.
-The ACPI DMAR table is used to set up pre-boot DMA protection which eliminates some firmware attacks.
+On Intel systems the ACPI DMAR table indicated the system is configured with pre-boot DMA protection which eliminates some firmware attacks.
+On AMD systems the ACPI IVRS table indicates the same.
 
-**Impact:** Without a DMAR table the IOMMU is disabled at boot.
+**Impact:** The IOMMU may is disabled at boot.
 An attacker could connect a malicious peripheral using ThunderBolt and reboot the machine, which would allow the attacker to modify the system memory.
 This would allow subverting the Secure Boot protection, and also invalidate any system attestation.
 
@@ -454,11 +478,15 @@ This would allow subverting the Secure Boot protection, and also invalidate any 
 - `not-valid`: could not determine state
 - `not-enabled`: was not enabled
 
-To meet HSI-3 on systems that run this test, the result must be `enabled`. *[v1.5.0]*
+To meet HSI-3 on systems that run this test, the result must be `enabled`. *[v1.8.0]*
+
+Note: a previous version of this attribute existed in 1.5.0 but was only for Intel systems.
+It was renamed in 1.8.0 to support other vendors.
 
 **References:**
 
 - [IOMMU Wikipedia Page](https://en.wikipedia.org/wiki/Input%E2%80%93output_memory_management_unit)
+- [AMD IVRS Specification](https://www.amd.com/system/files/TechDocs/48882_IOMMU.pdf)
 
 <a id="org.fwupd.hsi.Kernel.IntelBootguard"></a>
 <a id="org.fwupd.hsi.IntelBootguard.Enabled"></a>
@@ -633,7 +661,57 @@ To meet HSI-4 on systems that run this test, the result must be `enabled`. *[v1.
 - [Intel TME Press Release](https://software.intel.com/content/www/us/en/develop/blogs/intel-releases-new-technology-specification-for-memory-encryption.html)
 - [WikiChip SME Overview](https://en.wikichip.org/wiki/x86/sme)
 
+<a id="org.fwupd.hsi.Amd.PlatformRollbackProtection"></a>
+
+### [AMD Rollback protection](#org.fwupd.hsi.Amd.RollbackProtection)
+
+AMD SOCs include the ability to prevent a rollback attack by a rollback protection feature on the firmware.  This feature prevents an attacker from loading an older
+firmware onto the part after a security vulnerability has been fixed.
+
+**Impact:** SOCs without this feature may be attacked by an attacker installing an older firmware that takes advantage of a well-known vulnerability.
+
+**Possible results:**
+
+- `enabled`: rollback protection enabled
+- `not-enabled`: rollback protection disabled
+
+To meet HSI-1 on AMD systems that run this test, the result must be `enabled`. *[v1.8.0]*
+
+**References:**
+
+- [Rollback protection](https://www.psacertified.org/blog/anti-rollback-explained/)
+
 <a id="org.fwupd.hsi.IntelSmap"></a>
+
+### [AMD SPI Write protections](#org.fwupd.hsi.Amd.SpiWriteProtection)
+
+SOCs may enforce control of the SPI bus to prevent writes other than by verified entities.
+
+**Impact:** SOCs without this feature may be attacked by an attacker modifying the SPI.
+
+**Possible results:**
+
+- `enabled`: spi protections enabled
+- `not-enabled`: spi protections disabled
+
+To meet HSI-2 on systems that run this test, the result must be `enabled`. *[v1.8.0]*
+
+<a id="org.fwupd.hsi.Amd.SpiWriteProtection"></a>
+
+### [AMD SPI Replay protections](#org.fwupd.hsi.Amd.SpiReplayProtection)
+
+SOCs may include support for replay-protected monotonic counters to prevent replay attacks.
+
+**Impact:** SOCs without this feature may be attacked by an attacker modifying the SPI.
+
+**Possible results:**
+
+- `enabled`: spi protections enabled
+- `not-enabled`: spi protections disabled
+
+To meet HSI-3 on systems that run this test, the result must be `enabled`. *[v1.8.0]*
+
+<a id="org.fwupd.hsi.Amd.SpiReplayProtection"></a>
 
 ### [Supervisor Mode Access Prevention](#org.fwupd.hsi.IntelSmap)
 

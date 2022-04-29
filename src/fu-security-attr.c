@@ -34,7 +34,7 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: Title: SPI refers to the flash chip in the computer */
 		return g_strdup(_("SPI BIOS Descriptor"));
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_ACPI_DMAR) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PREBOOT_DMA_PROTECTION) == 0) {
 		/* TRANSLATORS: Title: DMA as in https://en.wikipedia.org/wiki/DMA_attack  */
 		return g_strdup(_("Pre-boot DMA protection"));
 	}
@@ -173,11 +173,30 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: Title: if the fwupd plugins are all present and correct */
 		return g_strdup(_("fwupd plugins"));
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_DCI_ENABLED) == 0 ||
-	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_DCI_LOCKED) == 0) {
-		/* TRANSLATORS: Title: Direct Connect Interface (DCI) allows
-		 * debugging of Intel processors using the USB3 port */
-		return g_strdup(_("Intel DCI debugger"));
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_ENABLED) == 0 ||
+	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED) == 0) {
+		/* TRANSLATORS: Title: Allows debugging of parts using proprietary hardware */
+		return g_strdup(_("Platform Debugging"));
+	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU) == 0) {
+		/* TRANSLATORS: Title: if fwupd supports HSI on this chip */
+		return g_strdup(_("Supported CPU"));
+	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION) == 0) {
+		/* TRANSLATORS: Title: if firmware enforces rollback protection */
+		return g_strdup(_("Rollback protection"));
+	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION) == 0) {
+		/* TRANSLATORS: Title: if hardware enforces control of SPI replays */
+		return g_strdup(_("SPI replay protection"));
+	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SPI_WRITE_PROTECTION) == 0) {
+		/* TRANSLATORS: Title: if hardware enforces control of SPI writes */
+		return g_strdup(_("SPI write protection"));
+	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED) == 0) {
+		/* TRANSLATORS: Title: if the part has been fused */
+		return g_strdup(_("Fused platform"));
 	}
 
 	/* we should not get here */

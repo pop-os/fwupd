@@ -84,7 +84,7 @@ fu_parade_lspcon_device_init(FuParadeLspconDevice *self)
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE);
-	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_set_firmware_size(device, 0x10000);
 	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_PAIR);
@@ -121,19 +121,6 @@ fu_parade_lspcon_device_probe(FuDevice *device, GError **error)
 	FuContext *context = fu_device_get_context(device);
 	FuUdevDevice *udev_device = FU_UDEV_DEVICE(device);
 	const gchar *device_name;
-	g_autofree gchar *instance_id_hwid = NULL;
-	g_autofree gchar *instance_id = NULL;
-
-	/* custom instance IDs to get device quirks */
-	instance_id = g_strdup_printf("PARADE-LSPCON\\NAME_%s",
-				      fu_udev_device_get_sysfs_attr(udev_device, "name", NULL));
-	fu_device_add_instance_id(device, instance_id);
-	instance_id_hwid = g_strdup_printf("%s&FAMILY_%s",
-					   instance_id,
-					   fu_context_get_hwid_value(context, FU_HWIDS_KEY_FAMILY));
-	fu_device_add_instance_id_full(device,
-				       instance_id_hwid,
-				       FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
 
 	device_name = fu_device_get_name(device);
 	if (g_strcmp0(device_name, "PS175") != 0) {
@@ -144,6 +131,17 @@ fu_parade_lspcon_device_probe(FuDevice *device, GError **error)
 			    device_name);
 		return FALSE;
 	}
+
+	/* custom instance IDs to get device quirks */
+	fu_device_add_instance_str(device,
+				   "NAME",
+				   fu_udev_device_get_sysfs_attr(udev_device, "name", NULL));
+	fu_device_add_instance_str(device,
+				   "FAMILY",
+				   fu_context_get_hwid_value(context, FU_HWIDS_KEY_FAMILY));
+	if (!fu_device_build_instance_id(device, error, "PARADE-LSPCON", "NAME", NULL))
+		return FALSE;
+	fu_device_build_instance_id_quirk(device, NULL, "PARADE-LSPCON", "NAME", "FAMILY", NULL);
 
 	/* should know which aux device over which we read DPCD version */
 	if (self->aux_device_name == NULL) {

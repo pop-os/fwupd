@@ -38,13 +38,11 @@ Plugin = flashrom
 # StarLabTop Mk III (coreboot GUID)
 [d33219e2-b84c-53a8-a624-27af9752dba6]
 Branch = coreboot
-VersionFormat = plain
 Flags = reset-cmos
 
 # StarLite Mk II (coreboot GUID)
 [2993474c-b4c4-5b7c-b2e1-a471d8d328a5]
 Branch = coreboot
-VersionFormat = plain
 Flags = reset-cmos
 
 # StarLite Mk II (AMI GUID)
@@ -54,7 +52,6 @@ FirmwareSizeMax = 0x800000
 # StarLite Mk III (coreboot GUID)
 [3d2f164a-8818-58fd-a082-6c60a67e21a6]
 Branch = coreboot
-VersionFormat = plain
 Flags = reset-cmos
 
 # StarLite Mk III (AMI GUID)
@@ -64,7 +61,6 @@ FirmwareSizeMax = 0x800000
 # StarLite Mk IV (coreboot GUID)
 [5dc1dd5b-761e-5146-8ac2-1fdd8445f2ff]
 Branch = coreboot
-VersionFormat = plain
 Flags = reset-cmos
 
 # StarLite Mk IV (AMI GUID)
@@ -74,19 +70,44 @@ FirmwareSizeMax = 0x800000
 # StarLabTop Mk IV (coreboot GUID)
 [0ee5867c-93f0-5fb4-adf1-9d686ea1183a]
 Branch = coreboot
-VersionFormat = plain
 Flags = reset-cmos
 
 # StarBook Mk V (coreboot GUID)
 [54c96fef-31e7-5011-a3ff-ea8e855d9acd]
 Branch = coreboot
-VersionFormat = plain
 Flags = reset-cmos
 
 # NovaCustom NV4x (HwId)
 [25b6ea34-8f52-598e-a27a-31e03014dbe3]
 Plugin = flashrom
+[59caeff5-6a3c-595b-aab1-56500d0fecbc]
+Plugin = flashrom
 
 # NovaCustom NV4x (Dasharo GUID)
 [9a8c30e2-1b7e-5b28-9632-fc2fbf8cd0ba]
 Branch = dasharo
+VersionFormat = triplet
+[41a8fb3d-213a-5a8a-b0f4-e2a7c55aaf80]
+Branch = dasharo
+VersionFormat = triplet
+
+# NovaCustom NS5x (HwId)
+[bab4f96c-34e4-5b92-a785-4e4489b1c395]
+Plugin = flashrom
+
+# NovaCustom NS5x (Dasharo GUID)
+[43455705-4c7d-5440-b285-8362b67a5743]
+Branch = dasharo
+VersionFormat = triplet
+
+# Tuxedo InifinityBook S14 Gen6 (HwId)
+[6c80d85b-d0b6-5ee2-99d4-ec28dd32febd]
+Plugin = flashrom
+[FLASHROM\GUID_6c80d85b-d0b6-5ee2-99d4-ec28dd32febd]
+Flags = fn-m-me-unlock
+
+# Tuxedo InifinityBook S15 Gen6 (HwId)
+[60f53465-e8fc-5122-b79b-f7b03f063037]
+Plugin = flashrom
+[FLASHROM\GUID_60f53465-e8fc-5122-b79b-f7b03f063037]
+Flags = fn-m-me-unlock

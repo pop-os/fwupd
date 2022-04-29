@@ -8,6 +8,7 @@
 
 #include <fwupdplugin.h>
 
+#include "fu-thunderbolt-common.h"
 #include "fu-thunderbolt-controller.h"
 #include "fu-thunderbolt-firmware-update.h"
 #include "fu-thunderbolt-firmware.h"
@@ -33,11 +34,11 @@ fu_plugin_thunderbolt_safe_kernel(FuPlugin *plugin, GError **error)
 static gboolean
 fu_plugin_thunderbolt_device_created(FuPlugin *plugin, FuDevice *dev, GError **error)
 {
-	FuContext *ctx = fu_plugin_get_context(plugin);
 	fu_plugin_add_rule(plugin,
 			   FU_PLUGIN_RULE_INHIBITS_IDLE,
 			   "thunderbolt requires device wakeup");
-	fu_device_set_context(dev, ctx);
+	if (fu_plugin_get_config_value_boolean(plugin, "RetimerOfflineMode"))
+		fu_device_add_private_flag(dev, FU_THUNDERBOLT_DEVICE_FLAG_FORCE_ENUMERATION);
 	return TRUE;
 }
 
@@ -79,6 +80,7 @@ fu_plugin_thunderbolt_composite_prepare(FuPlugin *plugin, GPtrArray *devices, GE
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *dev = g_ptr_array_index(devices, i);
 		if ((g_strcmp0(fu_device_get_plugin(dev), "thunderbolt") == 0) &&
+		    fu_device_has_private_flag(dev, FU_THUNDERBOLT_DEVICE_FLAG_FORCE_ENUMERATION) &&
 		    fu_device_has_internal_flag(dev, FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE)) {
 			return fu_thunderbolt_retimer_set_parent_port_offline(dev, error);
 		}
@@ -92,6 +94,7 @@ fu_plugin_thunderbolt_composite_cleanup(FuPlugin *plugin, GPtrArray *devices, GE
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *dev = g_ptr_array_index(devices, i);
 		if ((g_strcmp0(fu_device_get_plugin(dev), "thunderbolt") == 0) &&
+		    fu_device_has_private_flag(dev, FU_THUNDERBOLT_DEVICE_FLAG_FORCE_ENUMERATION) &&
 		    fu_device_has_internal_flag(dev, FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE)) {
 			g_usleep(FU_THUNDERBOLT_RETIMER_CLEANUP_DELAY);
 			return fu_thunderbolt_retimer_set_parent_port_online(dev, error);

@@ -531,10 +531,10 @@ fu_dfu_device_remove_attribute(FuDfuDevice *self, FuDfuDeviceAttrs attribute)
  * Returns: a new #FuDfuDevice
  **/
 FuDfuDevice *
-fu_dfu_device_new(GUsbDevice *usb_device)
+fu_dfu_device_new(FuContext *ctx, GUsbDevice *usb_device)
 {
 	FuDfuDevice *self;
-	self = g_object_new(FU_TYPE_DFU_DEVICE, "usb-device", usb_device, NULL);
+	self = g_object_new(FU_TYPE_DFU_DEVICE, "usb-device", usb_device, "context", ctx, NULL);
 	return self;
 }
 
@@ -889,8 +889,7 @@ fu_dfu_device_refresh(FuDfuDevice *self, GError **error)
 	if (fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_IGNORE_POLLTIMEOUT)) {
 		priv->dnload_timeout = DFU_DEVICE_DNLOAD_TIMEOUT_DEFAULT;
 	} else {
-		priv->dnload_timeout =
-		    buf[1] + (((guint32)buf[2]) << 8) + (((guint32)buf[3]) << 16);
+		priv->dnload_timeout = fu_common_read_uint24(&buf[1], G_LITTLE_ENDIAN);
 		if (priv->dnload_timeout == 0 &&
 		    !fu_device_has_private_flag(FU_DEVICE(self),
 						FU_DFU_DEVICE_FLAG_ALLOW_ZERO_POLLTIMEOUT)) {
@@ -1903,7 +1902,6 @@ fu_dfu_device_init(FuDfuDevice *self)
 	priv->targets = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	priv->timeout_ms = 1500;
 	priv->transfer_size = 64;
-	fu_device_add_icon(FU_DEVICE(self), "drive-harddisk-usb");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);

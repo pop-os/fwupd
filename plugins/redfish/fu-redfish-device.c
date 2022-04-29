@@ -15,6 +15,8 @@ typedef struct {
 	JsonObject *member;
 	guint64 milestone;
 	gchar *build;
+	guint reset_pre_delay;	/* default of 0ms */
+	guint reset_post_delay; /* default of 0ms */
 } FuRedfishDevicePrivate;
 
 enum { PROP_0, PROP_BACKEND, PROP_MEMBER, PROP_LAST };
@@ -32,6 +34,8 @@ fu_redfish_device_to_string(FuDevice *device, guint idt, GString *str)
 		fu_common_string_append_kx(str, idt, "Milestone", priv->milestone);
 	if (priv->build != NULL)
 		fu_common_string_append_kv(str, idt, "Build", priv->build);
+	fu_common_string_append_ku(str, idt, "ResetPretDelay", priv->reset_pre_delay);
+	fu_common_string_append_ku(str, idt, "ResetPostDelay", priv->reset_post_delay);
 }
 
 static void
@@ -58,7 +62,6 @@ fu_redfish_device_set_device_class(FuRedfishDevice *self, const gchar *tmp)
 		return;
 	}
 	g_debug("no icon mapping for %s", tmp);
-	fu_device_add_icon(FU_DEVICE(self), "audio-card");
 }
 
 static gboolean
@@ -66,7 +69,6 @@ fu_redfish_device_probe_related_pcie_item(FuRedfishDevice *self, const gchar *ur
 {
 	FuRedfishDevicePrivate *priv = GET_PRIVATE(self);
 	JsonObject *json_obj;
-	const gchar *subsystem = "PCI";
 	guint64 vendor_id = 0x0;
 	guint64 model_id = 0x0;
 	guint64 subsystem_vendor_id = 0x0;
@@ -133,25 +135,19 @@ fu_redfish_device_probe_related_pcie_item(FuRedfishDevice *self, const gchar *ur
 	}
 
 	/* add more instance IDs if possible */
-	if (vendor_id != 0x0 && model_id != 0x0) {
-		g_autofree gchar *devid1 = NULL;
-		devid1 = g_strdup_printf("%s\\VEN_%04X&DEV_%04X",
-					 subsystem,
-					 (guint)vendor_id,
-					 (guint)model_id);
-		fu_device_add_instance_id(FU_DEVICE(self), devid1);
-	}
-	if (vendor_id != 0x0 && model_id != 0x0 && subsystem_vendor_id != 0x0 &&
-	    subsystem_model_id != 0x0) {
-		g_autofree gchar *devid2 = NULL;
-		devid2 = g_strdup_printf("%s\\VEN_%04X&DEV_%04X&SUBSYS_%04X%04X",
-					 subsystem,
-					 (guint)vendor_id,
-					 (guint)model_id,
+	if (vendor_id != 0x0)
+		fu_device_add_instance_u16(FU_DEVICE(self), "VEN", vendor_id);
+	if (model_id != 0x0)
+		fu_device_add_instance_u16(FU_DEVICE(self), "DEV", model_id);
+	if (subsystem_vendor_id != 0x0 && subsystem_model_id != 0x0) {
+		g_autofree gchar *subsys = NULL;
+		subsys = g_strdup_printf("%04X%04X",
 					 (guint)subsystem_vendor_id,
 					 (guint)subsystem_model_id);
-		fu_device_add_instance_id(FU_DEVICE(self), devid2);
+		fu_device_add_instance_str(FU_DEVICE(self), "SUBSYS", subsys);
 	}
+	fu_device_build_instance_id(FU_DEVICE(self), NULL, "PCI", "VEN", "DEV", NULL);
+	fu_device_build_instance_id(FU_DEVICE(self), NULL, "PCI", "VEN", "DEV", "SUBSYS", NULL);
 
 	/* success */
 	return TRUE;
@@ -449,31 +445,31 @@ fu_redfish_device_probe(FuDevice *dev, GError **error)
 		}
 	}
 
+	/* add IDs */
+	fu_device_add_instance_strsafe(dev, "VENDOR", fu_device_get_vendor(dev));
+	fu_device_add_instance_str(dev, "SOFTWAREID", guid);
+	fu_device_add_instance_str(dev, "ID", fu_device_get_backend_id(dev));
+
 	/* some vendors use a GUID, others use an ID like BMC-AFBT-10 */
 	guid_lower = g_ascii_strdown(guid, -1);
 	if (fwupd_guid_is_valid(guid_lower)) {
 		fu_device_add_guid(dev, guid_lower);
-	} else if (fu_device_get_vendor(dev) != NULL) {
-		const gchar *instance_id_suffix = "";
-		g_autofree gchar *instance_id = NULL;
+	} else {
 		if (fu_device_has_private_flag(dev, FU_REDFISH_DEVICE_FLAG_UNSIGNED_BUILD))
-			instance_id_suffix = "&TYPE_UNSIGNED";
-		instance_id = g_strdup_printf("REDFISH\\VENDOR_%s&SOFTWAREID_%s%s",
-					      fu_device_get_vendor(dev),
-					      guid,
-					      instance_id_suffix);
-		g_strdelimit(instance_id, " ", '_');
-		fu_device_add_instance_id(dev, instance_id);
+			fu_device_add_instance_str(dev, "TYPE", "UNSIGNED");
+
+		fu_device_build_instance_id(dev,
+					    NULL,
+					    "REDFISH",
+					    "VENDOR",
+					    "SOFTWAREID",
+					    "TYPE",
+					    NULL);
+		fu_device_build_instance_id(dev, NULL, "REDFISH", "VENDOR", "SOFTWAREID", NULL);
 	}
 
 	/* used for quirking and parenting */
-	if (fu_device_get_vendor(dev) != NULL && fu_device_get_backend_id(dev) != NULL) {
-		g_autofree gchar *instance_id = NULL;
-		instance_id = g_strdup_printf("REDFISH\\VENDOR_%s&ID_%s",
-					      fu_device_get_vendor(dev),
-					      fu_device_get_backend_id(dev));
-		fu_device_add_instance_id(dev, instance_id);
-	}
+	fu_device_build_instance_id(dev, NULL, "REDFISH", "VENDOR", "ID", NULL);
 
 	if (json_object_has_member(member, "Name")) {
 		const gchar *tmp = json_object_get_string_member(member, "Name");
@@ -759,6 +755,49 @@ fu_redfish_device_poll_task(FuRedfishDevice *self,
 	return FALSE;
 }
 
+guint
+fu_redfish_device_get_reset_pre_delay(FuRedfishDevice *self)
+{
+	FuRedfishDevicePrivate *priv = GET_PRIVATE(self);
+	return priv->reset_pre_delay;
+}
+
+guint
+fu_redfish_device_get_reset_post_delay(FuRedfishDevice *self)
+{
+	FuRedfishDevicePrivate *priv = GET_PRIVATE(self);
+	return priv->reset_post_delay;
+}
+
+static gboolean
+fu_redfish_device_set_quirk_kv(FuDevice *device,
+			       const gchar *key,
+			       const gchar *value,
+			       GError **error)
+{
+	FuRedfishDevice *self = FU_REDFISH_DEVICE(device);
+	FuRedfishDevicePrivate *priv = GET_PRIVATE(self);
+	guint64 tmp = 0;
+
+	if (g_strcmp0(key, "RedfishResetPreDelay") == 0) {
+		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT, error))
+			return FALSE;
+		priv->reset_pre_delay = tmp;
+		return TRUE;
+	}
+	if (g_strcmp0(key, "RedfishResetPostDelay") == 0) {
+		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT, error))
+			return FALSE;
+		priv->reset_post_delay = tmp;
+		return TRUE;
+	}
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
+	return FALSE;
+}
+
 static void
 fu_redfish_device_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
 {
@@ -819,6 +858,9 @@ fu_redfish_device_init(FuRedfishDevice *self)
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_REDFISH_DEVICE_FLAG_WILDCARD_TARGETS,
 					"wildcard-targets");
+	fu_device_register_private_flag(FU_DEVICE(self),
+					FU_REDFISH_DEVICE_FLAG_MANAGER_RESET,
+					"manager-reset");
 }
 
 static void
@@ -847,6 +889,7 @@ fu_redfish_device_class_init(FuRedfishDeviceClass *klass)
 
 	klass_device->to_string = fu_redfish_device_to_string;
 	klass_device->probe = fu_redfish_device_probe;
+	klass_device->set_quirk_kv = fu_redfish_device_set_quirk_kv;
 
 	/**
 	 * FuRedfishDevice:backend:

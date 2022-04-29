@@ -14,13 +14,15 @@
 G_BEGIN_DECLS
 
 /**
- * FWUPD_SECURITY_ATTR_ID_ACPI_DMAR:
+ * FWUPD_SECURITY_ATTR_ID_PREBOOT_DMA_PROTECTION:
  *
- * Host Security ID attribute for ACPI DMAR table
+ * Host Security ID attribute for Pre-boot DMA protection
  *
- * Since: 1.5.0
+ * This was previously known as org.fwupd.hsi.AcpiDmar for Intel from 1.5.0+.
+ *
+ * Since: 1.8.0
  **/
-#define FWUPD_SECURITY_ATTR_ID_ACPI_DMAR "org.fwupd.hsi.AcpiDmar"
+#define FWUPD_SECURITY_ATTR_ID_PREBOOT_DMA_PROTECTION "org.fwupd.hsi.PrebootDma"
 /**
  * FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM:
  *
@@ -254,21 +256,35 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_UEFI_SECUREBOOT "org.fwupd.hsi.Uefi.SecureBoot"
 /**
- * FWUPD_SECURITY_ATTR_ID_INTEL_DCI_ENABLED:
+ * FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_ENABLED:
  *
- * Host Security ID attribute for Intel DCI enabled
+ * Host Security ID attribute for parts with debugging capabilities enabled
  *
- * Since: 1.5.0
+ * This was previously known as org.fwupd.hsi.PlatformDebugEnabled for Intel 1.5.0+
+ * It was renamed for all vendor support in 1.8.0. *
+ *
+ * Since: 1.8.0
  **/
-#define FWUPD_SECURITY_ATTR_ID_INTEL_DCI_ENABLED "org.fwupd.hsi.IntelDci.Enabled"
+#define FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_ENABLED "org.fwupd.hsi.PlatformDebugEnabled"
 /**
- * FWUPD_SECURITY_ATTR_ID_INTEL_DCI_LOCKED:
+ * FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED:
  *
- * Host Security ID attribute for Intel DCI locked
+ * Host Security ID attribute for fused parts
  *
- * Since: 1.5.0
+ * Since: 1.8.0
  **/
-#define FWUPD_SECURITY_ATTR_ID_INTEL_DCI_LOCKED "org.fwupd.hsi.IntelDci.Locked"
+#define FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED "org.fwupd.hsi.PlatformFused"
+/**
+ * FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED:
+ *
+ * Host Security ID attribute for parts locked from debugging
+ *
+ * This was previously known as org.fwupd.hsi.IntelDci.Locked for Intel 1.5.0+
+ * It was renamed for all vendor support in 1.8.0.
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED "org.fwupd.hsi.PlatformDebugLocked"
 /**
  * FWUPD_SECURITY_ATTR_ID_UEFI_PK:
  *
@@ -277,6 +293,39 @@ G_BEGIN_DECLS
  * Since: 1.5.5
  **/
 #define FWUPD_SECURITY_ATTR_ID_UEFI_PK "org.fwupd.hsi.Uefi.Pk"
+/**
+ * FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU
+ *
+ * Host Security ID attribute for Supported CPU
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU "org.fwupd.hsi.SupportedCpu"
+/**
+ * FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION
+ *
+ * Host Security ID attribute for Rollback protection of AMD platform
+ * firmware
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION "org.fwupd.hsi.Amd.RollbackProtection"
+/**
+ * FWUPD_SECURITY_ATTR_ID_AMD_SPI_WRITE_PROTECTION
+ *
+ * Host Security ID attribute for SPI Write protection
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_AMD_SPI_WRITE_PROTECTION "org.fwupd.hsi.Amd.SpiWriteProtection"
+/**
+ * FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION
+ *
+ * Host Security ID attribute for SPI replay protection
+ *
+ * Since: 1.8.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION "org.fwupd.hsi.Amd.SpiReplayProtection"
 
 GVariant *
 fwupd_security_attr_to_variant(FwupdSecurityAttr *self);

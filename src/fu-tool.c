@@ -941,6 +941,7 @@ fu_util_install_blob(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* get device */
+	priv->filter_include |= FWUPD_DEVICE_FLAG_UPDATABLE;
 	if (g_strv_length(values) >= 2) {
 		device = fu_util_get_device(priv, values[1], error);
 		if (device == NULL)
@@ -1080,6 +1081,7 @@ fu_util_firmware_dump(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* get device */
+	priv->filter_include |= FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE;
 	if (g_strv_length(values) >= 2) {
 		device = fu_util_get_device(priv, values[1], error);
 		if (device == NULL)
@@ -1103,11 +1105,11 @@ fu_util_firmware_dump(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gint
-fu_util_install_task_sort_cb(gconstpointer a, gconstpointer b)
+fu_util_release_sort_cb(gconstpointer a, gconstpointer b)
 {
-	FuInstallTask *task1 = *((FuInstallTask **)a);
-	FuInstallTask *task2 = *((FuInstallTask **)b);
-	return fu_install_task_compare(task1, task2);
+	FuRelease *release1 = *((FuRelease **)a);
+	FuRelease *release2 = *((FuRelease **)b);
+	return fu_release_compare(release1, release2);
 }
 
 static void
@@ -1175,7 +1177,7 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(GPtrArray) components = NULL;
 	g_autoptr(GPtrArray) devices_possible = NULL;
 	g_autoptr(GPtrArray) errors = NULL;
-	g_autoptr(GPtrArray) install_tasks = NULL;
+	g_autoptr(GPtrArray) releases = NULL;
 	g_autoptr(XbSilo) silo = NULL;
 
 	/* load engine */
@@ -1229,21 +1231,29 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* for each component in the silo */
 	errors = g_ptr_array_new_with_free_func((GDestroyNotify)g_error_free);
-	install_tasks = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	releases = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	for (guint i = 0; i < components->len; i++) {
 		XbNode *component = g_ptr_array_index(components, i);
 
 		/* do any devices pass the requirements */
 		for (guint j = 0; j < devices_possible->len; j++) {
 			FuDevice *device = g_ptr_array_index(devices_possible, j);
-			g_autoptr(FuInstallTask) task = NULL;
+			g_autoptr(FuRelease) release = fu_release_new();
 			g_autoptr(GError) error_local = NULL;
 
 			/* is this component valid for the device */
-			task = fu_install_task_new(device, component);
+			fu_release_set_device(release, device);
+			fu_release_set_request(release, priv->request);
+			if (!fu_release_load(release, component, NULL, priv->flags, &error_local)) {
+				g_debug("loading release failed on %s:%s failed: %s",
+					fu_device_get_id(device),
+					xb_node_query_text(component, "id", NULL),
+					error_local->message);
+				g_ptr_array_add(errors, g_steal_pointer(&error_local));
+				continue;
+			}
 			if (!fu_engine_check_requirements(priv->engine,
-							  priv->request,
-							  task,
+							  release,
 							  priv->flags | FWUPD_INSTALL_FLAG_FORCE,
 							  &error_local)) {
 				g_debug("first pass requirement on %s:%s failed: %s",
@@ -1257,8 +1267,7 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 			/* make a second pass using possibly updated version format now */
 			fu_engine_md_refresh_device_from_component(priv->engine, device, component);
 			if (!fu_engine_check_requirements(priv->engine,
-							  priv->request,
-							  task,
+							  release,
 							  priv->flags,
 							  &error_local)) {
 				g_debug("second pass requirement on %s:%s failed: %s",
@@ -1273,15 +1282,15 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 			fu_device_incorporate_from_component(device, component);
 
 			/* success */
-			g_ptr_array_add(install_tasks, g_steal_pointer(&task));
+			g_ptr_array_add(releases, g_steal_pointer(&release));
 		}
 	}
 
 	/* order the install tasks by the device priority */
-	g_ptr_array_sort(install_tasks, fu_util_install_task_sort_cb);
+	g_ptr_array_sort(releases, fu_util_release_sort_cb);
 
 	/* nothing suitable */
-	if (install_tasks->len == 0) {
+	if (releases->len == 0) {
 		GError *error_tmp = fu_common_error_array_get_best(errors);
 		g_propagate_error(error, error_tmp);
 		return FALSE;
@@ -1294,13 +1303,13 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 			 priv);
 
 	/* install all the tasks */
-	if (!fu_engine_install_tasks(priv->engine,
-				     priv->request,
-				     install_tasks,
-				     blob_cab,
-				     priv->progress,
-				     priv->flags,
-				     error))
+	if (!fu_engine_install_releases(priv->engine,
+					priv->request,
+					releases,
+					blob_cab,
+					priv->progress,
+					priv->flags,
+					error))
 		return FALSE;
 
 	fu_util_display_current_message(priv);
@@ -1587,6 +1596,7 @@ fu_util_detach(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* get device */
+	priv->filter_exclude |= FWUPD_DEVICE_FLAG_IS_BOOTLOADER;
 	if (g_strv_length(values) >= 1) {
 		device = fu_util_get_device(priv, values[0], error);
 		if (device == NULL)
@@ -1684,6 +1694,7 @@ fu_util_attach(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* get device */
+	priv->filter_include |= FWUPD_DEVICE_FLAG_IS_BOOTLOADER;
 	if (g_strv_length(values) >= 1) {
 		device = fu_util_get_device(priv, values[0], error);
 		if (device == NULL)
@@ -2587,6 +2598,7 @@ fu_util_verify_update(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* get device */
+	priv->filter_include |= FWUPD_DEVICE_FLAG_UPDATABLE;
 	if (g_strv_length(values) == 1) {
 		dev = fu_util_get_device(priv, values[0], error);
 		if (dev == NULL)
@@ -2809,26 +2821,11 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(GPtrArray) events_array = NULL;
 	g_autofree gchar *str = NULL;
 
-	/* not ready yet */
-	if ((priv->flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "The HSI specification is not yet complete. "
-				    "To ignore this warning, use --force");
-		return FALSE;
-	}
-
 	if (!fu_util_start_engine(priv,
 				  FU_ENGINE_LOAD_FLAG_COLDPLUG | FU_ENGINE_LOAD_FLAG_HWINFO |
 				      FU_ENGINE_LOAD_FLAG_REMOTES,
 				  error))
 		return FALSE;
-
-	g_print("%s \033[1m%s\033[0m\n",
-		/* TRANSLATORS: this is a string like 'HSI:2-U' */
-		_("Host Security ID:"),
-		fu_engine_get_host_security_id(priv->engine));
 
 	/* show or hide different elements */
 	if (priv->show_all) {
@@ -2836,8 +2833,29 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 		flags |= FU_SECURITY_ATTR_TO_STRING_FLAG_SHOW_URLS;
 	}
 
-	/* print the "why" */
 	attrs = fu_engine_get_host_security_attrs(priv->engine);
+	items = fu_security_attrs_get_all(attrs);
+	for (guint j = 0; j < items->len; j++) {
+		FwupdSecurityAttr *attr = g_ptr_array_index(items, j);
+
+		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA))
+			continue;
+		if (priv->flags & FWUPD_INSTALL_FLAG_FORCE)
+			continue;
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "Not enough data was provided to make an HSI calculation. "
+				    "To ignore this warning, use --force.");
+		return FALSE;
+	}
+
+	g_print("%s \033[1m%s\033[0m\n",
+		/* TRANSLATORS: this is a string like 'HSI:2-U' */
+		_("Host Security ID:"),
+		fu_engine_get_host_security_id(priv->engine));
+
+	/* print the "why" */
 	if (priv->as_json) {
 		str = fu_security_attrs_to_json_string(attrs, error);
 		if (str == NULL)
@@ -2845,7 +2863,7 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_print("%s\n", str);
 		return TRUE;
 	}
-	items = fu_security_attrs_get_all(attrs);
+
 	str = fu_util_security_attrs_to_string(items, flags);
 	g_print("%s\n", str);
 
@@ -3120,6 +3138,10 @@ fu_util_version(FuUtilPrivate *priv, GError **error)
 	g_autoptr(GHashTable) metadata = NULL;
 	g_autofree gchar *str = NULL;
 
+	/* load engine */
+	if (!fu_util_start_engine(priv, FU_ENGINE_LOAD_FLAG_READONLY, error))
+		return FALSE;
+
 	/* get metadata */
 	metadata = fu_engine_get_report_metadata(priv->engine, error);
 	if (metadata == NULL)
@@ -3334,7 +3356,7 @@ main(int argc, char *argv[])
 
 #ifdef _WIN32
 	/* workaround Windows setting the codepage to 1252 */
-	g_setenv("LANG", "C.UTF-8", FALSE);
+	(void)g_setenv("LANG", "C.UTF-8", FALSE);
 #endif
 
 	setlocale(LC_ALL, "");
@@ -3352,7 +3374,6 @@ main(int argc, char *argv[])
 
 	/* when not using the engine */
 	priv->progress = fu_progress_new(G_STRLOC);
-	fu_progress_set_profile(priv->progress, g_getenv("FWUPD_VERBOSE") != NULL);
 	g_signal_connect(priv->progress,
 			 "percentage-changed",
 			 G_CALLBACK(fu_util_progress_percentage_changed_cb),
@@ -3680,6 +3701,7 @@ main(int argc, char *argv[])
 		g_print("%s: %s\n", _("Failed to parse arguments"), error->message);
 		return EXIT_FAILURE;
 	}
+	fu_progress_set_profile(priv->progress, g_getenv("FWUPD_VERBOSE") != NULL);
 
 	/* allow disabling SSL strict mode for broken corporate proxies */
 	if (priv->disable_ssl_strict) {
@@ -3692,7 +3714,7 @@ main(int argc, char *argv[])
 			   _("Ignoring SSL strict checks, "
 			     "to do this automatically in the future "
 			     "export DISABLE_SSL_STRICT in your environment"));
-		g_setenv("DISABLE_SSL_STRICT", "1", TRUE);
+		(void)g_setenv("DISABLE_SSL_STRICT", "1", TRUE);
 	}
 
 	/* parse filter flags */

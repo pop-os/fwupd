@@ -240,7 +240,7 @@ fu_plugin_add_security_attr_dci_enabled(FuPlugin *plugin, FuSecurityAttrs *attrs
 		return;
 
 	/* create attr */
-	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_INTEL_DCI_ENABLED);
+	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_ENABLED);
 	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
 	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_CRITICAL);
 	if (device != NULL)
@@ -272,7 +272,7 @@ fu_plugin_add_security_attr_dci_locked(FuPlugin *plugin, FuSecurityAttrs *attrs)
 		return;
 
 	/* create attr */
-	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_INTEL_DCI_LOCKED);
+	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED);
 	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
 	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
 	if (device != NULL)
@@ -351,7 +351,7 @@ fu_plugin_add_security_attr_amd_sme_enabled(FuPlugin *plugin, FuSecurityAttrs *a
 	}
 
 	if (!priv->amd64_syscfg.fields.sme_is_enabled) {
-		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
+		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENCRYPTED);
 		return;
 	}
 
@@ -363,13 +363,14 @@ fu_plugin_add_security_attr_amd_sme_enabled(FuPlugin *plugin, FuSecurityAttrs *a
 
 	if (!(fu_plugin_msr_kernel_enabled_sme(&error_local))) {
 		g_debug("%s", error_local->message);
-		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
+		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENCRYPTED);
 		return;
 	}
 
 	/* success */
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
 	fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_ENCRYPTED);
+	fwupd_security_attr_add_obsolete(attr, "pci_psp");
 }
 
 static void

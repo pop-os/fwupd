@@ -294,7 +294,7 @@ fu_device_cfi_device_func(void)
 	g_assert_true(ret);
 
 	cfi_device = fu_cfi_device_new(ctx, "3730");
-	ret = fu_device_probe(FU_DEVICE(cfi_device), &error);
+	ret = fu_device_setup(FU_DEVICE(cfi_device), &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -358,7 +358,7 @@ fu_smbios_func(void)
 
 	/* these tests will not write */
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
-	g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 
 	smbios = fu_smbios_new();
 	ret = fu_smbios_setup(smbios, &error);
@@ -633,7 +633,7 @@ fu_hwids_func(void)
 
 	/* these tests will not write */
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
-	g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 
 	smbios = fu_smbios_new();
 	ret = fu_smbios_setup(smbios, &error);
@@ -888,17 +888,17 @@ fu_common_kernel_lockdown_func(void)
 #endif
 
 	old_kernel_dir = g_test_build_filename(G_TEST_DIST, "tests", "lockdown", NULL);
-	g_setenv("FWUPD_SYSFSSECURITYDIR", old_kernel_dir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSSECURITYDIR", old_kernel_dir, TRUE);
 	ret = fu_common_kernel_locked_down();
 	g_assert_false(ret);
 
 	locked_dir = g_test_build_filename(G_TEST_DIST, "tests", "lockdown", "locked", NULL);
-	g_setenv("FWUPD_SYSFSSECURITYDIR", locked_dir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSSECURITYDIR", locked_dir, TRUE);
 	ret = fu_common_kernel_locked_down();
 	g_assert_true(ret);
 
 	none_dir = g_test_build_filename(G_TEST_DIST, "tests", "lockdown", "none", NULL);
-	g_setenv("FWUPD_SYSFSSECURITYDIR", none_dir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSSECURITYDIR", none_dir, TRUE);
 	ret = fu_common_kernel_locked_down();
 	g_assert_false(ret);
 }
@@ -1017,7 +1017,7 @@ fu_common_spawn_func(void)
 	guint lines = 0;
 	g_autoptr(GError) error = NULL;
 	g_autofree gchar *fn = NULL;
-	const gchar *argv[3] = {"replace", "test", NULL};
+	const gchar *argv[4] = {"/bin/sh", "replace", "test", NULL};
 
 #ifdef _WIN32
 	g_test_skip("Known failures on Windows right now, skipping spawn func test");
@@ -1025,7 +1025,7 @@ fu_common_spawn_func(void)
 #endif
 
 	fn = g_test_build_filename(G_TEST_DIST, "tests", "spawn.sh", NULL);
-	argv[0] = fn;
+	argv[1] = fn;
 	ret = fu_common_spawn_sync(argv, fu_test_stdout_cb, &lines, 0, NULL, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -1039,7 +1039,7 @@ fu_common_spawn_timeout_func(void)
 	guint lines = 0;
 	g_autoptr(GError) error = NULL;
 	g_autofree gchar *fn = NULL;
-	const gchar *argv[3] = {"replace", "test", NULL};
+	const gchar *argv[4] = {"/bin/sh", "replace", "test", NULL};
 
 #ifdef _WIN32
 	g_test_skip("Known failures on Windows right now, skipping spawn timeout test");
@@ -1047,8 +1047,8 @@ fu_common_spawn_timeout_func(void)
 #endif
 
 	fn = g_test_build_filename(G_TEST_DIST, "tests", "spawn.sh", NULL);
-	argv[0] = fn;
-	ret = fu_common_spawn_sync(argv, fu_test_stdout_cb, &lines, 50, NULL, &error);
+	argv[1] = fn;
+	ret = fu_common_spawn_sync(argv, fu_test_stdout_cb, &lines, 500, NULL, &error);
 	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_CANCELLED);
 	g_assert_false(ret);
 	g_assert_cmpint(lines, ==, 1);
@@ -1057,7 +1057,7 @@ fu_common_spawn_timeout_func(void)
 static void
 fu_common_endian_func(void)
 {
-	guint8 buf[2];
+	guint8 buf[3];
 
 	fu_common_write_uint16(buf, 0x1234, G_LITTLE_ENDIAN);
 	g_assert_cmpint(buf[0], ==, 0x34);
@@ -1068,6 +1068,18 @@ fu_common_endian_func(void)
 	g_assert_cmpint(buf[0], ==, 0x12);
 	g_assert_cmpint(buf[1], ==, 0x34);
 	g_assert_cmpint(fu_common_read_uint16(buf, G_BIG_ENDIAN), ==, 0x1234);
+
+	fu_common_write_uint24(buf, 0x123456, G_LITTLE_ENDIAN);
+	g_assert_cmpint(buf[0], ==, 0x56);
+	g_assert_cmpint(buf[1], ==, 0x34);
+	g_assert_cmpint(buf[2], ==, 0x12);
+	g_assert_cmpint(fu_common_read_uint24(buf, G_LITTLE_ENDIAN), ==, 0x123456);
+
+	fu_common_write_uint24(buf, 0x123456, G_BIG_ENDIAN);
+	g_assert_cmpint(buf[0], ==, 0x12);
+	g_assert_cmpint(buf[1], ==, 0x34);
+	g_assert_cmpint(buf[2], ==, 0x56);
+	g_assert_cmpint(fu_common_read_uint24(buf, G_BIG_ENDIAN), ==, 0x123456);
 }
 
 static GBytes *
@@ -1785,9 +1797,11 @@ fu_device_inhibit_func(void)
 
 	/* does not exist -> fine */
 	fu_device_uninhibit(device, "NOTGOINGTOEXIST");
+	g_assert_false(fu_device_has_inhibit(device, "NOTGOINGTOEXIST"));
 
 	/* first one */
 	fu_device_inhibit(device, "needs-activation", "Device is pending activation");
+	g_assert_true(fu_device_has_inhibit(device, "needs-activation"));
 	g_assert_true(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
 	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
 
@@ -1798,6 +1812,7 @@ fu_device_inhibit_func(void)
 
 	/* activated, power still too low */
 	fu_device_uninhibit(device, "needs-activation");
+	g_assert_false(fu_device_has_inhibit(device, "needs-activation"));
 	g_assert_true(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
 	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
 
@@ -2455,6 +2470,27 @@ fu_common_vercmp_func(void)
 	g_assert_cmpint(fu_common_vercmp_full(NULL, NULL, FWUPD_VERSION_FORMAT_UNKNOWN),
 			==,
 			G_MAXINT);
+}
+
+static void
+fu_firmware_raw_aligned_func(void)
+{
+	gboolean ret;
+	g_autoptr(FuFirmware) firmware1 = fu_firmware_new();
+	g_autoptr(FuFirmware) firmware2 = fu_firmware_new();
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GBytes) blob = g_bytes_new_static("hello", 5);
+
+	/* no alignment */
+	ret = fu_firmware_parse(firmware1, blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* invalid alignment */
+	fu_firmware_set_alignment(firmware2, FU_FIRMWARE_ALIGNMENT_4K);
+	ret = fu_firmware_parse(firmware2, blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_false(ret);
 }
 
 static void
@@ -3121,7 +3157,7 @@ fu_efivar_func(void)
 
 	/* these tests will write */
 	sysfsfwdir = g_test_build_filename(G_TEST_BUILT, "tests", NULL);
-	g_setenv("FWUPD_SYSFSFWDIR", sysfsfwdir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSFWDIR", sysfsfwdir, TRUE);
 
 	/* check supported */
 	ret = fu_efivar_supported(&error);
@@ -3294,7 +3330,8 @@ fu_security_attrs_hsi_func(void)
 	g_autofree gchar *hsi6 = NULL;
 	g_autofree gchar *hsi7 = NULL;
 	g_autofree gchar *hsi8 = NULL;
-	g_autofree gchar *expected_hsi8 = NULL;
+	g_autofree gchar *hsi9 = NULL;
+	g_autofree gchar *expected_hsi9 = NULL;
 	g_autoptr(FuSecurityAttrs) attrs = NULL;
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
 
@@ -3324,6 +3361,18 @@ fu_security_attrs_hsi_func(void)
 	g_assert_cmpstr(hsi3, ==, "HSI:1");
 	g_clear_object(&attr);
 
+	/* add an implicit obsolete via duplication */
+	attr = fwupd_security_attr_new("org.fwupd.hsi.PRX");
+	fwupd_security_attr_set_plugin(attr, "other-plugin");
+	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
+	fwupd_security_attr_set_url(attr, "http://other-plugin");
+	fu_security_attrs_append(attrs, attr);
+	fu_security_attrs_depsolve(attrs);
+	hsi4 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	g_assert_cmpstr(hsi4, ==, "HSI:1");
+	g_assert_true(fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_OBSOLETED));
+	g_clear_object(&attr);
+
 	/* add attr from HSI:3, obsoleting the failure */
 	attr = fwupd_security_attr_new("org.fwupd.hsi.BIOSGuard");
 	fwupd_security_attr_set_plugin(attr, "test");
@@ -3333,8 +3382,8 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
 	fu_security_attrs_depsolve(attrs);
-	hsi4 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
-	g_assert_cmpstr(hsi4, ==, "HSI:3");
+	hsi5 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	g_assert_cmpstr(hsi5, ==, "HSI:3");
 	g_clear_object(&attr);
 
 	/* add taint that was fine */
@@ -3344,8 +3393,8 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi5 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
-	g_assert_cmpstr(hsi5, ==, "HSI:3");
+	hsi6 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	g_assert_cmpstr(hsi6, ==, "HSI:3");
 	g_clear_object(&attr);
 
 	/* add updates and attestation */
@@ -3354,8 +3403,8 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi6 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
-	g_assert_cmpstr(hsi6, ==, "HSI:3");
+	hsi7 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	g_assert_cmpstr(hsi7, ==, "HSI:3");
 	g_clear_object(&attr);
 
 	/* add issue that was uncool */
@@ -3364,8 +3413,8 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi7 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
-	g_assert_cmpstr(hsi7, ==, "HSI:3!");
+	hsi8 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	g_assert_cmpstr(hsi8, ==, "HSI:3!");
 	g_clear_object(&attr);
 
 	/* show version in the attribute */
@@ -3374,12 +3423,12 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi8 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_ADD_VERSION);
-	expected_hsi8 = g_strdup_printf("HSI:3! (v%d.%d.%d)",
+	hsi9 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_ADD_VERSION);
+	expected_hsi9 = g_strdup_printf("HSI:3! (v%d.%d.%d)",
 					FWUPD_MAJOR_VERSION,
 					FWUPD_MINOR_VERSION,
 					FWUPD_MICRO_VERSION);
-	g_assert_cmpstr(hsi8, ==, expected_hsi8);
+	g_assert_cmpstr(hsi9, ==, expected_hsi9);
 	g_clear_object(&attr);
 }
 static void
@@ -3726,15 +3775,16 @@ fu_progress_func(void)
 			 &helper);
 
 	fu_progress_set_steps(progress, 5);
+	g_assert_cmpint(helper.last_percentage, ==, 0);
 
 	fu_progress_step_done(progress);
-	g_assert_cmpint(helper.updates, ==, 1);
+	g_assert_cmpint(helper.updates, ==, 2);
 	g_assert_cmpint(helper.last_percentage, ==, 20);
 
 	for (guint i = 0; i < 4; i++)
 		fu_progress_step_done(progress);
 	g_assert_cmpint(helper.last_percentage, ==, 100);
-	g_assert_cmpint(helper.updates, ==, 5);
+	g_assert_cmpint(helper.updates, ==, 6);
 }
 
 static void
@@ -3933,14 +3983,14 @@ main(int argc, char **argv)
 
 	/* only critical and error are fatal */
 	g_log_set_fatal_mask(NULL, G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL);
-	g_setenv("G_MESSAGES_DEBUG", "all", TRUE);
+	(void)g_setenv("G_MESSAGES_DEBUG", "all", TRUE);
 
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
-	g_setenv("FWUPD_DATADIR", testdatadir, TRUE);
-	g_setenv("FWUPD_PLUGINDIR", testdatadir, TRUE);
-	g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
-	g_setenv("FWUPD_OFFLINE_TRIGGER", "/tmp/fwupd-self-test/system-update", TRUE);
-	g_setenv("FWUPD_LOCALSTATEDIR", "/tmp/fwupd-self-test/var", TRUE);
+	(void)g_setenv("FWUPD_DATADIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_PLUGINDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_OFFLINE_TRIGGER", "/tmp/fwupd-self-test/system-update", TRUE);
+	(void)g_setenv("FWUPD_LOCALSTATEDIR", "/tmp/fwupd-self-test/var", TRUE);
 
 	g_test_add_func("/fwupd/common{strnsplit}", fu_common_strnsplit_func);
 	g_test_add_func("/fwupd/common{memmem}", fu_common_memmem_func);
@@ -4005,6 +4055,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/firmware{common}", fu_firmware_common_func);
 	g_test_add_func("/fwupd/firmware{dedupe}", fu_firmware_dedupe_func);
 	g_test_add_func("/fwupd/firmware{build}", fu_firmware_build_func);
+	g_test_add_func("/fwupd/firmware{raw-aligned}", fu_firmware_raw_aligned_func);
 	g_test_add_func("/fwupd/firmware{ihex}", fu_firmware_ihex_func);
 	g_test_add_func("/fwupd/firmware{ihex-xml}", fu_firmware_ihex_xml_func);
 	g_test_add_func("/fwupd/firmware{ihex-offset}", fu_firmware_ihex_offset_func);

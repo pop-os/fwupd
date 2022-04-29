@@ -1,5 +1,20 @@
+# some of these are controlled by meson tristate features
+plugin_deps = [
+  gio,
+  giounix,
+  gnutls,
+  gmodule,
+  gudev,
+  gusb,
+  libarchive,
+  libjsonglib,
+  libxmlb,
+  protobufc,
+]
+
 subdir('acpi-dmar')
 subdir('acpi-facp')
+subdir('acpi-ivrs')
 subdir('acpi-phat')
 subdir('amt')
 subdir('analogix')
@@ -8,7 +23,9 @@ subdir('bcm57xx')
 subdir('bios')
 subdir('ccgx')
 subdir('cfu')
+subdir('ch341a')
 subdir('colorhug')
+subdir('corsair')
 subdir('cpu')
 subdir('cros-ec')
 subdir('dell')
@@ -49,6 +66,7 @@ subdir('optionrom')
 subdir('parade-lspcon')
 subdir('pci-bcr')
 subdir('pci-mei')
+subdir('pci-psp')
 subdir('pixart-rf')
 subdir('platform-integrity')
 subdir('powerd')

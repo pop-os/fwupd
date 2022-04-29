@@ -30,6 +30,8 @@ fu_mtd_device_to_string(FuDevice *device, guint idt, GString *str)
 static gboolean
 fu_mtd_device_setup(FuDevice *device, GError **error)
 {
+	FuFirmware *firmware_child = NULL;
+	GPtrArray *instance_ids;
 	GType firmware_gtype = fu_device_get_firmware_gtype(device);
 	const gchar *fn;
 	g_autoptr(FuFirmware) firmware = NULL;
@@ -53,11 +55,24 @@ fu_mtd_device_setup(FuDevice *device, GError **error)
 	if (!fu_firmware_parse_file(firmware, file, FWUPD_INSTALL_FLAG_NONE, error))
 		return FALSE;
 
+	/* find the firmware child that matches any of the device GUID,
+	 * and use the main firmware version if no match */
+	instance_ids = fu_device_get_instance_ids(device);
+	for (guint i = 0; i < instance_ids->len; i++) {
+		const gchar *instance_id = g_ptr_array_index(instance_ids, i);
+		g_autofree gchar *guid = fwupd_guid_hash_string(instance_id);
+		firmware_child = fu_firmware_get_image_by_id(firmware, guid, NULL);
+		if (firmware_child != NULL)
+			break;
+	}
+	if (firmware_child == NULL)
+		firmware_child = firmware;
+
 	/* copy over the version */
-	if (fu_firmware_get_version(firmware) != NULL)
-		fu_device_set_version(device, fu_firmware_get_version(firmware));
-	if (fu_firmware_get_version_raw(firmware) != G_MAXUINT64)
-		fu_device_set_version_raw(device, fu_firmware_get_version_raw(firmware));
+	if (fu_firmware_get_version(firmware_child) != NULL)
+		fu_device_set_version(device, fu_firmware_get_version(firmware_child));
+	if (fu_firmware_get_version_raw(firmware_child) != G_MAXUINT64)
+		fu_device_set_version_raw(device, fu_firmware_get_version_raw(firmware_child));
 
 	/* success */
 	return TRUE;
@@ -91,13 +106,10 @@ fu_mtd_device_probe(FuDevice *device, GError **error)
 	FuContext *ctx = fu_device_get_context(device);
 	FuMtdDevice *self = FU_MTD_DEVICE(device);
 	const gchar *name;
-	const gchar *product;
 	const gchar *vendor;
 	guint64 flags = 0;
 	guint64 size = 0;
-	g_autofree gchar *name_safe = NULL;
-	g_autofree gchar *product_safe = NULL;
-	g_autofree gchar *vendor_safe = NULL;
+	g_autoptr(GError) error_local = NULL;
 
 	/* FuUdevDevice->probe */
 	if (!FU_DEVICE_CLASS(fu_mtd_device_parent_class)->probe(device, error))
@@ -107,53 +119,48 @@ fu_mtd_device_probe(FuDevice *device, GError **error)
 	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "mtd", error))
 		return FALSE;
 
+	/* flags have to exist */
+	if (!fu_udev_device_get_sysfs_attr_uint64(FU_UDEV_DEVICE(device),
+						  "flags",
+						  &flags,
+						  &error_local)) {
+		if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
+					    "no MTD flags");
+			return FALSE;
+		}
+		g_propagate_error(error, g_steal_pointer(&error_local));
+		return FALSE;
+	}
+
 	/* get name */
 	name = fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(device), "name", NULL);
-	if (name != NULL) {
-		name_safe = fu_common_instance_id_strsafe(name);
-		if (name_safe != NULL) {
-			g_autofree gchar *devid = g_strdup_printf("MTD\\NAME_%s", name_safe);
-			fu_device_add_instance_id(FU_DEVICE(self), devid);
-		}
+	if (name != NULL)
 		fu_device_set_name(FU_DEVICE(self), name);
-	}
 
 	/* set vendor ID as the BIOS vendor */
 	vendor = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER);
 	if (vendor != NULL) {
 		g_autofree gchar *vendor_id = g_strdup_printf("DMI:%s", vendor);
 		fu_device_add_vendor_id(device, vendor_id);
-		vendor_safe = fu_common_instance_id_strsafe(vendor);
 	}
 
 	/* use vendor and product as an optional instance ID prefix */
-	product = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_PRODUCT_NAME);
-	if (product != NULL)
-		product_safe = fu_common_instance_id_strsafe(product);
-	if (vendor_safe != NULL && product_safe != NULL && name_safe != NULL) {
-		g_autofree gchar *devid = NULL;
-		devid = g_strdup_printf("MTD\\VENDOR_%s&PRODUCT_%s&NAME_%s",
-					vendor_safe,
-					product_safe,
-					name_safe);
-		fu_device_add_instance_id(device, devid);
-	}
-	if (vendor_safe != NULL && name_safe != NULL) {
-		g_autofree gchar *devid = NULL;
-		devid = g_strdup_printf("MTD\\VENDOR_%s&NAME_%s", vendor_safe, name_safe);
-		fu_device_add_instance_id(device, devid);
-	}
-	if (name_safe != NULL) {
-		g_autofree gchar *devid = g_strdup_printf("MTD\\NAME_%s", name_safe);
-		fu_device_add_instance_id(FU_DEVICE(self), devid);
-	}
+	fu_device_add_instance_strsafe(device, "NAME", name);
+	fu_device_add_instance_strsafe(device, "VENDOR", vendor);
+	fu_device_add_instance_strsafe(device,
+				       "PRODUCT",
+				       fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_PRODUCT_NAME));
+	fu_device_build_instance_id(device, NULL, "MTD", "NAME", NULL);
+	fu_device_build_instance_id(device, NULL, "MTD", "VENDOR", "NAME", NULL);
+	fu_device_build_instance_id(device, NULL, "MTD", "VENDOR", "PRODUCT", "NAME", NULL);
 
 	/* get properties about the device */
 	if (!fu_udev_device_get_sysfs_attr_uint64(FU_UDEV_DEVICE(device), "size", &size, error))
 		return FALSE;
 	fu_device_set_firmware_size_max(device, size);
-	if (!fu_udev_device_get_sysfs_attr_uint64(FU_UDEV_DEVICE(device), "flags", &flags, error))
-		return FALSE;
 #ifdef HAVE_MTD_USER_H
 	if ((flags & MTD_NO_ERASE) == 0) {
 		if (!fu_udev_device_get_sysfs_attr_uint64(FU_UDEV_DEVICE(device),
@@ -390,6 +397,7 @@ fu_mtd_device_init(FuMtdDevice *self)
 	fu_device_add_protocol(FU_DEVICE(self), "org.infradead.mtd");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
 	fu_device_add_icon(FU_DEVICE(self), "drive-harddisk-solidstate");
 	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),

@@ -5,8 +5,10 @@ set -x
 #get any missing deps from the container
 ./contrib/ci/fwupd_setup_helpers.py install-dependencies --yes -o fedora
 
+# disable the safe directory feature
+git config --global safe.directory "*"
+
 #generate a tarball
-git config tar.tar.xz.command "xz -c"
 mkdir -p build && pushd build
 rm -rf *
 
@@ -20,12 +22,12 @@ meson .. \
     -Dtests=true \
     -Dgusb:tests=false \
     -Dplugin_dummy=true \
-    -Dplugin_flashrom=true \
-    -Dplugin_modem_manager=false \
-    -Dplugin_thunderbolt=true \
-    -Dplugin_uefi_capsule=true \
-    -Dplugin_dell=true \
-    -Dplugin_synaptics_mst=true $@
+    -Dplugin_flashrom=enabled \
+    -Dplugin_modem_manager=disabled \
+    -Dplugin_thunderbolt=enabled \
+    -Dplugin_uefi_capsule=enabled \
+    -Dplugin_dell=enabled \
+    -Dplugin_synaptics_mst=enabled $@
 ninja-build dist
 popd
 VERSION=`meson introspect build --projectinfo | jq -r .version`

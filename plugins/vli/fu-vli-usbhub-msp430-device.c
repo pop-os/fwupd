@@ -227,6 +227,7 @@ fu_vli_usbhub_msp430_device_write_firmware(FuDevice *device,
 
 	/* transfer by I²C write, and check status by I²C read */
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
+	fu_progress_set_steps(progress, records->len);
 	for (guint j = 0; j < records->len; j++) {
 		FuIhexFirmwareRecord *rcd = g_ptr_array_index(records, j);
 		FuVliUsbhubDeviceRequest req = {0x0};
@@ -277,7 +278,7 @@ fu_vli_usbhub_msp430_device_write_firmware(FuDevice *device,
 				     &req,
 				     error))
 			return FALSE;
-		fu_progress_set_percentage_full(progress, (gsize)j + 1, (gsize)records->len);
+		fu_progress_step_done(progress);
 	}
 
 	/* the device automatically reboots */
@@ -292,19 +293,13 @@ fu_vli_usbhub_msp430_device_probe(FuDevice *device, GError **error)
 {
 	FuVliDeviceKind device_kind = FU_VLI_DEVICE_KIND_MSP430;
 	FuVliUsbhubDevice *parent = FU_VLI_USBHUB_DEVICE(fu_device_get_parent(device));
-	g_autofree gchar *instance_id = NULL;
 
 	fu_device_set_name(device, fu_vli_common_device_kind_to_string(device_kind));
 	fu_device_set_physical_id(device, fu_device_get_physical_id(FU_DEVICE(parent)));
 
 	/* add instance ID */
-	instance_id = g_strdup_printf("USB\\VID_%04X&PID_%04X&I2C_%s",
-				      fu_usb_device_get_vid(FU_USB_DEVICE(parent)),
-				      fu_usb_device_get_pid(FU_USB_DEVICE(parent)),
-				      fu_vli_common_device_kind_to_string(device_kind));
-	fu_device_add_instance_id(device, instance_id);
-
-	return TRUE;
+	fu_device_add_instance_str(device, "I2C", fu_vli_common_device_kind_to_string(device_kind));
+	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", NULL);
 }
 
 static void
@@ -320,7 +315,7 @@ fu_vli_usbhub_msp430_device_set_progress(FuDevice *self, FuProgress *progress)
 static void
 fu_vli_usbhub_msp430_device_init(FuVliUsbhubMsp430Device *self)
 {
-	fu_device_add_icon(FU_DEVICE(self), "audio-card");
+	fu_device_add_icon(FU_DEVICE(self), "usb-hub");
 	fu_device_add_protocol(FU_DEVICE(self), "com.vli.i2c");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);

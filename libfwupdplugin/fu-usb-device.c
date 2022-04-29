@@ -174,7 +174,7 @@ fu_usb_device_query_hub(FuUsbDevice *self, GError **error)
 	gsize sz = 0;
 	guint16 value = 0x29;
 	guint8 data[0x0c] = {0x0};
-	g_autofree gchar *devid = NULL;
+	g_autoptr(GString) hub = g_string_new(NULL);
 
 	/* longer descriptor for SuperSpeed */
 	if (fu_usb_device_get_spec(self) >= 0x0300)
@@ -198,22 +198,23 @@ fu_usb_device_query_hub(FuUsbDevice *self, GError **error)
 	if (g_getenv("FU_USB_DEVICE_DEBUG") != NULL)
 		fu_common_dump_raw(G_LOG_DOMAIN, "HUB_DT", data, sz);
 
-	/* see http://www.usblyzer.com/usb-hub-class-decoder.htm */
-	if (sz == 0x09) {
-		devid = g_strdup_printf("USB\\VID_%04X&PID_%04X&HUB_%02X",
-					g_usb_device_get_vid(priv->usb_device),
-					g_usb_device_get_pid(priv->usb_device),
-					data[7]);
-		fu_device_add_instance_id(FU_DEVICE(self), devid);
-	} else if (sz == 0x0c) {
-		devid = g_strdup_printf("USB\\VID_%04X&PID_%04X&HUB_%02X%02X",
-					g_usb_device_get_vid(priv->usb_device),
-					g_usb_device_get_pid(priv->usb_device),
-					data[11],
-					data[10]);
-		fu_device_add_instance_id(FU_DEVICE(self), devid);
+	/* for USB 3: size is fixed as max ports is 15,
+	 * for USB 2: size is variable as max ports is 255 */
+	if (fu_usb_device_get_spec(self) >= 0x0300 && sz == 0x0C) {
+		g_string_append_printf(hub, "%02X", data[0x0B]);
+		g_string_append_printf(hub, "%02X", data[0x0A]);
+	} else if (sz >= 9) {
+		guint8 numbytes = fu_common_align_up(data[2] + 1, 0x03) / 8;
+		for (guint i = 0; i < numbytes; i++) {
+			guint8 tmp = 0x0;
+			if (!fu_common_read_uint8_safe(data, sz, 7 + i, &tmp, error))
+				return FALSE;
+			g_string_append_printf(hub, "%02X", tmp);
+		}
 	}
-	return TRUE;
+	if (hub->len > 0)
+		fu_device_add_instance_str(FU_DEVICE(self), "HUB", hub->str);
+	return fu_device_build_instance_id(FU_DEVICE(self), error, "VID", "PID", "HUB", NULL);
 }
 #endif
 
@@ -342,6 +343,49 @@ fu_usb_device_setup(FuDevice *device, GError **error)
 }
 
 static gboolean
+fu_usb_device_ready(FuDevice *device, GError **error)
+{
+#ifdef HAVE_GUSB
+	FuUsbDevice *self = FU_USB_DEVICE(device);
+	FuUsbDevicePrivate *priv = GET_PRIVATE(self);
+	g_autoptr(GPtrArray) intfs = NULL;
+
+	/* get the interface GUIDs */
+	intfs = g_usb_device_get_interfaces(priv->usb_device, error);
+	if (intfs == NULL)
+		return FALSE;
+
+	/* add fallback icon if there is nothing added already */
+	if (fu_device_get_icons(device)->len == 0) {
+		for (guint i = 0; i < intfs->len; i++) {
+			GUsbInterface *intf = g_ptr_array_index(intfs, i);
+
+			/* Video: Video Control: i.e. a webcam */
+			if (g_usb_interface_get_class(intf) == G_USB_DEVICE_CLASS_VIDEO &&
+			    g_usb_interface_get_subclass(intf) == 0x01) {
+				fu_device_add_icon(device, "camera-web");
+			}
+
+			/* Audio */
+			if (g_usb_interface_get_class(intf) == G_USB_DEVICE_CLASS_AUDIO)
+				fu_device_add_icon(device, "audio-card");
+
+			/* Mass Storage */
+			if (g_usb_interface_get_class(intf) == G_USB_DEVICE_CLASS_MASS_STORAGE)
+				fu_device_add_icon(device, "drive-harddisk");
+
+			/* Printer */
+			if (g_usb_interface_get_class(intf) == G_USB_DEVICE_CLASS_PRINTER)
+				fu_device_add_icon(device, "printer");
+		}
+	}
+#endif
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_usb_device_close(FuDevice *device, GError **error)
 {
 	FuUsbDevice *self = FU_USB_DEVICE(device);
@@ -395,9 +439,6 @@ fu_usb_device_probe(FuDevice *device, GError **error)
 	FuUsbDevice *self = FU_USB_DEVICE(device);
 	FuUsbDevicePrivate *priv = GET_PRIVATE(self);
 	guint16 release;
-	g_autofree gchar *devid0 = NULL;
-	g_autofree gchar *devid1 = NULL;
-	g_autofree gchar *devid2 = NULL;
 	g_autofree gchar *platform_id = NULL;
 	g_autofree gchar *vendor_id = NULL;
 	g_autoptr(GPtrArray) intfs = NULL;
@@ -417,17 +458,12 @@ fu_usb_device_probe(FuDevice *device, GError **error)
 	}
 
 	/* add GUIDs in order of priority */
-	devid2 = g_strdup_printf("USB\\VID_%04X&PID_%04X&REV_%04X",
-				 g_usb_device_get_vid(priv->usb_device),
-				 g_usb_device_get_pid(priv->usb_device),
-				 release);
-	fu_device_add_instance_id(device, devid2);
-	devid1 = g_strdup_printf("USB\\VID_%04X&PID_%04X",
-				 g_usb_device_get_vid(priv->usb_device),
-				 g_usb_device_get_pid(priv->usb_device));
-	fu_device_add_instance_id(device, devid1);
-	devid0 = g_strdup_printf("USB\\VID_%04X", g_usb_device_get_vid(priv->usb_device));
-	fu_device_add_instance_id_full(device, devid0, FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
+	fu_device_add_instance_u16(device, "VID", g_usb_device_get_vid(priv->usb_device));
+	fu_device_add_instance_u16(device, "PID", g_usb_device_get_pid(priv->usb_device));
+	fu_device_add_instance_u16(device, "REV", release);
+	fu_device_build_instance_id_quirk(device, NULL, "USB", "VID", NULL);
+	fu_device_build_instance_id(device, NULL, "USB", "VID", "PID", NULL);
+	fu_device_build_instance_id(device, NULL, "USB", "VID", "PID", "REV", NULL);
 
 	/* add the interface GUIDs */
 	intfs = g_usb_device_get_interfaces(priv->usb_device, error);
@@ -435,20 +471,18 @@ fu_usb_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 	for (guint i = 0; i < intfs->len; i++) {
 		GUsbInterface *intf = g_ptr_array_index(intfs, i);
-		g_autofree gchar *intid1 = NULL;
-		g_autofree gchar *intid2 = NULL;
-		g_autofree gchar *intid3 = NULL;
-		intid1 = g_strdup_printf("USB\\CLASS_%02X&SUBCLASS_%02X&PROT_%02X",
-					 g_usb_interface_get_class(intf),
-					 g_usb_interface_get_subclass(intf),
-					 g_usb_interface_get_protocol(intf));
-		fu_device_add_instance_id_full(device, intid1, FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
-		intid2 = g_strdup_printf("USB\\CLASS_%02X&SUBCLASS_%02X",
-					 g_usb_interface_get_class(intf),
-					 g_usb_interface_get_subclass(intf));
-		fu_device_add_instance_id_full(device, intid2, FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
-		intid3 = g_strdup_printf("USB\\CLASS_%02X", g_usb_interface_get_class(intf));
-		fu_device_add_instance_id_full(device, intid3, FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
+		fu_device_add_instance_u8(device, "CLASS", g_usb_interface_get_class(intf));
+		fu_device_add_instance_u8(device, "SUBCLASS", g_usb_interface_get_subclass(intf));
+		fu_device_add_instance_u8(device, "PROT", g_usb_interface_get_protocol(intf));
+		fu_device_build_instance_id_quirk(device, NULL, "USB", "CLASS", NULL);
+		fu_device_build_instance_id_quirk(device, NULL, "USB", "CLASS", "SUBCLASS", NULL);
+		fu_device_build_instance_id_quirk(device,
+						  NULL,
+						  "USB",
+						  "CLASS",
+						  "SUBCLASS",
+						  "PROT",
+						  NULL);
 	}
 
 	/* add 2 levels of parent IDs */
@@ -834,6 +868,7 @@ fu_usb_device_class_init(FuUsbDeviceClass *klass)
 	object_class->set_property = fu_usb_device_set_property;
 	device_class->open = fu_usb_device_open;
 	device_class->setup = fu_usb_device_setup;
+	device_class->ready = fu_usb_device_ready;
 	device_class->close = fu_usb_device_close;
 	device_class->probe = fu_usb_device_probe;
 	device_class->to_string = fu_usb_device_to_string;

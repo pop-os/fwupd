@@ -104,6 +104,22 @@ fu_progressbar_erase_line(FuProgressbar *self)
 }
 
 static gboolean
+_fu_status_is_predictable(FwupdStatus status)
+{
+	if (status == FWUPD_STATUS_DEVICE_ERASE)
+		return TRUE;
+	if (status == FWUPD_STATUS_DEVICE_VERIFY)
+		return TRUE;
+	if (status == FWUPD_STATUS_DEVICE_READ)
+		return TRUE;
+	if (status == FWUPD_STATUS_DEVICE_WRITE)
+		return TRUE;
+	if (status == FWUPD_STATUS_DOWNLOADING)
+		return TRUE;
+	return FALSE;
+}
+
+static gboolean
 fu_progressbar_estimate_ready(FuProgressbar *self, guint percentage)
 {
 	gdouble old;
@@ -115,6 +131,10 @@ fu_progressbar_estimate_ready(FuProgressbar *self, guint percentage)
 		self->last_estimate = 0;
 		return FALSE;
 	}
+
+	/* allow-list things that make sense... */
+	if (!_fu_status_is_predictable(self->status))
+		return FALSE;
 
 	old = self->last_estimate;
 	elapsed = g_timer_elapsed(self->time_elapsed, NULL);
@@ -157,11 +177,8 @@ fu_progressbar_refresh(FuProgressbar *self, FwupdStatus status, guint percentage
 	fu_progressbar_erase_line(self);
 
 	/* add status */
-	if (status == FWUPD_STATUS_IDLE) {
-		percentage = 100;
+	if (status == FWUPD_STATUS_IDLE || status == FWUPD_STATUS_UNKNOWN) {
 		status = self->status;
-		is_idle_newline = TRUE;
-	} else if (status == FWUPD_STATUS_WAITING_FOR_AUTH) {
 		is_idle_newline = TRUE;
 	}
 	if (percentage == 100)
@@ -264,7 +281,7 @@ fu_progressbar_spin_cb(gpointer user_data)
 	FuProgressbar *self = FU_PROGRESSBAR(user_data);
 
 	/* ignore */
-	if (self->status == FWUPD_STATUS_IDLE || self->status == FWUPD_STATUS_WAITING_FOR_AUTH)
+	if (self->status == FWUPD_STATUS_IDLE || self->status == FWUPD_STATUS_UNKNOWN)
 		return G_SOURCE_CONTINUE;
 
 	/* move the spinner index up to down */
@@ -317,15 +334,15 @@ fu_progressbar_update(FuProgressbar *self, FwupdStatus status, guint percentage)
 {
 	g_return_if_fail(FU_IS_PROGRESSBAR(self));
 
+	/* not useful */
+	if (status == FWUPD_STATUS_UNKNOWN)
+		return;
+
 	/* ignore initial client connection */
 	if (self->status == FWUPD_STATUS_UNKNOWN && status == FWUPD_STATUS_IDLE) {
 		self->status = status;
 		return;
 	}
-
-	/* use cached value */
-	if (status == FWUPD_STATUS_UNKNOWN)
-		status = self->status;
 
 	if (!self->interactive) {
 		g_print("%s: %u%%\n", fu_progressbar_status_to_string(status), percentage);
@@ -337,7 +354,7 @@ fu_progressbar_update(FuProgressbar *self, FwupdStatus status, guint percentage)
 	/* if the main loop isn't spinning and we've not had a chance to
 	 * execute the callback just do the refresh now manually */
 	if (percentage == 0 && status != FWUPD_STATUS_IDLE &&
-	    status != FWUPD_STATUS_WAITING_FOR_AUTH && self->status != FWUPD_STATUS_UNKNOWN) {
+	    self->status != FWUPD_STATUS_UNKNOWN) {
 		if ((g_get_monotonic_time() - self->last_animated) / 1000 > 40) {
 			fu_progressbar_spin_inc(self);
 			fu_progressbar_refresh(self, status, percentage);

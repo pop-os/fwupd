@@ -95,6 +95,10 @@ fu_util_client_notify_cb(GObject *object, GParamSpec *pspec, FuUtilPrivate *priv
 static void
 fu_util_update_device_request_cb(FwupdClient *client, FwupdRequest *request, FuUtilPrivate *priv)
 {
+	/* action has not been assigned yet */
+	if (priv->current_operation == FU_UTIL_OPERATION_UNKNOWN)
+		return;
+
 	/* nothing sensible to show */
 	if (fwupd_request_get_message(request) == NULL)
 		return;
@@ -119,6 +123,10 @@ static void
 fu_util_update_device_changed_cb(FwupdClient *client, FwupdDevice *device, FuUtilPrivate *priv)
 {
 	g_autofree gchar *str = NULL;
+
+	/* action has not been assigned yet */
+	if (priv->current_operation == FU_UTIL_OPERATION_UNKNOWN)
+		return;
 
 	/* allowed to set whenever the device has changed */
 	if (fwupd_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN))
@@ -985,10 +993,7 @@ fu_util_device_test(FuUtilPrivate *priv, gchar **values, GError **error)
 					 .name = "Unknown"};
 
 	/* required for interactive devices */
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-request",
-			 G_CALLBACK(fu_util_update_device_request_cb),
-			 priv);
+	priv->current_operation = FU_UTIL_OPERATION_UPDATE;
 
 	/* at least one argument required */
 	if (g_strv_length(values) == 0) {
@@ -1074,7 +1079,7 @@ fu_util_download(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
-fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
+fu_util_local_install(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	const gchar *id;
 	g_autofree gchar *filename = NULL;
@@ -1097,14 +1102,6 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	priv->current_operation = FU_UTIL_OPERATION_INSTALL;
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-request",
-			 G_CALLBACK(fu_util_update_device_request_cb),
-			 priv);
 
 	/* install with flags chosen by the user */
 	filename = fu_util_download_if_required(priv, values[0], error);
@@ -1488,6 +1485,42 @@ fu_util_get_device_or_prompt(FuUtilPrivate *priv, gchar **values, GError **error
 	return fu_util_prompt_for_device(priv, devices, error);
 }
 
+static FwupdRelease *
+fu_util_get_release_for_device_version(FuUtilPrivate *priv,
+				       FwupdDevice *device,
+				       const gchar *version,
+				       GError **error)
+{
+	g_autoptr(GPtrArray) releases = NULL;
+
+	/* get all releases */
+	releases = fwupd_client_get_releases(priv->client,
+					     fwupd_device_get_id(device),
+					     priv->cancellable,
+					     error);
+	if (releases == NULL)
+		return NULL;
+
+	/* find using vercmp */
+	for (guint j = 0; j < releases->len; j++) {
+		FwupdRelease *release = g_ptr_array_index(releases, j);
+		if (fu_common_vercmp_full(fwupd_release_get_version(release),
+					  version,
+					  fwupd_device_get_version_format(device)) == 0) {
+			return g_object_ref(release);
+		}
+	}
+
+	/* did not find */
+	g_set_error(error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
+		    "Unable to locate release %s for %s",
+		    version,
+		    fu_device_get_name(device));
+	return NULL;
+}
+
 static gboolean
 fu_util_clear_results(FuUtilPrivate *priv, gchar **values, GError **error)
 {
@@ -1855,13 +1888,14 @@ fu_util_unlock(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (dev == NULL)
 		return FALSE;
 
+	if (!fwupd_client_unlock(priv->client, fwupd_device_get_id(dev), priv->cancellable, error))
+		return FALSE;
+
+	/* check flags after unlocking in case the operation changes them */
 	if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN))
 		priv->completion_flags |= FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN;
 	if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_NEEDS_REBOOT))
 		priv->completion_flags |= FWUPD_DEVICE_FLAG_NEEDS_REBOOT;
-
-	if (!fwupd_client_unlock(priv->client, fwupd_device_get_id(dev), priv->cancellable, error))
-		return FALSE;
 
 	return fu_util_prompt_complete(priv->completion_flags, TRUE, error);
 }
@@ -2311,15 +2345,18 @@ fu_util_update_device_with_release(FuUtilPrivate *priv,
 }
 
 static gboolean
-fu_util_maybe_send_reports(FuUtilPrivate *priv, const gchar *remote_id, GError **error)
+fu_util_maybe_send_reports(FuUtilPrivate *priv, FwupdRelease *rel, GError **error)
 {
 	g_autoptr(FwupdRemote) remote = NULL;
 	g_autoptr(GError) error_local = NULL;
-	if (remote_id == NULL) {
+	if (fwupd_release_get_remote_id(rel) == NULL) {
 		g_debug("not sending reports, no remote");
 		return TRUE;
 	}
-	remote = fwupd_client_get_remote_by_id(priv->client, remote_id, priv->cancellable, error);
+	remote = fwupd_client_get_remote_by_id(priv->client,
+					       fwupd_release_get_remote_id(rel),
+					       priv->cancellable,
+					       error);
 	if (remote == NULL)
 		return FALSE;
 	if (fwupd_remote_get_automatic_reports(remote)) {
@@ -2372,20 +2409,11 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (devices == NULL)
 		return FALSE;
 	priv->current_operation = FU_UTIL_OPERATION_UPDATE;
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-request",
-			 G_CALLBACK(fu_util_update_device_request_cb),
-			 priv);
 	g_ptr_array_sort(devices, fu_util_sort_devices_by_flags_cb);
 	for (guint i = 0; i < devices->len; i++) {
 		FwupdDevice *dev = g_ptr_array_index(devices, i);
 		FwupdRelease *rel;
 		const gchar *device_id = fu_device_get_id(dev);
-		const gchar *remote_id;
 		g_autoptr(GPtrArray) rels = NULL;
 		g_autoptr(GError) error_local = NULL;
 		gboolean dev_skip_byid = TRUE;
@@ -2445,8 +2473,7 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 		fu_util_display_current_message(priv);
 
 		/* send report if we're supposed to */
-		remote_id = fwupd_release_get_remote_id(rel);
-		if (!fu_util_maybe_send_reports(priv, remote_id, error))
+		if (!fu_util_maybe_send_reports(priv, rel, error))
 			return FALSE;
 	}
 
@@ -2580,7 +2607,6 @@ fu_util_remote_disable(FuUtilPrivate *priv, gchar **values, GError **error)
 static gboolean
 fu_util_downgrade(FuUtilPrivate *priv, gchar **values, GError **error)
 {
-	const gchar *remote_id;
 	g_autoptr(FwupdDevice) dev = NULL;
 	g_autoptr(FwupdRelease) rel = NULL;
 	g_autoptr(GPtrArray) rels = NULL;
@@ -2619,14 +2645,6 @@ fu_util_downgrade(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* update the console if composite devices are also updated */
 	priv->current_operation = FU_UTIL_OPERATION_DOWNGRADE;
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-request",
-			 G_CALLBACK(fu_util_update_device_request_cb),
-			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
 	if (!fu_util_update_device_with_release(priv, dev, rel, error))
 		return FALSE;
@@ -2634,8 +2652,7 @@ fu_util_downgrade(FuUtilPrivate *priv, gchar **values, GError **error)
 	fu_util_display_current_message(priv);
 
 	/* send report if we're supposed to */
-	remote_id = fwupd_release_get_remote_id(rel);
-	if (!fu_util_maybe_send_reports(priv, remote_id, error))
+	if (!fu_util_maybe_send_reports(priv, rel, error))
 		return FALSE;
 
 	/* we don't want to ask anything */
@@ -2650,9 +2667,7 @@ fu_util_downgrade(FuUtilPrivate *priv, gchar **values, GError **error)
 static gboolean
 fu_util_reinstall(FuUtilPrivate *priv, gchar **values, GError **error)
 {
-	const gchar *remote_id;
 	g_autoptr(FwupdRelease) rel = NULL;
-	g_autoptr(GPtrArray) rels = NULL;
 	g_autoptr(FwupdDevice) dev = NULL;
 
 	priv->filter_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
@@ -2661,49 +2676,76 @@ fu_util_reinstall(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* try to lookup/match release from client */
-	rels = fwupd_client_get_releases(priv->client,
-					 fwupd_device_get_id(dev),
-					 priv->cancellable,
-					 error);
-	if (rels == NULL)
+	rel = fu_util_get_release_for_device_version(priv, dev, fu_device_get_version(dev), error);
+	if (rel == NULL)
 		return FALSE;
-	for (guint j = 0; j < rels->len; j++) {
-		FwupdRelease *rel_tmp = g_ptr_array_index(rels, j);
-		if (fu_common_vercmp_full(fwupd_release_get_version(rel_tmp),
-					  fu_device_get_version(dev),
-					  fwupd_device_get_version_format(dev)) == 0) {
-			rel = g_object_ref(rel_tmp);
-			break;
-		}
-	}
-	if (rel == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "Unable to locate release for %s version %s",
-			    fu_device_get_name(dev),
-			    fu_device_get_version(dev));
-		return FALSE;
-	}
 
 	/* update the console if composite devices are also updated */
 	priv->current_operation = FU_UTIL_OPERATION_INSTALL;
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-request",
-			 G_CALLBACK(fu_util_update_device_request_cb),
-			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
 	if (!fu_util_update_device_with_release(priv, dev, rel, error))
 		return FALSE;
 	fu_util_display_current_message(priv);
 
 	/* send report if we're supposed to */
-	remote_id = fwupd_release_get_remote_id(rel);
-	if (!fu_util_maybe_send_reports(priv, remote_id, error))
+	if (!fu_util_maybe_send_reports(priv, rel, error))
+		return FALSE;
+
+	/* we don't want to ask anything */
+	if (priv->no_reboot_check) {
+		g_debug("skipping reboot check");
+		return TRUE;
+	}
+
+	return fu_util_prompt_complete(priv->completion_flags, TRUE, error);
+}
+
+static gboolean
+fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	g_autoptr(FwupdDevice) dev = NULL;
+	g_autoptr(FwupdRelease) rel = NULL;
+
+	/* fall back for CLI compatibility */
+	if (g_strv_length(values) >= 1) {
+		if (g_file_test(values[0], G_FILE_TEST_EXISTS))
+			return fu_util_local_install(priv, values, error);
+	}
+
+	/* find device */
+	priv->filter_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
+	dev = fu_util_get_device_or_prompt(priv, values, error);
+	if (dev == NULL)
+		return FALSE;
+
+	/* find release */
+	if (g_strv_length(values) >= 2) {
+		rel = fu_util_get_release_for_device_version(priv, dev, values[1], error);
+		if (rel == NULL)
+			return FALSE;
+	} else {
+		g_autoptr(GPtrArray) rels = NULL;
+		rels = fwupd_client_get_releases(priv->client,
+						 fwupd_device_get_id(dev),
+						 priv->cancellable,
+						 error);
+		if (rels == NULL)
+			return FALSE;
+		rel = fu_util_prompt_for_release(priv, rels, error);
+		if (rel == NULL)
+			return FALSE;
+	}
+
+	/* allow all actions */
+	priv->current_operation = FU_UTIL_OPERATION_INSTALL;
+	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
+	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
+	if (!fu_util_update_device_with_release(priv, dev, rel, error))
+		return FALSE;
+	fu_util_display_current_message(priv);
+
+	/* send report if we're supposed to */
+	if (!fu_util_maybe_send_reports(priv, rel, error))
 		return FALSE;
 
 	/* we don't want to ask anything */
@@ -2724,7 +2766,6 @@ _g_str_equal0(gconstpointer str1, gconstpointer str2)
 static gboolean
 fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 {
-	const gchar *remote_id;
 	const gchar *branch;
 	g_autoptr(FwupdRelease) rel = NULL;
 	g_autoptr(GPtrArray) rels = NULL;
@@ -2819,14 +2860,6 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* update the console if composite devices are also updated */
 	priv->current_operation = FU_UTIL_OPERATION_INSTALL;
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-request",
-			 G_CALLBACK(fu_util_update_device_request_cb),
-			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH;
 	if (!fu_util_update_device_with_release(priv, dev, rel, error))
@@ -2834,8 +2867,7 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 	fu_util_display_current_message(priv);
 
 	/* send report if we're supposed to */
-	remote_id = fwupd_release_get_remote_id(rel);
-	if (!fu_util_maybe_send_reports(priv, remote_id, error))
+	if (!fu_util_maybe_send_reports(priv, rel, error))
 		return FALSE;
 
 	/* we don't want to ask anything */
@@ -3287,14 +3319,6 @@ fu_util_sync_bkc(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* update the console if composite devices are also updated */
 	priv->current_operation = FU_UTIL_OPERATION_INSTALL;
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
-	g_signal_connect(FWUPD_CLIENT(priv->client),
-			 "device-request",
-			 G_CALLBACK(fu_util_update_device_request_cb),
-			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
 
 	/* for each device, find the release that matches the tag */
@@ -3371,20 +3395,25 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(GError) error_local = NULL;
 	g_autofree gchar *str = NULL;
 
-	/* not ready yet */
-	if ((priv->flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "The HSI specification is not yet complete. "
-				    "To ignore this warning, use --force");
-		return FALSE;
-	}
-
 	/* the "why" */
 	attrs = fwupd_client_get_host_security_attrs(priv->client, priv->cancellable, error);
 	if (attrs == NULL)
 		return FALSE;
+
+	for (guint j = 0; j < attrs->len; j++) {
+		FwupdSecurityAttr *attr = g_ptr_array_index(attrs, j);
+
+		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA))
+			continue;
+		if (priv->flags & FWUPD_INSTALL_FLAG_FORCE)
+			continue;
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "Not enough data was provided to make an HSI calculation. "
+				    "To ignore this warning, use --force");
+		return FALSE;
+	}
 
 	/* the "when" */
 	events = fwupd_client_get_host_security_events(priv->client,
@@ -4023,10 +4052,17 @@ main(int argc, char *argv[])
 	fu_util_cmd_array_add(cmd_array,
 			      "install",
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("[DEVICE-ID|GUID] [VERSION]"),
+			      /* TRANSLATORS: command description */
+			      _("Install a specific firmware version on a device"),
+			      fu_util_install);
+	fu_util_cmd_array_add(cmd_array,
+			      "local-install",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
 			      _("FILE [DEVICE-ID|GUID]"),
 			      /* TRANSLATORS: command description */
 			      _("Install a firmware file on this hardware"),
-			      fu_util_install);
+			      fu_util_local_install);
 	fu_util_cmd_array_add(cmd_array,
 			      "get-details",
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
@@ -4265,7 +4301,7 @@ main(int argc, char *argv[])
 			   _("Ignoring SSL strict checks, "
 			     "to do this automatically in the future "
 			     "export DISABLE_SSL_STRICT in your environment"));
-		g_setenv("DISABLE_SSL_STRICT", "1", TRUE);
+		(void)g_setenv("DISABLE_SSL_STRICT", "1", TRUE);
 	}
 
 	/* this doesn't have to be precise (e.g. using the build-year) as we just
@@ -4311,8 +4347,8 @@ main(int argc, char *argv[])
 
 	/* set verbose? */
 	if (verbose) {
-		g_setenv("G_MESSAGES_DEBUG", "all", FALSE);
-		g_setenv("FWUPD_VERBOSE", "1", FALSE);
+		(void)g_setenv("G_MESSAGES_DEBUG", "all", FALSE);
+		(void)g_setenv("FWUPD_VERBOSE", "1", FALSE);
 	} else {
 		g_log_set_handler(G_LOG_DOMAIN, G_LOG_LEVEL_DEBUG, fu_util_ignore_cb, NULL);
 	}
@@ -4355,6 +4391,14 @@ main(int argc, char *argv[])
 	g_signal_connect(FWUPD_CLIENT(priv->client),
 			 "notify::status",
 			 G_CALLBACK(fu_util_client_notify_cb),
+			 priv);
+	g_signal_connect(FWUPD_CLIENT(priv->client),
+			 "device-changed",
+			 G_CALLBACK(fu_util_update_device_changed_cb),
+			 priv);
+	g_signal_connect(FWUPD_CLIENT(priv->client),
+			 "device-request",
+			 G_CALLBACK(fu_util_update_device_request_cb),
 			 priv);
 
 	/* show a warning if the daemon is tainted */

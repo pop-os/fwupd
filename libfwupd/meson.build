@@ -32,11 +32,8 @@ libfwupd_deps = [
     gmodule,
     libjcat,
     libjsonglib,
+    libcurl,
 ]
-
-if get_option('curl')
-  libfwupd_deps += libcurl
-endif
 
 libfwupd_src = [
   'fwupd-client.c',
@@ -88,13 +85,11 @@ pkgg.generate(
   description : 'fwupd is a system daemon for installing device firmware',
 )
 
-if get_option('introspection')
+if introspection.allowed()
   fwupd_gir_deps = [
       giounix,
+      libcurl,
   ]
-  if get_option('curl')
-    fwupd_gir_deps += libcurl
-  endif
   fwupd_gir = gnome.generate_gir(fwupd,
     sources : [
       'fwupd-client.c',
@@ -164,7 +159,7 @@ if get_option('introspection')
     output: 'fwupd.map',
     command: [
       python3,
-      join_paths(meson.source_root(), 'contrib', 'generate-version-script.py'),
+      join_paths(meson.project_source_root(), 'contrib', 'generate-version-script.py'),
       'LIBFWUPD',
       '@INPUT@',
       '@OUTPUT@',

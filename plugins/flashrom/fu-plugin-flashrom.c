@@ -13,19 +13,35 @@
 #include <libflashrom.h>
 #include <string.h>
 
-#include "fu-flashrom-internal-device.h"
+#include "fu-flashrom-device.h"
 
 #define SELFCHECK_TRUE 1
+
+struct FuPluginData {
+	struct flashrom_flashctx *flashctx;
+	struct flashrom_programmer *flashprog;
+	gchar *guid; /* GUID from quirks that activated this plugin */
+};
 
 static void
 fu_plugin_flashrom_init(FuPlugin *plugin)
 {
-	FuContext *ctx = fu_plugin_get_context(plugin);
+	(void)fu_plugin_alloc_data(plugin, sizeof(FuPluginData));
 
 	fu_plugin_add_rule(plugin, FU_PLUGIN_RULE_METADATA_SOURCE, "linux_lockdown");
 	fu_plugin_add_rule(plugin, FU_PLUGIN_RULE_CONFLICTS, "coreboot"); /* obsoleted */
 	fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_REQUIRE_HWID);
-	fu_context_add_quirk_key(ctx, "FlashromProgrammer");
+}
+
+static void
+fu_plugin_flashrom_destroy(FuPlugin *plugin)
+{
+	FuPluginData *data = fu_plugin_get_data(plugin);
+	if (data->flashctx != NULL)
+		flashrom_flash_release(data->flashctx);
+	if (data->flashprog != NULL)
+		flashrom_programmer_shutdown(data->flashprog);
+	g_free(data->guid);
 }
 
 static int
@@ -145,16 +161,40 @@ fu_plugin_flashrom_device_set_hwids(FuPlugin *plugin, FuDevice *device)
 	}
 }
 
-static gboolean
-fu_plugin_flashrom_coldplug(FuPlugin *plugin, GError **error)
+static FuDevice *
+fu_plugin_flashrom_add_device(FuPlugin *plugin,
+			      const gchar *guid,
+			      FuIfdRegion region,
+			      GError **error)
 {
 	FuContext *ctx = fu_plugin_get_context(plugin);
+	FuPluginData *data = fu_plugin_get_data(plugin);
 	const gchar *dmi_vendor;
-	g_autoptr(FuDevice) device = fu_flashrom_internal_device_new(ctx);
+	const gchar *product = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_PRODUCT_NAME);
+	const gchar *vendor = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER);
+	const gchar *region_str = fu_ifd_region_to_string(region);
+	g_autofree gchar *name = g_strdup_printf("%s (%s)", product, region_str);
+	g_autoptr(FuDevice) device = fu_flashrom_device_new(ctx, data->flashctx, region);
 
-	fu_device_set_context(device, ctx);
-	fu_device_set_name(device, fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_PRODUCT_NAME));
-	fu_device_set_vendor(device, fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER));
+	fu_device_set_name(device, name);
+	fu_device_set_vendor(device, vendor);
+
+	fu_device_add_instance_str(device, "VENDOR", vendor);
+	fu_device_add_instance_str(device, "PRODUCT", product);
+	fu_device_add_instance_strup(device, "REGION", region_str);
+	if (!fu_device_build_instance_id(device,
+					 error,
+					 "FLASHROM",
+					 "VENDOR",
+					 "PRODUCT",
+					 "REGION",
+					 NULL))
+		return NULL;
+
+	/* add this so we can attach board-specific quirks */
+	fu_device_add_instance_str(FU_DEVICE(device), "GUID", guid);
+	if (!fu_device_build_instance_id(FU_DEVICE(device), error, "FLASHROM", "GUID", NULL))
+		return NULL;
 
 	/* use same VendorID logic as with UEFI */
 	dmi_vendor = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_BIOS_VENDOR);
@@ -165,18 +205,79 @@ fu_plugin_flashrom_coldplug(FuPlugin *plugin, GError **error)
 	fu_plugin_flashrom_device_set_version(plugin, device);
 	fu_plugin_flashrom_device_set_hwids(plugin, device);
 	fu_plugin_flashrom_device_set_bios_info(plugin, device);
-	fu_flashrom_device_set_programmer_name(FU_FLASHROM_DEVICE(device), "internal");
 	if (!fu_device_setup(device, error))
-		return FALSE;
+		return NULL;
 
 	/* success */
 	fu_plugin_device_add(plugin, device);
-	return TRUE;
+
+	g_object_ref(device);
+	return device;
+}
+
+static void
+fu_plugin_flashrom_device_registered(FuPlugin *plugin, FuDevice *device)
+{
+	g_autoptr(FuDevice) me_device = NULL;
+	FuPluginData *data = fu_plugin_get_data(plugin);
+	const gchar *me_region_str = fu_ifd_region_to_string(FU_IFD_REGION_ME);
+
+	/* we're only interested in a device from intel-spi plugin that corresponds to ME
+	 * region of IFD */
+	if (g_strcmp0(fu_device_get_plugin(device), "intel_spi") != 0)
+		return;
+	if (g_strcmp0(fu_device_get_logical_id(device), me_region_str) != 0)
+		return;
+
+	me_device = fu_plugin_flashrom_add_device(plugin, data->guid, FU_IFD_REGION_ME, NULL);
+	if (me_device == NULL)
+		return;
+
+	/* unlock operation requires device to be locked */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_LOCKED))
+		fu_device_add_flag(me_device, FWUPD_DEVICE_FLAG_LOCKED);
+}
+
+static gboolean
+fu_plugin_flashrom_coldplug(FuPlugin *plugin, GError **error)
+{
+	FuPluginData *data = fu_plugin_get_data(plugin);
+	g_autoptr(FuDevice) device =
+	    fu_plugin_flashrom_add_device(plugin, data->guid, FU_IFD_REGION_BIOS, error);
+	return (device != NULL);
+}
+
+/* finds GUID that activated this plugin */
+static const gchar *
+fu_plugin_flashrom_find_guid(FuPlugin *plugin, GError **error)
+{
+	FuContext *ctx = fu_plugin_get_context(plugin);
+	GPtrArray *hwids = fu_context_get_hwid_guids(ctx);
+
+	for (guint i = 0; i < hwids->len; i++) {
+		const gchar *guid = g_ptr_array_index(hwids, i);
+		const gchar *plugin_name =
+		    fu_context_lookup_quirk_by_id(ctx, guid, FU_QUIRKS_PLUGIN);
+		if (g_strcmp0(plugin_name, "flashrom") == 0)
+			return guid;
+	}
+
+	return NULL;
 }
 
 static gboolean
 fu_plugin_flashrom_startup(FuPlugin *plugin, GError **error)
 {
+	gint rc;
+	const gchar *guid;
+	FuPluginData *data = fu_plugin_get_data(plugin);
+
+	guid = fu_plugin_flashrom_find_guid(plugin, error);
+	if (guid == NULL)
+		return FALSE;
+
+	data->guid = g_strdup(guid);
+
 	if (flashrom_init(SELFCHECK_TRUE)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -185,7 +286,45 @@ fu_plugin_flashrom_startup(FuPlugin *plugin, GError **error)
 		return FALSE;
 	}
 	flashrom_set_log_callback(fu_plugin_flashrom_debug_cb);
+
+	if (flashrom_programmer_init(&data->flashprog, "internal", NULL)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "programmer initialization failed");
+		return FALSE;
+	}
+
+	rc = flashrom_flash_probe(&data->flashctx, data->flashprog, NULL);
+	if (rc == 3) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "flash probe failed: multiple chips were found");
+		return FALSE;
+	}
+	if (rc == 2) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "flash probe failed: no chip was found");
+		return FALSE;
+	}
+	if (rc != 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "flash probe failed: unknown error");
+		return FALSE;
+	}
+
 	return TRUE;
+}
+
+static gboolean
+fu_plugin_flashrom_unlock(FuPlugin *self, FuDevice *device, GError **error)
+{
+	return fu_flashrom_device_unlock(FU_FLASHROM_DEVICE(device), error);
 }
 
 void
@@ -193,6 +332,9 @@ fu_plugin_init_vfuncs(FuPluginVfuncs *vfuncs)
 {
 	vfuncs->build_hash = FU_BUILD_HASH;
 	vfuncs->init = fu_plugin_flashrom_init;
+	vfuncs->destroy = fu_plugin_flashrom_destroy;
+	vfuncs->device_registered = fu_plugin_flashrom_device_registered;
 	vfuncs->startup = fu_plugin_flashrom_startup;
 	vfuncs->coldplug = fu_plugin_flashrom_coldplug;
+	vfuncs->unlock = fu_plugin_flashrom_unlock;
 }

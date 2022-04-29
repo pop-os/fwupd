@@ -878,6 +878,34 @@ fu_common_write_uint16(guint8 *buf, guint16 val_native, FuEndianType endian)
 }
 
 /**
+ * fu_common_write_uint24:
+ * @buf: a writable buffer
+ * @val_native: a value in host byte-order
+ * @endian: an endian type, e.g. %G_LITTLE_ENDIAN
+ *
+ * Writes a value to a buffer using a specified endian.
+ *
+ * Since: 1.8.0
+ **/
+void
+fu_common_write_uint24(guint8 *buf, guint32 val_native, FuEndianType endian)
+{
+	guint32 val_hw;
+	switch (endian) {
+	case G_BIG_ENDIAN:
+		val_hw = GUINT32_TO_BE(val_native);
+		memcpy(buf, ((const guint8 *)&val_hw) + 0x1, 0x3);
+		break;
+	case G_LITTLE_ENDIAN:
+		val_hw = GUINT32_TO_LE(val_native);
+		memcpy(buf, &val_hw, 0x3);
+		break;
+	default:
+		g_assert_not_reached();
+	}
+}
+
+/**
  * fu_common_write_uint32:
  * @buf: a writable buffer
  * @val_native: a value in host byte-order
@@ -953,6 +981,37 @@ fu_common_read_uint16(const guint8 *buf, FuEndianType endian)
 		break;
 	case G_LITTLE_ENDIAN:
 		val_native = GUINT16_FROM_LE(val_hw);
+		break;
+	default:
+		g_assert_not_reached();
+	}
+	return val_native;
+}
+
+/**
+ * fu_common_read_uint24:
+ * @buf: a readable buffer
+ * @endian: an endian type, e.g. %G_LITTLE_ENDIAN
+ *
+ * Read a value from a buffer using a specified endian.
+ *
+ * Returns: a value in host byte-order
+ *
+ * Since: 1.8.0
+ **/
+guint32
+fu_common_read_uint24(const guint8 *buf, FuEndianType endian)
+{
+	guint32 val_hw = 0;
+	guint32 val_native;
+	switch (endian) {
+	case G_BIG_ENDIAN:
+		memcpy(((guint8 *)&val_hw) + 0x1, buf, 0x3);
+		val_native = GUINT32_FROM_BE(val_hw);
+		break;
+	case G_LITTLE_ENDIAN:
+		memcpy(&val_hw, buf, 0x3);
+		val_native = GUINT32_FROM_LE(val_hw);
 		break;
 	default:
 		g_assert_not_reached();
@@ -1940,6 +1999,27 @@ fu_common_bytes_compare(GBytes *bytes1, GBytes *bytes2, GError **error)
 	buf1 = g_bytes_get_data(bytes1, &bufsz1);
 	buf2 = g_bytes_get_data(bytes2, &bufsz2);
 	return fu_common_bytes_compare_raw(buf1, bufsz1, buf2, bufsz2, error);
+}
+
+/**
+ * fu_byte_array_compare:
+ * @buf1: a data blob
+ * @buf2: another #GByteArray
+ * @error: (nullable): optional return location for an error
+ *
+ * Compares two buffers for equality.
+ *
+ * Returns: %TRUE if @buf1 and @buf2 are identical
+ *
+ * Since: 1.8.0
+ **/
+gboolean
+fu_byte_array_compare(GByteArray *buf1, GByteArray *buf2, GError **error)
+{
+	g_return_val_if_fail(buf1 != NULL, FALSE);
+	g_return_val_if_fail(buf2 != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+	return fu_common_bytes_compare_raw(buf1->data, buf1->len, buf2->data, buf2->len, error);
 }
 
 /**
@@ -3721,6 +3801,8 @@ guint8
 fu_common_sum8_bytes(GBytes *blob)
 {
 	g_return_val_if_fail(blob != NULL, G_MAXUINT8);
+	if (g_bytes_get_size(blob) == 0)
+		return 0;
 	return fu_common_sum8(g_bytes_get_data(blob, NULL), g_bytes_get_size(blob));
 }
 
@@ -3884,6 +3966,39 @@ fu_common_sum32w_bytes(GBytes *blob, FuEndianType endian)
 {
 	g_return_val_if_fail(blob != NULL, G_MAXUINT32);
 	return fu_common_sum32w(g_bytes_get_data(blob, NULL), g_bytes_get_size(blob), endian);
+}
+
+/**
+ * fu_common_reverse_uint8:
+ * @value: integer
+ *
+ * Calculates the reverse bit order for a single byte.
+ *
+ * Returns: the @value, reversed
+ *
+ * Since: 1.8.0
+ **/
+guint8
+fu_common_reverse_uint8(guint8 value)
+{
+	guint8 tmp = 0;
+	if (value & 0x01)
+		tmp = 0x80;
+	if (value & 0x02)
+		tmp |= 0x40;
+	if (value & 0x04)
+		tmp |= 0x20;
+	if (value & 0x08)
+		tmp |= 0x10;
+	if (value & 0x10)
+		tmp |= 0x08;
+	if (value & 0x20)
+		tmp |= 0x04;
+	if (value & 0x40)
+		tmp |= 0x02;
+	if (value & 0x80)
+		tmp |= 0x01;
+	return tmp;
 }
 
 /**

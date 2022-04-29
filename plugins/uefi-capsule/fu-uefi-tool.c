@@ -15,7 +15,6 @@
 #include <unistd.h>
 
 #include "fu-context-private.h"
-#include "fu-ucs2.h"
 #include "fu-uefi-backend.h"
 #include "fu-uefi-cod-device.h"
 #include "fu-uefi-common.h"
@@ -215,7 +214,7 @@ main(int argc, char *argv[])
 
 	/* set verbose? */
 	if (verbose) {
-		g_setenv("G_MESSAGES_DEBUG", "all", FALSE);
+		(void)g_setenv("G_MESSAGES_DEBUG", "all", FALSE);
 	} else {
 		g_log_set_handler(G_LOG_DOMAIN, G_LOG_LEVEL_DEBUG, fu_util_ignore_cb, NULL);
 	}
@@ -267,7 +266,11 @@ main(int argc, char *argv[])
 		}
 		buf_ucs2 = g_new0(guint16, (sz / 2) + 1);
 		memcpy(buf_ucs2, buf, sz);
-		str = fu_ucs2_to_uft8(buf_ucs2, sz / 2);
+		str = g_utf16_to_utf8(buf_ucs2, sz / 2, NULL, NULL, &error_local);
+		if (str == NULL) {
+			g_printerr("failed: %s\n", error_local->message);
+			return EXIT_FAILURE;
+		}
 		g_print("%s", str);
 	}
 
@@ -398,6 +401,13 @@ main(int argc, char *argv[])
 		g_autoptr(GError) error_local = NULL;
 		g_autoptr(GBytes) fw = NULL;
 
+		/* progress */
+		fu_progress_set_id(progress, G_STRLOC);
+		fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);   /* prepare */
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98); /* write */
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);   /* cleanup */
+
 		/* load SMBIOS */
 		if (!fu_context_load_hwinfo(ctx, &error_local)) {
 			g_printerr("failed: %s\n", error_local->message);
@@ -434,22 +444,31 @@ main(int argc, char *argv[])
 		fu_uefi_device_set_esp(dev, esp);
 		if (flags != NULL)
 			fu_device_set_custom_flags(FU_DEVICE(dev), flags);
-		if (!fu_device_prepare(FU_DEVICE(dev), FWUPD_INSTALL_FLAG_NONE, &error_local)) {
+		if (!fu_device_prepare(FU_DEVICE(dev),
+				       fu_progress_get_child(progress),
+				       FWUPD_INSTALL_FLAG_NONE,
+				       &error_local)) {
 			g_printerr("failed: %s\n", error_local->message);
 			return EXIT_FAILURE;
 		}
+		fu_progress_step_done(progress);
 		if (!fu_device_write_firmware(FU_DEVICE(dev),
 					      fw,
-					      progress,
+					      fu_progress_get_child(progress),
 					      FWUPD_INSTALL_FLAG_NONE,
 					      &error_local)) {
 			g_printerr("failed: %s\n", error_local->message);
 			return EXIT_FAILURE;
 		}
-		if (!fu_device_cleanup(FU_DEVICE(dev), FWUPD_INSTALL_FLAG_NONE, &error_local)) {
+		fu_progress_step_done(progress);
+		if (!fu_device_cleanup(FU_DEVICE(dev),
+				       fu_progress_get_child(progress),
+				       FWUPD_INSTALL_FLAG_NONE,
+				       &error_local)) {
 			g_printerr("failed: %s\n", error_local->message);
 			return EXIT_FAILURE;
 		}
+		fu_progress_step_done(progress);
 	}
 
 	/* success */

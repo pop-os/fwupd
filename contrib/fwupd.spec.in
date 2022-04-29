@@ -37,6 +37,11 @@
 %global have_dell 1
 %endif
 
+# AMD PSP is only available on x86
+%ifarch x86_64
+%global have_pci_psp 1
+%endif
+
 # only available recently
 %if 0%{?fedora} >= 30
 %global have_modem_manager 1
@@ -64,6 +69,7 @@ BuildRequires: sqlite-devel
 BuildRequires: systemd >= %{systemd_version}
 BuildRequires: systemd-devel
 BuildRequires: libarchive-devel
+BuildRequires: libcbor-devel
 BuildRequires: gobject-introspection-devel
 BuildRequires: gcab
 %ifarch %{valgrind_arches}
@@ -242,46 +248,46 @@ fwupd wrapper for Qubes OS
     -Dplugin_dummy=false \
 %endif
 %if 0%{?have_flashrom}
-    -Dplugin_flashrom=true \
+    -Dplugin_flashrom=enabled \
 %else
-    -Dplugin_flashrom=false \
+    -Dplugin_flashrom=disabled \
 %endif
 %if 0%{?have_msr}
-    -Dplugin_msr=true \
+    -Dplugin_msr=enabled \
 %else
-    -Dplugin_msr=false \
+    -Dplugin_msr=disabled \
 %endif
-    -Dplugin_thunderbolt=true \
+    -Dplugin_thunderbolt=enabled \
 %if 0%{?have_uefi}
-    -Dplugin_uefi_capsule=true \
-    -Dplugin_uefi_pk=true \
-    -Dplugin_tpm=true \
-    -Dplugin_gpio=true \
+    -Dplugin_uefi_capsule=enabled \
+    -Dplugin_uefi_pk=enabled \
+    -Dplugin_tpm=enabled \
+    -Dplugin_gpio=enabled \
     -Defi_binary=false \
 %else
-    -Dplugin_uefi_capsule=false \
-    -Dplugin_uefi_pk=false \
-    -Dplugin_tpm=false \
+    -Dplugin_uefi_capsule=disabled \
+    -Dplugin_uefi_pk=disabled \
+    -Dplugin_tpm=disabled \
 %endif
 %if 0%{?have_dell}
-    -Dplugin_dell=true \
-    -Dplugin_synaptics_mst=true \
+    -Dplugin_dell=enabled \
+    -Dplugin_synaptics_mst=enabled \
 %else
-    -Dplugin_dell=false \
-    -Dplugin_synaptics_mst=false \
+    -Dplugin_dell=disabled \
+    -Dplugin_synaptics_mst=disabled \
 %endif
 %if 0%{?have_modem_manager}
-    -Dplugin_modem_manager=true \
+    -Dplugin_modem_manager=enabled \
 %else
-    -Dplugin_modem_manager=false \
+    -Dplugin_modem_manager=disabled \
 %endif
 %if 0%{?qubes_packages}
     -Dqubes=true \
 %endif
     -Dman=true \
-    -Dbluez=true \
-    -Dplugin_powerd=false \
-    -Dsupported_build=true
+    -Dbluez=enabled \
+    -Dplugin_powerd=disabled \
+    -Dsupported_build=enabled
 
 %meson_build
 
@@ -411,15 +417,17 @@ done
 /usr/lib/udev/rules.d/*.rules
 /usr/lib/systemd/system-shutdown/fwupd.shutdown
 %dir %{_libdir}/fwupd-plugins-%{fwupdplugin_version}
-%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_dmar.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_facp.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_phat.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_amt.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_analogix.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_ata.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_bcm57xx.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_cfu.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_ccgx.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_ch341a.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_colorhug.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_corsair.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_cros_ec.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_cpu.so
 %if 0%{?have_dell}
@@ -449,7 +457,12 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_linux_swap.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_linux_tainted.so
 %if 0%{?have_msr}
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_dmar.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_ivrs.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_msr.so
+%endif
+%if 0%{?have_pci_psp}
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_pci_psp.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_mtd.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_nitrokey.so
