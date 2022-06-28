@@ -618,10 +618,7 @@ fu_ccgx_dmc_device_attach(FuDevice *device, FuProgress *progress, GError **error
 
 	if (manual_replug) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION);
-		fu_device_inhibit(device,
-				  "update-pending",
-				  "A pending update will be completed next time the device "
-				  "is unplugged from your computer");
+		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_UPDATE_PENDING);
 	} else {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 	}
@@ -751,6 +748,7 @@ fu_ccgx_dmc_device_init(FuCcgxDmcDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_CCGX_DMC_DEVICE_FLAG_HAS_MANUAL_REPLUG,
 					"has-manual-replug");

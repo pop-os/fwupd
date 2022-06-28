@@ -11,11 +11,11 @@
 #include <fcntl.h>
 #include <fwupd.h>
 #include <gio/gio.h>
-#include <gio/gunixfdlist.h>
 #include <glib/gi18n.h>
 #include <glib/gstdio.h>
 #include <xmlb.h>
 #ifdef HAVE_GIO_UNIX
+#include <gio/gunixfdlist.h>
 #include <glib-unix.h>
 #endif
 #include <locale.h>
@@ -227,7 +227,7 @@ fu_util_prompt_for_device(FuUtilPrivate *priv, GPtrArray *devices, GError **erro
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_FOUND,
-				    "can't prompt for devices ");
+				    "can't prompt for devices");
 		return NULL;
 	}
 
@@ -506,12 +506,6 @@ fu_util_build_device_tree(FuUtilPrivate *priv, GNode *root, GPtrArray *devs, Fwu
 	}
 }
 
-static gchar *
-fu_util_get_tree_title(FuUtilPrivate *priv)
-{
-	return g_strdup(fwupd_client_get_host_product(priv->client));
-}
-
 static gboolean
 fu_util_get_releases_as_json(FuUtilPrivate *priv, GPtrArray *rels, GError **error)
 {
@@ -571,7 +565,6 @@ fu_util_get_devices(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(GNode) root = g_node_new(NULL);
 	g_autoptr(GPtrArray) devs = NULL;
-	g_autofree gchar *title = fu_util_get_tree_title(priv);
 
 	/* get results from daemon */
 	devs = fwupd_client_get_devices(priv->client, priv->cancellable, error);
@@ -590,7 +583,7 @@ fu_util_get_devices(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_print("%s\n", _("No hardware detected with firmware update capability"));
 		return TRUE;
 	}
-	fu_util_print_tree(root, title);
+	fu_util_print_tree(priv->client, root);
 
 	/* nag? */
 	if (!fu_util_perhaps_show_unreported(priv, error))
@@ -1157,7 +1150,6 @@ fu_util_get_details(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(GPtrArray) array = NULL;
 	g_autoptr(GNode) root = g_node_new(NULL);
-	g_autofree gchar *title = fu_util_get_tree_title(priv);
 
 	/* check args */
 	if (g_strv_length(values) != 1) {
@@ -1178,7 +1170,7 @@ fu_util_get_details(FuUtilPrivate *priv, gchar **values, GError **error)
 		return fu_util_get_details_as_json(priv, array, error);
 
 	fu_util_build_device_tree(priv, root, array, NULL);
-	fu_util_print_tree(root, title);
+	fu_util_print_tree(priv->client, root);
 
 	return TRUE;
 }
@@ -1367,7 +1359,6 @@ fu_util_get_history(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GNode) root = g_node_new(NULL);
-	g_autofree gchar *title = fu_util_get_tree_title(priv);
 
 	/* get all devices from the history database */
 	devices = fwupd_client_get_history(priv->client, priv->cancellable, error);
@@ -1435,7 +1426,7 @@ fu_util_get_history(FuUtilPrivate *priv, gchar **values, GError **error)
 		}
 	}
 
-	fu_util_print_tree(root, title);
+	fu_util_print_tree(priv->client, root);
 
 	return TRUE;
 }
@@ -1762,7 +1753,7 @@ fu_util_get_results(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 	if (priv->as_json)
 		return fu_util_get_results_as_json(priv, rel, error);
-	tmp = fu_util_device_to_string(rel, 0);
+	tmp = fu_util_device_to_string(priv->client, rel, 0);
 	g_print("%s", tmp);
 	return TRUE;
 }
@@ -1803,12 +1794,11 @@ fu_util_get_releases(FuUtilPrivate *priv, gchar **values, GError **error)
 		}
 	} else {
 		g_autoptr(GNode) root = g_node_new(NULL);
-		g_autofree gchar *title = fu_util_get_tree_title(priv);
 		for (guint i = 0; i < rels->len; i++) {
 			FwupdRelease *rel = g_ptr_array_index(rels, i);
 			g_node_append_data(root, rel);
 		}
-		fu_util_print_tree(root, title);
+		fu_util_print_tree(priv->client, root);
 	}
 
 	return TRUE;
@@ -1988,8 +1978,6 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(GPtrArray) devices = NULL;
 	gboolean supported = FALSE;
 	g_autoptr(GNode) root = g_node_new(NULL);
-	g_autofree gchar *title = fu_util_get_tree_title(priv);
-	g_autoptr(GPtrArray) devices_inhibited = g_ptr_array_new();
 	g_autoptr(GPtrArray) devices_no_support = g_ptr_array_new();
 	g_autoptr(GPtrArray) devices_no_upgrades = g_ptr_array_new();
 
@@ -2038,10 +2026,6 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 			continue;
 		}
 		supported = TRUE;
-		if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
-			g_ptr_array_add(devices_inhibited, dev);
-			continue;
-		}
 
 		/* get the releases for this device and filter for validity */
 		rels = fwupd_client_get_upgrades(priv->client,
@@ -2081,16 +2065,6 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 			g_printerr(" • %s\n", fwupd_device_get_name(dev));
 		}
 	}
-	if (devices_inhibited->len > 0) {
-		/* TRANSLATORS: the device has a reason it can't update, e.g. laptop lid closed */
-		g_printerr("%s\n", _("Devices not currently updatable:"));
-		for (guint i = 0; i < devices_inhibited->len; i++) {
-			FwupdDevice *dev = g_ptr_array_index(devices_inhibited, i);
-			g_printerr(" • %s — %s\n",
-				   fwupd_device_get_name(dev),
-				   fwupd_device_get_update_error(dev));
-		}
-	}
 
 	/* nag? */
 	if (!fu_util_perhaps_show_unreported(priv, error))
@@ -2115,7 +2089,7 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 	}
 
-	fu_util_print_tree(root, title);
+	fu_util_print_tree(priv->client, root);
 
 	/* success */
 	return TRUE;
@@ -2144,7 +2118,6 @@ fu_util_get_remotes(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(GNode) root = g_node_new(NULL);
 	g_autoptr(GPtrArray) remotes = NULL;
-	g_autofree gchar *title = fu_util_get_tree_title(priv);
 
 	remotes = fwupd_client_get_remotes(priv->client, priv->cancellable, error);
 	if (remotes == NULL)
@@ -2162,7 +2135,7 @@ fu_util_get_remotes(FuUtilPrivate *priv, gchar **values, GError **error)
 		FwupdRemote *remote_tmp = g_ptr_array_index(remotes, i);
 		g_node_append_data(root, remote_tmp);
 	}
-	fu_util_print_tree(root, title);
+	fu_util_print_tree(priv->client, root);
 
 	return TRUE;
 }
@@ -2306,7 +2279,7 @@ fu_util_prompt_warning_composite(FuUtilPrivate *priv,
 		for (guint j = 0; j < rels->len; j++) {
 			FwupdRelease *rel_tmp = g_ptr_array_index(rels, j);
 			if (fwupd_release_has_checksum(rel_tmp, rel_csum)) {
-				g_autofree gchar *title = fu_util_get_tree_title(priv);
+				const gchar *title = fwupd_client_get_host_product(priv->client);
 				if (!fu_util_prompt_warning(dev_tmp, rel_tmp, title, error))
 					return FALSE;
 				break;
@@ -2324,8 +2297,22 @@ fu_util_update_device_with_release(FuUtilPrivate *priv,
 				   FwupdRelease *rel,
 				   GError **error)
 {
+	if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE)) {
+		const gchar *name = fwupd_device_get_name(dev);
+		g_autofree gchar *str = NULL;
+
+		/* TRANSLATORS: the device has a reason it can't update, e.g. laptop lid closed */
+		str = g_strdup_printf(_("%s is not currently updatable"), name);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOTHING_TO_DO,
+			    "%s: %s",
+			    str,
+			    fwupd_device_get_update_error(dev));
+		return FALSE;
+	}
 	if (!priv->no_safety_check && !priv->assume_yes) {
-		g_autofree gchar *title = fu_util_get_tree_title(priv);
+		const gchar *title = fwupd_client_get_host_product(priv->client);
 		if (!fu_util_prompt_warning(dev, rel, title, error))
 			return FALSE;
 		if (!fu_util_prompt_warning_fde(dev, error))
@@ -2419,7 +2406,8 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 		gboolean dev_skip_byid = TRUE;
 
 		/* not going to have results, so save a D-Bus round-trip */
-		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE))
+		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE) &&
+		    !fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN))
 			continue;
 		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_SUPPORTED)) {
 			if (!no_updates_header) {
@@ -2708,7 +2696,7 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* fall back for CLI compatibility */
 	if (g_strv_length(values) >= 1) {
-		if (g_file_test(values[0], G_FILE_TEST_EXISTS))
+		if (g_file_test(values[0], G_FILE_TEST_EXISTS) || fu_util_is_url(values[0]))
 			return fu_util_local_install(priv, values, error);
 	}
 
@@ -4008,6 +3996,11 @@ main(int argc, char *argv[])
 					 NULL},
 					{NULL}};
 
+#ifdef _WIN32
+	/* workaround Windows setting the codepage to 1252 */
+	(void)g_setenv("LANG", "C.UTF-8", FALSE);
+#endif
+
 	setlocale(LC_ALL, "");
 
 	bindtextdomain(GETTEXT_PACKAGE, FWUPD_LOCALEDIR);
@@ -4269,6 +4262,20 @@ main(int argc, char *argv[])
 	/* sort by command name */
 	fu_util_cmd_array_sort(cmd_array);
 
+	/* non-TTY consoles cannot answer questions */
+	if (!fu_util_setup_interactive(priv, &error_console)) {
+		g_debug("failed to initialize interactive console: %s", error_console->message);
+		priv->no_unreported_check = TRUE;
+		priv->no_metadata_check = TRUE;
+		priv->no_reboot_check = TRUE;
+		priv->no_safety_check = TRUE;
+		priv->no_remote_check = TRUE;
+		priv->no_device_prompt = TRUE;
+	} else {
+		is_interactive = TRUE;
+	}
+	fu_progressbar_set_interactive(priv->progressbar, is_interactive);
+
 	/* get a list of the commands */
 	priv->context = g_option_context_new(NULL);
 	cmd_descriptions = fu_util_cmd_array_to_string(cmd_array);
@@ -4316,20 +4323,6 @@ main(int argc, char *argv[])
 			   _("The system clock has not been set "
 			     "correctly and downloading files may fail."));
 	}
-
-	/* non-TTY consoles cannot answer questions */
-	if (!fu_util_setup_interactive(priv, &error_console)) {
-		g_debug("failed to initialize interactive console: %s", error_console->message);
-		priv->no_unreported_check = TRUE;
-		priv->no_metadata_check = TRUE;
-		priv->no_reboot_check = TRUE;
-		priv->no_safety_check = TRUE;
-		priv->no_remote_check = TRUE;
-		priv->no_device_prompt = TRUE;
-	} else {
-		is_interactive = TRUE;
-	}
-	fu_progressbar_set_interactive(priv->progressbar, is_interactive);
 
 	/* parse filter flags */
 	if (filter != NULL) {
@@ -4465,7 +4458,7 @@ main(int argc, char *argv[])
 			FWUPD_FEATURE_FLAG_CAN_REPORT | FWUPD_FEATURE_FLAG_SWITCH_BRANCH |
 			    FWUPD_FEATURE_FLAG_REQUESTS | FWUPD_FEATURE_FLAG_UPDATE_ACTION |
 			    FWUPD_FEATURE_FLAG_FDE_WARNING | FWUPD_FEATURE_FLAG_DETACH_ACTION |
-			    FWUPD_FEATURE_FLAG_COMMUNITY_TEXT,
+			    FWUPD_FEATURE_FLAG_COMMUNITY_TEXT | FWUPD_FEATURE_FLAG_SHOW_PROBLEMS,
 			priv->cancellable,
 			&error)) {
 			g_printerr("Failed to set front-end features: %s\n", error->message);
@@ -4476,6 +4469,13 @@ main(int argc, char *argv[])
 	/* run the specified command */
 	ret = fu_util_cmd_array_run(cmd_array, priv, argv[1], (gchar **)&argv[2], &error);
 	if (!ret) {
+#ifdef SUPPORTED_BUILD
+		/* sanity check */
+		if (error == NULL) {
+			g_critical("exec failed but no error set!");
+			return EXIT_FAILURE;
+		}
+#endif
 		g_printerr("%s\n", error->message);
 		if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_ARGS)) {
 			/* TRANSLATORS: error message explaining command on how to get help */

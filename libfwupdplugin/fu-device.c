@@ -24,8 +24,6 @@
 #define FU_DEVICE_RETRY_OPEN_COUNT 5
 #define FU_DEVICE_RETRY_OPEN_DELAY 500 /* ms */
 
-#define FU_DEVICE_DEFAULT_BATTERY_THRESHOLD 10 /* % */
-
 /**
  * FuDevice:
  *
@@ -36,6 +34,11 @@
 
 static void
 fu_device_finalize(GObject *object);
+static void
+fu_device_inhibit_full(FuDevice *self,
+		       FwupdDeviceProblem problem,
+		       const gchar *inhibit_id,
+		       const gchar *reason);
 
 typedef struct {
 	gchar *alternate_id;
@@ -54,12 +57,11 @@ typedef struct {
 	GRWLock parent_guids_mutex;
 	GPtrArray *parent_physical_ids; /* (nullable) */
 	guint remove_delay;		/* ms */
-	guint battery_level;
-	guint battery_threshold;
 	guint request_cnts[FWUPD_REQUEST_KIND_LAST];
 	gint order;
 	guint priority;
 	guint poll_id;
+	gint poll_locker_cnt;
 	gboolean done_probe;
 	gboolean done_setup;
 	gboolean device_id_valid;
@@ -86,14 +88,13 @@ typedef struct {
 } FuDeviceRetryRecovery;
 
 typedef struct {
+	FwupdDeviceProblem problem;
 	gchar *inhibit_id;
 	gchar *reason;
 } FuDeviceInhibit;
 
 enum {
 	PROP_0,
-	PROP_BATTERY_LEVEL,
-	PROP_BATTERY_THRESHOLD,
 	PROP_PHYSICAL_ID,
 	PROP_LOGICAL_ID,
 	PROP_BACKEND_ID,
@@ -116,12 +117,6 @@ fu_device_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec
 	FuDevice *self = FU_DEVICE(object);
 	FuDevicePrivate *priv = GET_PRIVATE(self);
 	switch (prop_id) {
-	case PROP_BATTERY_LEVEL:
-		g_value_set_uint(value, priv->battery_level);
-		break;
-	case PROP_BATTERY_THRESHOLD:
-		g_value_set_uint(value, priv->battery_threshold);
-		break;
 	case PROP_PHYSICAL_ID:
 		g_value_set_string(value, priv->physical_id);
 		break;
@@ -151,12 +146,6 @@ fu_device_set_property(GObject *object, guint prop_id, const GValue *value, GPar
 {
 	FuDevice *self = FU_DEVICE(object);
 	switch (prop_id) {
-	case PROP_BATTERY_LEVEL:
-		fu_device_set_battery_level(self, g_value_get_uint(value));
-		break;
-	case PROP_BATTERY_THRESHOLD:
-		fu_device_set_battery_threshold(self, g_value_get_uint(value));
-		break;
 	case PROP_PHYSICAL_ID:
 		fu_device_set_physical_id(self, g_value_get_string(value));
 		break;
@@ -242,6 +231,10 @@ fu_device_internal_flag_to_string(FuDeviceInternalFlags flag)
 		return "no-probe";
 	if (flag == FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED)
 		return "md-set-signed";
+	if (flag == FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING)
+		return "auto-pause-polling";
+	if (flag == FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG)
+		return "only-wait-for-replug";
 	return NULL;
 }
 
@@ -306,6 +299,10 @@ fu_device_internal_flag_from_string(const gchar *flag)
 		return FU_DEVICE_INTERNAL_FLAG_NO_PROBE;
 	if (g_strcmp0(flag, "md-set-signed") == 0)
 		return FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED;
+	if (g_strcmp0(flag, "auto-pause-polling") == 0)
+		return FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING;
+	if (g_strcmp0(flag, "only-wait-for-replug") == 0)
+		return FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG;
 	return FU_DEVICE_INTERNAL_FLAG_UNKNOWN;
 }
 
@@ -717,6 +714,50 @@ fu_device_retry(FuDevice *self,
 	return fu_device_retry_full(self, func, count, priv->retry_delay, user_data, error);
 }
 
+static gboolean
+fu_device_poll_locker_open_cb(GObject *device, GError **error)
+{
+	FuDevice *self = FU_DEVICE(device);
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	g_atomic_int_inc(&priv->poll_locker_cnt);
+	return TRUE;
+}
+
+static gboolean
+fu_device_poll_locker_close_cb(GObject *device, GError **error)
+{
+	FuDevice *self = FU_DEVICE(device);
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	g_atomic_int_dec_and_test(&priv->poll_locker_cnt);
+	return TRUE;
+}
+
+/**
+ * fu_device_poll_locker_new:
+ * @self: a #FuDevice
+ * @error: (nullable): optional return location for an error
+ *
+ * Returns a device locker that prevents polling on the device. If there are no open poll lockers
+ * then the poll callback will be called.
+ *
+ * Use %FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING to opt into this functionality.
+ *
+ * Returns: (transfer full): a #FuDeviceLocker
+ *
+ * Since: 1.8.1
+ **/
+FuDeviceLocker *
+fu_device_poll_locker_new(FuDevice *self, GError **error)
+{
+	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	return fu_device_locker_new_full(self,
+					 fu_device_poll_locker_open_cb,
+					 fu_device_poll_locker_close_cb,
+					 error);
+}
+
 /**
  * fu_device_poll:
  * @self: a #FuDevice
@@ -750,6 +791,14 @@ fu_device_poll_cb(gpointer user_data)
 	FuDevice *self = FU_DEVICE(user_data);
 	FuDevicePrivate *priv = GET_PRIVATE(self);
 	g_autoptr(GError) error_local = NULL;
+
+	/* device is being detached, written, read, or attached */
+	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING) &&
+	    priv->poll_locker_cnt > 0) {
+		g_debug("ignoring poll callback as an action is in progress");
+		return G_SOURCE_CONTINUE;
+	}
+
 	if (!fu_device_poll(self, &error_local)) {
 		g_warning("disabling polling: %s", error_local->message);
 		priv->poll_id = 0;
@@ -1223,7 +1272,10 @@ fu_device_add_child(FuDevice *self, FuDevice *child)
 		g_autoptr(GList) values = g_hash_table_get_values(priv->inhibits);
 		for (GList *l = values; l != NULL; l = l->next) {
 			FuDeviceInhibit *inhibit = (FuDeviceInhibit *)l->data;
-			fu_device_inhibit(child, inhibit->inhibit_id, inhibit->reason);
+			fu_device_inhibit_full(child,
+					       inhibit->problem,
+					       inhibit->inhibit_id,
+					       inhibit->reason);
 		}
 	}
 
@@ -1524,6 +1576,33 @@ fu_device_add_child_by_kv(FuDevice *self, const gchar *str, GError **error)
 }
 
 static gboolean
+fu_device_set_quirk_inhibit_section(FuDevice *self, const gchar *value, GError **error)
+{
+	g_auto(GStrv) sections = NULL;
+
+	g_return_val_if_fail(value != NULL, FALSE);
+
+	/* sanity check */
+	sections = g_strsplit(value, ":", -1);
+	if (g_strv_length(sections) != 2) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "quirk key not supported, expected k1:v1[,k2:v2][,k3:]");
+		return FALSE;
+	}
+
+	/* allow empty string to unset quirk */
+	if (g_strcmp0(sections[1], "") != 0)
+		fu_device_inhibit(self, sections[0], sections[1]);
+	else
+		fu_device_uninhibit(self, sections[0]);
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GError **error)
 {
 	FuDevicePrivate *priv = GET_PRIVATE(self);
@@ -1649,10 +1728,11 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_INHIBIT) == 0) {
-		if (value != NULL)
-			fu_device_inhibit(self, "quirk", value);
-		else
-			fu_device_uninhibit(self, "quirk");
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++) {
+			if (!fu_device_set_quirk_inhibit_section(self, sections[i], error))
+				return FALSE;
+		}
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_GTYPE) == 0) {
@@ -2568,6 +2648,7 @@ static void
 fu_device_ensure_inhibits(FuDevice *self)
 {
 	FuDevicePrivate *priv = GET_PRIVATE(self);
+	FwupdDeviceProblem problems = FWUPD_DEVICE_PROBLEM_NONE;
 	guint nr_inhibits = g_hash_table_size(priv->inhibits);
 
 	/* disable */
@@ -2591,6 +2672,7 @@ fu_device_ensure_inhibits(FuDevice *self)
 		for (GList *l = values; l != NULL; l = l->next) {
 			FuDeviceInhibit *inhibit = (FuDeviceInhibit *)l->data;
 			g_ptr_array_add(reasons, inhibit->reason);
+			problems |= inhibit->problem;
 		}
 		reasons_str = fu_common_strjoin_array(", ", reasons);
 		fu_device_set_update_error(self, reasons_str);
@@ -2602,9 +2684,96 @@ fu_device_ensure_inhibits(FuDevice *self)
 		fu_device_set_update_error(self, NULL);
 	}
 
+	/* sync with baseclass */
+	fwupd_device_set_problems(FWUPD_DEVICE(self), problems);
+
 	/* enable */
 	if (priv->notify_flags_handler_id != 0)
 		g_signal_handler_unblock(self, priv->notify_flags_handler_id);
+}
+
+static gchar *
+fu_device_problem_to_inhibit_reason(FuDevice *self, guint64 device_problem)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	if (device_problem == FWUPD_DEVICE_PROBLEM_UNREACHABLE)
+		return g_strdup("Device is unreachable, or out of wireless range");
+	if (device_problem == FWUPD_DEVICE_PROBLEM_UPDATE_PENDING)
+		return g_strdup("Device is waiting for the update to be applied");
+	if (device_problem == FWUPD_DEVICE_PROBLEM_REQUIRE_AC_POWER)
+		return g_strdup("Device requires AC power to be connected");
+	if (device_problem == FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED)
+		return g_strdup("Device cannot be used while the lid is closed");
+	if (device_problem == FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW) {
+		if (priv->ctx == NULL)
+			return g_strdup("System power is too low to perform the update");
+		return g_strdup_printf(
+		    "System power is too low to perform the update (%u%%, requires %u%%)",
+		    fu_context_get_battery_level(priv->ctx),
+		    fu_context_get_battery_threshold(priv->ctx));
+	}
+	if (device_problem == FWUPD_DEVICE_PROBLEM_POWER_TOO_LOW) {
+		if (fu_device_get_battery_level(self) == FWUPD_BATTERY_LEVEL_INVALID ||
+		    fu_device_get_battery_threshold(self) == FWUPD_BATTERY_LEVEL_INVALID) {
+			return g_strdup_printf("Device battery power is too low");
+		}
+		return g_strdup_printf("Device battery power is too low (%u%%, requires %u%%)",
+				       fu_device_get_battery_level(self),
+				       fu_device_get_battery_threshold(self));
+	}
+	return NULL;
+}
+
+static void
+fu_device_inhibit_full(FuDevice *self,
+		       FwupdDeviceProblem problem,
+		       const gchar *inhibit_id,
+		       const gchar *reason)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	FuDeviceInhibit *inhibit;
+
+	g_return_if_fail(FU_IS_DEVICE(self));
+
+	/* lazy create as most devices will not need this */
+	if (priv->inhibits == NULL) {
+		priv->inhibits = g_hash_table_new_full(g_str_hash,
+						       g_str_equal,
+						       NULL,
+						       (GDestroyNotify)fu_device_inhibit_free);
+	}
+
+	/* can fallback */
+	if (inhibit_id == NULL)
+		inhibit_id = fwupd_device_problem_to_string(problem);
+
+	/* already exists */
+	inhibit = g_hash_table_lookup(priv->inhibits, inhibit_id);
+	if (inhibit != NULL)
+		return;
+
+	/* create new */
+	inhibit = g_new0(FuDeviceInhibit, 1);
+	inhibit->problem = problem;
+	inhibit->inhibit_id = g_strdup(inhibit_id);
+	if (reason != NULL) {
+		inhibit->reason = g_strdup(reason);
+	} else {
+		inhibit->reason = fu_device_problem_to_inhibit_reason(self, problem);
+	}
+	g_hash_table_insert(priv->inhibits, inhibit->inhibit_id, inhibit);
+
+	/* refresh */
+	fu_device_ensure_inhibits(self);
+
+	/* propagate to children */
+	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_INHIBIT_CHILDREN)) {
+		GPtrArray *children = fu_device_get_children(self);
+		for (guint i = 0; i < children->len; i++) {
+			FuDevice *child = g_ptr_array_index(children, i);
+			fu_device_inhibit(child, inhibit_id, reason);
+		}
+	}
 }
 
 /**
@@ -2624,42 +2793,9 @@ fu_device_ensure_inhibits(FuDevice *self)
 void
 fu_device_inhibit(FuDevice *self, const gchar *inhibit_id, const gchar *reason)
 {
-	FuDevicePrivate *priv = GET_PRIVATE(self);
-	FuDeviceInhibit *inhibit;
-
 	g_return_if_fail(FU_IS_DEVICE(self));
 	g_return_if_fail(inhibit_id != NULL);
-
-	/* lazy create as most devices will not need this */
-	if (priv->inhibits == NULL) {
-		priv->inhibits = g_hash_table_new_full(g_str_hash,
-						       g_str_equal,
-						       NULL,
-						       (GDestroyNotify)fu_device_inhibit_free);
-	}
-
-	/* already exists */
-	inhibit = g_hash_table_lookup(priv->inhibits, inhibit_id);
-	if (inhibit != NULL)
-		return;
-
-	/* create new */
-	inhibit = g_new0(FuDeviceInhibit, 1);
-	inhibit->inhibit_id = g_strdup(inhibit_id);
-	inhibit->reason = g_strdup(reason);
-	g_hash_table_insert(priv->inhibits, inhibit->inhibit_id, inhibit);
-
-	/* refresh */
-	fu_device_ensure_inhibits(self);
-
-	/* propagate to children */
-	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_INHIBIT_CHILDREN)) {
-		GPtrArray *children = fu_device_get_children(self);
-		for (guint i = 0; i < children->len; i++) {
-			FuDevice *child = g_ptr_array_index(children, i);
-			fu_device_inhibit(child, inhibit_id, reason);
-		}
-	}
+	fu_device_inhibit_full(self, FWUPD_DEVICE_PROBLEM_NONE, inhibit_id, reason);
 }
 
 /**
@@ -2684,6 +2820,48 @@ fu_device_has_inhibit(FuDevice *self, const gchar *inhibit_id)
 	if (priv->inhibits == NULL)
 		return FALSE;
 	return g_hash_table_contains(priv->inhibits, inhibit_id);
+}
+
+/**
+ * fu_device_remove_problem:
+ * @self: a #FuDevice
+ * @problem: a #FwupdDeviceProblem, e.g. %FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW
+ *
+ * Allow the device from being updated if there are no other inhibitors,
+ * changing it from %FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN to %FWUPD_DEVICE_FLAG_UPDATABLE.
+ *
+ * If the device already has no inhibit with the @inhibit_id then the request
+ * is ignored.
+ *
+ * Since: 1.8.1
+ **/
+void
+fu_device_remove_problem(FuDevice *self, FwupdDeviceProblem problem)
+{
+	g_return_if_fail(FU_IS_DEVICE(self));
+	g_return_if_fail(problem != FWUPD_DEVICE_PROBLEM_UNKNOWN);
+	return fu_device_uninhibit(self, fwupd_device_problem_to_string(problem));
+}
+
+/**
+ * fu_device_add_problem:
+ * @self: a #FuDevice
+ * @problem: a #FwupdDeviceProblem, e.g. %FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW
+ *
+ * Prevent the device from being updated, changing it from %FWUPD_DEVICE_FLAG_UPDATABLE
+ * to %FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN if not already inhibited.
+ *
+ * If the device already has an inhibit with the same @problem then the request
+ * is ignored.
+ *
+ * Since: 1.8.1
+ **/
+void
+fu_device_add_problem(FuDevice *self, FwupdDeviceProblem problem)
+{
+	g_return_if_fail(FU_IS_DEVICE(self));
+	g_return_if_fail(problem != FWUPD_DEVICE_PROBLEM_UNKNOWN);
+	fu_device_inhibit_full(self, problem, NULL, NULL);
 }
 
 /**
@@ -3035,7 +3213,7 @@ fu_device_add_flag(FuDevice *self, FwupdDeviceFlags flag)
 
 	/* do not let devices be updated until back in range */
 	if (flag & FWUPD_DEVICE_FLAG_UNREACHABLE)
-		fu_device_inhibit(self, "unreachable", "Device is unreachable");
+		fu_device_add_problem(self, FWUPD_DEVICE_PROBLEM_UNREACHABLE);
 }
 
 typedef struct {
@@ -3099,10 +3277,30 @@ fu_device_register_private_flag(FuDevice *self, guint64 value, const gchar *valu
 	g_return_if_fail(value_str != NULL);
 
 	/* ensure exists */
-	if (priv->private_flag_items == NULL)
+	if (priv->private_flag_items == NULL) {
 		priv->private_flag_items = g_ptr_array_new_with_free_func(
 		    (GDestroyNotify)fu_device_private_flag_item_free);
+	}
 
+	/* sanity check */
+	item = fu_device_private_flag_item_find_by_val(self, value);
+	if (item != NULL) {
+		g_critical("already registered private %s flag with value: %s:0x%x",
+			   G_OBJECT_TYPE_NAME(self),
+			   value_str,
+			   (guint)value);
+		return;
+	}
+	item = fu_device_private_flag_item_find_by_str(self, value_str);
+	if (item != NULL) {
+		g_critical("already registered private %s flag with string: %s:0x%x",
+			   G_OBJECT_TYPE_NAME(self),
+			   value_str,
+			   (guint)value);
+		return;
+	}
+
+	/* add new */
 	item = g_new0(FuDevicePrivateFlagItem, 1);
 	item->value = value;
 	item->value_str = g_strdup(value_str);
@@ -3267,13 +3465,12 @@ fu_device_set_update_state(FuDevice *self, FwupdUpdateState update_state)
 static void
 fu_device_ensure_battery_inhibit(FuDevice *self)
 {
-	FuDevicePrivate *priv = GET_PRIVATE(self);
-	if (priv->battery_level == FU_BATTERY_VALUE_INVALID ||
-	    priv->battery_level >= fu_device_get_battery_threshold(self)) {
-		fu_device_uninhibit(self, "battery");
+	if (fu_device_get_battery_level(self) == FWUPD_BATTERY_LEVEL_INVALID ||
+	    fu_device_get_battery_level(self) >= fu_device_get_battery_threshold(self)) {
+		fu_device_remove_problem(self, FWUPD_DEVICE_PROBLEM_POWER_TOO_LOW);
 		return;
 	}
-	fu_device_inhibit(self, "battery", "Battery level is too low");
+	fu_device_add_problem(self, FWUPD_DEVICE_PROBLEM_POWER_TOO_LOW);
 }
 
 /**
@@ -3289,17 +3486,16 @@ fu_device_ensure_battery_inhibit(FuDevice *self)
 guint
 fu_device_get_battery_level(FuDevice *self)
 {
-	FuDevicePrivate *priv = GET_PRIVATE(self);
-	g_return_val_if_fail(FU_IS_DEVICE(self), FU_BATTERY_VALUE_INVALID);
+	g_return_val_if_fail(FU_IS_DEVICE(self), FWUPD_BATTERY_LEVEL_INVALID);
 
 	/* use the parent if the child is unset */
 	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_BATTERY) &&
-	    priv->battery_level == FU_BATTERY_VALUE_INVALID) {
+	    fu_device_get_battery_level(self) == FWUPD_BATTERY_LEVEL_INVALID) {
 		FuDevice *parent = fu_device_get_parent(self);
 		if (parent != NULL)
 			return fu_device_get_battery_level(parent);
 	}
-	return priv->battery_level;
+	return fwupd_device_get_battery_level(FWUPD_DEVICE(self));
 }
 
 /**
@@ -3307,7 +3503,7 @@ fu_device_get_battery_level(FuDevice *self)
  * @self: a #FuDevice
  * @battery_level: the percentage value
  *
- * Sets the battery level, or %FU_BATTERY_VALUE_INVALID.
+ * Sets the battery level, or %FWUPD_BATTERY_LEVEL_INVALID.
  *
  * Setting this allows fwupd to show a warning if the device change is too low
  * to perform the update.
@@ -3317,13 +3513,9 @@ fu_device_get_battery_level(FuDevice *self)
 void
 fu_device_set_battery_level(FuDevice *self, guint battery_level)
 {
-	FuDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_if_fail(FU_IS_DEVICE(self));
-	g_return_if_fail(battery_level <= FU_BATTERY_VALUE_INVALID);
-	if (priv->battery_level == battery_level)
-		return;
-	priv->battery_level = battery_level;
-	g_object_notify(G_OBJECT(self), "battery-level");
+	g_return_if_fail(battery_level <= FWUPD_BATTERY_LEVEL_INVALID);
+	fwupd_device_set_battery_level(FWUPD_DEVICE(self), battery_level);
 	fu_device_ensure_battery_inhibit(self);
 }
 
@@ -3344,22 +3536,16 @@ fu_device_set_battery_level(FuDevice *self, guint battery_level)
 guint
 fu_device_get_battery_threshold(FuDevice *self)
 {
-	FuDevicePrivate *priv = GET_PRIVATE(self);
-	g_return_val_if_fail(FU_IS_DEVICE(self), FU_BATTERY_VALUE_INVALID);
+	g_return_val_if_fail(FU_IS_DEVICE(self), FWUPD_BATTERY_LEVEL_INVALID);
 
 	/* use the parent if the child is unset */
 	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_BATTERY) &&
-	    priv->battery_threshold == FU_BATTERY_VALUE_INVALID) {
+	    fwupd_device_get_battery_threshold(FWUPD_DEVICE(self)) == FWUPD_BATTERY_LEVEL_INVALID) {
 		FuDevice *parent = fu_device_get_parent(self);
 		if (parent != NULL)
 			return fu_device_get_battery_threshold(parent);
 	}
-
-	/* default value */
-	if (priv->battery_threshold == FU_BATTERY_VALUE_INVALID)
-		return FU_DEVICE_DEFAULT_BATTERY_THRESHOLD;
-
-	return priv->battery_threshold;
+	return fwupd_device_get_battery_threshold(FWUPD_DEVICE(self));
 }
 
 /**
@@ -3367,7 +3553,7 @@ fu_device_get_battery_threshold(FuDevice *self)
  * @self: a #FuDevice
  * @battery_threshold: the percentage value
  *
- * Sets the battery level, or %FU_BATTERY_VALUE_INVALID for the default.
+ * Sets the battery level, or %FWUPD_BATTERY_LEVEL_INVALID for the default.
  *
  * Setting this allows fwupd to show a warning if the device change is too low
  * to perform the update.
@@ -3377,13 +3563,9 @@ fu_device_get_battery_threshold(FuDevice *self)
 void
 fu_device_set_battery_threshold(FuDevice *self, guint battery_threshold)
 {
-	FuDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_if_fail(FU_IS_DEVICE(self));
-	g_return_if_fail(battery_threshold <= FU_BATTERY_VALUE_INVALID);
-	if (priv->battery_threshold == battery_threshold)
-		return;
-	priv->battery_threshold = battery_threshold;
-	g_object_notify(G_OBJECT(self), "battery-threshold");
+	g_return_if_fail(battery_threshold <= FWUPD_BATTERY_LEVEL_INVALID);
+	fwupd_device_set_battery_threshold(FWUPD_DEVICE(self), battery_threshold);
 	fu_device_ensure_battery_inhibit(self);
 }
 
@@ -3429,13 +3611,6 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 		fu_common_string_append_ku(str, idt + 1, "RemoveDelay", priv->remove_delay);
 	if (priv->custom_flags != NULL)
 		fu_common_string_append_kv(str, idt + 1, "CustomFlags", priv->custom_flags);
-	if (priv->battery_level != FU_BATTERY_VALUE_INVALID)
-		fu_common_string_append_ku(str, idt + 1, "BatteryLevel", priv->battery_level);
-	if (priv->battery_threshold != FU_BATTERY_VALUE_INVALID)
-		fu_common_string_append_ku(str,
-					   idt + 1,
-					   "BatteryThreshold",
-					   priv->battery_threshold);
 	if (priv->firmware_gtype != G_TYPE_INVALID) {
 		fu_common_string_append_kv(str,
 					   idt + 1,
@@ -5177,38 +5352,6 @@ fu_device_class_init(FuDeviceClass *klass)
 	g_object_class_install_property(object_class, PROP_BACKEND_ID, pspec);
 
 	/**
-	 * FuDevice:battery-level:
-	 *
-	 * The device battery level in percent.
-	 *
-	 * Since: 1.5.8
-	 */
-	pspec = g_param_spec_uint("battery-level",
-				  NULL,
-				  NULL,
-				  0,
-				  FU_BATTERY_VALUE_INVALID,
-				  FU_BATTERY_VALUE_INVALID,
-				  G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
-	g_object_class_install_property(object_class, PROP_BATTERY_LEVEL, pspec);
-
-	/**
-	 * FuDevice:battery-threshold:
-	 *
-	 * The device battery threshold in percent.
-	 *
-	 * Since: 1.5.8
-	 */
-	pspec = g_param_spec_uint("battery-threshold",
-				  NULL,
-				  NULL,
-				  0,
-				  FU_BATTERY_VALUE_INVALID,
-				  FU_BATTERY_VALUE_INVALID,
-				  G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
-	g_object_class_install_property(object_class, PROP_BATTERY_THRESHOLD, pspec);
-
-	/**
 	 * FuDevice:context:
 	 *
 	 * The #FuContext to use.
@@ -5256,8 +5399,6 @@ fu_device_init(FuDevice *self)
 {
 	FuDevicePrivate *priv = GET_PRIVATE(self);
 	priv->order = G_MAXINT;
-	priv->battery_level = FU_BATTERY_VALUE_INVALID;
-	priv->battery_threshold = FU_BATTERY_VALUE_INVALID;
 	priv->parent_guids = g_ptr_array_new_with_free_func(g_free);
 	priv->possible_plugins = g_ptr_array_new_with_free_func(g_free);
 	priv->retry_recs = g_ptr_array_new_with_free_func(g_free);

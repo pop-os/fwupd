@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version : '1.8.0',
+  version : '1.8.1',
   license : 'LGPL-2.1+',
   meson_version : '>=0.60.0',
   default_options : ['warning_level=2', 'c_std=c99'],
@@ -183,12 +183,14 @@ if host_machine.system() == 'windows'
   datadir = get_option('datadir')
   installed_test_bindir = get_option('libexecdir')
   installed_test_datadir = get_option('datadir')
+  daemon_dir = get_option('libexecdir')
 else
   datadir = join_paths(prefix, get_option('datadir'))
   sysconfdir = join_paths(prefix, get_option('sysconfdir'))
   localstatedir = join_paths(prefix, get_option('localstatedir'))
   installed_test_bindir = join_paths(libexecdir, 'installed-tests', meson.project_name())
   installed_test_datadir = join_paths(datadir, 'installed-tests', meson.project_name())
+  daemon_dir = join_paths(libexecdir, 'fwupd')
 endif
 mandir = join_paths(prefix, get_option('mandir'))
 localedir = join_paths(prefix, get_option('localedir'))
@@ -227,7 +229,10 @@ if sqlite.found()
 endif
 libarchive = dependency('libarchive', required: get_option('libarchive'))
 if libarchive.found()
-    conf.set('HAVE_LIBARCHIVE', '1')
+  conf.set('HAVE_LIBARCHIVE', '1')
+  if cc.has_header_symbol('archive.h', 'archive_write_add_filter_zstd')
+    conf.set('HAVE_LIBARCHIVE_WRITE_ADD_FILTER_ZSTD', '1')
+  endif
 endif
 endif
 libjcat = dependency('jcat', version : '>= 0.1.4', fallback : ['libjcat', 'libjcat_dep'])
@@ -505,7 +510,7 @@ conf.set_quoted('FWUPD_PLUGINDIR', plugin_dir)
 endif
 
 # sanity check, otherwise there is not point building
-if host_machine.system() == 'windows' and not gusb.found()
+if build_standalone and host_machine.system() == 'windows' and not gusb.found()
   error('gusb feature is required for Windows build')
 endif
 
@@ -544,6 +549,14 @@ elif get_option('docs') == 'docgen'
   gidocgen = find_program('gi-docgen', required: introspection)
 endif
 
+# using "meson configure -Db_sanitize=address,undefined" is super useful in finding corruption,
+# but it does not work with our GMainContext-abuse tests...
+if get_option('b_sanitize').contains('address')
+  run_sanitize_unsafe_tests = false
+else
+  run_sanitize_unsafe_tests = true
+endif
+
 subdir('libfwupd')
 if polkit.found()
   subdir('policy')
@@ -561,14 +574,4 @@ subdir('docs')
 
 if build_daemon and libsystemd.found()
   meson.add_install_script('meson_post_install.sh', systemdunitdir)
-endif
-
-makensis = find_program('makensis', required : host_machine.system() == 'windows')
-if makensis.found()
-  run_target(
-    'makensis',
-    command: [
-      makensis,
-      join_paths(meson.project_source_root(), 'contrib', 'setup-win32.nsi'),
-  ])
 endif

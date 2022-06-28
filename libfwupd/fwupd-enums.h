@@ -74,6 +74,7 @@ typedef enum {
  * @FWUPD_FEATURE_FLAG_REQUESTS:		Can show interactive requests
  * @FWUPD_FEATURE_FLAG_FDE_WARNING:		Can warn about full disk encryption
  * @FWUPD_FEATURE_FLAG_COMMUNITY_TEXT:		Can show information about community supported
+ * @FWUPD_FEATURE_FLAG_SHOW_PROBLEMS:		Can show problems when getting the update list
  *
  * The flags to the feature capabilities of the front-end client.
  **/
@@ -86,6 +87,7 @@ typedef enum {
 	FWUPD_FEATURE_FLAG_REQUESTS = 1 << 4,	    /* Since: 1.6.2 */
 	FWUPD_FEATURE_FLAG_FDE_WARNING = 1 << 5,    /* Since: 1.7.1 */
 	FWUPD_FEATURE_FLAG_COMMUNITY_TEXT = 1 << 6, /* Since: 1.7.5 */
+	FWUPD_FEATURE_FLAG_SHOW_PROBLEMS = 1 << 7,  /* Since: 1.8.1 */
 	/*< private >*/
 	FWUPD_FEATURE_FLAG_LAST
 } FwupdFeatureFlags;
@@ -540,6 +542,80 @@ typedef enum {
 typedef guint64 FwupdDeviceFlags;
 
 /**
+ * FWUPD_DEVICE_PROBLEM_NONE:
+ *
+ * No device problems detected.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_NONE (0u)
+/**
+ * FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW:
+ *
+ * The system power is too low to perform the update.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW (1u << 0)
+/**
+ * FWUPD_DEVICE_PROBLEM_UNREACHABLE:
+ *
+ * The device is unreachable, or out of wireless range.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_UNREACHABLE (1u << 1)
+/**
+ * FWUPD_DEVICE_PROBLEM_POWER_TOO_LOW:
+ *
+ * The device battery power is too low.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_POWER_TOO_LOW (1u << 2)
+/**
+ * FWUPD_DEVICE_PROBLEM_UPDATE_PENDING:
+ *
+ * The device is waiting for the update to be applied.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_UPDATE_PENDING (1u << 3)
+/**
+ * FWUPD_DEVICE_PROBLEM_REQUIRE_AC_POWER:
+ *
+ * The device requires AC power to be connected.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_REQUIRE_AC_POWER (1u << 4)
+/**
+ * FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED:
+ *
+ * The device cannot be used while the laptop lid is closed.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED (1u << 5)
+/**
+ * FWUPD_DEVICE_PROBLEM_UNKNOWN:
+ *
+ * This problem is not defined, this typically will happen from mismatched
+ * fwupd library and clients.
+ *
+ * Since 1.8.1
+ */
+#define FWUPD_DEVICE_PROBLEM_UNKNOWN G_MAXUINT64
+/**
+ * FwupdDeviceProblem:
+ *
+ * Problems are reasons why the device is not updatable.
+ *
+ * All problems have to be fixable by the user, rather than the plugin author.
+ */
+typedef guint64 FwupdDeviceProblem;
+
+/**
  * FWUPD_RELEASE_FLAG_NONE:
  *
  * No flags are set.
@@ -864,7 +940,7 @@ typedef enum {
  * @FWUPD_KEYRING_KIND_PKCS7:			Verification using PKCS7
  * @FWUPD_KEYRING_KIND_JCAT:			Verification using Jcat
  *
- * The update state.
+ * Type of keyring used on a remote.
  **/
 typedef enum {
 	FWUPD_KEYRING_KIND_UNKNOWN, /* Since: 0.9.7 */
@@ -915,6 +991,14 @@ typedef enum {
 	FWUPD_VERSION_FORMAT_LAST
 } FwupdVersionFormat;
 
+/**
+ * FWUPD_BATTERY_LEVEL_INVALID:
+ *
+ * This value signifies the battery level is either unset, or the value cannot
+ * be discovered.
+ */
+#define FWUPD_BATTERY_LEVEL_INVALID 101
+
 const gchar *
 fwupd_status_to_string(FwupdStatus status);
 FwupdStatus
@@ -923,6 +1007,10 @@ const gchar *
 fwupd_device_flag_to_string(FwupdDeviceFlags device_flag);
 FwupdDeviceFlags
 fwupd_device_flag_from_string(const gchar *device_flag);
+const gchar *
+fwupd_device_problem_to_string(FwupdDeviceProblem device_problem);
+FwupdDeviceProblem
+fwupd_device_problem_from_string(const gchar *device_problem);
 const gchar *
 fwupd_plugin_flag_to_string(FwupdPluginFlags plugin_flag);
 FwupdPluginFlags

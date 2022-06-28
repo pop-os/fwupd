@@ -34,6 +34,7 @@ typedef struct {
 	guint64 created;
 	guint64 modified;
 	guint64 flags;
+	guint64 problems;
 	GPtrArray *guids;
 	GPtrArray *vendor_ids;
 	GPtrArray *protocols;
@@ -61,6 +62,8 @@ typedef struct {
 	GPtrArray *checksums;
 	GPtrArray *children;
 	guint32 flashes_left;
+	guint32 battery_level;
+	guint32 battery_threshold;
 	guint32 install_duration;
 	FwupdUpdateState update_state;
 	gchar *update_error;
@@ -82,11 +85,16 @@ enum {
 	PROP_UPDATE_MESSAGE,
 	PROP_UPDATE_ERROR,
 	PROP_UPDATE_IMAGE,
+	PROP_BATTERY_LEVEL,
+	PROP_BATTERY_THRESHOLD,
+	PROP_PROBLEMS,
 	PROP_LAST
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE(FwupdDevice, fwupd_device, G_TYPE_OBJECT)
 #define GET_PRIVATE(o) (fwupd_device_get_instance_private(o))
+
+#define FWUPD_BATTERY_THRESHOLD_DEFAULT 10 /* % */
 
 /**
  * fwupd_device_get_checksums:
@@ -1260,6 +1268,104 @@ fwupd_device_set_flashes_left(FwupdDevice *self, guint32 flashes_left)
 }
 
 /**
+ * fwupd_device_get_battery_level:
+ * @self: a #FwupdDevice
+ *
+ * Returns the battery level.
+ *
+ * Returns: value in percent
+ *
+ * Since: 1.8.1
+ **/
+guint32
+fwupd_device_get_battery_level(FwupdDevice *self)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FWUPD_IS_DEVICE(self), FWUPD_BATTERY_LEVEL_INVALID);
+	return priv->battery_level;
+}
+
+/**
+ * fwupd_device_set_battery_level:
+ * @self: a #FwupdDevice
+ * @battery_level: the percentage value
+ *
+ * Sets the battery level, or %FWUPD_BATTERY_LEVEL_INVALID.
+ *
+ * Setting this allows fwupd to show a warning if the device change is too low
+ * to perform the update.
+ *
+ * Since: 1.8.1
+ **/
+void
+fwupd_device_set_battery_level(FwupdDevice *self, guint32 battery_level)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+
+	g_return_if_fail(FWUPD_IS_DEVICE(self));
+	g_return_if_fail(battery_level <= FWUPD_BATTERY_LEVEL_INVALID);
+
+	if (priv->battery_level == battery_level)
+		return;
+	priv->battery_level = battery_level;
+	g_object_notify(G_OBJECT(self), "battery-level");
+}
+
+/**
+ * fwupd_device_get_battery_threshold:
+ * @self: a #FwupdDevice
+ *
+ * Returns the battery threshold under which a firmware update cannot be
+ * performed.
+ *
+ * If fwupd_device_set_battery_threshold() has not been used, a default value is
+ * used instead.
+ *
+ * Returns: value in percent
+ *
+ * Since: 1.8.1
+ **/
+guint32
+fwupd_device_get_battery_threshold(FwupdDevice *self)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+
+	g_return_val_if_fail(FWUPD_IS_DEVICE(self), FWUPD_BATTERY_LEVEL_INVALID);
+
+	/* default value */
+	if (priv->battery_threshold == FWUPD_BATTERY_LEVEL_INVALID)
+		return FWUPD_BATTERY_THRESHOLD_DEFAULT;
+
+	return priv->battery_threshold;
+}
+
+/**
+ * fwupd_device_set_battery_threshold:
+ * @self: a #FwupdDevice
+ * @battery_threshold: the percentage value
+ *
+ * Sets the battery level, or %FWUPD_BATTERY_LEVEL_INVALID for the default.
+ *
+ * Setting this allows fwupd to show a warning if the device change is too low
+ * to perform the update.
+ *
+ * Since: 1.8.1
+ **/
+void
+fwupd_device_set_battery_threshold(FwupdDevice *self, guint32 battery_threshold)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+
+	g_return_if_fail(FWUPD_IS_DEVICE(self));
+	g_return_if_fail(battery_threshold <= FWUPD_BATTERY_LEVEL_INVALID);
+
+	if (priv->battery_threshold == battery_threshold)
+		return;
+	priv->battery_threshold = battery_threshold;
+	g_object_notify(G_OBJECT(self), "battery-threshold");
+}
+
+/**
  * fwupd_device_get_install_duration:
  * @self: a #FwupdDevice
  *
@@ -1559,6 +1665,107 @@ fwupd_device_has_flag(FwupdDevice *self, FwupdDeviceFlags flag)
 }
 
 /**
+ * fwupd_device_get_problems:
+ * @self: a #FwupdDevice
+ *
+ * Gets device problems.
+ *
+ * Returns: device problems, or 0 if unset
+ *
+ * Since: 1.8.1
+ **/
+guint64
+fwupd_device_get_problems(FwupdDevice *self)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FWUPD_IS_DEVICE(self), 0);
+	return priv->problems;
+}
+
+/**
+ * fwupd_device_set_problems:
+ * @self: a #FwupdDevice
+ * @problems: device problems, e.g. %FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW
+ *
+ * Sets device problems.
+ *
+ * Since: 1.8.1
+ **/
+void
+fwupd_device_set_problems(FwupdDevice *self, guint64 problems)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FWUPD_IS_DEVICE(self));
+	if (priv->problems == problems)
+		return;
+	priv->problems = problems;
+	g_object_notify(G_OBJECT(self), "problems");
+}
+
+/**
+ * fwupd_device_add_problem:
+ * @self: a #FwupdDevice
+ * @problem: the #FwupdDeviceProblem, e.g. #FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW
+ *
+ * Adds a specific device problem kind to the device.
+ *
+ * Since: 1.8.1
+ **/
+void
+fwupd_device_add_problem(FwupdDevice *self, FwupdDeviceProblem problem)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FWUPD_IS_DEVICE(self));
+	if (problem == FWUPD_DEVICE_PROBLEM_NONE)
+		return;
+	if (fwupd_device_has_problem(self, problem))
+		return;
+	priv->problems |= problem;
+	g_object_notify(G_OBJECT(self), "problems");
+}
+
+/**
+ * fwupd_device_remove_problem:
+ * @self: a #FwupdDevice
+ * @problem: the #FwupdDeviceProblem, e.g. #FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW
+ *
+ * Removes a specific device problem kind from the device.
+ *
+ * Since: 1.8.1
+ **/
+void
+fwupd_device_remove_problem(FwupdDevice *self, FwupdDeviceProblem problem)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FWUPD_IS_DEVICE(self));
+	if (problem == FWUPD_DEVICE_PROBLEM_NONE)
+		return;
+	if (!fwupd_device_has_problem(self, problem))
+		return;
+	priv->problems &= ~problem;
+	g_object_notify(G_OBJECT(self), "problems");
+}
+
+/**
+ * fwupd_device_has_problem:
+ * @self: a #FwupdDevice
+ * @problem: the #FwupdDeviceProblem
+ *
+ * Finds if the device has a specific device problem kind.
+ *
+ * Returns: %TRUE if the problem is set
+ *
+ * Since: 1.8.1
+ **/
+gboolean
+fwupd_device_has_problem(FwupdDevice *self, FwupdDeviceProblem problem)
+{
+	FwupdDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FWUPD_IS_DEVICE(self), FALSE);
+	return (priv->problems & problem) > 0;
+}
+
+/**
  * fwupd_device_get_created:
  * @self: a #FwupdDevice
  *
@@ -1647,6 +1854,7 @@ fwupd_device_incorporate(FwupdDevice *self, FwupdDevice *donor)
 	g_return_if_fail(FWUPD_IS_DEVICE(donor));
 
 	fwupd_device_add_flag(self, priv_donor->flags);
+	fwupd_device_add_problem(self, priv_donor->problems);
 	if (priv->created == 0)
 		fwupd_device_set_created(self, priv_donor->created);
 	if (priv->modified == 0)
@@ -1655,6 +1863,10 @@ fwupd_device_incorporate(FwupdDevice *self, FwupdDevice *donor)
 		fwupd_device_set_version_build_date(self, priv_donor->version_build_date);
 	if (priv->flashes_left == 0)
 		fwupd_device_set_flashes_left(self, priv_donor->flashes_left);
+	if (priv->battery_level == FWUPD_BATTERY_LEVEL_INVALID)
+		fwupd_device_set_battery_level(self, priv_donor->battery_level);
+	if (priv->battery_threshold == FWUPD_BATTERY_LEVEL_INVALID)
+		fwupd_device_set_battery_threshold(self, priv_donor->battery_threshold);
 	if (priv->install_duration == 0)
 		fwupd_device_set_install_duration(self, priv_donor->install_duration);
 	if (priv->update_state == FWUPD_UPDATE_STATE_UNKNOWN)
@@ -1814,6 +2026,12 @@ fwupd_device_to_variant_full(FwupdDevice *self, FwupdDeviceFlags flags)
 				      FWUPD_RESULT_KEY_FLAGS,
 				      g_variant_new_uint64(priv->flags));
 	}
+	if (priv->problems > 0) {
+		g_variant_builder_add(&builder,
+				      "{sv}",
+				      FWUPD_RESULT_KEY_PROBLEMS,
+				      g_variant_new_uint64(priv->problems));
+	}
 	if (priv->created > 0) {
 		g_variant_builder_add(&builder,
 				      "{sv}",
@@ -1933,6 +2151,18 @@ fwupd_device_to_variant_full(FwupdDevice *self, FwupdDeviceFlags flags)
 				      "{sv}",
 				      FWUPD_RESULT_KEY_FLASHES_LEFT,
 				      g_variant_new_uint32(priv->flashes_left));
+	}
+	if (priv->battery_level != FWUPD_BATTERY_LEVEL_INVALID) {
+		g_variant_builder_add(&builder,
+				      "{sv}",
+				      FWUPD_RESULT_KEY_BATTERY_LEVEL,
+				      g_variant_new_uint32(priv->battery_level));
+	}
+	if (priv->battery_threshold != FWUPD_BATTERY_LEVEL_INVALID) {
+		g_variant_builder_add(&builder,
+				      "{sv}",
+				      FWUPD_RESULT_KEY_BATTERY_THRESHOLD,
+				      g_variant_new_uint32(priv->battery_threshold));
 	}
 	if (priv->install_duration > 0) {
 		g_variant_builder_add(&builder,
@@ -2056,6 +2286,10 @@ fwupd_device_from_key_value(FwupdDevice *self, const gchar *key, GVariant *value
 		fwupd_device_set_flags(self, g_variant_get_uint64(value));
 		return;
 	}
+	if (g_strcmp0(key, FWUPD_RESULT_KEY_PROBLEMS) == 0) {
+		fwupd_device_set_problems(self, g_variant_get_uint64(value));
+		return;
+	}
 	if (g_strcmp0(key, FWUPD_RESULT_KEY_CREATED) == 0) {
 		fwupd_device_set_created(self, g_variant_get_uint64(value));
 		return;
@@ -2159,6 +2393,14 @@ fwupd_device_from_key_value(FwupdDevice *self, const gchar *key, GVariant *value
 		fwupd_device_set_flashes_left(self, g_variant_get_uint32(value));
 		return;
 	}
+	if (g_strcmp0(key, FWUPD_RESULT_KEY_BATTERY_LEVEL) == 0) {
+		fwupd_device_set_battery_level(self, g_variant_get_uint32(value));
+		return;
+	}
+	if (g_strcmp0(key, FWUPD_RESULT_KEY_BATTERY_THRESHOLD) == 0) {
+		fwupd_device_set_battery_threshold(self, g_variant_get_uint32(value));
+		return;
+	}
 	if (g_strcmp0(key, FWUPD_RESULT_KEY_INSTALL_DURATION) == 0) {
 		fwupd_device_set_install_duration(self, g_variant_get_uint32(value));
 		return;
@@ -2246,6 +2488,23 @@ fwupd_pad_kv_dfl(GString *str, const gchar *key, guint64 device_flags)
 }
 
 static void
+fwupd_device_pad_kv_problems(GString *str, const gchar *key, guint64 device_problems)
+{
+	g_autoptr(GString) tmp = g_string_new("");
+	for (guint i = 0; i < 64; i++) {
+		if ((device_problems & ((guint64)1 << i)) == 0)
+			continue;
+		g_string_append_printf(tmp, "%s|", fwupd_device_problem_to_string((guint64)1 << i));
+	}
+	if (tmp->len == 0) {
+		g_string_append(tmp, fwupd_device_problem_to_string(0));
+	} else {
+		g_string_truncate(tmp, tmp->len - 1);
+	}
+	fwupd_pad_kv_str(str, key, tmp->str);
+}
+
+static void
 fwupd_pad_kv_int(GString *str, const gchar *key, guint32 value)
 {
 	g_autofree gchar *tmp = NULL;
@@ -2299,9 +2558,9 @@ fwupd_device_set_update_state(FwupdDevice *self, FwupdUpdateState update_state)
  * fwupd_device_get_version_format:
  * @self: a #FwupdDevice
  *
- * Gets the update state.
+ * Gets the version format.
  *
- * Returns: the update state, or %FWUPD_VERSION_FORMAT_UNKNOWN if unset
+ * Returns: the version format, or %FWUPD_VERSION_FORMAT_UNKNOWN if unset
  *
  * Since: 1.2.9
  **/
@@ -2316,9 +2575,9 @@ fwupd_device_get_version_format(FwupdDevice *self)
 /**
  * fwupd_device_set_version_format:
  * @self: a #FwupdDevice
- * @version_format: the state, e.g. %FWUPD_VERSION_FORMAT_PENDING
+ * @version_format: the version format, e.g. %FWUPD_VERSION_FORMAT_NUMBER
  *
- * Sets the update state.
+ * Sets the version format.
  *
  * Since: 1.2.9
  **/
@@ -2703,6 +2962,18 @@ fwupd_device_to_json(FwupdDevice *self, JsonBuilder *builder)
 		}
 		json_builder_end_array(builder);
 	}
+	if (priv->problems != FWUPD_DEVICE_PROBLEM_NONE) {
+		json_builder_set_member_name(builder, FWUPD_RESULT_KEY_PROBLEMS);
+		json_builder_begin_array(builder);
+		for (guint i = 0; i < 64; i++) {
+			const gchar *tmp;
+			if ((priv->problems & ((guint64)1 << i)) == 0)
+				continue;
+			tmp = fwupd_device_problem_to_string((guint64)1 << i);
+			json_builder_add_string_value(builder, tmp);
+		}
+		json_builder_end_array(builder);
+	}
 	if (priv->checksums->len > 0) {
 		json_builder_set_member_name(builder, "Checksums");
 		json_builder_begin_array(builder);
@@ -2737,6 +3008,16 @@ fwupd_device_to_json(FwupdDevice *self, JsonBuilder *builder)
 		fwupd_common_json_add_int(builder,
 					  FWUPD_RESULT_KEY_FLASHES_LEFT,
 					  priv->flashes_left);
+	if (priv->battery_level != FWUPD_BATTERY_LEVEL_INVALID) {
+		fwupd_common_json_add_int(builder,
+					  FWUPD_RESULT_KEY_BATTERY_LEVEL,
+					  priv->battery_level);
+	}
+	if (priv->battery_threshold != FWUPD_BATTERY_LEVEL_INVALID) {
+		fwupd_common_json_add_int(builder,
+					  FWUPD_RESULT_KEY_BATTERY_THRESHOLD,
+					  priv->battery_threshold);
+	}
 	if (priv->version_raw > 0)
 		fwupd_common_json_add_int(builder, FWUPD_RESULT_KEY_VERSION_RAW, priv->version_raw);
 	if (priv->version_lowest_raw > 0)
@@ -2901,6 +3182,9 @@ fwupd_device_to_string(FwupdDevice *self)
 		fwupd_pad_kv_str(str, FWUPD_RESULT_KEY_ISSUES, tmp);
 	}
 	fwupd_pad_kv_dfl(str, FWUPD_RESULT_KEY_FLAGS, priv->flags);
+	if (priv->problems != FWUPD_DEVICE_PROBLEM_NONE) {
+		fwupd_device_pad_kv_problems(str, FWUPD_RESULT_KEY_PROBLEMS, priv->problems);
+	}
 	for (guint i = 0; i < priv->checksums->len; i++) {
 		const gchar *checksum = g_ptr_array_index(priv->checksums, i);
 		g_autofree gchar *checksum_display = fwupd_checksum_format_for_display(checksum);
@@ -2919,6 +3203,11 @@ fwupd_device_to_string(FwupdDevice *self)
 			 fwupd_version_format_to_string(priv->version_format));
 	if (priv->flashes_left < 2)
 		fwupd_pad_kv_int(str, FWUPD_RESULT_KEY_FLASHES_LEFT, priv->flashes_left);
+
+	if (priv->battery_level != FWUPD_BATTERY_LEVEL_INVALID)
+		fwupd_pad_kv_int(str, FWUPD_RESULT_KEY_BATTERY_LEVEL, priv->battery_level);
+	if (priv->battery_threshold != FWUPD_BATTERY_LEVEL_INVALID)
+		fwupd_pad_kv_int(str, FWUPD_RESULT_KEY_BATTERY_THRESHOLD, priv->battery_threshold);
 	if (priv->version_raw > 0) {
 		g_autofree gchar *tmp = fwupd_device_verstr_raw(priv->version_raw);
 		fwupd_pad_kv_str(str, FWUPD_RESULT_KEY_VERSION_RAW, tmp);
@@ -2974,6 +3263,9 @@ fwupd_device_get_property(GObject *object, guint prop_id, GValue *value, GParamS
 	case PROP_FLAGS:
 		g_value_set_uint64(value, priv->flags);
 		break;
+	case PROP_PROBLEMS:
+		g_value_set_uint64(value, priv->problems);
+		break;
 	case PROP_PROTOCOL:
 		g_value_set_string(value, priv->protocol);
 		break;
@@ -2995,6 +3287,12 @@ fwupd_device_get_property(GObject *object, guint prop_id, GValue *value, GParamS
 	case PROP_UPDATE_STATE:
 		g_value_set_uint(value, priv->update_state);
 		break;
+	case PROP_BATTERY_LEVEL:
+		g_value_set_uint(value, priv->battery_level);
+		break;
+	case PROP_BATTERY_THRESHOLD:
+		g_value_set_uint(value, priv->battery_threshold);
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -3011,6 +3309,9 @@ fwupd_device_set_property(GObject *object, guint prop_id, const GValue *value, G
 		break;
 	case PROP_FLAGS:
 		fwupd_device_set_flags(self, g_value_get_uint64(value));
+		break;
+	case PROP_PROBLEMS:
+		fwupd_device_set_problems(self, g_value_get_uint64(value));
 		break;
 	case PROP_PROTOCOL:
 		fwupd_device_add_protocol(self, g_value_get_string(value));
@@ -3032,6 +3333,12 @@ fwupd_device_set_property(GObject *object, guint prop_id, const GValue *value, G
 		break;
 	case PROP_UPDATE_STATE:
 		fwupd_device_set_update_state(self, g_value_get_uint(value));
+		break;
+	case PROP_BATTERY_LEVEL:
+		fwupd_device_set_battery_level(self, g_value_get_uint(value));
+		break;
+	case PROP_BATTERY_THRESHOLD:
+		fwupd_device_set_battery_threshold(self, g_value_get_uint(value));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -3080,6 +3387,22 @@ fwupd_device_class_init(FwupdDeviceClass *klass)
 				    FWUPD_DEVICE_FLAG_NONE,
 				    G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 	g_object_class_install_property(object_class, PROP_FLAGS, pspec);
+
+	/**
+	 * FwupdDevice:problems:
+	 *
+	 * The problems with the device that the user could fix, e.g. "lid open".
+	 *
+	 * Since: 1.8.1
+	 */
+	pspec = g_param_spec_uint64("problems",
+				    NULL,
+				    NULL,
+				    FWUPD_DEVICE_PROBLEM_NONE,
+				    FWUPD_DEVICE_PROBLEM_UNKNOWN,
+				    FWUPD_DEVICE_PROBLEM_NONE,
+				    G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_PROBLEMS, pspec);
 
 	/**
 	 * FwupdDevice:protocol:
@@ -3183,6 +3506,38 @@ fwupd_device_class_init(FwupdDeviceClass *klass)
 				    NULL,
 				    G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 	g_object_class_install_property(object_class, PROP_UPDATE_IMAGE, pspec);
+
+	/**
+	 * FwupdDevice:battery-level:
+	 *
+	 * The device battery level in percent.
+	 *
+	 * Since: 1.5.8
+	 */
+	pspec = g_param_spec_uint("battery-level",
+				  NULL,
+				  NULL,
+				  0,
+				  FWUPD_BATTERY_LEVEL_INVALID,
+				  FWUPD_BATTERY_LEVEL_INVALID,
+				  G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_BATTERY_LEVEL, pspec);
+
+	/**
+	 * FwupdDevice:battery-threshold:
+	 *
+	 * The device battery threshold in percent.
+	 *
+	 * Since: 1.5.8
+	 */
+	pspec = g_param_spec_uint("battery-threshold",
+				  NULL,
+				  NULL,
+				  0,
+				  FWUPD_BATTERY_LEVEL_INVALID,
+				  FWUPD_BATTERY_LEVEL_INVALID,
+				  G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_BATTERY_THRESHOLD, pspec);
 }
 
 static void
@@ -3198,6 +3553,8 @@ fwupd_device_init(FwupdDevice *self)
 	priv->issues = g_ptr_array_new_with_free_func(g_free);
 	priv->children = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	priv->releases = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	priv->battery_level = FWUPD_BATTERY_LEVEL_INVALID;
+	priv->battery_threshold = FWUPD_BATTERY_LEVEL_INVALID;
 }
 
 static void

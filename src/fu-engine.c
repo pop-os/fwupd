@@ -111,7 +111,6 @@ struct _FuEngine {
 	FuConfig *config;
 	FuRemoteList *remote_list;
 	FuDeviceList *device_list;
-	FwupdStatus status;
 	gboolean tainted;
 	gboolean only_trusted;
 	gboolean write_history;
@@ -194,30 +193,10 @@ fu_engine_get_context(FuEngine *self)
 	return self->ctx;
 }
 
-/**
- * fu_engine_get_status:
- * @self: a #FuEngine
- *
- * Gets the current engine status.
- *
- * Returns: a #FwupdStatus, e.g. %FWUPD_STATUS_DECOMPRESSING
- **/
-FwupdStatus
-fu_engine_get_status(FuEngine *self)
-{
-	g_return_val_if_fail(FU_IS_ENGINE(self), 0);
-	return self->status;
-}
-
 static void
 fu_engine_set_status(FuEngine *self, FwupdStatus status)
 {
-	if (self->status == status)
-		return;
-	self->status = status;
-
 	/* emit changed */
-	g_debug("Emitting PropertyChanged('Status'='%s')", fwupd_status_to_string(status));
 	g_signal_emit(self, signals[SIGNAL_STATUS_CHANGED], 0, status);
 }
 
@@ -262,6 +241,10 @@ fu_engine_watch_device(FuEngine *self, FuDevice *device)
 			 G_CALLBACK(fu_engine_generic_notify_cb),
 			 self);
 	g_signal_connect(FU_DEVICE(device),
+			 "notify::problems",
+			 G_CALLBACK(fu_engine_generic_notify_cb),
+			 self);
+	g_signal_connect(FU_DEVICE(device),
 			 "notify::update-message",
 			 G_CALLBACK(fu_engine_generic_notify_cb),
 			 self);
@@ -292,22 +275,21 @@ fu_engine_ensure_device_battery_inhibit(FuEngine *self, FuDevice *device)
 	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_REQUIRE_AC) &&
 	    (fu_context_get_battery_state(self->ctx) == FU_BATTERY_STATE_DISCHARGING ||
 	     fu_context_get_battery_state(self->ctx) == FU_BATTERY_STATE_EMPTY)) {
-		fu_device_inhibit(device,
-				  "battery-system",
-				  "Cannot install update when not on AC power");
-		return;
+		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_REQUIRE_AC_POWER);
+	} else {
+		fu_device_remove_problem(device, FWUPD_DEVICE_PROBLEM_REQUIRE_AC_POWER);
 	}
-	if (fu_context_get_battery_level(self->ctx) != FU_BATTERY_VALUE_INVALID &&
-	    fu_context_get_battery_threshold(self->ctx) != FU_BATTERY_VALUE_INVALID &&
+	if (fu_context_get_battery_level(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
+	    fu_context_get_battery_threshold(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
 	    fu_context_get_battery_level(self->ctx) < fu_context_get_battery_threshold(self->ctx)) {
 		g_autofree gchar *reason = NULL;
 		reason = g_strdup_printf(
 		    "Cannot install update when system battery is not at least %u%%",
 		    fu_context_get_battery_threshold(self->ctx));
-		fu_device_inhibit(device, "battery-system", reason);
-		return;
+		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW);
+	} else {
+		fu_device_remove_problem(device, FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW);
 	}
-	fu_device_uninhibit(device, "battery-system");
 }
 
 static void
@@ -315,12 +297,10 @@ fu_engine_ensure_device_lid_inhibit(FuEngine *self, FuDevice *device)
 {
 	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_NO_LID_CLOSED) &&
 	    fu_context_get_lid_state(self->ctx) == FU_LID_STATE_CLOSED) {
-		fu_device_inhibit(device,
-				  "lid-closed-system",
-				  "Cannot install update when the lid is closed");
+		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED);
 		return;
 	}
-	fu_device_uninhibit(device, "lid-closed-system");
+	fu_device_remove_problem(device, FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED);
 }
 
 static void
@@ -1691,6 +1671,7 @@ fu_engine_get_report_metadata_os_release(GHashTable *hash, GError **error)
 	return TRUE;
 }
 
+#ifdef __linux__
 static gchar *
 fu_engine_get_proc_cmdline(GError **error)
 {
@@ -1779,6 +1760,7 @@ fu_engine_get_proc_cmdline(GError **error)
 	}
 	return g_string_free(g_steal_pointer(&cmdline_safe), FALSE);
 }
+#endif
 
 static gboolean
 fu_engine_get_report_metadata_kernel_cmdline(GHashTable *hash, GError **error)
@@ -2583,8 +2565,8 @@ fu_engine_device_check_power(FuEngine *self,
 	}
 
 	/* not enough just in case */
-	if (fu_context_get_battery_level(self->ctx) != FU_BATTERY_VALUE_INVALID &&
-	    fu_context_get_battery_threshold(self->ctx) != FU_BATTERY_VALUE_INVALID &&
+	if (fu_context_get_battery_level(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
+	    fu_context_get_battery_threshold(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
 	    fu_context_get_battery_level(self->ctx) < fu_context_get_battery_threshold(self->ctx)) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -2685,6 +2667,7 @@ fu_engine_detach(FuEngine *self,
 	FuPlugin *plugin;
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
+	g_autoptr(FuDeviceLocker) poll_locker = NULL;
 
 	/* the device and plugin both may have changed */
 	device = fu_engine_get_device(self, device_id, error);
@@ -2692,6 +2675,12 @@ fu_engine_detach(FuEngine *self,
 		g_prefix_error(error, "failed to get device before update detach: ");
 		return FALSE;
 	}
+
+	/* pause the polling */
+	poll_locker = fu_device_poll_locker_new(device, error);
+	if (poll_locker == NULL)
+		return FALSE;
+
 	str = fu_device_to_string(device);
 	g_debug("detach -> %s", str);
 	plugin =
@@ -2731,6 +2720,7 @@ fu_engine_attach(FuEngine *self, const gchar *device_id, FuProgress *progress, G
 	FuPlugin *plugin;
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
+	g_autoptr(FuDeviceLocker) poll_locker = NULL;
 
 	/* the device and plugin both may have changed */
 	device = fu_engine_get_device(self, device_id, error);
@@ -2743,6 +2733,11 @@ fu_engine_attach(FuEngine *self, const gchar *device_id, FuProgress *progress, G
 	plugin =
 	    fu_plugin_list_find_by_name(self->plugin_list, fu_device_get_plugin(device), error);
 	if (plugin == NULL)
+		return FALSE;
+
+	/* pause the polling */
+	poll_locker = fu_device_poll_locker_new(device, error);
+	if (poll_locker == NULL)
 		return FALSE;
 
 	if (!fu_plugin_runner_attach(plugin, device, progress, error))
@@ -2841,6 +2836,7 @@ fu_engine_write_firmware(FuEngine *self,
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDevice) device_pending = NULL;
+	g_autoptr(FuDeviceLocker) poll_locker = NULL;
 
 	/* cancel the pending action */
 	if (!fu_engine_offline_invalidate(error))
@@ -2852,6 +2848,12 @@ fu_engine_write_firmware(FuEngine *self,
 		g_prefix_error(error, "failed to get device before update: ");
 		return FALSE;
 	}
+
+	/* pause the polling */
+	poll_locker = fu_device_poll_locker_new(device, error);
+	if (poll_locker == NULL)
+		return FALSE;
+
 	device_pending = fu_history_get_device_by_id(self->history, device_id, NULL);
 	str = fu_device_to_string(device);
 	g_debug("update -> %s", str);
@@ -2864,10 +2866,12 @@ fu_engine_write_firmware(FuEngine *self,
 		g_autoptr(GError) error_cleanup = NULL;
 
 		/* attack back into runtime then cleanup */
+		fu_progress_reset(progress);
 		if (!fu_plugin_runner_attach(plugin, device, progress, &error_attach)) {
 			g_warning("failed to attach device after failed update: %s",
 				  error_attach->message);
 		}
+		fu_progress_reset(progress);
 		if (!fu_engine_cleanup(self, device_id, progress, flags, &error_cleanup)) {
 			g_warning("failed to update-cleanup after failed update: %s",
 				  error_cleanup->message);
@@ -2914,6 +2918,12 @@ fu_engine_firmware_dump(FuEngine *self,
 			GError **error)
 {
 	g_autoptr(FuDeviceLocker) locker = NULL;
+	g_autoptr(FuDeviceLocker) poll_locker = NULL;
+
+	/* pause the polling */
+	poll_locker = fu_device_poll_locker_new(device, error);
+	if (poll_locker == NULL)
+		return NULL;
 
 	/* open, read, close */
 	locker = fu_device_locker_new(device, error);
@@ -2922,6 +2932,30 @@ fu_engine_firmware_dump(FuEngine *self,
 		return NULL;
 	}
 	return fu_device_dump_firmware(device, progress, error);
+}
+
+FuFirmware *
+fu_engine_firmware_read(FuEngine *self,
+			FuDevice *device,
+			FuProgress *progress,
+			FwupdInstallFlags flags,
+			GError **error)
+{
+	g_autoptr(FuDeviceLocker) locker = NULL;
+	g_autoptr(FuDeviceLocker) poll_locker = NULL;
+
+	/* pause the polling */
+	poll_locker = fu_device_poll_locker_new(device, error);
+	if (poll_locker == NULL)
+		return NULL;
+
+	/* open, read, close */
+	locker = fu_device_locker_new(device, error);
+	if (locker == NULL) {
+		g_prefix_error(error, "failed to open device for firmware read: ");
+		return NULL;
+	}
+	return fu_device_read_firmware(device, progress, error);
 }
 
 gboolean
@@ -3406,6 +3440,8 @@ fu_common_device_category_to_name(const gchar *cat)
 		return "Display";
 	if (g_strcmp0(cat, "X-BaseboardManagementController") == 0)
 		return "BMC";
+	if (g_strcmp0(cat, "X-UsbReceiver") == 0)
+		return "USB Receiver";
 	return NULL;
 }
 
@@ -4802,7 +4838,8 @@ fu_engine_get_releases_for_device(FuEngine *self,
 	}
 
 	/* only show devices that can be updated */
-	if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE) &&
+	if (!fu_engine_request_has_feature_flag(request, FWUPD_FEATURE_FLAG_SHOW_PROBLEMS) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -6127,15 +6164,13 @@ fu_engine_get_host_security_events(FuEngine *self, guint limit, GError **error)
 	return g_steal_pointer(&events);
 }
 
-gboolean
+static gboolean
 fu_engine_load_plugins(FuEngine *self, GError **error)
 {
 	const gchar *fn;
 	g_autoptr(GDir) dir = NULL;
 	g_autofree gchar *plugin_path = NULL;
 	g_autofree gchar *suffix = g_strdup_printf(".%s", G_MODULE_SUFFIX);
-	g_autoptr(GPtrArray) plugins_disabled = g_ptr_array_new_with_free_func(g_free);
-	g_autoptr(GPtrArray) plugins_disabled_rt = g_ptr_array_new_with_free_func(g_free);
 
 	/* search */
 	plugin_path = fu_common_get_path(FU_PATH_KIND_PLUGINDIR_PKG);
@@ -6147,40 +6182,56 @@ fu_engine_load_plugins(FuEngine *self, GError **error)
 		g_autofree gchar *name = NULL;
 		g_autoptr(FuPlugin) plugin = NULL;
 		g_autoptr(GError) error_local = NULL;
-		g_autoptr(GPtrArray) firmware_gtypes = NULL;
 
 		/* ignore non-plugins */
 		if (!g_str_has_suffix(fn, suffix))
 			continue;
-
-		/* is disabled */
 		name = fu_plugin_guess_name_from_fn(fn);
 		if (name == NULL)
 			continue;
-		if (fu_engine_is_plugin_name_disabled(self, name) ||
-		    !fu_engine_is_plugin_name_enabled(self, name)) {
-			g_ptr_array_add(plugins_disabled, g_steal_pointer(&name));
-			continue;
-		}
 
 		/* open module */
 		filename = g_build_filename(plugin_path, fn, NULL);
 		plugin = fu_plugin_new(self->ctx);
 		fu_plugin_set_name(plugin, name);
+		fu_engine_add_plugin(self, plugin);
 
-		/* if loaded from fu_engine_load() open the plugin */
-		firmware_gtypes = fu_context_get_firmware_gtype_ids(self->ctx);
-		if (firmware_gtypes->len > 0) {
-			if (!fu_plugin_open(plugin, filename, &error_local)) {
-				g_warning("cannot load: %s", error_local->message);
-				fu_engine_add_plugin(self, plugin);
-				continue;
-			}
+		/* open the plugin and call ->load() */
+		if (!fu_plugin_open(plugin, filename, &error_local)) {
+			g_warning("cannot load: %s", error_local->message);
+			continue;
 		}
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_engine_plugins_init(FuEngine *self, GError **error)
+{
+	GPtrArray *plugins = fu_plugin_list_get_all(self->plugin_list);
+	g_autoptr(GPtrArray) plugins_disabled = g_ptr_array_new_with_free_func(g_free);
+	g_autoptr(GPtrArray) plugins_disabled_rt = g_ptr_array_new_with_free_func(g_free);
+
+	for (guint i = 0; i < plugins->len; i++) {
+		FuPlugin *plugin = g_ptr_array_index(plugins, i);
+		const gchar *name = fu_plugin_get_name(plugin);
+
+		/* is disabled */
+		if (fu_engine_is_plugin_name_disabled(self, name) ||
+		    !fu_engine_is_plugin_name_enabled(self, name)) {
+			g_ptr_array_add(plugins_disabled, g_strdup(name));
+			fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_DISABLED);
+			continue;
+		}
+
+		/* init plugin, adding device and firmware GTypes */
+		fu_plugin_runner_init(plugin);
 
 		/* runtime disabled */
 		if (fu_plugin_has_flag(plugin, FWUPD_PLUGIN_FLAG_DISABLED)) {
-			g_ptr_array_add(plugins_disabled_rt, g_steal_pointer(&name));
+			g_ptr_array_add(plugins_disabled_rt, g_strdup(name));
 			continue;
 		}
 
@@ -6209,9 +6260,6 @@ fu_engine_load_plugins(FuEngine *self, GError **error)
 				 "config-changed",
 				 G_CALLBACK(fu_engine_plugin_config_changed_cb),
 				 self);
-
-		/* add */
-		fu_engine_add_plugin(self, plugin);
 	}
 
 	/* show list */
@@ -6335,6 +6383,14 @@ fu_engine_backend_device_added_cb(FuBackend *backend, FuDevice *device, FuEngine
 		if (plugin == NULL)
 			continue;
 		if (!fu_plugin_runner_backend_device_added(plugin, device, &error)) {
+#ifdef SUPPORTED_BUILD
+			/* sanity check */
+			if (error == NULL) {
+				g_critical("failed to add device %s: exec failed but no error set!",
+					   fu_device_get_backend_id(device));
+				continue;
+			}
+#endif
 			if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 				if (g_getenv("FWUPD_PROBE_VERBOSE") != NULL) {
 					g_debug("%s ignoring: %s",
@@ -6381,13 +6437,22 @@ fu_engine_backend_device_changed_cb(FuBackend *backend, FuDevice *device, FuEngi
 		FuPlugin *plugin_tmp = g_ptr_array_index(plugins, j);
 		g_autoptr(GError) error = NULL;
 		if (!fu_plugin_runner_backend_device_changed(plugin_tmp, device, &error)) {
+#ifdef SUPPORTED_BUILD
+			/* sanity check */
+			if (error == NULL) {
+				g_critical(
+				    "failed to change device %s: exec failed but no error set!",
+				    fu_device_get_backend_id(device));
+				continue;
+			}
+#endif
 			if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 				g_debug("%s ignoring: %s",
 					fu_plugin_get_name(plugin_tmp),
 					error->message);
 				continue;
 			}
-			g_warning("%s failed to change udev device %s: %s",
+			g_warning("%s failed to change device %s: %s",
 				  fu_plugin_get_name(plugin_tmp),
 				  fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device)),
 				  error->message);
@@ -6793,6 +6858,12 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 		fu_engine_add_blocked_firmware(self, csum);
 	}
 
+	/* load plugins early, as we have to call ->load() *before* building quirk silo */
+	if (!fu_engine_load_plugins(self, error)) {
+		g_prefix_error(error, "Failed to load plugins: ");
+		return FALSE;
+	}
+
 	/* set up idle exit */
 	if ((self->app_flags & FU_APP_FLAGS_NO_IDLE_SOURCES) == 0)
 		fu_idle_set_timeout(self->idle, fu_config_get_idle_timeout(self->config));
@@ -6873,9 +6944,9 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error)
 		return FALSE;
 	}
 
-	/* load plugin */
-	if (!fu_engine_load_plugins(self, error)) {
-		g_prefix_error(error, "Failed to load plugins: ");
+	/* init plugins, adding device and firmware GTypes */
+	if (!fu_engine_plugins_init(self, error)) {
+		g_prefix_error(error, "failed to init plugins: ");
 		return FALSE;
 	}
 
@@ -7107,7 +7178,6 @@ fu_engine_init(FuEngine *self)
 	g_autofree gchar *pkidir_md = NULL;
 	g_autofree gchar *sysconfdir = NULL;
 	self->percentage = 0;
-	self->status = FWUPD_STATUS_IDLE;
 	self->config = fu_config_new();
 	self->remote_list = fu_remote_list_new();
 	self->device_list = fu_device_list_new();
@@ -7221,7 +7291,12 @@ static void
 fu_engine_finalize(GObject *obj)
 {
 	FuEngine *self = FU_ENGINE(obj);
+	GPtrArray *plugins = fu_plugin_list_get_all(self->plugin_list);
 
+	for (guint i = 0; i < plugins->len; i++) {
+		FuPlugin *plugin = g_ptr_array_index(plugins, i);
+		g_signal_handlers_disconnect_by_data(plugin, self);
+	}
 	for (guint i = 0; i < self->local_monitors->len; i++) {
 		GFileMonitor *monitor = g_ptr_array_index(self->local_monitors, i);
 		g_file_monitor_cancel(monitor);

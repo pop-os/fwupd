@@ -114,6 +114,14 @@ fwupd_device_get_flashes_left(FwupdDevice *self);
 void
 fwupd_device_set_flashes_left(FwupdDevice *self, guint32 flashes_left);
 guint32
+fwupd_device_get_battery_level(FwupdDevice *self);
+void
+fwupd_device_set_battery_level(FwupdDevice *self, guint32 battery_level);
+guint32
+fwupd_device_get_battery_threshold(FwupdDevice *self);
+void
+fwupd_device_set_battery_threshold(FwupdDevice *self, guint32 battery_threshold);
+guint32
 fwupd_device_get_install_duration(FwupdDevice *self);
 void
 fwupd_device_set_install_duration(FwupdDevice *self, guint32 duration);
@@ -127,6 +135,16 @@ void
 fwupd_device_remove_flag(FwupdDevice *self, FwupdDeviceFlags flag);
 gboolean
 fwupd_device_has_flag(FwupdDevice *self, FwupdDeviceFlags flag);
+guint64
+fwupd_device_get_problems(FwupdDevice *self);
+void
+fwupd_device_set_problems(FwupdDevice *self, guint64 problems);
+void
+fwupd_device_add_problem(FwupdDevice *self, FwupdDeviceProblem problem);
+void
+fwupd_device_remove_problem(FwupdDevice *self, FwupdDeviceProblem problem);
+gboolean
+fwupd_device_has_problem(FwupdDevice *self, FwupdDeviceProblem problem);
 guint64
 fwupd_device_get_created(FwupdDevice *self);
 void

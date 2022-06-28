@@ -449,6 +449,25 @@ typedef guint64 FuDeviceInternalFlags;
  */
 #define FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED (1ull << 23)
 
+/**
+ * FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING:
+ *
+ * Pause polling when reading or writing to the device
+ *
+ * Since: 1.8.1
+ */
+#define FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING (1ull << 24)
+
+/**
+ * FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG:
+ *
+ * Only use the device removal delay when explicitly waiting for a replug, rather than every time
+ * the device is removed.
+ *
+ * Since: 1.8.1
+ */
+#define FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG (1ull << 25)
+
 /* accessors */
 gchar *
 fu_device_to_string(FuDevice *self);
@@ -526,6 +545,10 @@ void
 fu_device_inhibit(FuDevice *self, const gchar *inhibit_id, const gchar *reason);
 void
 fu_device_uninhibit(FuDevice *self, const gchar *inhibit_id);
+void
+fu_device_add_problem(FuDevice *self, FwupdDeviceProblem problem);
+void
+fu_device_remove_problem(FuDevice *self, FwupdDeviceProblem problem);
 gboolean
 fu_device_has_inhibit(FuDevice *self, const gchar *inhibit_id);
 const gchar *
@@ -720,3 +743,5 @@ gboolean
 fu_device_build_instance_id(FuDevice *self, GError **error, const gchar *subsystem, ...);
 gboolean
 fu_device_build_instance_id_quirk(FuDevice *self, GError **error, const gchar *subsystem, ...);
+FuDeviceLocker *
+fu_device_poll_locker_new(FuDevice *self, GError **error);

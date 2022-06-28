@@ -57,6 +57,20 @@ if bluez.allowed()
   daemon_src += 'fu-bluez-backend.c'
 endif
 
+# include event message file
+if host_machine.system() == 'windows'
+  windmc = find_program('windmc')
+  fwupd_rc = custom_target('fwupd-rc',
+    input : 'fwupd-windows.mc',
+    output : 'fwupd-windows.rc',
+    command : [
+      windmc, '@INPUT@', '--rcdir', meson.current_build_dir(),
+    ],
+  )
+  windows = import('windows')
+  daemon_src += windows.compile_resources(fwupd_rc)
+endif
+
 if build_daemon
 install_data(['org.freedesktop.fwupd.xml'],
   install_dir : join_paths(datadir, 'dbus-1', 'interfaces')
@@ -198,12 +212,21 @@ if get_option('man')
 endif
 
 if build_daemon
+
+# the StartServiceCtrlDispatcherA design is so different use a different source file
+if host_machine.system() == 'windows'
+  daemon_loader_src = 'fu-main-windows.c'
+else
+  daemon_loader_src = 'fu-main.c'
+endif
+
 executable(
   'fwupd',
   resources_src,
   fu_hash,
   sources : [
-    'fu-main.c',
+    daemon_loader_src,
+    'fu-daemon.c',
     daemon_src,
   ],
   include_directories : [
@@ -224,7 +247,7 @@ executable(
     '-DFU_OFFLINE_DESTDIR=""',
   ],
   install : true,
-  install_dir : join_paths(libexecdir, 'fwupd')
+  install_dir : daemon_dir
 )
 
 endif

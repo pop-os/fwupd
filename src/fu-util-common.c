@@ -168,6 +168,7 @@ fu_util_prompt_for_boolean(gboolean def)
 static gboolean
 fu_util_traverse_tree(GNode *n, gpointer data)
 {
+	FwupdClient *client = FWUPD_CLIENT(data);
 	guint idx = g_node_depth(n) - 1;
 	g_autofree gchar *tmp = NULL;
 	g_auto(GStrv) split = NULL;
@@ -175,7 +176,7 @@ fu_util_traverse_tree(GNode *n, gpointer data)
 	/* get split lines */
 	if (FWUPD_IS_DEVICE(n->data)) {
 		FwupdDevice *dev = FWUPD_DEVICE(n->data);
-		tmp = fu_util_device_to_string(dev, idx);
+		tmp = fu_util_device_to_string(client, dev, idx);
 	} else if (FWUPD_IS_REMOTE(n->data)) {
 		FwupdRemote *remote = FWUPD_REMOTE(n->data);
 		tmp = fu_util_remote_to_string(remote, idx);
@@ -187,7 +188,7 @@ fu_util_traverse_tree(GNode *n, gpointer data)
 
 	/* root node */
 	if (n->data == NULL && g_getenv("FWUPD_VERBOSE") == NULL) {
-		const gchar *str = data;
+		const gchar *str = fwupd_client_get_host_product(client);
 		g_print("%s\n│\n", str != NULL ? str : "○");
 		return FALSE;
 	}
@@ -239,9 +240,9 @@ fu_util_traverse_tree(GNode *n, gpointer data)
 }
 
 void
-fu_util_print_tree(GNode *n, gpointer data)
+fu_util_print_tree(FwupdClient *client, GNode *n)
 {
-	g_node_traverse(n, G_PRE_ORDER, G_TRAVERSE_ALL, -1, fu_util_traverse_tree, data);
+	g_node_traverse(n, G_PRE_ORDER, G_TRAVERSE_ALL, -1, fu_util_traverse_tree, client);
 }
 
 static gboolean
@@ -796,6 +797,11 @@ fu_util_release_get_name(FwupdRelease *release)
 			 * is the device that updates all the other firmware on the system */
 			return g_strdup_printf(_("%s BMC Update"), name);
 		}
+		if (g_strcmp0(cat, "X-UsbReceiver") == 0) {
+			/* TRANSLATORS: Receiver refers to a radio device, e.g. a tiny Bluetooth
+			 * device that stays in the USB port so the wireless peripheral works */
+			return g_strdup_printf(_("%s USB Receiver Update"), name);
+		}
 	}
 
 	/* TRANSLATORS: this is the fallback where we don't know if the release
@@ -1303,8 +1309,57 @@ fu_util_update_state_to_string(FwupdUpdateState update_state)
 	return NULL;
 }
 
+static gchar *
+fu_util_device_problem_to_string(FwupdClient *client, FwupdDevice *dev, FwupdDeviceProblem problem)
+{
+	if (problem == FWUPD_DEVICE_PROBLEM_NONE)
+		return NULL;
+	if (problem == FWUPD_DEVICE_PROBLEM_UNKNOWN)
+		return NULL;
+	if (problem == FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW) {
+		if (fwupd_client_get_battery_level(client) == FWUPD_BATTERY_LEVEL_INVALID ||
+		    fwupd_client_get_battery_threshold(client) == FWUPD_BATTERY_LEVEL_INVALID) {
+			/* TRANSLATORS: as in laptop battery power */
+			return g_strdup(_("System power is too low to perform the update"));
+		}
+		return g_strdup_printf(
+		    /* TRANSLATORS: as in laptop battery power */
+		    _("System power is too low to perform the update (%u%%, requires %u%%)"),
+		    fwupd_client_get_battery_level(client),
+		    fwupd_client_get_battery_threshold(client));
+	}
+	if (problem == FWUPD_DEVICE_PROBLEM_UNREACHABLE) {
+		/* TRANSLATORS: for example, a Bluetooth mouse that is in powersave mode */
+		return g_strdup(_("Device is unreachable, or out of wireless range"));
+	}
+	if (problem == FWUPD_DEVICE_PROBLEM_POWER_TOO_LOW) {
+		if (fwupd_device_get_battery_level(dev) == FWUPD_BATTERY_LEVEL_INVALID ||
+		    fwupd_device_get_battery_threshold(dev) == FWUPD_BATTERY_LEVEL_INVALID) {
+			/* TRANSLATORS: for example the batteries *inside* the Bluetooth mouse */
+			return g_strdup_printf(_("Device battery power is too low"));
+		}
+		/* TRANSLATORS: for example the batteries *inside* the Bluetooth mouse */
+		return g_strdup_printf(_("Device battery power is too low (%u%%, requires %u%%)"),
+				       fwupd_device_get_battery_level(dev),
+				       fwupd_device_get_battery_threshold(dev));
+	}
+	if (problem == FWUPD_DEVICE_PROBLEM_UPDATE_PENDING) {
+		/* TRANSLATORS: usually this is when we're waiting for a reboot */
+		return g_strdup(_("Device is waiting for the update to be applied"));
+	}
+	if (problem == FWUPD_DEVICE_PROBLEM_REQUIRE_AC_POWER) {
+		/* TRANSLATORS: as in, wired mains power for a laptop */
+		return g_strdup(_("Device requires AC power to be connected"));
+	}
+	if (problem == FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED) {
+		/* TRANSLATORS: lid means "laptop top cover" */
+		return g_strdup(_("Device cannot be used while the lid is closed"));
+	}
+	return NULL;
+}
+
 gchar *
-fu_util_device_to_string(FwupdDevice *dev, guint idt)
+fu_util_device_to_string(FwupdClient *client, FwupdDevice *dev, guint idt)
 {
 	FwupdUpdateState state;
 	GPtrArray *guids = fwupd_device_get_guids(dev);
@@ -1454,11 +1509,54 @@ fu_util_device_to_string(FwupdDevice *dev, guint idt)
 			}
 		}
 	}
-	tmp = fwupd_device_get_update_error(dev);
-	if (tmp != NULL) {
-		g_autofree gchar *color = fu_util_term_format(tmp, FU_UTIL_TERM_COLOR_RED);
-		/* TRANSLATORS: error message from last update attempt */
-		fu_common_string_append_kv(str, idt + 1, _("Update Error"), color);
+
+	/* battery, but only if we're not about to show the same info as an inhibit */
+	if (!fwupd_device_has_problem(dev, FWUPD_DEVICE_PROBLEM_POWER_TOO_LOW)) {
+		if (fwupd_device_get_battery_level(dev) != FWUPD_BATTERY_LEVEL_INVALID &&
+		    fwupd_device_get_battery_threshold(dev) != FWUPD_BATTERY_LEVEL_INVALID) {
+			g_autofree gchar *val = NULL;
+			/* TRANSLATORS: first percentage is current value, 2nd percentage is the
+			 * lowest limit the firmware update is allowed for the update to happen */
+			val = g_strdup_printf(_("%u%% (threshold %u%%)"),
+					      fwupd_device_get_battery_level(dev),
+					      fwupd_device_get_battery_threshold(dev));
+			/* TRANSLATORS: refers to the battery inside the peripheral device */
+			fu_common_string_append_kv(str, idt + 1, _("Battery"), val);
+		} else if (fwupd_device_get_battery_level(dev) != FWUPD_BATTERY_LEVEL_INVALID) {
+			g_autofree gchar *val = NULL;
+			val = g_strdup_printf("%u%%", fwupd_device_get_battery_level(dev));
+			/* TRANSLATORS: refers to the battery inside the peripheral device */
+			fu_common_string_append_kv(str, idt + 1, _("Battery"), val);
+		}
+	}
+
+	/* either show enumerated [translated] problems or the synthesized update error */
+	if (fwupd_device_get_problems(dev) == FWUPD_DEVICE_PROBLEM_NONE) {
+		tmp = fwupd_device_get_update_error(dev);
+		if (tmp != NULL) {
+			g_autofree gchar *color = fu_util_term_format(tmp, FU_UTIL_TERM_COLOR_RED);
+			/* TRANSLATORS: error message from last update attempt */
+			fu_common_string_append_kv(str, idt + 1, _("Update Error"), color);
+		}
+	} else {
+		/* TRANSLATORS: reasons the device is not updatable */
+		tmp = _("Problems");
+		for (guint i = 0; i < 64; i++) {
+			FwupdDeviceProblem problem = (guint64)1 << i;
+			g_autofree gchar *bullet = NULL;
+			g_autofree gchar *desc = NULL;
+			g_autofree gchar *color = NULL;
+
+			if (!fwupd_device_has_problem(dev, problem))
+				continue;
+			desc = fu_util_device_problem_to_string(client, dev, problem);
+			if (desc == NULL)
+				continue;
+			bullet = g_strdup_printf("• %s", desc);
+			color = fu_util_term_format(bullet, FU_UTIL_TERM_COLOR_RED);
+			fu_common_string_append_kv(str, idt + 1, tmp, color);
+			tmp = NULL;
+		}
 	}
 
 	/* modified date: for history devices */
