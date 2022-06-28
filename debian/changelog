@@ -1,6 +1,6 @@
-fwupd (1.8.1-1) UNRELEASED; urgency=medium
+fwupd (1.8.1-1) unstable; urgency=medium
 
-  * New upstream version (1.8.1)
+  * New upstream version (1.8.1) (LP: #1979963)
   * Drop patch for systemd refresh unit, upstream.
 
  -- Mario Limonciello <superm1@gmail.com>  Thu, 28 Apr 2022 23:56:33 -0500
