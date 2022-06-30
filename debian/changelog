@@ -1,3 +1,10 @@
+fwupd (1.8.1-2) unstable; urgency=medium
+
+  * Fix mistake in symbols file
+  * Fix gitignore
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 29 Jun 2022 20:01:43 -0500
+
 fwupd (1.8.1-1) unstable; urgency=medium
 
   * New upstream version (1.8.1) (LP: #1979963)
