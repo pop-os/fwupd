@@ -1,3 +1,9 @@
+fwupd (1.8.2-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.8.2)
+
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 11 Jul 2022 13:36:31 -0500
+
 fwupd (1.8.1-2) unstable; urgency=medium
 
   * Fix mistake in symbols file
