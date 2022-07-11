@@ -59,12 +59,12 @@ fu_bcm57xx_firmware_parse_header(FuBcm57xxFirmware *self, GBytes *fw, GError **e
 		return FALSE;
 
 	/* get address */
-	return fu_common_read_uint32_safe(buf,
-					  bufsz,
-					  BCM_NVRAM_HEADER_PHYS_ADDR,
-					  &self->phys_addr,
-					  G_BIG_ENDIAN,
-					  error);
+	return fu_memread_uint32_safe(buf,
+				      bufsz,
+				      BCM_NVRAM_HEADER_PHYS_ADDR,
+				      &self->phys_addr,
+				      G_BIG_ENDIAN,
+				      error);
 }
 
 static FuFirmware *
@@ -76,29 +76,29 @@ fu_bcm57xx_firmware_parse_info(FuBcm57xxFirmware *self, GBytes *fw, GError **err
 	g_autoptr(FuFirmware) img = fu_firmware_new_from_bytes(fw);
 
 	/* if the MAC is set non-zero this is an actual backup rather than a container */
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					BCM_NVRAM_INFO_MAC_ADDR0,
-					&mac_addr0,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    BCM_NVRAM_INFO_MAC_ADDR0,
+				    &mac_addr0,
+				    G_BIG_ENDIAN,
+				    error))
 		return NULL;
 	self->is_backup = mac_addr0 != 0x0 && mac_addr0 != 0xffffffff;
 
 	/* read vendor + model */
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					BCM_NVRAM_INFO_VENDOR,
-					&self->vendor,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    BCM_NVRAM_INFO_VENDOR,
+				    &self->vendor,
+				    G_BIG_ENDIAN,
+				    error))
 		return NULL;
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					BCM_NVRAM_INFO_DEVICE,
-					&self->model,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    BCM_NVRAM_INFO_DEVICE,
+				    &self->model,
+				    G_BIG_ENDIAN,
+				    error))
 		return NULL;
 
 	/* success */
@@ -121,19 +121,19 @@ fu_bcm57xx_firmware_parse_stage1(FuBcm57xxFirmware *self,
 	g_autoptr(FuFirmware) img = fu_bcm57xx_stage1_image_new();
 	g_autoptr(GBytes) blob = NULL;
 
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					BCM_NVRAM_HEADER_BASE + BCM_NVRAM_HEADER_SIZE_WRDS,
-					&stage1_wrds,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    BCM_NVRAM_HEADER_BASE + BCM_NVRAM_HEADER_SIZE_WRDS,
+				    &stage1_wrds,
+				    G_BIG_ENDIAN,
+				    error))
 		return NULL;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					BCM_NVRAM_HEADER_BASE + BCM_NVRAM_HEADER_OFFSET,
-					&stage1_off,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    BCM_NVRAM_HEADER_BASE + BCM_NVRAM_HEADER_OFFSET,
+				    &stage1_off,
+				    G_BIG_ENDIAN,
+				    error))
 		return NULL;
 	stage1_sz = (stage1_wrds * sizeof(guint32));
 	if (stage1_off != BCM_NVRAM_STAGE1_BASE) {
@@ -156,7 +156,7 @@ fu_bcm57xx_firmware_parse_stage1(FuBcm57xxFirmware *self,
 	}
 
 	/* verify CRC */
-	blob = fu_common_bytes_new_offset(fw, stage1_off, stage1_sz, error);
+	blob = fu_bytes_new_offset(fw, stage1_off, stage1_sz, error);
 	if (blob == NULL)
 		return NULL;
 	if (!fu_firmware_parse(img, blob, flags, error))
@@ -189,12 +189,12 @@ fu_bcm57xx_firmware_parse_stage2(FuBcm57xxFirmware *self,
 	stage2_off = BCM_NVRAM_STAGE1_BASE + stage1_sz;
 	if (!fu_bcm57xx_verify_magic(fw, stage2_off, error))
 		return NULL;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					stage2_off + sizeof(guint32),
-					&stage2_sz,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    stage2_off + sizeof(guint32),
+				    &stage2_sz,
+				    G_BIG_ENDIAN,
+				    error))
 		return NULL;
 	if (stage2_off + stage2_sz > bufsz) {
 		g_set_error(error,
@@ -207,7 +207,7 @@ fu_bcm57xx_firmware_parse_stage2(FuBcm57xxFirmware *self,
 	}
 
 	/* verify CRC */
-	blob = fu_common_bytes_new_offset(fw, stage2_off + 0x8, stage2_sz, error);
+	blob = fu_bytes_new_offset(fw, stage2_off + 0x8, stage2_sz, error);
 	if (blob == NULL)
 		return NULL;
 	if (!fu_firmware_parse(img, blob, flags, error))
@@ -237,26 +237,26 @@ fu_bcm57xx_firmware_parse_dict(FuBcm57xxFirmware *self,
 	g_autoptr(GBytes) blob = NULL;
 
 	/* header */
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					base + BCM_NVRAM_DIRECTORY_ADDR,
-					&dict_addr,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    base + BCM_NVRAM_DIRECTORY_ADDR,
+				    &dict_addr,
+				    G_BIG_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					base + BCM_NVRAM_DIRECTORY_SIZE_WRDS,
-					&dict_info,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    base + BCM_NVRAM_DIRECTORY_SIZE_WRDS,
+				    &dict_info,
+				    G_BIG_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					base + BCM_NVRAM_DIRECTORY_OFFSET,
-					&dict_off,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    base + BCM_NVRAM_DIRECTORY_OFFSET,
+				    &dict_off,
+				    G_BIG_ENDIAN,
+				    error))
 		return FALSE;
 
 	/* no dict stored */
@@ -290,7 +290,7 @@ fu_bcm57xx_firmware_parse_dict(FuBcm57xxFirmware *self,
 			    (guint)dict_off);
 		return FALSE;
 	}
-	blob = fu_common_bytes_new_offset(fw, dict_off, dict_sz, error);
+	blob = fu_bytes_new_offset(fw, dict_off, dict_sz, error);
 	if (blob == NULL)
 		return FALSE;
 	if (!fu_firmware_parse(img, blob, flags, error))
@@ -304,8 +304,7 @@ fu_bcm57xx_firmware_parse_dict(FuBcm57xxFirmware *self,
 static gboolean
 fu_bcm57xx_firmware_parse(FuFirmware *firmware,
 			  GBytes *fw,
-			  guint64 addr_start,
-			  guint64 addr_end,
+			  gsize offset,
 			  FwupdInstallFlags flags,
 			  GError **error)
 {
@@ -325,7 +324,7 @@ fu_bcm57xx_firmware_parse(FuFirmware *firmware,
 	g_autoptr(GBytes) blob_vpd = NULL;
 
 	/* try to autodetect the file type */
-	if (!fu_common_read_uint32_safe(buf, bufsz, 0x0, &magic, G_BIG_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, 0x0, &magic, G_BIG_ENDIAN, error))
 		return FALSE;
 
 	/* standalone APE */
@@ -363,8 +362,7 @@ fu_bcm57xx_firmware_parse(FuFirmware *firmware,
 	self->source_padchar = buf[bufsz - 1];
 
 	/* NVRAM header */
-	blob_header =
-	    fu_common_bytes_new_offset(fw, BCM_NVRAM_HEADER_BASE, BCM_NVRAM_HEADER_SZ, error);
+	blob_header = fu_bytes_new_offset(fw, BCM_NVRAM_HEADER_BASE, BCM_NVRAM_HEADER_SZ, error);
 	if (blob_header == NULL)
 		return FALSE;
 	if (!fu_bcm57xx_firmware_parse_header(self, blob_header, error)) {
@@ -373,7 +371,7 @@ fu_bcm57xx_firmware_parse(FuFirmware *firmware,
 	}
 
 	/* info */
-	blob_info = fu_common_bytes_new_offset(fw, BCM_NVRAM_INFO_BASE, BCM_NVRAM_INFO_SZ, error);
+	blob_info = fu_bytes_new_offset(fw, BCM_NVRAM_INFO_BASE, BCM_NVRAM_INFO_SZ, error);
 	if (blob_info == NULL)
 		return FALSE;
 	img_info = fu_bcm57xx_firmware_parse_info(self, blob_info, error);
@@ -385,7 +383,7 @@ fu_bcm57xx_firmware_parse(FuFirmware *firmware,
 	fu_firmware_add_image(firmware, img_info);
 
 	/* VPD */
-	blob_vpd = fu_common_bytes_new_offset(fw, BCM_NVRAM_VPD_BASE, BCM_NVRAM_VPD_SZ, error);
+	blob_vpd = fu_bytes_new_offset(fw, BCM_NVRAM_VPD_BASE, BCM_NVRAM_VPD_SZ, error);
 	if (blob_vpd == NULL)
 		return FALSE;
 	img_vpd = fu_firmware_new_from_bytes(blob_vpd);
@@ -394,8 +392,7 @@ fu_bcm57xx_firmware_parse(FuFirmware *firmware,
 	fu_firmware_add_image(firmware, img_vpd);
 
 	/* info2 */
-	blob_info2 =
-	    fu_common_bytes_new_offset(fw, BCM_NVRAM_INFO2_BASE, BCM_NVRAM_INFO2_SZ, error);
+	blob_info2 = fu_bytes_new_offset(fw, BCM_NVRAM_INFO2_BASE, BCM_NVRAM_INFO2_SZ, error);
 	if (blob_info2 == NULL)
 		return FALSE;
 	img_info2 = fu_firmware_new_from_bytes(blob_info2);
@@ -550,12 +547,8 @@ fu_bcm57xx_firmware_write(FuFirmware *firmware, GError **error)
 		GByteArray *tmp = g_byte_array_sized_new(BCM_NVRAM_INFO_SZ);
 		for (gsize i = 0; i < BCM_NVRAM_INFO_SZ; i++)
 			fu_byte_array_append_uint8(tmp, 0x0);
-		fu_common_write_uint16(tmp->data + BCM_NVRAM_INFO_VENDOR,
-				       self->vendor,
-				       G_BIG_ENDIAN);
-		fu_common_write_uint16(tmp->data + BCM_NVRAM_INFO_DEVICE,
-				       self->model,
-				       G_BIG_ENDIAN);
+		fu_memwrite_uint16(tmp->data + BCM_NVRAM_INFO_VENDOR, self->vendor, G_BIG_ENDIAN);
+		fu_memwrite_uint16(tmp->data + BCM_NVRAM_INFO_DEVICE, self->model, G_BIG_ENDIAN);
 		blob_info = g_byte_array_free_to_bytes(tmp);
 	}
 	fu_byte_array_append_bytes(buf, blob_info);

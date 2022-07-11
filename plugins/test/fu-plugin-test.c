@@ -24,14 +24,14 @@ fu_plugin_test_init(FuPlugin *plugin)
 static void
 fu_plugin_test_destroy(FuPlugin *plugin)
 {
-	// FuPluginData *data = fu_plugin_get_data (plugin);
+	// FuPluginData *priv = fu_plugin_get_data (plugin);
 	g_debug("destroy");
 }
 
 static gboolean
 fu_plugin_test_load_xml(FuPlugin *plugin, const gchar *xml, GError **error)
 {
-	FuPluginData *data = fu_plugin_get_data(plugin);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
 	g_autoptr(XbBuilder) builder = xb_builder_new();
 	g_autoptr(XbBuilderSource) source = xb_builder_source_new();
 	g_autoptr(XbNode) delay_decompress_ms = NULL;
@@ -50,20 +50,20 @@ fu_plugin_test_load_xml(FuPlugin *plugin, const gchar *xml, GError **error)
 	/* parse markup */
 	delay_decompress_ms = xb_silo_query_first(silo, "config/delay_decompress_ms", NULL);
 	if (delay_decompress_ms != NULL)
-		data->delay_decompress_ms = xb_node_get_text_as_uint(delay_decompress_ms);
+		priv->delay_decompress_ms = xb_node_get_text_as_uint(delay_decompress_ms);
 	delay_write_ms = xb_silo_query_first(silo, "config/delay_write_ms", NULL);
 	if (delay_write_ms != NULL)
-		data->delay_write_ms = xb_node_get_text_as_uint(delay_write_ms);
+		priv->delay_write_ms = xb_node_get_text_as_uint(delay_write_ms);
 	delay_verify_ms = xb_silo_query_first(silo, "config/delay_verify_ms", NULL);
 	if (delay_verify_ms != NULL)
-		data->delay_verify_ms = xb_node_get_text_as_uint(delay_verify_ms);
+		priv->delay_verify_ms = xb_node_get_text_as_uint(delay_verify_ms);
 
 	/* success */
 	return TRUE;
 }
 
 static gboolean
-fu_plugin_test_startup(FuPlugin *plugin, GError **error)
+fu_plugin_test_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	const gchar *xml = g_getenv("FWUPD_TEST_PLUGIN_XML");
 	if (xml != NULL) {
@@ -74,11 +74,11 @@ fu_plugin_test_startup(FuPlugin *plugin, GError **error)
 }
 
 static gboolean
-fu_plugin_test_coldplug(FuPlugin *plugin, GError **error)
+fu_plugin_test_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	FuContext *ctx = fu_plugin_get_context(plugin);
 	g_autoptr(FuDevice) device = NULL;
-	device = fu_device_new_with_context(ctx);
+	device = fu_device_new(ctx);
 	fu_device_set_id(device, "FakeDevice");
 	fu_device_add_guid(device, "b585990a-003e-5270-89d5-3705a17f9a43");
 	fu_device_set_name(device, "Integrated_Webcam(TM)");
@@ -111,7 +111,7 @@ fu_plugin_test_coldplug(FuPlugin *plugin, GError **error)
 		g_autoptr(FuDevice) child1 = NULL;
 		g_autoptr(FuDevice) child2 = NULL;
 
-		child1 = fu_device_new_with_context(ctx);
+		child1 = fu_device_new(ctx);
 		fu_device_add_vendor_id(child1, "USB:FFFF");
 		fu_device_add_protocol(child1, "com.acme");
 		fu_device_set_physical_id(child1, "fake");
@@ -125,7 +125,7 @@ fu_plugin_test_coldplug(FuPlugin *plugin, GError **error)
 		fu_device_add_flag(child1, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 		fu_plugin_device_add(plugin, child1);
 
-		child2 = fu_device_new_with_context(ctx);
+		child2 = fu_device_new(ctx);
 		fu_device_add_vendor_id(child2, "USB:FFFF");
 		fu_device_add_protocol(child2, "com.acme");
 		fu_device_set_physical_id(child2, "fake");
@@ -150,7 +150,11 @@ fu_plugin_test_device_registered(FuPlugin *plugin, FuDevice *device)
 }
 
 static gboolean
-fu_plugin_test_verify(FuPlugin *plugin, FuDevice *device, FuPluginVerifyFlags flags, GError **error)
+fu_plugin_test_verify(FuPlugin *plugin,
+		      FuDevice *device,
+		      FuProgress *progress,
+		      FuPluginVerifyFlags flags,
+		      GError **error)
 {
 	if (g_strcmp0(fu_device_get_version(device), "1.2.2") == 0) {
 		fu_device_add_checksum(device, "90d0ad436d21e0687998cd2127b2411135e1f730");
@@ -186,12 +190,17 @@ fu_plugin_test_get_version(GBytes *blob_fw)
 {
 	const gchar *str = g_bytes_get_data(blob_fw, NULL);
 	guint64 val = 0;
+	g_autoptr(GError) error_local = NULL;
+
 	if (str == NULL)
 		return NULL;
-	val = fu_common_strtoull(str);
+	if (!fu_strtoull(str, &val, 0, G_MAXUINT32, &error_local)) {
+		g_debug("invalid version specified: %s", error_local->message);
+		return NULL;
+	}
 	if (val == 0x0)
 		return NULL;
-	return fu_common_version_from_uint32(val, FWUPD_VERSION_FORMAT_TRIPLET);
+	return fu_version_from_uint32(val, FWUPD_VERSION_FORMAT_TRIPLET);
 }
 
 static gboolean
@@ -202,7 +211,7 @@ fu_plugin_test_write_firmware(FuPlugin *plugin,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
-	FuPluginData *data = fu_plugin_get_data(plugin);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
 	const gchar *test = g_getenv("FWUPD_PLUGIN_TEST");
 	gboolean requires_activation = g_strcmp0(test, "requires-activation") == 0;
 	gboolean requires_reboot = g_strcmp0(test, "requires-reboot") == 0;
@@ -214,19 +223,19 @@ fu_plugin_test_write_firmware(FuPlugin *plugin,
 		return FALSE;
 	}
 	fu_progress_set_status(progress, FWUPD_STATUS_DECOMPRESSING);
-	for (guint i = 0; i <= data->delay_decompress_ms; i++) {
+	for (guint i = 0; i <= priv->delay_decompress_ms; i++) {
 		g_usleep(1000);
-		fu_progress_set_percentage_full(progress, i, data->delay_decompress_ms);
+		fu_progress_set_percentage_full(progress, i, priv->delay_decompress_ms);
 	}
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
-	for (guint i = 0; i <= data->delay_write_ms; i++) {
+	for (guint i = 0; i <= priv->delay_write_ms; i++) {
 		g_usleep(1000);
-		fu_progress_set_percentage_full(progress, i, data->delay_write_ms);
+		fu_progress_set_percentage_full(progress, i, priv->delay_write_ms);
 	}
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_VERIFY);
-	for (guint i = 0; i <= data->delay_verify_ms; i++) {
+	for (guint i = 0; i <= priv->delay_verify_ms; i++) {
 		g_usleep(1000);
-		fu_progress_set_percentage_full(progress, i, data->delay_verify_ms);
+		fu_progress_set_percentage_full(progress, i, priv->delay_verify_ms);
 	}
 
 	/* composite test, upgrade composite devices */

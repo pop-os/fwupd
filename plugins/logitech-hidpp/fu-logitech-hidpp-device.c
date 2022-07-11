@@ -302,7 +302,7 @@ fu_logitech_hidpp_map_to_string(FuLogitechHidPpHidppMap *map, guint idt, GString
 	g_autofree gchar *tmp = g_strdup_printf("%s [0x%04x]",
 						fu_logitech_hidpp_feature_to_string(map->feature),
 						map->feature);
-	fu_common_string_append_kv(str, idt, title, tmp);
+	fu_string_append(str, idt, title, tmp);
 }
 
 static void
@@ -314,10 +314,10 @@ fu_logitech_hidpp_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUdevDevice->to_string */
 	FU_DEVICE_CLASS(fu_logitech_hidpp_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_ku(str, idt, "HidppVersion", priv->hidpp_version);
-	fu_common_string_append_ku(str, idt, "HidppPid", priv->hidpp_pid);
-	fu_common_string_append_kx(str, idt, "DeviceIdx", priv->device_idx);
-	fu_common_string_append_kv(str, idt, "ModelId", priv->model_id);
+	fu_string_append_ku(str, idt, "HidppVersion", priv->hidpp_version);
+	fu_string_append_ku(str, idt, "HidppPid", priv->hidpp_pid);
+	fu_string_append_kx(str, idt, "DeviceIdx", priv->device_idx);
+	fu_string_append(str, idt, "ModelId", priv->model_id);
 	for (guint i = 0; i < priv->feature_index->len; i++) {
 		FuLogitechHidPpHidppMap *map = g_ptr_array_index(priv->feature_index, i);
 		fu_logitech_hidpp_map_to_string(map, idt, str);
@@ -687,16 +687,6 @@ fu_logitech_hidpp_device_probe(FuDevice *device, GError **error)
 	FuLogitechHidPpDevice *self = FU_HIDPP_DEVICE(device);
 	FuLogitechHidPpDevicePrivate *priv = GET_PRIVATE(self);
 
-	/*
-	 * FuUdevDevice->probe except for paired devices. We don't want
-	 * paired devices to inherit the logical ids of the receiver.
-	 */
-	if (priv->device_idx == HIDPP_DEVICE_IDX_UNSET ||
-	    priv->device_idx == HIDPP_DEVICE_IDX_BLE) {
-		if (!FU_DEVICE_CLASS(fu_logitech_hidpp_device_parent_class)->probe(device, error))
-			return FALSE;
-	}
-
 	/* set the physical ID */
 	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error))
 		return FALSE;
@@ -716,7 +706,14 @@ fu_logitech_hidpp_device_probe(FuDevice *device, GError **error)
 		fu_device_set_logical_id(device, id_str->str);
 	}
 
-	return TRUE;
+	/* this is a non-standard extension */
+	fu_device_add_instance_u16(FU_DEVICE(self),
+				   "VID",
+				   fu_udev_device_get_vendor(FU_UDEV_DEVICE(device)));
+	fu_device_add_instance_u16(FU_DEVICE(self),
+				   "PID",
+				   fu_udev_device_get_model(FU_UDEV_DEVICE(device)));
+	return fu_device_build_instance_id(FU_DEVICE(self), error, "UFY", "VID", "PID", NULL);
 }
 
 static gboolean
@@ -1112,12 +1109,12 @@ fu_logitech_hidpp_device_write_firmware_pkt(FuLogitechHidPpDevice *self,
 	}
 
 	/* check error */
-	if (!fu_common_read_uint32_safe(msg->data,
-					sizeof(msg->data),
-					0x0,
-					&packet_cnt,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(msg->data,
+				    sizeof(msg->data),
+				    0x0,
+				    &packet_cnt,
+				    G_BIG_ENDIAN,
+				    error))
 		return FALSE;
 	if (g_getenv("FWUPD_LOGITECH_HIDPP_VERBOSE") != NULL)
 		g_debug("packet_cnt=0x%04x", packet_cnt);
@@ -1314,11 +1311,10 @@ static void
 fu_logitech_hidpp_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "reload");
 }
 
 static void

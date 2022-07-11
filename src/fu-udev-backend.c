@@ -8,10 +8,11 @@
 
 #include "config.h"
 
+#include <fwupdplugin.h>
+
 #include <gudev/gudev.h>
 
 #include "fu-udev-backend.h"
-#include "fu-udev-device.h"
 
 struct _FuUdevBackend {
 	FuBackend parent_instance;
@@ -25,11 +26,32 @@ G_DEFINE_TYPE(FuUdevBackend, fu_udev_backend, FU_TYPE_BACKEND)
 static void
 fu_udev_backend_device_add(FuUdevBackend *self, GUdevDevice *udev_device)
 {
+	GType gtype = FU_TYPE_UDEV_DEVICE;
 	g_autoptr(FuUdevDevice) device = NULL;
+	struct {
+		const gchar *subsystem;
+		GType gtype;
+	} subsystem_gtype_map[] = {{"mei", FU_TYPE_MEI_DEVICE},
+				   {"i2c", FU_TYPE_I2C_DEVICE},
+				   {"i2c-dev", FU_TYPE_I2C_DEVICE},
+				   {NULL, G_TYPE_INVALID}};
+
+	/* create the correct object depending on the subsystem */
+	for (guint i = 0; subsystem_gtype_map[i].gtype != G_TYPE_INVALID; i++) {
+		if (g_strcmp0(g_udev_device_get_subsystem(udev_device),
+			      subsystem_gtype_map[i].subsystem) == 0) {
+			gtype = subsystem_gtype_map[i].gtype;
+			break;
+		}
+	}
 
 	/* success */
-	device =
-	    fu_udev_device_new_with_context(fu_backend_get_context(FU_BACKEND(self)), udev_device);
+	device = g_object_new(gtype,
+			      "context",
+			      fu_backend_get_context(FU_BACKEND(self)),
+			      "udev-device",
+			      udev_device,
+			      NULL);
 	fu_backend_device_added(FU_BACKEND(self), FU_DEVICE(device));
 }
 
@@ -128,8 +150,31 @@ fu_udev_backend_uevent_cb(GUdevClient *gudev_client,
 	}
 }
 
+static void
+fu_udev_backend_coldplug_subsystem(FuUdevBackend *self,
+				   const gchar *subsystem,
+				   FuProgress *progress)
+{
+	g_autolist(GObject) devices = NULL;
+
+	devices = g_udev_client_query_by_subsystem(self->gudev_client, subsystem);
+	if (g_getenv("FWUPD_PROBE_VERBOSE") != NULL)
+		g_debug("%u devices with subsystem %s", g_list_length(devices), subsystem);
+
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_set_name(progress, subsystem);
+	fu_progress_set_steps(progress, g_list_length(devices));
+	for (GList *l = devices; l != NULL; l = l->next) {
+		GUdevDevice *udev_device = l->data;
+		fu_progress_set_name(fu_progress_get_child(progress),
+				     g_udev_device_get_sysfs_path(udev_device));
+		fu_udev_backend_device_add(self, udev_device);
+		fu_progress_step_done(progress);
+	}
+}
+
 static gboolean
-fu_udev_backend_coldplug(FuBackend *backend, GError **error)
+fu_udev_backend_coldplug(FuBackend *backend, FuProgress *progress, GError **error)
 {
 	FuUdevBackend *self = FU_UDEV_BACKEND(backend);
 
@@ -148,18 +193,14 @@ fu_udev_backend_coldplug(FuBackend *backend, GError **error)
 	}
 
 	/* get all devices of class */
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_set_steps(progress, self->subsystems->len);
 	for (guint i = 0; i < self->subsystems->len; i++) {
 		const gchar *subsystem = g_ptr_array_index(self->subsystems, i);
-		GList *devices = g_udev_client_query_by_subsystem(self->gudev_client, subsystem);
-		if (g_getenv("FWUPD_PROBE_VERBOSE") != NULL) {
-			g_debug("%u devices with subsystem %s", g_list_length(devices), subsystem);
-		}
-		for (GList *l = devices; l != NULL; l = l->next) {
-			GUdevDevice *udev_device = l->data;
-			fu_udev_backend_device_add(self, udev_device);
-		}
-		g_list_foreach(devices, (GFunc)g_object_unref, NULL);
-		g_list_free(devices);
+		fu_udev_backend_coldplug_subsystem(self,
+						   subsystem,
+						   fu_progress_get_child(progress));
+		fu_progress_step_done(progress);
 	}
 
 	return TRUE;

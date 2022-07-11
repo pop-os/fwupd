@@ -6,12 +6,14 @@
 
 #define G_LOG_DOMAIN "FuFirmware"
 
-#include "fu-firmware-common.h"
+#include "config.h"
 
-#include <config.h>
 #include <string.h>
 
 #include "fu-common.h"
+#include "fu-firmware-common.h"
+#include "fu-mem.h"
+#include "fu-string.h"
 
 /**
  * fu_firmware_strparse_uint4_safe:
@@ -49,7 +51,7 @@ fu_firmware_strparse_uint4_safe(const gchar *data,
 		return FALSE;
 	valuetmp = g_ascii_strtoull(buffer, &endptr, 16);
 	if (endptr - buffer != sizeof(buffer) - 1) {
-		g_autofree gchar *str = fu_common_strsafe(buffer, sizeof(buffer));
+		g_autofree gchar *str = fu_strsafe(buffer, sizeof(buffer));
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_DATA,
@@ -98,7 +100,7 @@ fu_firmware_strparse_uint8_safe(const gchar *data,
 		return FALSE;
 	valuetmp = g_ascii_strtoull(buffer, &endptr, 16);
 	if (endptr - buffer != sizeof(buffer) - 1) {
-		g_autofree gchar *str = fu_common_strsafe(buffer, sizeof(buffer));
+		g_autofree gchar *str = fu_strsafe(buffer, sizeof(buffer));
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_DATA,
@@ -147,7 +149,7 @@ fu_firmware_strparse_uint16_safe(const gchar *data,
 		return FALSE;
 	valuetmp = g_ascii_strtoull(buffer, &endptr, 16);
 	if (endptr - buffer != sizeof(buffer) - 1) {
-		g_autofree gchar *str = fu_common_strsafe(buffer, sizeof(buffer));
+		g_autofree gchar *str = fu_strsafe(buffer, sizeof(buffer));
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_DATA,
@@ -196,7 +198,7 @@ fu_firmware_strparse_uint24_safe(const gchar *data,
 		return FALSE;
 	valuetmp = g_ascii_strtoull(buffer, &endptr, 16);
 	if (endptr - buffer != sizeof(buffer) - 1) {
-		g_autofree gchar *str = fu_common_strsafe(buffer, sizeof(buffer));
+		g_autofree gchar *str = fu_strsafe(buffer, sizeof(buffer));
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_DATA,
@@ -245,7 +247,7 @@ fu_firmware_strparse_uint32_safe(const gchar *data,
 		return FALSE;
 	valuetmp = g_ascii_strtoull(buffer, &endptr, 16);
 	if (endptr - buffer != sizeof(buffer) - 1) {
-		g_autofree gchar *str = fu_common_strsafe(buffer, sizeof(buffer));
+		g_autofree gchar *str = fu_strsafe(buffer, sizeof(buffer));
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_DATA,

@@ -47,7 +47,6 @@ _fwupdtool_cmd_list=(
 
 _fwupdtool_opts=(
 	'--verbose'
-	'--enable-json-state'
 	'--allow-reinstall'
 	'--allow-older'
 	'--force'
@@ -77,6 +76,15 @@ _show_firmware_types()
 	COMPREPLY+=( $(compgen -W "${firmware_types}" -- "$cur") )
 }
 
+_show_device_ids()
+{
+	if ! command -v jq &> /dev/null; then
+		return 0
+	fi
+	local description
+	description="$(command jq '.Devices | .[] | .DeviceId' @localstatedir@/cache/fwupd/devices.json 2>/dev/null)"
+	COMPREPLY+=( $(compgen -W "${description}" -- "$cur") )
+}
 
 _show_plugins()
 {
@@ -95,11 +103,11 @@ _show_modifiers()
 
 _fwupdtool()
 {
-	local cur prev command
+	local cur prev command arg args
 	COMPREPLY=()
-	cur=`_get_cword`
-	prev=${COMP_WORDS[COMP_CWORD-1]}
-	command=${COMP_WORDS[1]}
+	_get_comp_words_by_ref cur prev
+	_get_first_arg
+	_count_args
 
 	case $prev in
 	--plugins)
@@ -112,79 +120,71 @@ _fwupdtool()
 		;;
 	esac
 
-	case $command in
-	get-details|install|install-blob|firmware-dump)
+	case $arg in
+	get-details|install|install-blob|firmware-dump|firmware-read)
 		#find files
-		if [[ "$prev" = "$command" ]]; then
+		if [[ "$args" = "2" ]]; then
 			_filedir
-		#modifiers
-		else
-			_show_modifiers
+		#device ID
+		elif [[ "$args" = "3" ]]; then
+			_show_device_ids
 		fi
 		;;
 	attach|detach|activate|verify-update|reinstall|get-updates)
-		if [[ "$prev" = "$command" ]]; then
+		#device ID
+		if [[ "$args" = "2" ]]; then
 			_show_device_ids
-		#modifiers
-		else
-			_show_modifiers
 		fi
 		;;
 	build-firmware)
 		#file in
-		if [[ "$prev" = "$command" ]]; then
+		if [[ "$args" = "2" ]]; then
 			_filedir
 		#file out
-		elif [[ "$prev" = "${COMP_WORDS[2]}" ]]; then
+		elif [[ "$args" = "3" ]]; then
 			_filedir
 		#script
-		elif [[ "$prev" = "${COMP_WORDS[3]}" ]]; then
+		elif [[ "$args" = "4" ]]; then
 			_filedir
 		#output
-		elif [[ "$prev" = "${COMP_WORDS[4]}" ]]; then
+		elif [[ "$args" = "5" ]]; then
 			_filedir
-		else
-			_show_modifiers
 		fi
 		;;
 	firmware-parse|firmware-patch)
 		#find files
-		if [[ "$prev" = "$command" ]]; then
+		if [[ "$args" = "2" ]]; then
 			_filedir
 		#firmware_type
-		elif [[ "$prev" = "${COMP_WORDS[2]}" ]]; then
+		elif [[ "$args" = "3" ]]; then
 			_show_firmware_types
-		else
-			_show_modifiers
 		fi
 		;;
 	firmware-convert)
 		#file in
-		if [[ "$prev" = "$command" ]]; then
+		if [[ "$args" = "2" ]]; then
 			_filedir
 		#file out
-		elif [[ "$prev" = "${COMP_WORDS[2]}" ]]; then
+		elif [[ "$args" = "3" ]]; then
 			_filedir
 		#firmware_type in
-		elif [[ "$prev" = "${COMP_WORDS[3]}" ]]; then
+		elif [[ "$args" = "4" ]]; then
 			_show_firmware_types
 		#firmware_type out
-		elif [[ "$prev" = "${COMP_WORDS[4]}" ]]; then
+		elif [[ "$args" = "5" ]]; then
 			_show_firmware_types
-		else
-			_show_modifiers
 		fi
 		;;
 	*)
 		#find first command
-		if [[ ${COMP_CWORD} = 1 ]]; then
+		if [[ "$args" = "1" ]]; then
 			COMPREPLY=( $(compgen -W '${_fwupdtool_cmd_list[@]}' -- "$cur") )
-		#modifiers for all commands
-		else
-			_show_modifiers
 		fi
 		;;
 	esac
+
+	#modifiers
+	_show_modifiers
 
 	return 0
 }

@@ -28,12 +28,14 @@ G_DEFINE_TYPE(FuScsiDevice, fu_scsi_device, FU_TYPE_UDEV_DEVICE)
 #define WRITE_BUFFER_CMD 0x3B
 #define READ_BUFFER_CMD	 0x3C
 
+#define FU_SCSI_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 static void
 fu_scsi_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuScsiDevice *self = FU_SCSI_DEVICE(device);
 	FU_DEVICE_CLASS(fu_scsi_device_parent_class)->to_string(device, idt, str);
-	fu_common_string_append_kx(str, idt, "FfuTimeout", self->ffu_timeout);
+	fu_string_append_kx(str, idt, "FfuTimeout", self->ffu_timeout);
 }
 
 static gboolean
@@ -44,6 +46,7 @@ fu_scsi_device_probe(FuDevice *device, GError **error)
 	guint64 removable = 0;
 	g_autofree gchar *vendor_id = NULL;
 	g_autoptr(FuUdevDevice) ufshci_parent = NULL;
+	const gchar *subsystem_parents[] = {"pci", "platform", NULL};
 
 	/* check is valid */
 	if (g_strcmp0(g_udev_device_get_devtype(udev_device), "disk") != 0) {
@@ -74,12 +77,17 @@ fu_scsi_device_probe(FuDevice *device, GError **error)
 	vendor_id = g_strdup_printf("SCSI:%s", fu_device_get_vendor(device));
 	fu_device_add_vendor_id(device, vendor_id);
 
-	/* TODO: the ufshci controller could really be on any bus.. */
-	ufshci_parent = fu_udev_device_get_parent_with_subsystem(FU_UDEV_DEVICE(device), "pci");
+	/* the ufshci controller could really be on any bus... search in order of priority */
+	for (guint i = 0; subsystem_parents[i] != NULL && ufshci_parent == NULL; i++) {
+		ufshci_parent = fu_udev_device_get_parent_with_subsystem(FU_UDEV_DEVICE(device),
+									 subsystem_parents[i]);
+	}
 	if (ufshci_parent != NULL) {
 		guint64 ufs_features = 0;
 
 		/* check if this is a UFS device */
+		g_debug("found ufshci controller at %s",
+			fu_udev_device_get_sysfs_path(ufshci_parent));
 		if (fu_udev_device_get_sysfs_attr_uint64(ufshci_parent,
 							 "device_descriptor/ufs_features",
 							 &ufs_features,
@@ -88,6 +96,8 @@ fu_scsi_device_probe(FuDevice *device, GError **error)
 			/* least significant bit specifies FFU capability */
 			if (ufs_features & 0x1) {
 				fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
+				fu_device_add_internal_flag(FU_DEVICE(self),
+							    FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
 				fu_device_add_protocol(device, "org.jedec.ufs");
 			}
 			if (!fu_udev_device_get_sysfs_attr_uint64(ufshci_parent,
@@ -121,7 +131,7 @@ fu_scsi_device_probe(FuDevice *device, GError **error)
 	}
 
 	/* set the physical ID */
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "scsi", error);
+	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "scsi:scsi_target", error);
 }
 
 static FuFirmware *
@@ -197,12 +207,12 @@ fu_scsi_device_send_scsi_cmd_v3(FuScsiDevice *self,
 
 	if (g_getenv("FWUPD_SCSI_VERBOSE") != NULL)
 		g_debug("cmd=0x%x len=0x%x", cdb[0], (guint)bufsz);
-	if (!fu_udev_device_ioctl_full(FU_UDEV_DEVICE(self),
-				       SG_IO,
-				       (guint8 *)&io_hdr,
-				       NULL,
-				       5000,
-				       error))
+	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
+				  SG_IO,
+				  (guint8 *)&io_hdr,
+				  NULL,
+				  FU_SCSI_DEVICE_IOCTL_TIMEOUT,
+				  error))
 		return FALSE;
 
 	if (io_hdr.status) {
@@ -252,8 +262,8 @@ fu_scsi_device_write_firmware(FuDevice *device,
 						BUFFER_FFU_MODE,
 						0x0 /* buf_id */};
 
-		fu_common_write_uint24(cdb + 3, offset, G_BIG_ENDIAN);
-		fu_common_write_uint24(cdb + 6, fu_chunk_get_data_sz(chk), G_BIG_ENDIAN);
+		fu_memwrite_uint24(cdb + 3, offset, G_BIG_ENDIAN);
+		fu_memwrite_uint24(cdb + 6, fu_chunk_get_data_sz(chk), G_BIG_ENDIAN);
 		if (!fu_scsi_device_send_scsi_cmd_v3(self,
 						     cdb,
 						     sizeof(cdb),
@@ -283,10 +293,10 @@ static void
 fu_scsi_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "reload");
 }
 
 static void

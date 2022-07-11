@@ -72,7 +72,7 @@ fu_firehose_updater_log_message(const gchar *action, GBytes *msg)
 	if (msg_size > G_MAXINT)
 		return;
 
-	msg_strsafe = fu_common_strsafe(msg_data, msg_size);
+	msg_strsafe = fu_strsafe(msg_data, msg_size);
 
 	g_debug("%s: %.*s", action, (gint)msg_size, msg_strsafe);
 }
@@ -540,7 +540,7 @@ fu_firehose_updater_send_program_file(FuFirehoseUpdater *self,
 		g_autoptr(GBytes) padded_bytes = NULL;
 		gsize padded_sz = sector_size * (fu_chunk_get_data_sz(chk) / sector_size + 1);
 
-		padded_bytes = fu_common_bytes_pad(fu_chunk_get_bytes(chk), padded_sz);
+		padded_bytes = fu_bytes_pad(fu_chunk_get_bytes(chk), padded_sz);
 		fu_chunk_set_bytes(chk, padded_bytes);
 
 		g_return_val_if_fail(fu_chunk_get_data_sz(chk) == padded_sz, FALSE);

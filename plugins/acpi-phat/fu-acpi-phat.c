@@ -44,14 +44,14 @@ fu_acpi_phat_record_parse(FuFirmware *firmware,
 	g_autoptr(FuFirmware) firmware_rcd = NULL;
 
 	/* common header */
-	if (!fu_common_read_uint16_safe(buf, bufsz, *offset, &record_type, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint16_safe(buf, bufsz, *offset, &record_type, G_LITTLE_ENDIAN, error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					*offset + 2,
-					&record_length,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    *offset + 2,
+				    &record_length,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 	if (record_length < 5) {
 		g_set_error(error,
@@ -61,7 +61,7 @@ fu_acpi_phat_record_parse(FuFirmware *firmware,
 			    record_length);
 		return FALSE;
 	}
-	if (!fu_common_read_uint8_safe(buf, bufsz, *offset + 4, &revision, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, *offset + 4, &revision, error))
 		return FALSE;
 
 	/* firmware version data record */
@@ -74,7 +74,7 @@ fu_acpi_phat_record_parse(FuFirmware *firmware,
 	/* supported record type */
 	if (firmware_rcd != NULL) {
 		g_autoptr(GBytes) fw_tmp = NULL;
-		fw_tmp = fu_common_bytes_new_offset(fw, *offset, record_length, error);
+		fw_tmp = fu_bytes_new_offset(fw, *offset, record_length, error);
 		if (fw_tmp == NULL)
 			return FALSE;
 		fu_firmware_set_size(firmware_rcd, record_length);
@@ -99,8 +99,7 @@ fu_acpi_phat_set_oem_id(FuAcpiPhat *self, const gchar *oem_id)
 static gboolean
 fu_acpi_phat_parse(FuFirmware *firmware,
 		   GBytes *fw,
-		   guint64 addr_start,
-		   guint64 addr_end,
+		   gsize offset,
 		   FwupdInstallFlags flags,
 		   GError **error)
 {
@@ -121,7 +120,7 @@ fu_acpi_phat_parse(FuFirmware *firmware,
 			    0x0, /* dst */
 			    buf,
 			    bufsz,
-			    0x00, /* src */
+			    offset + 0, /* src */
 			    sizeof(signature),
 			    error))
 		return FALSE;
@@ -133,7 +132,7 @@ fu_acpi_phat_parse(FuFirmware *firmware,
 			    signature);
 		return FALSE;
 	}
-	if (!fu_common_read_uint32_safe(buf, bufsz, 4, &length, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, offset + 4, &length, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (bufsz < length) {
 		g_set_error(error,
@@ -148,7 +147,7 @@ fu_acpi_phat_parse(FuFirmware *firmware,
 	/* spec revision */
 	if ((flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
 		guint8 revision = 0;
-		if (!fu_common_read_uint8_safe(buf, bufsz, 8, &revision, error))
+		if (!fu_memread_uint8_safe(buf, bufsz, offset + 8, &revision, error))
 			return FALSE;
 		if (revision != FU_ACPI_PHAT_REVISION) {
 			g_set_error(error,
@@ -163,7 +162,7 @@ fu_acpi_phat_parse(FuFirmware *firmware,
 
 	/* verify checksum */
 	if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
-		guint8 checksum = fu_common_sum8(buf, length);
+		guint8 checksum = fu_sum8(buf, length);
 		if (checksum != 0x00) {
 			g_set_error(error,
 				    G_IO_ERROR,
@@ -180,11 +179,11 @@ fu_acpi_phat_parse(FuFirmware *firmware,
 			    0x0, /* dst */
 			    buf,
 			    bufsz,
-			    10, /* src */
+			    offset + 10, /* src */
 			    sizeof(oem_id),
 			    error))
 		return FALSE;
-	oem_id_safe = fu_common_strsafe((const gchar *)oem_id, sizeof(oem_id));
+	oem_id_safe = fu_strsafe((const gchar *)oem_id, sizeof(oem_id));
 	fu_acpi_phat_set_oem_id(self, oem_id_safe);
 
 	/* OEM Table ID */
@@ -193,19 +192,19 @@ fu_acpi_phat_parse(FuFirmware *firmware,
 			    0x0, /* dst */
 			    buf,
 			    bufsz,
-			    16, /* src */
+			    offset + 16, /* src */
 			    sizeof(oem_table_id),
 			    error))
 		return FALSE;
-	oem_table_id_safe = fu_common_strsafe((const gchar *)oem_table_id, sizeof(oem_table_id));
+	oem_table_id_safe = fu_strsafe((const gchar *)oem_table_id, sizeof(oem_table_id));
 	fu_firmware_set_id(firmware, oem_table_id_safe);
-	if (!fu_common_read_uint32_safe(buf, bufsz, 24, &oem_revision, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, offset + 24, &oem_revision, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	fu_firmware_set_version_raw(firmware, oem_revision);
 
 	/* platform telemetry records */
-	for (gsize offset = 36; offset < length;) {
-		if (!fu_acpi_phat_record_parse(firmware, fw, &offset, flags, error))
+	for (gsize offset_tmp = offset + 36; offset_tmp < length;) {
+		if (!fu_acpi_phat_record_parse(firmware, fw, &offset_tmp, flags, error))
 			return FALSE;
 	}
 
@@ -273,7 +272,7 @@ fu_acpi_phat_write(FuFirmware *firmware, GError **error)
 	g_byte_array_append(buf, buf2->data, buf2->len);
 
 	/* fixup checksum */
-	buf->data[9] = 0xFF - fu_common_sum8(buf->data, buf->len);
+	buf->data[9] = 0xFF - fu_sum8(buf->data, buf->len);
 
 	/* success */
 	return g_byte_array_free_to_bytes(g_steal_pointer(&buf));

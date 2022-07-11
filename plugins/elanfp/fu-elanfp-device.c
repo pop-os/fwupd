@@ -203,7 +203,7 @@ fu_elanfp_device_setup(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to device setup: ");
 		return FALSE;
 	}
-	fw_ver = fu_common_read_uint16(usb_buf, G_BIG_ENDIAN);
+	fw_ver = fu_memread_uint16(usb_buf, G_BIG_ENDIAN);
 	fw_ver_str = g_strdup_printf("%04x", fw_ver);
 	fu_device_set_version(device, fw_ver_str);
 
@@ -240,21 +240,21 @@ fu_elanfp_device_write_payload(FuElanfpDevice *self,
 		databuf[1] = fu_chunk_get_data_sz(chk);
 
 		/* sequence number */
-		if (!fu_common_write_uint16_safe(databuf,
-						 sizeof(databuf),
-						 0x2,
-						 i + 1,
-						 G_LITTLE_ENDIAN,
-						 error))
+		if (!fu_memwrite_uint16_safe(databuf,
+					     sizeof(databuf),
+					     0x2,
+					     i + 1,
+					     G_LITTLE_ENDIAN,
+					     error))
 			return FALSE;
 
 		/* address */
-		if (!fu_common_write_uint32_safe(databuf,
-						 sizeof(databuf),
-						 0x4,
-						 fu_chunk_get_address(chk),
-						 G_LITTLE_ENDIAN,
-						 error))
+		if (!fu_memwrite_uint32_safe(databuf,
+					     sizeof(databuf),
+					     0x4,
+					     fu_chunk_get_address(chk),
+					     G_LITTLE_ENDIAN,
+					     error))
 			return FALSE;
 
 		/* data */
@@ -320,8 +320,8 @@ fu_elanfp_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);   /* offer */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98); /* payload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "offer");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "payload");
 
 	/* send offers */
 	for (i = 0; items[i].tag != NULL; i++) {
@@ -398,10 +398,10 @@ static void
 fu_elanfp_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

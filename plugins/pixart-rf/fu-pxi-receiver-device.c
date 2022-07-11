@@ -37,6 +37,7 @@ fu_pxi_receiver_device_get_raw_info(FuPxiReceiverDevice *self,
 				  HIDIOCGRAWINFO,
 				  (guint8 *)info,
 				  NULL,
+				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
 				  error)) {
 		return FALSE;
 	}
@@ -49,8 +50,8 @@ fu_pxi_receiver_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuPxiReceiverDevice *self = FU_PXI_RECEIVER_DEVICE(device);
 	fu_pxi_ota_fw_state_to_string(&self->fwstate, idt, str);
-	fu_common_string_append_kx(str, idt, "Vendor", self->vendor);
-	fu_common_string_append_kx(str, idt, "Product", self->product);
+	fu_string_append_kx(str, idt, "Vendor", self->vendor);
+	fu_string_append_kx(str, idt, "Product", self->product);
 }
 
 static gboolean
@@ -61,11 +62,12 @@ fu_pxi_receiver_device_set_feature(FuPxiReceiverDevice *self,
 {
 #ifdef HAVE_HIDRAW_H
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    HIDIOCSFEATURE(bufsz),
 				    (guint8 *)buf,
 				    NULL,
+				    FU_PXI_DEVICE_IOCTL_TIMEOUT,
 				    error);
 #else
 	g_set_error_literal(error,
@@ -83,11 +85,16 @@ fu_pxi_receiver_device_get_feature(FuPxiReceiverDevice *self,
 				   GError **error)
 {
 #ifdef HAVE_HIDRAW_H
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self), HIDIOCGFEATURE(bufsz), buf, NULL, error)) {
+	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
+				  HIDIOCGFEATURE(bufsz),
+				  buf,
+				  NULL,
+				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
+				  error)) {
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
 	return TRUE;
 #else
 	g_set_error_literal(error,
@@ -188,7 +195,7 @@ fu_pxi_receiver_device_get_cmd_response(FuPxiReceiverDevice *device,
 		if (!fu_pxi_receiver_device_get_feature(device, buf, bufsz, error))
 			return FALSE;
 
-		if (!fu_common_read_uint8_safe(buf, bufsz, 0x4, &sn, error))
+		if (!fu_memread_uint8_safe(buf, bufsz, 0x4, &sn, error))
 			return FALSE;
 
 		if (device->sn != sn)
@@ -245,7 +252,7 @@ fu_pxi_receiver_device_check_crc(FuDevice *device, guint16 checksum, GError **er
 	if (!fu_pxi_receiver_device_get_cmd_response(self, buf, sizeof(buf), error))
 		return FALSE;
 
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 
 	if (status == OTA_RSP_CODE_ERROR) {
@@ -296,7 +303,7 @@ fu_pxi_receiver_device_fw_object_create(FuDevice *device, FuChunk *chk, GError *
 	if (!fu_pxi_receiver_device_get_cmd_response(self, buf, sizeof(buf), error))
 		return FALSE;
 
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 
 	if (status != OTA_RSP_OK) {
@@ -348,7 +355,7 @@ fu_pxi_receiver_device_write_payload(FuDevice *device, FuChunk *chk, GError **er
 	if (!fu_pxi_receiver_device_get_cmd_response(self, buf, sizeof(buf), error))
 		return FALSE;
 
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 
 	if (status != OTA_RSP_OK) {
@@ -385,7 +392,7 @@ fu_pxi_receiver_device_write_chunk(FuDevice *device, FuChunk *chk, GError **erro
 				    self->fwstate.mtu_size);
 
 	/* the checksum of chunk */
-	checksum = fu_common_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
+	checksum = fu_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 	self->fwstate.checksum += checksum;
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk2 = g_ptr_array_index(chunks, i);
@@ -424,8 +431,8 @@ fu_pxi_receiver_device_fw_upgrade(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 5);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 95);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 5, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 95, NULL);
 
 	fw = fu_firmware_get_bytes(firmware, error);
 	if (fw == NULL)
@@ -440,7 +447,7 @@ fu_pxi_receiver_device_fw_upgrade(FuDevice *device,
 				    g_bytes_get_size(fw),
 				    G_LITTLE_ENDIAN); /* ota fw upgrade command fw size */
 	fu_byte_array_append_uint16(ota_cmd,
-				    fu_common_sum16_bytes(fw),
+				    fu_sum16_bytes(fw),
 				    G_LITTLE_ENDIAN); /* ota fw upgrade command checksum */
 
 	version = fu_firmware_get_version(firmware);
@@ -456,7 +463,7 @@ fu_pxi_receiver_device_fw_upgrade(FuDevice *device,
 
 	g_byte_array_append(ota_cmd, fw_version, sizeof(fw_version));
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "ota_cmd ", ota_cmd->data, ota_cmd->len);
+		fu_dump_raw(G_LOG_DOMAIN, "ota_cmd ", ota_cmd->data, ota_cmd->len);
 	self->sn++;
 
 	/* get pixart wireless module ota command */
@@ -482,7 +489,7 @@ fu_pxi_receiver_device_fw_upgrade(FuDevice *device,
 	if (!fu_pxi_receiver_device_get_cmd_response(self, res, sizeof(res), error))
 		return FALSE;
 
-	if (!fu_common_read_uint8_safe(res, sizeof(res), 0x5, &result, error))
+	if (!fu_memread_uint8_safe(res, sizeof(res), 0x5, &result, error))
 		return FALSE;
 	if (result != OTA_RSP_OK) {
 		g_set_error(error,
@@ -543,10 +550,10 @@ fu_pxi_receiver_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 9); /* ota-init */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 9, "ota-init");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, NULL);
 
 	/* get the default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -631,9 +638,9 @@ fu_pxi_receiver_device_get_peripheral_info(FuPxiReceiverDevice *device,
 		return FALSE;
 
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "model_info", buf, sizeof(buf));
+		fu_dump_raw(G_LOG_DOMAIN, "model_info", buf, sizeof(buf));
 
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x9, &model->status, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x9, &model->status, error))
 		return FALSE;
 
 	if (!fu_memcpy_safe(model->name,
@@ -646,9 +653,9 @@ fu_pxi_receiver_device_get_peripheral_info(FuPxiReceiverDevice *device,
 			    error))
 		return FALSE;
 
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x16, &model->type, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x16, &model->type, error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x17, &model->target, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x17, &model->target, error))
 		return FALSE;
 
 	if (!fu_memcpy_safe(model->version,
@@ -661,7 +668,7 @@ fu_pxi_receiver_device_get_peripheral_info(FuPxiReceiverDevice *device,
 			    error))
 		return FALSE;
 
-	if (!fu_common_read_uint16_safe(buf, sizeof(buf), 0x1D, &checksum, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint16_safe(buf, sizeof(buf), 0x1D, &checksum, G_LITTLE_ENDIAN, error))
 
 		return FALSE;
 
@@ -711,9 +718,9 @@ fu_pxi_receiver_device_get_peripheral_num(FuPxiReceiverDevice *device,
 	if (!fu_pxi_receiver_device_get_feature(device, buf, sizeof(buf), error))
 		return FALSE;
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "buf from get model num", buf, sizeof(buf));
+		fu_dump_raw(G_LOG_DOMAIN, "buf from get model num", buf, sizeof(buf));
 	}
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0xA, num_of_models, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0xA, num_of_models, error))
 		return FALSE;
 
 	/* success */
@@ -793,7 +800,7 @@ fu_pxi_receiver_device_setup_guid(FuPxiReceiverDevice *device, GError **error)
 
 	dev_name = g_string_new(fu_device_get_name(FU_DEVICE(device)));
 	g_string_ascii_up(dev_name);
-	fu_common_string_replace(dev_name, " ", "_");
+	fu_string_replace(dev_name, " ", "_");
 	devid = g_strdup_printf("HIDRAW\\VEN_%04X&DEV_%04X&NAME_%s",
 				(guint)hid_raw_info.vendor,
 				(guint)hid_raw_info.product,
@@ -865,10 +872,10 @@ fu_pxi_receiver_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

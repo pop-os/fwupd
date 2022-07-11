@@ -12,6 +12,12 @@ GType = FuSteelseriesSonic
 Icon = input-mouse
 
 # Aerox 3 Wireless
+[HIDRAW\VEN_0111&DEV_183A]
+Plugin = steelseries
+GType = FuSteelseriesFizzHid
+Name = Aerox 3 Wireless Mouse via Bluetooth
+Icon = input-mouse
+
 [USB\VID_1038&PID_1838]
 Plugin = steelseries
 GType = FuSteelseriesFizz
@@ -21,13 +27,36 @@ CounterpartGuid = USB\VID_1038&PID_1839
 FirmwareSize = 0x23000
 Flags = is-receiver
 
+[USB\VID_1038&PID_1839]
+Plugin = steelseries
+GType = FuSteelseriesFizz
+Name = Aerox 3 Wireless USB Receiver bootloader
+Icon = usb-receiver
+FirmwareSize = 0x23000
+Flags = is-bootloader,is-receiver,~usable-during-update
+
+[STEELSERIES\VID_1038&PID_1838&PROTOCOL_FIZZ_TUNNEL]
+Plugin = steelseries
+GType = FuSteelseriesFizzTunnel
+Name = Aerox 3 Wireless Mouse via USB Receiver
+Icon = input-mouse
+FirmwareSize = 0x27000
+
 [USB\VID_1038&PID_183A]
 Plugin = steelseries
 GType = FuSteelseriesFizz
 Name = Aerox 3 Wireless Mouse
 Icon = input-mouse
-CounterpartGuid = USB\VID_1038&PID_183B
+CounterpartGuid = USB\VID_103B&PID_1839,HIDRAW\VEN_0111&DEV_183A
 FirmwareSize = 0x27000
+
+[USB\VID_1038&PID_183B]
+Plugin = steelseries
+GType = FuSteelseriesFizz
+Name = Aerox 3 Wireless Mouse bootloader
+Icon = input-mouse
+FirmwareSize = 0x27000
+Flags = is-bootloader,~usable-during-update
 
 # Stratus Duo RX
 [USB\VID_1038&PID_1430]

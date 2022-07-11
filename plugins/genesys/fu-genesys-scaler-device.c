@@ -15,6 +15,8 @@
 #include "fu-genesys-scaler-device.h"
 #include "fu-genesys-scaler-firmware.h"
 
+#define GENESYS_SCALER_BANK_SIZE 0x200000U
+
 #define GENESYS_SCALER_MSTAR_READ     0x7a
 #define GENESYS_SCALER_MSTAR_WRITE    0x7b
 #define GENESYS_SCALER_MSTAR_DATA_OUT 0x7c
@@ -28,7 +30,7 @@
 
 #define GENESYS_SCALER_INFO 0xA4
 
-#define GENESYS_SCALER_USB_TIMEOUT 5000 /* ms */
+#define GENESYS_SCALER_USB_TIMEOUT 5000 /* 5s */
 
 /**
  * FU_SCALER_FLAG_PAUSE_R2_CPU:
@@ -62,7 +64,8 @@ typedef struct {
 struct _FuGenesysScalerDevice {
 	FuDevice parent_instance;
 	guint8 level;
-	guint8 public_key[0x212];
+	FuGenesysPublicKey public_key;
+	guint32 cfi_flash_id;
 	FuCfiDevice *cfi_device;
 	FuGenesysVendorCommand vc;
 	guint32 sector_size;
@@ -71,7 +74,6 @@ struct _FuGenesysScalerDevice {
 	guint16 gpio_out_reg;
 	guint16 gpio_en_reg;
 	guint8 gpio_val;
-	FuGenesysMtkFooter footer;
 };
 
 G_DEFINE_TYPE(FuGenesysScalerDevice, fu_genesys_scaler_device, FU_TYPE_DEVICE)
@@ -100,7 +102,7 @@ fu_genesys_scaler_device_enter_serial_debug_mode(FuGenesysScalerDevice *self, GE
 		return FALSE;
 	}
 
-	g_usleep(1000); /* 1 ms */
+	g_usleep(1000); /* 1ms */
 
 	/* success */
 	return TRUE;
@@ -610,7 +612,7 @@ fu_genesys_scaler_device_pause_r2_cpu(FuGenesysScalerDevice *self, GError **erro
 }
 
 static gboolean
-fu_geensys_scaler_device_set_isp_mode(FuDevice *device, gpointer user_data, GError **error)
+fu_genesys_scaler_device_set_isp_mode(FuDevice *device, gpointer user_data, GError **error)
 {
 	FuGenesysScalerDevice *self = user_data;
 	FuDevice *parent_device = fu_device_get_parent(FU_DEVICE(self));
@@ -650,7 +652,7 @@ fu_genesys_scaler_device_enter_isp_mode(FuGenesysScalerDevice *self, GError **er
 	 */
 
 	if (!fu_device_retry_full(FU_DEVICE(self),
-				  fu_geensys_scaler_device_set_isp_mode,
+				  fu_genesys_scaler_device_set_isp_mode,
 				  2,
 				  1000 /* 1ms */,
 				  self,
@@ -852,6 +854,7 @@ fu_genesys_scaler_device_get_public_key(FuGenesysScalerDevice *self,
 		g_usleep(100000); /* 100ms */
 	}
 
+	/* success */
 	return TRUE;
 }
 
@@ -1159,12 +1162,13 @@ fu_genesys_scaler_device_flash_control_sector_erase(FuGenesysScalerDevice *self,
 	if (!fu_genesys_scaler_device_flash_control_write_status(self, 0x00, error))
 		return FALSE;
 
-	/* 5s: 500x10ms retries */
-	if (!fu_device_retry(FU_DEVICE(self),
-			     fu_genesys_scaler_device_wait_flash_control_register_cb,
-			     500,
-			     &helper,
-			     error)) {
+	/* 5s */
+	if (!fu_device_retry_full(FU_DEVICE(self),
+				  fu_genesys_scaler_device_wait_flash_control_register_cb,
+				  100,
+				  50, /* 50ms */
+				  &helper,
+				  error)) {
 		g_prefix_error(error, "error waiting for flash control read status register: ");
 		return FALSE;
 	}
@@ -1210,12 +1214,13 @@ fu_genesys_scaler_device_flash_control_sector_erase(FuGenesysScalerDevice *self,
 		return FALSE;
 	}
 
-	/* 5s: 500x10ms retries */
-	if (!fu_device_retry(FU_DEVICE(self),
-			     fu_genesys_scaler_device_wait_flash_control_register_cb,
-			     500,
-			     &helper,
-			     error)) {
+	/* 5s */
+	if (!fu_device_retry_full(FU_DEVICE(self),
+				  fu_genesys_scaler_device_wait_flash_control_register_cb,
+				  100,
+				  50, /* 50ms */
+				  &helper,
+				  error)) {
 		g_prefix_error(error, "error waiting for flash control read status register: ");
 		return FALSE;
 	}
@@ -1342,7 +1347,7 @@ fu_genesys_scaler_device_flash_control_page_program(FuGenesysScalerDevice *self,
 		fu_progress_step_done(progress);
 	}
 
-	/* 200ms: 20x10ms retries */
+	/* 200ms */
 	if (!fu_device_retry(FU_DEVICE(self),
 			     fu_genesys_scaler_device_wait_flash_control_register_cb,
 			     20,
@@ -1517,7 +1522,7 @@ fu_genesys_scaler_device_get_firmware_packet_version(FuGenesysScalerDevice *self
 
 		buf[0] = 0x50; /* drifted value */
 		checksum = fu_genesys_scaler_device_calculate_checksum(buf, len + 3);
-		if (!fu_common_read_uint8_safe(buf, sizeof(buf), len + 3, &checksum_tmp, error))
+		if (!fu_memread_uint8_safe(buf, sizeof(buf), len + 3, &checksum_tmp, error))
 			return FALSE;
 		if (checksum_tmp != checksum) {
 			g_set_error(error,
@@ -1555,17 +1560,32 @@ fu_genesys_scaler_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 
 	if (!fu_genesys_scaler_device_get_public_key(self,
-						     self->public_key,
+						     (guint8 *)&self->public_key,
 						     sizeof(self->public_key),
 						     error))
 		return FALSE;
-	guid =
-	    fwupd_guid_hash_data(self->public_key, sizeof(self->public_key), FWUPD_GUID_FLAG_NONE);
+	if (memcmp(self->public_key.N, "N = ", 4) != 0 ||
+	    memcmp(self->public_key.E, "E = ", 4) != 0) {
+		if (g_getenv("FWUPD_GENESYS_SCALER_VERBOSE") != NULL) {
+			fu_dump_raw(G_LOG_DOMAIN,
+				    "PublicKey",
+				    (const guint8 *)&self->public_key,
+				    sizeof(self->public_key));
+		}
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_SIGNATURE_INVALID,
+				    "invalid public-key");
+		return FALSE;
+	}
+	guid = fwupd_guid_hash_data((const guint8 *)&self->public_key,
+				    sizeof(self->public_key),
+				    FWUPD_GUID_FLAG_NONE);
 
 	if (!fu_genesys_scaler_device_get_version(self, buf, sizeof(buf), error))
 		return FALSE;
 	/* ?xIM123; where ? is 0x06 (length?) */
-	panelrev = fu_common_strsafe((const gchar *)&buf[1], 6);
+	panelrev = fu_strsafe((const gchar *)&buf[1], 6);
 
 	if (!fu_genesys_scaler_device_get_firmware_packet_version(self, &ver, error))
 		return FALSE;
@@ -1602,29 +1622,17 @@ fu_genesys_scaler_device_probe(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_genesys_scaler_device_open(FuDevice *device, GError **error)
-{
-	FuDevice *parent_device = fu_device_get_parent(device);
-
-	return fu_device_open(parent_device, error);
-}
-
-static gboolean
-fu_genesys_scaler_device_close(FuDevice *device, GError **error)
-{
-	FuDevice *parent_device = fu_device_get_parent(device);
-
-	return fu_device_open(parent_device, error);
-}
-
-static gboolean
 fu_genesys_scaler_device_setup(FuDevice *device, GError **error)
 {
 	FuGenesysScalerDevice *self = FU_GENESYS_SCALER_DEVICE(device);
+	guint64 size_min = fu_device_get_firmware_size_max(device);
+	guint64 size;
 	guint32 sector_size;
 	guint32 page_size;
+	g_autofree gchar *flash_id = NULL;
 
-	self->cfi_device = fu_cfi_device_new(fu_device_get_context(FU_DEVICE(self)), "C84016");
+	flash_id = g_strdup_printf("%06X", self->cfi_flash_id);
+	self->cfi_device = fu_cfi_device_new(fu_device_get_context(FU_DEVICE(self)), flash_id);
 	if (!fu_device_setup(FU_DEVICE(self->cfi_device), error))
 		return FALSE;
 
@@ -1635,16 +1643,18 @@ fu_genesys_scaler_device_setup(FuDevice *device, GError **error)
 	if (page_size != 0)
 		self->page_size = page_size;
 
-	if (fu_device_get_firmware_size_max(device) == 0) {
-		guint64 size_max = fu_device_get_firmware_size_max(FU_DEVICE(self->cfi_device));
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE))
+		size_min *= 2;
 
-		if (size_max == 0)
-			size_max = 0x400000;
-
-		if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE))
-			size_max /= 2;
-
-		fu_device_set_firmware_size_max(FU_DEVICE(self), size_max);
+	size = fu_device_get_firmware_size_max(FU_DEVICE(self->cfi_device));
+	if (size != 0 && size < size_min) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "CFI device too small, got 0x%x, expected >= 0x%x",
+			    (guint)size,
+			    (guint)size_min);
+		return FALSE;
 	}
 
 	/* success */
@@ -1655,18 +1665,14 @@ static GBytes *
 fu_genesys_scaler_device_dump_firmware(FuDevice *device, FuProgress *progress, GError **error)
 {
 	FuGenesysScalerDevice *self = FU_GENESYS_SCALER_DEVICE(device);
-	gsize size = fu_device_get_firmware_size_max(device);
-	guint addr = 0x000000;
+	gsize size = fu_cfi_device_get_size(self->cfi_device);
 	g_autofree guint8 *buf = NULL;
 	g_autoptr(FuDeviceLocker) locker = NULL;
 
-	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE))
-		addr = 0x200000;
-
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 99);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 99, NULL);
 
 	/* require detach -> attach */
 	locker = fu_device_locker_new_full(device,
@@ -1679,7 +1685,7 @@ fu_genesys_scaler_device_dump_firmware(FuDevice *device, FuProgress *progress, G
 
 	buf = g_malloc0(size);
 	if (!fu_genesys_scaler_device_read_flash(self,
-						 addr,
+						 0,
 						 buf,
 						 size,
 						 fu_progress_get_child(progress),
@@ -1687,6 +1693,7 @@ fu_genesys_scaler_device_dump_firmware(FuDevice *device, FuProgress *progress, G
 		return NULL;
 	fu_progress_step_done(progress);
 
+	/* success */
 	return g_bytes_new_take(g_steal_pointer(&buf), size);
 }
 
@@ -1698,67 +1705,48 @@ fu_genesys_scaler_device_prepare_firmware(FuDevice *device,
 {
 	FuGenesysScalerDevice *self = FU_GENESYS_SCALER_DEVICE(device);
 	g_autoptr(FuFirmware) firmware = fu_genesys_scaler_firmware_new();
-	g_autoptr(FuFirmware) footer = fu_firmware_new();
-	g_autoptr(FuFirmware) payload = fu_firmware_new();
-	g_autoptr(GBytes) fw_payload = NULL;
-	g_autoptr(GBytes) fw_footer = NULL;
+	g_autoptr(GBytes) blob_payload = NULL;
+	g_autoptr(GBytes) blob_public_key = NULL;
 
 	/* parse firmware */
 	if (!fu_firmware_parse(firmware, fw, flags, error))
 		return NULL;
 
-	/* payload */
-	fw_payload = fu_common_bytes_new_offset(fw,
-						0,
-						g_bytes_get_size(fw) - sizeof(FuGenesysMtkFooter),
-						error);
-	if (fw_payload == NULL)
+	/* check public-key */
+	blob_public_key =
+	    fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_SIGNATURE, error);
+	if (blob_public_key == NULL)
 		return NULL;
-	if (!fu_firmware_parse(payload, fw_payload, flags, error))
-		return NULL;
-	fu_firmware_set_id(payload, FU_FIRMWARE_ID_PAYLOAD);
-	fu_firmware_add_image(firmware, payload);
-
-	/* footer */
-	fw_footer = fu_common_bytes_new_offset(fw,
-					       g_bytes_get_size(fw) - sizeof(FuGenesysMtkFooter),
-					       sizeof(FuGenesysMtkFooter),
-					       error);
-	if (!fu_firmware_parse(footer, fw_footer, flags, error))
-		return NULL;
-	if (!fu_memcpy_safe((guint8 *)&self->footer,
-			    sizeof(self->footer),
-			    0, /* dst */
-			    g_bytes_get_data(fw_footer, NULL),
-			    g_bytes_get_size(fw_footer),
-			    0, /* src */
-			    sizeof(self->footer),
-			    error))
-		return NULL;
-	fu_genesys_scaler_firmware_decrypt((guint8 *)&self->footer, sizeof(self->footer));
 	if (g_getenv("FWUPD_GENESYS_SCALER_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN,
-				   "Footer",
-				   (const guint8 *)&self->footer,
-				   sizeof(self->footer));
+		fu_dump_raw(G_LOG_DOMAIN,
+			    "PublicKey",
+			    g_bytes_get_data(blob_public_key, NULL),
+			    g_bytes_get_size(blob_public_key));
 	}
-	if (memcmp(self->footer.data.header.default_head,
-		   MTK_RSA_HEADER,
-		   sizeof(self->footer.data.header.default_head)) != 0) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "invalid footer");
-		return NULL;
-	}
-	if (memcmp(&self->footer.data.public_key,
-		   self->public_key,
-		   sizeof(self->footer.data.public_key)) != 0) {
+	if (memcmp(g_bytes_get_data(blob_public_key, NULL),
+		   &self->public_key,
+		   sizeof(self->public_key)) != 0 &&
+	    (flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
-				    FWUPD_ERROR_INTERNAL,
+				    FWUPD_ERROR_SIGNATURE_INVALID,
 				    "mismatch public-key");
 		return NULL;
 	}
-	fu_firmware_set_id(footer, FU_FIRMWARE_ID_HEADER);
-	fu_firmware_add_image(firmware, footer);
+
+	/* check size */
+	blob_payload = fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_PAYLOAD, error);
+	if (blob_payload == NULL)
+		return NULL;
+	if (g_bytes_get_size(blob_payload) > fu_device_get_firmware_size_max(device)) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_FILE,
+			    "firmware too large, got 0x%x, expected <= 0x%x",
+			    (guint)g_bytes_get_size(blob_payload),
+			    (guint)fu_device_get_firmware_size_max(device));
+		return NULL;
+	}
 
 	/* success */
 	return g_steal_pointer(&firmware);
@@ -1772,23 +1760,20 @@ fu_genesys_scaler_device_write_firmware(FuDevice *device,
 					GError **error)
 {
 	FuGenesysScalerDevice *self = FU_GENESYS_SCALER_DEVICE(device);
-	guint addr = 0x000000;
-	gsize size = 0x200000;
+	guint addr = 0;
+	gsize size;
 	const guint8 *data;
 	g_autofree guint8 *buf = NULL;
 	g_autoptr(FuFirmware) payload = NULL;
 	g_autoptr(GBytes) fw_payload = NULL;
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 4);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 54);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 42);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 4, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 54, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 42, NULL);
 
-	if (self->footer.data.header.configuration_setting.bits.second_image) {
-		addr = fu_common_read_uint32(
-		    (const guint8 *)self->footer.data.header.second_image_program_addr,
-		    G_LITTLE_ENDIAN);
-	}
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE))
+		addr = GENESYS_SCALER_BANK_SIZE;
 
 	payload = fu_firmware_get_image_by_id(firmware, FU_FIRMWARE_ID_PAYLOAD, error);
 	if (payload == NULL)
@@ -1825,7 +1810,7 @@ fu_genesys_scaler_device_write_firmware(FuDevice *device,
 						 fu_progress_get_child(progress),
 						 error))
 		return FALSE;
-	if (!fu_common_bytes_compare_raw(buf, size, data, size, error))
+	if (!fu_memcmp_safe(buf, size, data, size, error))
 		return FALSE;
 	fu_progress_step_done(progress);
 
@@ -1837,10 +1822,10 @@ static void
 fu_genesys_scaler_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void
@@ -1852,39 +1837,40 @@ fu_genesys_scaler_device_to_string(FuDevice *device, guint idt, GString *str)
 	g_autoptr(GError) error_local_e = NULL;
 	g_autoptr(GError) error_local_n = NULL;
 
-	fu_common_string_append_kx(str, idt, "Level", self->level);
+	fu_string_append_kx(str, idt, "Level", self->level);
 	if (fu_memcpy_safe((guint8 *)public_key_e,
 			   sizeof(public_key_e),
 			   0, /* dst */
-			   self->public_key,
+			   (const guint8 *)&self->public_key,
 			   sizeof(self->public_key),
 			   sizeof(self->public_key) - 2 - (sizeof(public_key_e) - 1), /* src */
 			   sizeof(public_key_e) - 1,
 			   &error_local_e)) {
-		fu_common_string_append_kv(str, idt, "PublicKeyE", public_key_e);
+		fu_string_append(str, idt, "PublicKeyE", public_key_e);
 	} else {
 		g_debug("ignoring public-key parameter E: %s", error_local_e->message);
 	}
 	if (fu_memcpy_safe((guint8 *)public_key_n,
 			   sizeof(public_key_n),
 			   0, /* dst */
-			   self->public_key,
+			   (const guint8 *)&self->public_key,
 			   sizeof(self->public_key),
 			   4, /* src */
 			   sizeof(public_key_n) - 1,
 			   &error_local_n)) {
-		fu_common_string_append_kv(str, idt, "PublicKeyN", public_key_n);
+		fu_string_append(str, idt, "PublicKeyN", public_key_n);
 	} else {
 		g_debug("ignoring public-key parameter N: %s", error_local_n->message);
 	}
-	fu_common_string_append_kx(str, idt, "ReadRequestRead", self->vc.req_read);
-	fu_common_string_append_kx(str, idt, "WriteRequest", self->vc.req_write);
-	fu_common_string_append_kx(str, idt, "SectorSize", self->sector_size);
-	fu_common_string_append_kx(str, idt, "PageSize", self->page_size);
-	fu_common_string_append_kx(str, idt, "TransferSize", self->transfer_size);
-	fu_common_string_append_kx(str, idt, "GpioOutputRegister", self->gpio_out_reg);
-	fu_common_string_append_kx(str, idt, "GpioEnableRegister", self->gpio_en_reg);
-	fu_common_string_append_kx(str, idt, "GpioValue", self->gpio_val);
+	fu_string_append_kx(str, idt, "ReadRequestRead", self->vc.req_read);
+	fu_string_append_kx(str, idt, "WriteRequest", self->vc.req_write);
+	fu_string_append_kx(str, idt, "SectorSize", self->sector_size);
+	fu_string_append_kx(str, idt, "PageSize", self->page_size);
+	fu_string_append_kx(str, idt, "TransferSize", self->transfer_size);
+	fu_string_append_kx(str, idt, "GpioOutputRegister", self->gpio_out_reg);
+	fu_string_append_kx(str, idt, "GpioEnableRegister", self->gpio_en_reg);
+	fu_string_append_kx(str, idt, "GpioValue", self->gpio_val);
+	fu_string_append_kx(str, idt, "CfiFlashId", self->cfi_flash_id);
 }
 
 static gboolean
@@ -1897,7 +1883,7 @@ fu_genesys_scaler_device_set_quirk_kv(FuDevice *device,
 	guint64 tmp;
 
 	if (g_strcmp0(key, "GenesysScalerDeviceTransferSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->transfer_size = tmp;
 
@@ -1905,7 +1891,7 @@ fu_genesys_scaler_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "GenesysScalerGpioOutputRegister") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		self->gpio_out_reg = tmp;
 
@@ -1913,7 +1899,7 @@ fu_genesys_scaler_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "GenesysScalerGpioEnableRegister") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		self->gpio_en_reg = tmp;
 
@@ -1921,14 +1907,23 @@ fu_genesys_scaler_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "GenesysScalerGpioValue") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		self->gpio_val = tmp;
 
 		/* success */
 		return TRUE;
 	}
+	if (g_strcmp0(key, "GenesysScalerCfiFlashId") == 0) {
+		if (!fu_strtoull(value, &tmp, 0, 0x00ffffffU, error))
+			return FALSE;
+		self->cfi_flash_id = tmp;
 
+		/* success */
+		return TRUE;
+	}
+
+	/* failure */
 	g_set_error_literal(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -1942,17 +1937,21 @@ fu_genesys_scaler_device_init(FuGenesysScalerDevice *self)
 	fu_device_set_vendor(FU_DEVICE(self), "MStar Semiconductor");
 	fu_device_set_name(FU_DEVICE(self), "TSUMG");
 	fu_device_add_protocol(FU_DEVICE(self), "com.mstarsemi.scaler");
-	fu_device_retry_set_delay(FU_DEVICE(self), 10); /* ms */
+	fu_device_retry_set_delay(FU_DEVICE(self), 10); /* 10ms */
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_SCALER_FLAG_PAUSE_R2_CPU,
 					"pause-r2-cpu");
 	fu_device_register_private_flag(FU_DEVICE(self), FU_SCALER_FLAG_USE_I2C_CH0, "use-i2c-ch0");
-	self->sector_size = 0x1000; /* 4KB */
-	self->page_size = 0x100;    /* 256B */
-	self->transfer_size = 0x40; /* 64B */
+	fu_device_set_install_duration(FU_DEVICE(self), 730); /* 12min 10s */
+
+	self->sector_size = 0x1000;						/* 4KB */
+	self->page_size = 0x100;						/* 256B */
+	self->transfer_size = 0x40;						/* 64B */
+	fu_device_set_firmware_size(FU_DEVICE(self), GENESYS_SCALER_BANK_SIZE); /* 2MB */
 }
 
 static void
@@ -1960,8 +1959,6 @@ fu_genesys_scaler_device_class_init(FuGenesysScalerDeviceClass *klass)
 {
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
 	klass_device->probe = fu_genesys_scaler_device_probe;
-	klass_device->open = fu_genesys_scaler_device_open;
-	klass_device->close = fu_genesys_scaler_device_close;
 	klass_device->setup = fu_genesys_scaler_device_setup;
 	klass_device->dump_firmware = fu_genesys_scaler_device_dump_firmware;
 	klass_device->prepare_firmware = fu_genesys_scaler_device_prepare_firmware;

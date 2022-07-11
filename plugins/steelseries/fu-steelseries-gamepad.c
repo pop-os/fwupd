@@ -33,7 +33,11 @@ fu_steelseries_gamepad_cmd_erase(FuDevice *device, GError **error)
 		data[13] = 0x02;
 	}
 
-	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device), data, FALSE, error)) {
+	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device),
+				       data,
+				       sizeof(data),
+				       FALSE,
+				       error)) {
 		g_prefix_error(error, "unable erase flash block: ");
 		return FALSE;
 	}
@@ -57,17 +61,21 @@ fu_steelseries_gamepad_setup(FuDevice *device, GError **error)
 
 	/* get version of FW and bootloader */
 	data[0] = 0x12;
-	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device), data, TRUE, error))
+	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device),
+				       data,
+				       sizeof(data),
+				       TRUE,
+				       error))
 		return FALSE;
 
-	if (!fu_common_read_uint16_safe(data, sizeof(data), 0x01, &fw_ver, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint16_safe(data, sizeof(data), 0x01, &fw_ver, G_LITTLE_ENDIAN, error))
 		return FALSE;
-	version = fu_common_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_BCD);
+	version = fu_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_BCD);
 	fu_device_set_version(FU_DEVICE(device), version);
 
-	if (!fu_common_read_uint16_safe(data, sizeof(data), 0x03, &fw_ver, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint16_safe(data, sizeof(data), 0x03, &fw_ver, G_LITTLE_ENDIAN, error))
 		return FALSE;
-	bootloader_version = fu_common_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_BCD);
+	bootloader_version = fu_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_BCD);
 	fu_device_set_version_bootloader(device, bootloader_version);
 
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
@@ -86,7 +94,11 @@ fu_steelseries_gamepad_attach(FuDevice *device, FuProgress *progress, GError **e
 		return TRUE;
 
 	/* switch to runtime mode */
-	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device), data, FALSE, &error_local))
+	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device),
+				       data,
+				       sizeof(data),
+				       FALSE,
+				       &error_local))
 		g_debug("ignoring error on reset: %s", error_local->message);
 
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
@@ -104,7 +116,11 @@ fu_steelseries_gamepad_detach(FuDevice *device, FuProgress *progress, GError **e
 		return TRUE;
 
 	/* switch to bootloader mode */
-	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device), data, FALSE, &error_local))
+	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device),
+				       data,
+				       sizeof(data),
+				       FALSE,
+				       &error_local))
 		g_debug("ignoring error on reset: %s", error_local->message);
 
 	/* controller will be renumbered after switching to bootloader mode */
@@ -129,12 +145,12 @@ fu_steelseries_gamepad_write_firmware_chunks(FuDevice *device,
 		guint8 data[STEELSERIES_BUFFER_CONTROL_SIZE] = {0xA3};
 
 		/* block ID */
-		if (!fu_common_write_uint16_safe(data,
-						 STEELSERIES_BUFFER_CONTROL_SIZE,
-						 0x01,
-						 (guint16)id,
-						 G_LITTLE_ENDIAN,
-						 error))
+		if (!fu_memwrite_uint16_safe(data,
+					     STEELSERIES_BUFFER_CONTROL_SIZE,
+					     0x01,
+					     (guint16)id,
+					     G_LITTLE_ENDIAN,
+					     error))
 			return FALSE;
 		/* 32B of data only */
 		if (!fu_memcpy_safe(data,
@@ -149,18 +165,22 @@ fu_steelseries_gamepad_write_firmware_chunks(FuDevice *device,
 
 		/* block checksum */
 		/* probably not necessary */
-		chunk_checksum = fu_common_sum16(data + 3, STEELSERIES_BUFFER_TRANSFER_SIZE);
-		if (!fu_common_write_uint16_safe(data,
-						 STEELSERIES_BUFFER_CONTROL_SIZE,
-						 0x03 + STEELSERIES_BUFFER_TRANSFER_SIZE,
-						 chunk_checksum,
-						 G_LITTLE_ENDIAN,
-						 error))
+		chunk_checksum = fu_sum16(data + 3, STEELSERIES_BUFFER_TRANSFER_SIZE);
+		if (!fu_memwrite_uint16_safe(data,
+					     STEELSERIES_BUFFER_CONTROL_SIZE,
+					     0x03 + STEELSERIES_BUFFER_TRANSFER_SIZE,
+					     chunk_checksum,
+					     G_LITTLE_ENDIAN,
+					     error))
 			return FALSE;
 
 		*checksum += (guint32)chunk_checksum;
 
-		if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device), data, FALSE, error)) {
+		if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device),
+					       data,
+					       sizeof(data),
+					       FALSE,
+					       error)) {
 			g_prefix_error(error, "unable to flash block %u: ", id);
 			return FALSE;
 		}
@@ -178,15 +198,19 @@ fu_steelseries_gamepad_write_checksum(FuDevice *device, guint32 checksum, GError
 	/* write checksum */
 	guint8 data[STEELSERIES_BUFFER_CONTROL_SIZE] = {0xA5, 0xAA, 0x55};
 
-	if (!fu_common_write_uint32_safe(data,
-					 STEELSERIES_BUFFER_CONTROL_SIZE,
-					 0x03,
-					 checksum,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint32_safe(data,
+				     STEELSERIES_BUFFER_CONTROL_SIZE,
+				     0x03,
+				     checksum,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return FALSE;
 
-	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device), data, TRUE, error)) {
+	if (!fu_steelseries_device_cmd(FU_STEELSERIES_DEVICE(device),
+				       data,
+				       sizeof(data),
+				       TRUE,
+				       error)) {
 		g_prefix_error(error, "unable to write checksum: ");
 		return FALSE;
 	}
@@ -229,9 +253,9 @@ fu_steelseries_gamepad_write_firmware(FuDevice *device,
 	}
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 0);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
 
 	/* erase all first */
 	if (!fu_steelseries_gamepad_cmd_erase(device, error))
@@ -257,10 +281,10 @@ static void
 fu_steelseries_gamepad_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 93);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 93, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "reload");
 }
 
 static void

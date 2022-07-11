@@ -59,6 +59,8 @@ G_DEFINE_TYPE(FuSynapticsRmiHidDevice, fu_synaptics_rmi_hid_device, FU_TYPE_SYNA
 #define RMI_SLEEP_MODE_NORMAL	    0x00
 #define RMI_SLEEP_MODE_SENSOR_SLEEP 0x01
 
+#define FU_SYNAPTICS_RMI_HID_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 static GByteArray *
 fu_synaptics_rmi_hid_device_read(FuSynapticsRmiDevice *rmi_device,
 				 guint16 addr,
@@ -92,12 +94,12 @@ fu_synaptics_rmi_hid_device_read(FuSynapticsRmiDevice *rmi_device,
 	for (guint j = req->len; j < 21; j++)
 		fu_byte_array_append_uint8(req, 0x0);
 	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-		fu_common_dump_full(G_LOG_DOMAIN,
-				    "ReportWrite",
-				    req->data,
-				    req->len,
-				    80,
-				    FU_DUMP_FLAGS_NONE);
+		fu_dump_full(G_LOG_DOMAIN,
+			     "ReportWrite",
+			     req->data,
+			     req->len,
+			     80,
+			     FU_DUMP_FLAGS_NONE);
 	}
 	if (!fu_io_channel_write_byte_array(self->io_channel,
 					    req,
@@ -126,12 +128,12 @@ fu_synaptics_rmi_hid_device_read(FuSynapticsRmiDevice *rmi_device,
 			return NULL;
 		}
 		if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-			fu_common_dump_full(G_LOG_DOMAIN,
-					    "ReportRead",
-					    res->data,
-					    res->len,
-					    80,
-					    FU_DUMP_FLAGS_NONE);
+			fu_dump_full(G_LOG_DOMAIN,
+				     "ReportRead",
+				     res->data,
+				     res->len,
+				     80,
+				     FU_DUMP_FLAGS_NONE);
 		}
 
 		/* ignore non data report events */
@@ -167,12 +169,12 @@ fu_synaptics_rmi_hid_device_read(FuSynapticsRmiDevice *rmi_device,
 		g_byte_array_append(buf, res->data + HID_RMI4_READ_INPUT_DATA, input_count_sz);
 	}
 	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-		fu_common_dump_full(G_LOG_DOMAIN,
-				    "DeviceRead",
-				    buf->data,
-				    buf->len,
-				    80,
-				    FU_DUMP_FLAGS_NONE);
+		fu_dump_full(G_LOG_DOMAIN,
+			     "DeviceRead",
+			     buf->data,
+			     buf->len,
+			     80,
+			     FU_DUMP_FLAGS_NONE);
 	}
 
 	return g_steal_pointer(&buf);
@@ -227,12 +229,12 @@ fu_synaptics_rmi_hid_device_write(FuSynapticsRmiDevice *rmi_device,
 	for (guint i = buf->len; i < 21; i++)
 		fu_byte_array_append_uint8(buf, 0x0);
 	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-		fu_common_dump_full(G_LOG_DOMAIN,
-				    "DeviceWrite",
-				    buf->data,
-				    buf->len,
-				    80,
-				    FU_DUMP_FLAGS_NONE);
+		fu_dump_full(G_LOG_DOMAIN,
+			     "DeviceWrite",
+			     buf->data,
+			     buf->len,
+			     80,
+			     FU_DUMP_FLAGS_NONE);
 	}
 
 	return fu_io_channel_write_byte_array(self->io_channel,
@@ -270,12 +272,12 @@ fu_synaptics_rmi_hid_device_wait_for_attr(FuSynapticsRmiDevice *rmi_device,
 			return FALSE;
 		}
 		if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-			fu_common_dump_full(G_LOG_DOMAIN,
-					    "ReportRead",
-					    res->data,
-					    res->len,
-					    80,
-					    FU_DUMP_FLAGS_NONE);
+			fu_dump_full(G_LOG_DOMAIN,
+				     "ReportRead",
+				     res->data,
+				     res->len,
+				     80,
+				     FU_DUMP_FLAGS_NONE);
 		}
 		if (res->len < HID_RMI4_ATTN_INTERUPT_SOURCES + 1) {
 			g_debug("attr: ignoring small read of %u", res->len);
@@ -317,11 +319,12 @@ fu_synaptics_rmi_hid_device_set_mode(FuSynapticsRmiHidDevice *self,
 {
 	const guint8 data[] = {0x0f, mode};
 	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "SetMode", data, sizeof(data));
+		fu_dump_raw(G_LOG_DOMAIN, "SetMode", data, sizeof(data));
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    HIDIOCSFEATURE(sizeof(data)),
 				    (guint8 *)data,
 				    NULL,
+				    FU_SYNAPTICS_RMI_HID_DEVICE_IOCTL_TIMEOUT,
 				    error);
 }
 
@@ -491,9 +494,6 @@ fu_synaptics_rmi_hid_device_set_page(FuSynapticsRmiDevice *self, guint8 page, GE
 static gboolean
 fu_synaptics_rmi_hid_device_probe(FuDevice *device, GError **error)
 {
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_synaptics_rmi_hid_device_parent_class)->probe(device, error))
-		return FALSE;
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error);
 }
 
@@ -553,10 +553,10 @@ fu_synaptics_rmi_hid_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

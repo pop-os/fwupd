@@ -59,7 +59,7 @@ fu_vli_usbhub_device_i2c_read(FuVliUsbhubDevice *self,
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "I2cReadData", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "I2cReadData", buf, bufsz);
 	return TRUE;
 }
 
@@ -87,7 +87,7 @@ fu_vli_usbhub_device_i2c_write_data(FuVliUsbhubDevice *self,
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	guint16 value = (((guint16)disable_start_bit) << 8) | disable_end_bit;
 	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, bufsz);
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
@@ -226,6 +226,7 @@ fu_vli_usbhub_msp430_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* transfer by I²C write, and check status by I²C read */
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
 	fu_progress_set_steps(progress, records->len);
 	for (guint j = 0; j < records->len; j++) {
@@ -306,10 +307,10 @@ static void
 fu_vli_usbhub_msp430_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 13);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 85); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	 /* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 13, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 85, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

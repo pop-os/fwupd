@@ -79,13 +79,13 @@ fu_vli_usbhub_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* parent */
 	FU_DEVICE_CLASS(fu_vli_usbhub_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kb(str, idt, "DisablePowersave", self->disable_powersave);
-	fu_common_string_append_kx(str, idt, "UpdateProtocol", self->update_protocol);
+	fu_string_append_kb(str, idt, "DisablePowersave", self->disable_powersave);
+	fu_string_append_kx(str, idt, "UpdateProtocol", self->update_protocol);
 	if (self->update_protocol >= 0x2) {
-		fu_common_string_append_kv(str, idt, "H1Hdr@0x0", NULL);
+		fu_string_append(str, idt, "H1Hdr@0x0", NULL);
 		fu_vli_usbhub_header_to_string(&self->hd1_hdr, idt + 1, str);
 		if (self->hd2_hdr.dev_id != 0xffff) {
-			fu_common_string_append_kv(str, idt, "H2Hdr@0x1000", NULL);
+			fu_string_append(str, idt, "H2Hdr@0x1000", NULL);
 			fu_vli_usbhub_header_to_string(&self->hd2_hdr, idt + 1, str);
 		}
 	}
@@ -628,10 +628,6 @@ fu_vli_usbhub_device_probe(FuDevice *device, GError **error)
 {
 	guint16 usbver = fu_usb_device_get_spec(FU_USB_DEVICE(device));
 
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_vli_usbhub_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	/* quirks now applied... */
 	if (usbver > 0x0300 || fu_device_has_private_flag(device, FU_VLI_USBHUB_DEVICE_FLAG_USB3)) {
 		fu_device_set_summary(device, "USB 3.x hub");
@@ -874,8 +870,8 @@ fu_vli_usbhub_device_update_v1(FuVliUsbhubDevice *self,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80, NULL);
 
 	/* simple image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -919,8 +915,8 @@ fu_vli_usbhub_device_update_v2_recovery(FuVliUsbhubDevice *self,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80, NULL);
 
 	/* erase */
 	for (guint32 addr = 0; addr < bufsz; addr += 0x1000) {
@@ -1090,9 +1086,9 @@ fu_vli_usbhub_device_update_v2(FuVliUsbhubDevice *self,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 72);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 8); /* HD2 */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 72, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 8, "hd2");
 
 	/* make space */
 	if (!fu_vli_device_spi_erase(FU_VLI_DEVICE(self),
@@ -1203,10 +1199,10 @@ static void
 fu_vli_usbhub_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 92);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 7);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 92, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 7, "reload");
 }
 
 static void

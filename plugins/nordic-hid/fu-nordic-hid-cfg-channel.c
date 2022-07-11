@@ -27,6 +27,8 @@
 #define FU_NORDIC_HID_CFG_CHANNEL_RETRY_DELAY	  50  /* ms */
 #define FU_NORDIC_HID_CFG_CHANNEL_DFU_RETRY_DELAY 500 /* ms */
 
+#define FU_NORDIC_HID_CFG_CHANNEL_IOCTL_TIMEOUT 5000 /* ms */
+
 typedef enum {
 	CONFIG_STATUS_PENDING,
 	CONFIG_STATUS_GET_MAX_MOD_ID,
@@ -153,8 +155,13 @@ fu_nordic_hid_cfg_channel_send(FuNordicHidCfgChannel *self,
 	if (udev_device == NULL)
 		return FALSE;
 	if (g_getenv("FWUPD_NORDIC_HID_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "Sent", buf, bufsz);
-	if (!fu_udev_device_ioctl(udev_device, HIDIOCSFEATURE(bufsz), buf, NULL, error))
+		fu_dump_raw(G_LOG_DOMAIN, "Sent", buf, bufsz);
+	if (!fu_udev_device_ioctl(udev_device,
+				  HIDIOCSFEATURE(bufsz),
+				  buf,
+				  NULL,
+				  FU_NORDIC_HID_CFG_CHANNEL_IOCTL_TIMEOUT,
+				  error))
 		return FALSE;
 	return TRUE;
 #else
@@ -184,6 +191,7 @@ fu_nordic_hid_cfg_channel_receive(FuNordicHidCfgChannel *self,
 					  HIDIOCGFEATURE(sizeof(*recv_msg)),
 					  (guint8 *)recv_msg,
 					  NULL,
+					  FU_NORDIC_HID_CFG_CHANNEL_IOCTL_TIMEOUT,
 					  error))
 			return FALSE;
 		/* if the device is busy it return 06 00 00 00 00 response */
@@ -205,7 +213,7 @@ fu_nordic_hid_cfg_channel_receive(FuNordicHidCfgChannel *self,
 	}
 
 	if (g_getenv("FWUPD_NORDIC_HID_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "Received", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "Received", buf, bufsz);
 	/*
 	 * [TODO]: Possibly add the report-id fix for Bluez versions < 5.56:
 	 * https://github.com/bluez/bluez/commit/35a2c50437cca4d26ac6537ce3a964bb509c9b62
@@ -482,7 +490,7 @@ fu_nordic_hid_cfg_channel_get_board_name(FuNordicHidCfgChannel *self, GError **e
 		return FALSE;
 	if (!fu_nordic_hid_cfg_channel_cmd_receive(self, CONFIG_STATUS_SUCCESS, res, error))
 		return FALSE;
-	self->board_name = fu_common_strsafe((const gchar *)res->data, res->data_len);
+	self->board_name = fu_strsafe((const gchar *)res->data, res->data_len);
 
 	/* success */
 	return TRUE;
@@ -519,7 +527,7 @@ fu_nordic_hid_cfg_channel_get_bl_name(FuNordicHidCfgChannel *self, GError **erro
 			    g_strndup((const gchar *)res->data, res->data_len));
 			return FALSE;
 		}
-		self->bl_name = fu_common_strsafe((const gchar *)res->data, res->data_len);
+		self->bl_name = fu_strsafe((const gchar *)res->data, res->data_len);
 	} else if (g_getenv("FWUPD_NORDIC_HID_VERBOSE") != NULL) {
 		g_debug("the board have no support of bootloader runtime detection");
 	}
@@ -603,7 +611,7 @@ fu_nordic_hid_cfg_channel_load_module_opts(FuNordicHidCfgChannel *self,
 		if (res->data[0] == END_OF_TRANSFER_CHAR)
 			break;
 		opt = g_new0(FuNordicCfgChannelModuleOption, 1);
-		opt->name = fu_common_strsafe((const gchar *)res->data, res->data_len);
+		opt->name = fu_strsafe((const gchar *)res->data, res->data_len);
 		opt->idx = i;
 		g_ptr_array_add(mod->options, opt);
 	}
@@ -702,26 +710,21 @@ fu_nordic_hid_cfg_channel_dfu_fwinfo(FuNordicHidCfgChannel *self, GError **error
 	if (g_strcmp0(self->bl_name, "MCUBOOT") == 0)
 		self->flash_area_id = 0;
 
-	if (!fu_common_read_uint32_safe(res->data,
-					REPORT_SIZE,
-					0x01,
-					&self->flashed_image_len,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(res->data,
+				    REPORT_SIZE,
+				    0x01,
+				    &self->flashed_image_len,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(res->data,
-					REPORT_SIZE,
-					0x07,
-					&ver_rev,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(res->data, REPORT_SIZE, 0x07, &ver_rev, G_LITTLE_ENDIAN, error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(res->data,
-					REPORT_SIZE,
-					0x09,
-					&ver_build_nr,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(res->data,
+				    REPORT_SIZE,
+				    0x09,
+				    &ver_build_nr,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 	version = g_strdup_printf("%u.%u.%u.%u", res->data[4], res->data[5], ver_rev, ver_build_nr);
 	fu_device_set_version(FU_DEVICE(self), version);
@@ -840,33 +843,33 @@ fu_nordic_hid_cfg_channel_dfu_sync(FuNordicHidCfgChannel *self,
 		return FALSE;
 	}
 	dfu_info->dfu_state = res->data[0];
-	if (!fu_common_read_uint32_safe(res->data,
-					REPORT_SIZE,
-					0x01,
-					&dfu_info->img_length,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(res->data,
+				    REPORT_SIZE,
+				    0x01,
+				    &dfu_info->img_length,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(res->data,
-					REPORT_SIZE,
-					0x05,
-					&dfu_info->img_csum,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(res->data,
+				    REPORT_SIZE,
+				    0x05,
+				    &dfu_info->img_csum,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(res->data,
-					REPORT_SIZE,
-					0x09,
-					&dfu_info->offset,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(res->data,
+				    REPORT_SIZE,
+				    0x09,
+				    &dfu_info->offset,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(res->data,
-					REPORT_SIZE,
-					0x0D,
-					&dfu_info->sync_buffer_size,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(res->data,
+				    REPORT_SIZE,
+				    0x0D,
+				    &dfu_info->sync_buffer_size,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 
 	return TRUE;
@@ -891,26 +894,26 @@ fu_nordic_hid_cfg_channel_dfu_start(FuNordicHidCfgChannel *self,
 		return FALSE;
 	}
 
-	if (!fu_common_write_uint32_safe(data,
-					 REPORT_DATA_MAX_LEN,
-					 0x00,
-					 (guint32)img_length,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint32_safe(data,
+				     REPORT_DATA_MAX_LEN,
+				     0x00,
+				     (guint32)img_length,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return FALSE;
-	if (!fu_common_write_uint32_safe(data,
-					 REPORT_DATA_MAX_LEN,
-					 0x04,
-					 img_crc,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint32_safe(data,
+				     REPORT_DATA_MAX_LEN,
+				     0x04,
+				     img_crc,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return FALSE;
-	if (!fu_common_write_uint32_safe(data,
-					 REPORT_DATA_MAX_LEN,
-					 0x08,
-					 offset,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint32_safe(data,
+				     REPORT_DATA_MAX_LEN,
+				     0x08,
+				     offset,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return FALSE;
 
 	if (!fu_nordic_hid_cfg_channel_cmd_send(self,
@@ -927,10 +930,6 @@ fu_nordic_hid_cfg_channel_dfu_start(FuNordicHidCfgChannel *self,
 static gboolean
 fu_nordic_hid_cfg_channel_probe(FuDevice *device, GError **error)
 {
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_nordic_hid_cfg_channel_parent_class)->probe(device, error))
-		return FALSE;
-
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error);
 }
 
@@ -983,10 +982,10 @@ static void
 fu_nordic_hid_cfg_channel_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "reload");
 }
 
 static void
@@ -995,7 +994,7 @@ fu_nordic_hid_cfg_channel_module_to_string(FuNordicCfgChannelModule *mod, guint 
 	for (guint i = 0; i < mod->options->len; i++) {
 		FuNordicCfgChannelModuleOption *opt = g_ptr_array_index(mod->options, i);
 		g_autofree gchar *title = g_strdup_printf("Option%02x", i);
-		fu_common_string_append_kv(str, idt, title, opt->name);
+		fu_string_append(str, idt, title, opt->name);
 	}
 }
 
@@ -1003,15 +1002,15 @@ static void
 fu_nordic_hid_cfg_channel_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuNordicHidCfgChannel *self = FU_NORDIC_HID_CFG_CHANNEL(device);
-	fu_common_string_append_kv(str, idt, "BoardName", self->board_name);
-	fu_common_string_append_kv(str, idt, "Bootloader", self->bl_name);
-	fu_common_string_append_kx(str, idt, "FlashAreaId", self->flash_area_id);
-	fu_common_string_append_kx(str, idt, "FlashedImageLen", self->flashed_image_len);
-	fu_common_string_append_kx(str, idt, "PeerId", self->peer_id);
+	fu_string_append(str, idt, "BoardName", self->board_name);
+	fu_string_append(str, idt, "Bootloader", self->bl_name);
+	fu_string_append_kx(str, idt, "FlashAreaId", self->flash_area_id);
+	fu_string_append_kx(str, idt, "FlashedImageLen", self->flashed_image_len);
+	fu_string_append_kx(str, idt, "PeerId", self->peer_id);
 	for (guint i = 0; i < self->modules->len; i++) {
 		FuNordicCfgChannelModule *mod = g_ptr_array_index(self->modules, i);
 		g_autofree gchar *title = g_strdup_printf("Module%02x", i);
-		fu_common_string_append_kv(str, idt, title, mod->name);
+		fu_string_append(str, idt, title, mod->name);
 		fu_nordic_hid_cfg_channel_module_to_string(mod, idt + 1, str);
 	}
 }
@@ -1128,9 +1127,9 @@ fu_nordic_hid_cfg_channel_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
 
 	/* TODO: check if there is unfinished operation before? */
 	blob = fu_firmware_get_bytes(firmware, error);

@@ -23,7 +23,7 @@ fu_plugin_acpi_phat_init(FuPlugin *plugin)
 }
 
 static gboolean
-fu_plugin_acpi_phat_coldplug(FuPlugin *plugin, GError **error)
+fu_plugin_acpi_phat_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	g_autofree gchar *path = NULL;
 	g_autofree gchar *fn = NULL;
@@ -31,9 +31,9 @@ fu_plugin_acpi_phat_coldplug(FuPlugin *plugin, GError **error)
 	g_autoptr(FuFirmware) phat = fu_acpi_phat_new();
 	g_autoptr(GBytes) blob = NULL;
 
-	path = fu_common_get_path(FU_PATH_KIND_ACPI_TABLES);
+	path = fu_path_from_kind(FU_PATH_KIND_ACPI_TABLES);
 	fn = g_build_filename(path, "PHAT", NULL);
-	blob = fu_common_get_contents_bytes(fn, error);
+	blob = fu_bytes_get_contents(fn, error);
 	if (blob == NULL)
 		return FALSE;
 	if (!fu_firmware_parse(phat, blob, FWUPD_INSTALL_FLAG_NONE, error))

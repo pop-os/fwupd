@@ -42,10 +42,6 @@ fu_hailuck_bl_device_attach(FuDevice *device, FuProgress *progress, GError **err
 static gboolean
 fu_hailuck_bl_device_probe(FuDevice *device, GError **error)
 {
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_hailuck_bl_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	/* add instance ID */
 	fu_device_add_instance_str(device, "MODE", "KBD");
 	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", "MODE", NULL);
@@ -58,7 +54,7 @@ fu_hailuck_bl_device_read_block_start(FuHailuckBlDevice *self, guint32 length, G
 	    FU_HAILUCK_REPORT_ID_SHORT,
 	    FU_HAILUCK_CMD_READ_BLOCK_START,
 	};
-	fu_common_write_uint16(buf + 4, length, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(buf + 4, length, G_LITTLE_ENDIAN);
 	return fu_hid_device_set_report(FU_HID_DEVICE(self),
 					buf[0],
 					buf,
@@ -116,8 +112,9 @@ fu_hailuck_bl_device_dump_firmware(FuDevice *device, FuProgress *progress, GErro
 		return NULL;
 
 	/* receive data back */
-	fu_byte_array_set_size(fwbuf, fwsz);
+	fu_byte_array_set_size(fwbuf, fwsz, 0x00);
 	chunks = fu_chunk_array_mutable_new(fwbuf->data, fwbuf->len, 0x0, 0x0, 2048);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
@@ -159,7 +156,7 @@ fu_hailuck_bl_device_write_block_start(FuHailuckBlDevice *self, guint32 length, 
 	    FU_HAILUCK_REPORT_ID_SHORT,
 	    FU_HAILUCK_CMD_WRITE_BLOCK_START,
 	};
-	fu_common_write_uint16(buf + 4, length, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(buf + 4, length, G_LITTLE_ENDIAN);
 	return fu_hid_device_set_report(FU_HID_DEVICE(self),
 					buf[0],
 					buf,
@@ -220,10 +217,10 @@ fu_hailuck_bl_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1); /* block 0 */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 9);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1, "device-write-blk0");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 9, NULL);
 
 	/* get default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -278,7 +275,7 @@ fu_hailuck_bl_device_write_firmware(FuDevice *device,
 	/* verify */
 	fw_new = fu_hailuck_bl_device_dump_firmware(device, fu_progress_get_child(progress), error);
 	fu_progress_step_done(progress);
-	return fu_common_bytes_compare(fw, fw_new, error);
+	return fu_bytes_compare(fw, fw_new, error);
 }
 
 static void

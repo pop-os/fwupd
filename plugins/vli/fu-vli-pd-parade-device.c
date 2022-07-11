@@ -28,12 +28,12 @@ static void
 fu_vli_pd_parade_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuVliPdParadeDevice *self = FU_VLI_PD_PARADE_DEVICE(device);
-	fu_common_string_append_kv(str,
-				   idt,
-				   "DeviceKind",
-				   fu_vli_common_device_kind_to_string(self->device_kind));
-	fu_common_string_append_kx(str, idt, "Page2", self->page2);
-	fu_common_string_append_kx(str, idt, "Page7", self->page7);
+	fu_string_append(str,
+			 idt,
+			 "DeviceKind",
+			 fu_vli_common_device_kind_to_string(self->device_kind));
+	fu_string_append_kx(str, idt, "Page2", self->page2);
+	fu_string_append_kx(str, idt, "Page7", self->page7);
 }
 
 static gboolean
@@ -155,7 +155,11 @@ fu_vli_pd_parade_device_read_fw_ver(FuVliPdParadeDevice *self, GError **error)
 	if (!fu_vli_pd_parade_device_i2c_read(self, self->page7, 0x02, buf, 0x1, error))
 		return FALSE;
 	if (buf[0] != 0x01 && buf[0] != 0x02) {
-		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "not supported on this device: buffer was 0x%02x",
+			    buf[0]);
 		return FALSE;
 	}
 
@@ -472,10 +476,10 @@ fu_vli_pd_parade_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 19);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 36);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 19, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 36, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
 
 	/* simple image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -556,7 +560,7 @@ fu_vli_pd_parade_device_write_firmware(FuDevice *device,
 						blocks->len);
 	}
 	fw_verify = g_byte_array_free_to_bytes(g_steal_pointer(&buf_verify));
-	if (!fu_common_bytes_compare(fw, fw_verify, error))
+	if (!fu_bytes_compare(fw, fw_verify, error))
 		return FALSE;
 	fu_progress_step_done(progress);
 
@@ -647,8 +651,9 @@ fu_vli_pd_parade_device_dump_firmware(FuDevice *device, FuProgress *progress, GE
 
 	/* read */
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_VERIFY);
-	fu_byte_array_set_size(fw, fu_device_get_firmware_size_max(device));
+	fu_byte_array_set_size(fw, fu_device_get_firmware_size_max(device), 0x00);
 	blocks = fu_chunk_array_mutable_new(fw->data, fw->len, 0x0, 0x0, 0x10000);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, blocks->len);
 	for (guint i = 0; i < blocks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(blocks, i);
@@ -684,10 +689,10 @@ fu_vli_pd_parade_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

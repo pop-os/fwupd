@@ -6,18 +6,15 @@
 
 #pragma once
 
-#include <glib-object.h>
+#include <fwupdplugin.h>
+
 #include <jcat.h>
-#include <xmlb.h>
 
 #include "fwupd-device.h"
 #include "fwupd-enums.h"
 
-#include "fu-common.h"
-#include "fu-context.h"
-#include "fu-plugin.h"
+#include "fu-config.h"
 #include "fu-release.h"
-#include "fu-security-attrs.h"
 
 #define FU_TYPE_ENGINE (fu_engine_get_type())
 G_DECLARE_FINAL_TYPE(FuEngine, fu_engine, FU, ENGINE, GObject)
@@ -40,26 +37,23 @@ typedef enum {
 	FU_ENGINE_LOAD_FLAG_REMOTES = 1 << 2,
 	FU_ENGINE_LOAD_FLAG_HWINFO = 1 << 3,
 	FU_ENGINE_LOAD_FLAG_NO_CACHE = 1 << 4,
+	FU_ENGINE_LOAD_FLAG_NO_IDLE_SOURCES = 1 << 5,
 	/*< private >*/
 	FU_ENGINE_LOAD_FLAG_LAST
 } FuEngineLoadFlags;
 
 FuEngine *
-fu_engine_new(FuAppFlags app_flags);
-void
-fu_engine_add_app_flag(FuEngine *self, FuAppFlags app_flags);
+fu_engine_new(void);
 void
 fu_engine_add_plugin_filter(FuEngine *self, const gchar *plugin_glob);
 void
 fu_engine_idle_reset(FuEngine *self);
 gboolean
-fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, GError **error);
+fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GError **error);
 gboolean
 fu_engine_get_tainted(FuEngine *self);
-gboolean
-fu_engine_get_only_trusted(FuEngine *self);
-gboolean
-fu_engine_get_show_device_private(FuEngine *self);
+const gchar *
+fu_engine_get_host_vendor(FuEngine *self);
 const gchar *
 fu_engine_get_host_product(FuEngine *self);
 const gchar *
@@ -72,8 +66,8 @@ const gchar *
 fu_engine_get_host_security_id(FuEngine *self);
 XbSilo *
 fu_engine_get_silo_from_blob(FuEngine *self, GBytes *blob_cab, GError **error);
-guint64
-fu_engine_get_archive_size_max(FuEngine *self);
+FuConfig *
+fu_engine_get_config(FuEngine *self);
 GPtrArray *
 fu_engine_get_plugins(FuEngine *self);
 GPtrArray *
@@ -224,6 +218,11 @@ void
 fu_engine_add_plugin(FuEngine *self, FuPlugin *plugin);
 void
 fu_engine_add_runtime_version(FuEngine *self, const gchar *component_id, const gchar *version);
+GPtrArray *
+fu_engine_get_details_for_bytes(FuEngine *self,
+				FuEngineRequest *request,
+				GBytes *blob,
+				GError **error);
 gboolean
 fu_engine_check_trust(FuEngine *self, FuRelease *task, GError **error);
 gboolean
@@ -242,3 +241,5 @@ fu_engine_schedule_update(FuEngine *self,
 			  GBytes *blob_cab,
 			  FwupdInstallFlags flags,
 			  GError **error);
+GError *
+fu_engine_error_array_get_best(GPtrArray *errors);

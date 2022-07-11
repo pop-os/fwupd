@@ -58,7 +58,7 @@ fu_logitech_hidpp_runtime_bolt_to_string(FuDevice *device, guint idt, GString *s
 	FuLogitechHidPpRuntimeBolt *self = FU_HIDPP_RUNTIME_BOLT(device);
 
 	FU_DEVICE_CLASS(fu_logitech_hidpp_runtime_bolt_parent_class)->to_string(device, idt, str);
-	fu_common_string_append_ku(str, idt, "PairingSlots", self->pairing_slots);
+	fu_string_append_ku(str, idt, "PairingSlots", self->pairing_slots);
 }
 
 static FuLogitechHidPpDevice *
@@ -375,12 +375,12 @@ fu_logitech_hidpp_runtime_bolt_setup_internal(FuDevice *device, GError **error)
 		switch (msg->data[0]) {
 		case 0:
 			/* main application */
-			if (!fu_common_read_uint16_safe(msg->data,
-							sizeof(msg->data),
-							0x03,
-							&version_raw,
-							G_BIG_ENDIAN,
-							error))
+			if (!fu_memread_uint16_safe(msg->data,
+						    sizeof(msg->data),
+						    0x03,
+						    &version_raw,
+						    G_BIG_ENDIAN,
+						    error))
 				return FALSE;
 			version = fu_logitech_hidpp_format_version("MPR",
 								   msg->data[1],
@@ -390,12 +390,12 @@ fu_logitech_hidpp_runtime_bolt_setup_internal(FuDevice *device, GError **error)
 			break;
 		case 1:
 			/* bootloader */
-			if (!fu_common_read_uint16_safe(msg->data,
-							sizeof(msg->data),
-							0x03,
-							&version_raw,
-							G_BIG_ENDIAN,
-							error))
+			if (!fu_memread_uint16_safe(msg->data,
+						    sizeof(msg->data),
+						    0x03,
+						    &version_raw,
+						    G_BIG_ENDIAN,
+						    error))
 				return FALSE;
 			version = fu_logitech_hidpp_format_version("BOT",
 								   msg->data[1],
@@ -427,12 +427,12 @@ fu_logitech_hidpp_runtime_bolt_setup_internal(FuDevice *device, GError **error)
 							 "ENT",
 							 NULL))
 				return FALSE;
-			if (!fu_common_read_uint16_safe(msg->data,
-							sizeof(msg->data),
-							0x03,
-							&version_raw,
-							G_BIG_ENDIAN,
-							error))
+			if (!fu_memread_uint16_safe(msg->data,
+						    sizeof(msg->data),
+						    0x03,
+						    &version_raw,
+						    G_BIG_ENDIAN,
+						    error))
 				return FALSE;
 			g_string_append_printf(radio_version, "0x%.4x", version_raw);
 			fu_device_set_version(FU_DEVICE(radio), radio_version->str);
@@ -489,6 +489,7 @@ fu_logitech_hidpp_runtime_bolt_class_init(FuLogitechHidPpRuntimeBoltClass *klass
 static void
 fu_logitech_hidpp_runtime_bolt_init(FuLogitechHidPpRuntimeBolt *self)
 {
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_USER_REPLUG);
 	fu_device_set_vendor(FU_DEVICE(self), "Logitech");
 	fu_device_set_name(FU_DEVICE(self), "Bolt Receiver");

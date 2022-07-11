@@ -6,9 +6,13 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
+#include "fu-ifd-bios.h"
 #include "fu-ifd-common.h"
+#include "fu-ifd-firmware.h"
+#include "fu-ifd-image.h"
+#include "fu-mem.h"
 
 /**
  * FuIfdFirmware:
@@ -96,8 +100,7 @@ fu_ifd_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuil
 static gboolean
 fu_ifd_firmware_parse(FuFirmware *firmware,
 		      GBytes *fw,
-		      guint64 addr_start,
-		      guint64 addr_end,
+		      gsize offset,
 		      FwupdInstallFlags flags,
 		      GError **error)
 {
@@ -130,7 +133,7 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 	}
 
 	/* check signature */
-	sig = fu_common_read_uint32(buf + FU_IFD_FDBAR_SIGNATURE, G_LITTLE_ENDIAN);
+	sig = fu_memread_uint32(buf + FU_IFD_FDBAR_SIGNATURE, G_LITTLE_ENDIAN);
 	if (sig != FU_IFD_SIGNATURE) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -143,7 +146,7 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 
 	/* descriptor registers */
 	priv->descriptor_map0 =
-	    fu_common_read_uint32(buf + FU_IFD_FDBAR_DESCRIPTOR_MAP0, G_LITTLE_ENDIAN);
+	    fu_memread_uint32(buf + FU_IFD_FDBAR_DESCRIPTOR_MAP0, G_LITTLE_ENDIAN);
 	priv->num_regions = (priv->descriptor_map0 >> 24) & 0b111;
 	if (priv->num_regions == 0)
 		priv->num_regions = 10;
@@ -151,69 +154,68 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 	priv->flash_component_base_addr = (priv->descriptor_map0 << 4) & 0x00000FF0;
 	priv->flash_region_base_addr = (priv->descriptor_map0 >> 12) & 0x00000FF0;
 	priv->descriptor_map1 =
-	    fu_common_read_uint32(buf + FU_IFD_FDBAR_DESCRIPTOR_MAP1, G_LITTLE_ENDIAN);
+	    fu_memread_uint32(buf + FU_IFD_FDBAR_DESCRIPTOR_MAP1, G_LITTLE_ENDIAN);
 	priv->flash_master_base_addr = (priv->descriptor_map1 << 4) & 0x00000FF0;
 	priv->flash_ich_strap_base_addr = (priv->descriptor_map1 >> 12) & 0x00000FF0;
 	priv->descriptor_map2 =
-	    fu_common_read_uint32(buf + FU_IFD_FDBAR_DESCRIPTOR_MAP2, G_LITTLE_ENDIAN);
+	    fu_memread_uint32(buf + FU_IFD_FDBAR_DESCRIPTOR_MAP2, G_LITTLE_ENDIAN);
 	priv->flash_mch_strap_base_addr = (priv->descriptor_map2 << 4) & 0x00000FF0;
 
 	/* FCBA */
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					priv->flash_component_base_addr + FU_IFD_FCBA_FLCOMP,
-					&priv->components_rcd,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    priv->flash_component_base_addr + FU_IFD_FCBA_FLCOMP,
+				    &priv->components_rcd,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					priv->flash_component_base_addr + FU_IFD_FCBA_FLILL,
-					&priv->illegal_jedec,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    priv->flash_component_base_addr + FU_IFD_FCBA_FLILL,
+				    &priv->illegal_jedec,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					priv->flash_component_base_addr + FU_IFD_FCBA_FLILL1,
-					&priv->illegal_jedec1,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    priv->flash_component_base_addr + FU_IFD_FCBA_FLILL1,
+				    &priv->illegal_jedec1,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 
 	/* FMBA */
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					priv->flash_master_base_addr + 0x0,
-					&priv->flash_master[1],
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    priv->flash_master_base_addr + 0x0,
+				    &priv->flash_master[1],
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					priv->flash_master_base_addr + 0x4,
-					&priv->flash_master[2],
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    priv->flash_master_base_addr + 0x4,
+				    &priv->flash_master[2],
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					priv->flash_master_base_addr + 0x8,
-					&priv->flash_master[3],
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    priv->flash_master_base_addr + 0x8,
+				    &priv->flash_master[3],
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 
 	/* FRBA */
 	priv->flash_descriptor_regs = g_new0(guint32, priv->num_regions);
 	for (guint i = 0; i < priv->num_regions; i++) {
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						priv->flash_region_base_addr +
-						    (i * sizeof(guint32)),
-						&priv->flash_descriptor_regs[i],
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    priv->flash_region_base_addr + (i * sizeof(guint32)),
+					    &priv->flash_descriptor_regs[i],
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 	}
 	for (guint i = 0; i < priv->num_regions; i++) {
@@ -230,7 +232,7 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 
 		/* create image */
 		g_debug("freg %s 0x%04x -> 0x%04x", freg_str, freg_base, freg_limt);
-		contents = fu_common_bytes_new_offset(fw, freg_base, freg_size, error);
+		contents = fu_bytes_new_offset(fw, freg_base, freg_size, error);
 		if (contents == NULL)
 			return FALSE;
 		if (i == FU_IFD_REGION_BIOS) {
@@ -297,7 +299,7 @@ fu_ifd_firmware_write(FuFirmware *firmware, GError **error)
 	if (img_desc == NULL) {
 		g_autoptr(GByteArray) buf_desc = g_byte_array_new();
 		g_autoptr(GBytes) blob_desc = NULL;
-		fu_byte_array_set_size(buf_desc, FU_IFD_SIZE);
+		fu_byte_array_set_size(buf_desc, FU_IFD_SIZE, 0x00);
 
 		/* success */
 		blob_desc = g_byte_array_free_to_bytes(g_steal_pointer(&buf_desc));
@@ -337,49 +339,47 @@ fu_ifd_firmware_write(FuFirmware *firmware, GError **error)
 		/* check total size */
 		bufsz_max = MAX(fu_firmware_get_addr(img) + g_bytes_get_size(blob), bufsz_max);
 	}
-	fu_byte_array_set_size(buf, bufsz_max);
+	fu_byte_array_set_size(buf, bufsz_max, 0x00);
 
 	/* reserved */
 	for (guint i = 0; i < 0x10; i++)
 		buf->data[FU_IFD_FDBAR_RESERVED + i] = 0xff;
 
 	/* signature */
-	fu_common_write_uint32(buf->data + FU_IFD_FDBAR_SIGNATURE,
-			       FU_IFD_SIGNATURE,
-			       G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf->data + FU_IFD_FDBAR_SIGNATURE, FU_IFD_SIGNATURE, G_LITTLE_ENDIAN);
 
 	/* descriptor map */
-	fu_common_write_uint32(buf->data + FU_IFD_FDBAR_DESCRIPTOR_MAP0,
-			       priv->descriptor_map0,
-			       G_LITTLE_ENDIAN);
-	fu_common_write_uint32(buf->data + FU_IFD_FDBAR_DESCRIPTOR_MAP1,
-			       priv->descriptor_map1,
-			       G_LITTLE_ENDIAN);
-	fu_common_write_uint32(buf->data + FU_IFD_FDBAR_DESCRIPTOR_MAP2,
-			       priv->descriptor_map2,
-			       G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf->data + FU_IFD_FDBAR_DESCRIPTOR_MAP0,
+			   priv->descriptor_map0,
+			   G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf->data + FU_IFD_FDBAR_DESCRIPTOR_MAP1,
+			   priv->descriptor_map1,
+			   G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf->data + FU_IFD_FDBAR_DESCRIPTOR_MAP2,
+			   priv->descriptor_map2,
+			   G_LITTLE_ENDIAN);
 
 	/* FCBA */
-	if (!fu_common_write_uint32_safe(buf->data,
-					 buf->len,
-					 priv->flash_component_base_addr + FU_IFD_FCBA_FLCOMP,
-					 priv->components_rcd,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint32_safe(buf->data,
+				     buf->len,
+				     priv->flash_component_base_addr + FU_IFD_FCBA_FLCOMP,
+				     priv->components_rcd,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return NULL;
-	if (!fu_common_write_uint32_safe(buf->data,
-					 buf->len,
-					 priv->flash_component_base_addr + FU_IFD_FCBA_FLILL,
-					 priv->illegal_jedec,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint32_safe(buf->data,
+				     buf->len,
+				     priv->flash_component_base_addr + FU_IFD_FCBA_FLILL,
+				     priv->illegal_jedec,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return NULL;
-	if (!fu_common_write_uint32_safe(buf->data,
-					 buf->len,
-					 priv->flash_component_base_addr + FU_IFD_FCBA_FLILL1,
-					 priv->illegal_jedec1,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint32_safe(buf->data,
+				     buf->len,
+				     priv->flash_component_base_addr + FU_IFD_FCBA_FLILL1,
+				     priv->illegal_jedec1,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return NULL;
 
 	/* FRBA */
@@ -396,13 +396,12 @@ fu_ifd_firmware_write(FuFirmware *firmware, GError **error)
 		}
 		flreg = ((freg_limt << 4) & 0xFFFF0000) | (freg_base >> 12);
 		g_debug("freg 0x%04x -> 0x%04x = 0x%08x", freg_base, freg_limt, flreg);
-		if (!fu_common_write_uint32_safe(buf->data,
-						 buf->len,
-						 priv->flash_region_base_addr +
-						     (i * sizeof(guint32)),
-						 flreg,
-						 G_LITTLE_ENDIAN,
-						 error))
+		if (!fu_memwrite_uint32_safe(buf->data,
+					     buf->len,
+					     priv->flash_region_base_addr + (i * sizeof(guint32)),
+					     flreg,
+					     G_LITTLE_ENDIAN,
+					     error))
 			return NULL;
 	}
 

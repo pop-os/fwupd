@@ -43,7 +43,7 @@ fu_uefi_dbx_signature_list_validate_volume(FuEfiSignatureList *siglist,
 	esp_path = fu_volume_get_mount_point(esp);
 	if (esp_path == NULL)
 		return TRUE;
-	files = fu_common_get_files_recursive(esp_path, error);
+	files = fu_path_get_files(esp_path, error);
 	if (files == NULL)
 		return FALSE;
 
@@ -83,7 +83,7 @@ gboolean
 fu_uefi_dbx_signature_list_validate(FuEfiSignatureList *siglist, GError **error)
 {
 	g_autoptr(GPtrArray) volumes = NULL;
-	volumes = fu_common_get_volumes_by_kind(FU_VOLUME_KIND_ESP, error);
+	volumes = fu_volume_new_by_kind(FU_VOLUME_KIND_ESP, error);
 	if (volumes == NULL)
 		return FALSE;
 	for (guint i = 0; i < volumes->len; i++) {

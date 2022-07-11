@@ -6,8 +6,8 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-efi-firmware-file.h"
 #include "fu-efi-firmware-filesystem.h"
 
@@ -24,12 +24,10 @@ G_DEFINE_TYPE(FuEfiFirmwareFilesystem, fu_efi_firmware_filesystem, FU_TYPE_FIRMW
 static gboolean
 fu_efi_firmware_filesystem_parse(FuFirmware *firmware,
 				 GBytes *fw,
-				 guint64 addr_start,
-				 guint64 addr_end,
+				 gsize offset,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
-	gsize offset = 0;
 	gsize bufsz = 0x0;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
@@ -48,7 +46,7 @@ fu_efi_firmware_filesystem_parse(FuFirmware *firmware,
 		if (is_freespace)
 			break;
 
-		fw_tmp = fu_common_bytes_new_offset(fw, offset, bufsz - offset, error);
+		fw_tmp = fu_bytes_new_offset(fw, offset, bufsz - offset, error);
 		if (fw_tmp == NULL)
 			return FALSE;
 		if (!fu_firmware_parse(img, fw_tmp, flags, error)) {

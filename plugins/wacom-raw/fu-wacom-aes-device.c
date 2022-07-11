@@ -8,8 +8,6 @@
 
 #include <fwupdplugin.h>
 
-#include <gio/gio.h>
-
 #include "fu-wacom-aes-device.h"
 #include "fu-wacom-common.h"
 
@@ -136,12 +134,12 @@ fu_wacom_aes_device_setup(FuDevice *device, GError **error)
 
 		if (!fu_wacom_device_get_feature(FU_WACOM_DEVICE(self), data, sizeof(data), error))
 			return FALSE;
-		if (!fu_common_read_uint16_safe(data,
-						sizeof(data),
-						11,
-						&fw_ver,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(data,
+					    sizeof(data),
+					    11,
+					    &fw_ver,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		version = g_strdup_printf("%04x.%02x", fw_ver, data[13]);
 		fu_device_set_version(device, version);
@@ -233,8 +231,8 @@ fu_wacom_aes_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80, NULL);
 
 	/* erase */
 	if (!fu_wacom_aes_device_erase_all(self, progress, error))

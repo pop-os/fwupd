@@ -112,8 +112,8 @@ fu_dfu_target_avr_attach(FuDfuTarget *target, FuProgress *progress, GError **err
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 50);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 50);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 50, "download-chunk");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 50, "download-zero");
 
 	/* format buffer */
 	buf[0] = DFU_AVR32_GROUP_EXEC;
@@ -265,7 +265,7 @@ fu_dfu_target_avr32_select_memory_page(FuDfuTarget *target,
 	buf[0] = DFU_AVR32_GROUP_SELECT;
 	buf[1] = DFU_AVR32_CMD_SELECT_MEMORY;
 	buf[2] = DFU_AVR32_MEMORY_PAGE;
-	fu_common_write_uint16(&buf[3], memory_page, G_BIG_ENDIAN);
+	fu_memwrite_uint16(&buf[3], memory_page, G_BIG_ENDIAN);
 	data_in = g_bytes_new_static(buf, sizeof(buf));
 	g_debug("selecting memory page 0x%02x", (guint)memory_page);
 	if (!fu_dfu_target_download_chunk(target, 0, data_in, progress, error)) {
@@ -299,8 +299,8 @@ fu_dfu_target_avr_read_memory(FuDfuTarget *target,
 	/* format buffer */
 	buf[0] = DFU_AVR32_GROUP_UPLOAD;
 	buf[1] = DFU_AVR32_CMD_READ_MEMORY;
-	fu_common_write_uint16(&buf[2], addr_start, G_BIG_ENDIAN);
-	fu_common_write_uint16(&buf[4], addr_end, G_BIG_ENDIAN);
+	fu_memwrite_uint16(&buf[2], addr_start, G_BIG_ENDIAN);
+	fu_memwrite_uint16(&buf[4], addr_end, G_BIG_ENDIAN);
 	data_in = g_bytes_new_static(buf, sizeof(buf));
 	g_debug("reading memory from 0x%04x to 0x%04x", (guint)addr_start, (guint)addr_end);
 	if (!fu_dfu_target_download_chunk(target, 0, data_in, progress, error)) {
@@ -363,10 +363,10 @@ fu_dfu_target_avr32_get_chip_signature(FuDfuTarget *target, FuProgress *progress
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25, "mem-unit");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25, "mem-page");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25, "read-memory");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25, "upload");
 
 	/* select unit, and request 4 bytes */
 	if (!fu_dfu_target_avr_select_memory_unit(target,
@@ -411,8 +411,8 @@ fu_dfu_target_avr_get_chip_signature_for_addr(FuDfuTarget *target,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 10, "req");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 90, "res");
 
 	/* request a single byte */
 	if (!fu_dfu_target_avr_read_command(target,
@@ -520,7 +520,7 @@ fu_dfu_target_avr_setup(FuDfuTarget *target, GError **error)
 	/* get data back */
 	buf = g_bytes_get_data(chunk_sig, &sz);
 	if (g_getenv("FWUPD_DFU_VERBOSE") != NULL)
-		fu_common_dump_bytes(G_LOG_DOMAIN, "AVR:CID", chunk_sig);
+		fu_dump_bytes(G_LOG_DOMAIN, "AVR:CID", chunk_sig);
 	if (sz != 4) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -629,10 +629,10 @@ fu_dfu_target_avr_download_element_chunks(FuDfuTarget *target,
 		buf = g_malloc0(fu_chunk_get_data_sz(chk) + header_sz + sizeof(footer));
 		buf[0] = DFU_AVR32_GROUP_DOWNLOAD;
 		buf[1] = DFU_AVR32_CMD_PROGRAM_START;
-		fu_common_write_uint16(&buf[2], fu_chunk_get_address(chk), G_BIG_ENDIAN);
-		fu_common_write_uint16(&buf[4],
-				       fu_chunk_get_address(chk) + fu_chunk_get_data_sz(chk) - 1,
-				       G_BIG_ENDIAN);
+		fu_memwrite_uint16(&buf[2], fu_chunk_get_address(chk), G_BIG_ENDIAN);
+		fu_memwrite_uint16(&buf[4],
+				   fu_chunk_get_address(chk) + fu_chunk_get_data_sz(chk) - 1,
+				   G_BIG_ENDIAN);
 		memcpy(&buf[header_sz], fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 		memcpy(&buf[header_sz + fu_chunk_get_data_sz(chk)], footer, sizeof(footer));
 
@@ -674,8 +674,8 @@ fu_dfu_target_avr_download_element(FuDfuTarget *target,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
 
 	/* select a memory and erase everything */
 	if (!fu_dfu_target_avr_select_memory_unit(target,
@@ -751,8 +751,8 @@ fu_dfu_target_avr_upload_element_chunk(FuDfuTarget *target,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 70);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 30);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 70, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 30, NULL);
 
 	/* prepare to read */
 	if (!fu_dfu_target_avr_read_memory(target,
@@ -835,7 +835,7 @@ fu_dfu_target_avr_upload_element_chunks(FuDfuTarget *target,
 		g_ptr_array_add(blobs, blob_tmp);
 
 		/* this page has valid data */
-		if (!fu_common_bytes_is_empty(blob_tmp)) {
+		if (!fu_bytes_is_empty(blob_tmp)) {
 			g_debug("chunk %u has data (page %" G_GUINT32_FORMAT ")",
 				i,
 				fu_chunk_get_page(chk));
@@ -884,8 +884,8 @@ fu_dfu_target_avr_upload_element(FuDfuTarget *target,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 95);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 95, NULL);
 
 	/* select unit */
 	if (!fu_dfu_target_avr_select_memory_unit(target,

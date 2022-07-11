@@ -26,9 +26,6 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(ESYS_CONTEXT, Esys_Finalize_autoptr_cleanup)
 static gboolean
 fu_tpm_v2_device_probe(FuDevice *device, GError **error)
 {
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_tpm_v2_device_parent_class)->probe(device, error))
-		return FALSE;
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "tpm", error);
 }
 
@@ -98,7 +95,7 @@ fu_tpm_v2_device_get_string(ESYS_CONTEXT *ctx, guint32 query, GError **error)
 			result[i] = 0x20;
 	}
 
-	return fu_common_strstrip(result);
+	return fu_strstrip(result);
 }
 
 /* taken from TCG-TPM-Vendor-ID-Registry-Version-1.01-Revision-1.00.pdf */
@@ -323,7 +320,7 @@ fu_tpm_v2_device_setup(FuDevice *device, GError **error)
 
 	/* this has to be done after _add_instance_id() sets the quirks */
 	verfmt = fu_device_get_version_format(device);
-	version = fu_common_version_from_uint64(version_raw, verfmt);
+	version = fu_version_from_uint64(version_raw, verfmt);
 	fu_device_set_version_format(device, verfmt);
 	fu_device_set_version(device, version);
 

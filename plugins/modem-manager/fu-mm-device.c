@@ -111,13 +111,13 @@ fu_mm_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuMmDevice *self = FU_MM_DEVICE(device);
 	if (self->port_at != NULL)
-		fu_common_string_append_kv(str, idt, "AtPort", self->port_at);
+		fu_string_append(str, idt, "AtPort", self->port_at);
 	if (self->port_qmi != NULL)
-		fu_common_string_append_kv(str, idt, "QmiPort", self->port_qmi);
+		fu_string_append(str, idt, "QmiPort", self->port_qmi);
 	if (self->port_mbim != NULL)
-		fu_common_string_append_kv(str, idt, "MbimPort", self->port_mbim);
+		fu_string_append(str, idt, "MbimPort", self->port_mbim);
 	if (self->port_qcdm != NULL)
-		fu_common_string_append_kv(str, idt, "QcdmPort", self->port_qcdm);
+		fu_string_append(str, idt, "QcdmPort", self->port_qcdm);
 }
 
 const gchar *
@@ -217,9 +217,9 @@ fu_mm_device_probe_quectel_flags(FuMmDevice *self)
 	name = g_strndup(version, 6);
 	for (guint i = 0; secboot[i].name != NULL; i++) {
 		if (g_strcmp0(name, secboot[i].name) == 0) {
-			if (fu_common_vercmp_full(version,
-						  secboot[i].version,
-						  FWUPD_VERSION_FORMAT_PLAIN) >= 0) {
+			if (fu_version_compare(version,
+					       secboot[i].version,
+					       FWUPD_VERSION_FORMAT_PLAIN) >= 0) {
 				fu_device_add_flag(FU_DEVICE(self),
 						   FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 			} else {
@@ -635,7 +635,7 @@ fu_mm_device_qcdm_cmd(FuMmDevice *self, const guint8 *cmd, gsize cmd_len, GError
 	/* command */
 	qcdm_req = g_bytes_new(cmd, cmd_len);
 	if (g_getenv("FWUPD_MODEM_MANAGER_VERBOSE") != NULL)
-		fu_common_dump_bytes(G_LOG_DOMAIN, "writing", qcdm_req);
+		fu_dump_bytes(G_LOG_DOMAIN, "writing", qcdm_req);
 	if (!fu_io_channel_write_bytes(self->io_channel,
 				       qcdm_req,
 				       1500,
@@ -656,7 +656,7 @@ fu_mm_device_qcdm_cmd(FuMmDevice *self, const guint8 *cmd, gsize cmd_len, GError
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_MODEM_MANAGER_VERBOSE") != NULL)
-		fu_common_dump_bytes(G_LOG_DOMAIN, "read", qcdm_res);
+		fu_dump_bytes(G_LOG_DOMAIN, "read", qcdm_res);
 
 	/* command == response */
 	if (g_bytes_compare(qcdm_res, qcdm_req) != 0) {
@@ -690,7 +690,7 @@ fu_mm_device_at_cmd_cb(FuDevice *device, gpointer user_data, GError **error)
 	/* command */
 	at_req = g_bytes_new(cmd_cr, strlen(cmd_cr));
 	if (g_getenv("FWUPD_MODEM_MANAGER_VERBOSE") != NULL)
-		fu_common_dump_bytes(G_LOG_DOMAIN, "writing", at_req);
+		fu_dump_bytes(G_LOG_DOMAIN, "writing", at_req);
 	if (!fu_io_channel_write_bytes(self->io_channel,
 				       at_req,
 				       1500,
@@ -717,7 +717,7 @@ fu_mm_device_at_cmd_cb(FuDevice *device, gpointer user_data, GError **error)
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_MODEM_MANAGER_VERBOSE") != NULL)
-		fu_common_dump_bytes(G_LOG_DOMAIN, "read", at_res);
+		fu_dump_bytes(G_LOG_DOMAIN, "read", at_res);
 	buf = g_bytes_get_data(at_res, &bufsz);
 	if (bufsz < 6) {
 		g_set_error(error,
@@ -1433,7 +1433,7 @@ fu_mm_setup_firmware_dir(FuMmDevice *self, GError **error)
 	g_autofree gchar *mm_fw_dir = NULL;
 
 	/* create a directory to store firmware files for modem-manager plugin */
-	cachedir = fu_common_get_path(FU_PATH_KIND_CACHEDIR_PKG);
+	cachedir = fu_path_from_kind(FU_PATH_KIND_CACHEDIR_PKG);
 	mm_fw_dir = g_build_filename(cachedir, "modem-manager", "firmware", NULL);
 	if (g_mkdir_with_parents(mm_fw_dir, 0700) == -1) {
 		g_set_error(error,
@@ -1445,7 +1445,7 @@ fu_mm_setup_firmware_dir(FuMmDevice *self, GError **error)
 		return FALSE;
 	}
 
-	if (!fu_common_set_firmware_search_path(mm_fw_dir, error))
+	if (!fu_kernel_set_firmware_search_path(mm_fw_dir, error))
 		return FALSE;
 
 	self->firmware_path = g_steal_pointer(&mm_fw_dir);
@@ -1460,12 +1460,12 @@ fu_mm_copy_firehose_prog(FuMmDevice *self, GBytes *prog, GError **error)
 	g_autofree gchar *firehose_file_path = NULL;
 
 	qcom_fw_dir = g_build_filename(self->firmware_path, "qcom", NULL);
-	if (!fu_common_mkdir_parent(qcom_fw_dir, error))
+	if (!fu_path_mkdir_parent(qcom_fw_dir, error))
 		return FALSE;
 
 	firehose_file_path = g_build_filename(qcom_fw_dir, "prog_firehose_sdx24.mbn", NULL);
 
-	if (!fu_common_set_contents_bytes(firehose_file_path, prog, error))
+	if (!fu_bytes_set_contents(firehose_file_path, prog, error))
 		return FALSE;
 
 	return TRUE;
@@ -1474,7 +1474,7 @@ fu_mm_copy_firehose_prog(FuMmDevice *self, GBytes *prog, GError **error)
 static gboolean
 fu_mm_prepare_firmware_search_path(FuMmDevice *self, GError **error)
 {
-	self->restore_firmware_path = fu_common_get_firmware_search_path(NULL);
+	self->restore_firmware_path = fu_kernel_get_firmware_search_path(NULL);
 
 	return fu_mm_setup_firmware_dir(self, error);
 }
@@ -1483,9 +1483,9 @@ static gboolean
 fu_mm_restore_firmware_search_path(FuMmDevice *self, GError **error)
 {
 	if (self->restore_firmware_path != NULL && strlen(self->restore_firmware_path) > 0)
-		return fu_common_set_firmware_search_path(self->restore_firmware_path, error);
+		return fu_kernel_set_firmware_search_path(self->restore_firmware_path, error);
 
-	return fu_common_reset_firmware_search_path(error);
+	return fu_kernel_reset_firmware_search_path(error);
 }
 
 static gboolean
@@ -1505,9 +1505,9 @@ fu_mm_device_write_firmware_firehose(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
 
 	/* decompress entire archive ahead of time */
 	archive = fu_archive_new(fw, FU_ARCHIVE_FLAG_IGNORE_PATH, error);
@@ -1804,10 +1804,10 @@ fu_mm_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

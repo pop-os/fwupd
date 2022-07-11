@@ -48,7 +48,7 @@ fu_bcm57xx_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuBcm57xxDevice *self = FU_BCM57XX_DEVICE(device);
 	FU_DEVICE_CLASS(fu_bcm57xx_device_parent_class)->to_string(device, idt, str);
-	fu_common_string_append_kv(str, idt, "EthtoolIface", self->ethtool_iface);
+	fu_string_append(str, idt, "EthtoolIface", self->ethtool_iface);
 }
 
 static gboolean
@@ -57,10 +57,6 @@ fu_bcm57xx_device_probe(FuDevice *device, GError **error)
 	FuBcm57xxDevice *self = FU_BCM57XX_DEVICE(device);
 	g_autofree gchar *fn = NULL;
 	g_autoptr(GPtrArray) ifaces = NULL;
-
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_bcm57xx_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	/* only enumerate number 0 */
 	if (fu_udev_device_get_number(FU_UDEV_DEVICE(device)) != 0) {
@@ -83,7 +79,7 @@ fu_bcm57xx_device_probe(FuDevice *device, GError **error)
 		g_debug("waiting for net devices to appear");
 		g_usleep(50 * 1000);
 	}
-	ifaces = fu_common_filename_glob(fn, "en*", NULL);
+	ifaces = fu_path_glob(fn, "en*", NULL);
 	if (ifaces == NULL || ifaces->len == 0) {
 		fu_device_add_child(FU_DEVICE(self), FU_DEVICE(self->recovery));
 	} else {
@@ -503,10 +499,10 @@ fu_bcm57xx_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 19);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1, "build-img");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80, "write-chunks");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 19, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, NULL);
 
 	/* build the images into one linear blob of the correct size */
 	blob = fu_firmware_write(firmware, error);
@@ -525,7 +521,7 @@ fu_bcm57xx_device_write_firmware(FuDevice *device,
 	    fu_bcm57xx_device_dump_firmware(device, fu_progress_get_child(progress), error);
 	if (blob_verify == NULL)
 		return FALSE;
-	if (!fu_common_bytes_compare(blob, blob_verify, error))
+	if (!fu_bytes_compare(blob, blob_verify, error))
 		return FALSE;
 	fu_progress_step_done(progress);
 
@@ -569,8 +565,8 @@ fu_bcm57xx_device_setup(FuDevice *device, GError **error)
 		g_autofree gchar *fwversion_str = NULL;
 
 		/* this is only set on the OSS firmware */
-		fwversion_str = fu_common_version_from_uint32(GUINT32_FROM_BE(fwversion),
-							      FWUPD_VERSION_FORMAT_TRIPLET);
+		fwversion_str = fu_version_from_uint32(GUINT32_FROM_BE(fwversion),
+						       FWUPD_VERSION_FORMAT_TRIPLET);
 		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
 		fu_device_set_version(device, fwversion_str);
 		fu_device_set_version_raw(device, fwversion);
@@ -652,10 +648,10 @@ fu_bcm57xx_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

@@ -9,17 +9,17 @@
 #include "config.h"
 
 #include <gio/gio.h>
-#include <glib-object.h>
 #include <string.h>
 
 #include "fwupd-common.h"
 #include "fwupd-device-private.h"
 
-#include "fu-common-version.h"
 #include "fu-common.h"
 #include "fu-device-private.h"
 #include "fu-mutex.h"
 #include "fu-quirks.h"
+#include "fu-string.h"
+#include "fu-version-common.h"
 
 #define FU_DEVICE_RETRY_OPEN_COUNT 5
 #define FU_DEVICE_RETRY_OPEN_DELAY 500 /* ms */
@@ -1610,7 +1610,9 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 	guint64 tmp;
 
 	if (g_strcmp0(key, FU_QUIRKS_PLUGIN) == 0) {
-		fu_device_add_possible_plugin(self, value);
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_possible_plugin(self, sections[i]);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_FLAGS) == 0) {
@@ -1634,7 +1636,9 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_VENDOR_ID) == 0) {
-		fu_device_add_vendor_id(self, value);
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_vendor_id(self, sections[i]);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_PROTOCOL) == 0) {
@@ -1662,19 +1666,27 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_ICON) == 0) {
-		fu_device_add_icon(self, value);
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_icon(self, sections[i]);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_GUID) == 0) {
-		fu_device_add_guid(self, value);
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_guid(self, sections[i]);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_COUNTERPART_GUID) == 0) {
-		fu_device_add_counterpart_guid(self, value);
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_counterpart_guid(self, sections[i]);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_PARENT_GUID) == 0) {
-		fu_device_add_parent_guid(self, value);
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_parent_guid(self, sections[i]);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_PROXY_GUID) == 0) {
@@ -1682,43 +1694,43 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_FIRMWARE_SIZE_MIN) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT64, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT64, error))
 			return FALSE;
 		fu_device_set_firmware_size_min(self, tmp);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_FIRMWARE_SIZE_MAX) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT64, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT64, error))
 			return FALSE;
 		fu_device_set_firmware_size_max(self, tmp);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_FIRMWARE_SIZE) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT64, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT64, error))
 			return FALSE;
 		fu_device_set_firmware_size(self, tmp);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_INSTALL_DURATION) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, 60 * 60 * 24, error))
+		if (!fu_strtoull(value, &tmp, 0, 60 * 60 * 24, error))
 			return FALSE;
 		fu_device_set_install_duration(self, tmp);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_PRIORITY) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		fu_device_set_priority(self, tmp);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_BATTERY_THRESHOLD) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, 100, error))
+		if (!fu_strtoull(value, &tmp, 0, 100, error))
 			return FALSE;
 		fu_device_set_battery_threshold(self, tmp);
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_REMOVE_DELAY) == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT, error))
 			return FALSE;
 		fu_device_set_remove_delay(self, tmp);
 		return TRUE;
@@ -2327,7 +2339,7 @@ fu_device_fixup_vendor_name(FuDevice *self)
 		if (g_str_has_prefix(name_up, vendor_up)) {
 			gsize vendor_len = strlen(vendor);
 			g_autofree gchar *name1 = g_strdup(name + vendor_len);
-			g_autofree gchar *name2 = fu_common_strstrip(name1);
+			g_autofree gchar *name2 = fu_strstrip(name1);
 			g_debug("removing vendor prefix of '%s' from '%s'", vendor, name);
 			fwupd_device_set_name(FWUPD_DEVICE(self), name2);
 		}
@@ -2350,7 +2362,7 @@ fu_device_set_vendor(FuDevice *self, const gchar *vendor)
 
 	/* trim any leading and trailing spaces */
 	if (vendor != NULL)
-		vendor_safe = fu_common_strstrip(vendor);
+		vendor_safe = fu_strstrip(vendor);
 
 	/* proxy */
 	fwupd_device_set_vendor(FWUPD_DEVICE(self), vendor_safe);
@@ -2383,8 +2395,8 @@ fu_device_sanitize_name(const gchar *value)
 		}
 	}
 	g_string_truncate(new, last_non_space);
-	fu_common_string_replace(new, "(TM)", "™");
-	fu_common_string_replace(new, "(R)", "");
+	fu_string_replace(new, "(TM)", "™");
+	fu_string_replace(new, "(R)", "");
 	if (new->len == 0)
 		return NULL;
 	return g_string_free(g_steal_pointer(&new), FALSE);
@@ -2519,8 +2531,7 @@ fu_device_set_version(FuDevice *self, const gchar *version)
 	/* sanitize if required */
 	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_ENSURE_SEMVER)) {
 		version_safe =
-		    fu_common_version_ensure_semver_full(version,
-							 fu_device_get_version_format(self));
+		    fu_version_ensure_semver(version, fu_device_get_version_format(self));
 		if (g_strcmp0(version, version_safe) != 0)
 			g_debug("converted '%s' to '%s'", version, version_safe);
 	} else {
@@ -2529,9 +2540,7 @@ fu_device_set_version(FuDevice *self, const gchar *version)
 
 	/* print a console warning for an invalid version, if semver */
 	if (version_safe != NULL &&
-	    !fu_common_version_verify_format(version_safe,
-					     fu_device_get_version_format(self),
-					     &error))
+	    !fu_version_verify_format(version_safe, fu_device_get_version_format(self), &error))
 		g_warning("%s", error->message);
 
 	/* if different */
@@ -2565,7 +2574,8 @@ fu_device_set_version_lowest(FuDevice *self, const gchar *version)
 
 	/* sanitize if required */
 	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_ENSURE_SEMVER)) {
-		version_safe = fu_common_version_ensure_semver(version);
+		version_safe =
+		    fu_version_ensure_semver(version, fu_device_get_version_format(self));
 		if (g_strcmp0(version, version_safe) != 0)
 			g_debug("converted '%s' to '%s'", version, version_safe);
 	} else {
@@ -2574,9 +2584,7 @@ fu_device_set_version_lowest(FuDevice *self, const gchar *version)
 
 	/* print a console warning for an invalid version, if semver */
 	if (version_safe != NULL &&
-	    !fu_common_version_verify_format(version_safe,
-					     fu_device_get_version_format(self),
-					     &error))
+	    !fu_version_verify_format(version_safe, fu_device_get_version_format(self), &error))
 		g_warning("%s", error->message);
 
 	/* if different */
@@ -2610,7 +2618,8 @@ fu_device_set_version_bootloader(FuDevice *self, const gchar *version)
 
 	/* sanitize if required */
 	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_ENSURE_SEMVER)) {
-		version_safe = fu_common_version_ensure_semver(version);
+		version_safe =
+		    fu_version_ensure_semver(version, fu_device_get_version_format(self));
 		if (g_strcmp0(version, version_safe) != 0)
 			g_debug("converted '%s' to '%s'", version, version_safe);
 	} else {
@@ -2619,9 +2628,7 @@ fu_device_set_version_bootloader(FuDevice *self, const gchar *version)
 
 	/* print a console warning for an invalid version, if semver */
 	if (version_safe != NULL &&
-	    !fu_common_version_verify_format(version_safe,
-					     fu_device_get_version_format(self),
-					     &error))
+	    !fu_version_verify_format(version_safe, fu_device_get_version_format(self), &error))
 		g_warning("%s", error->message);
 
 	/* if different */
@@ -2674,7 +2681,7 @@ fu_device_ensure_inhibits(FuDevice *self)
 			g_ptr_array_add(reasons, inhibit->reason);
 			problems |= inhibit->problem;
 		}
-		reasons_str = fu_common_strjoin_array(", ", reasons);
+		reasons_str = fu_strjoin(", ", reasons);
 		fu_device_set_update_error(self, reasons_str);
 	} else {
 		if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
@@ -3594,58 +3601,55 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 	if (tmp != NULL && tmp[0] != '\0')
 		g_string_append(str, tmp);
 	if (priv->alternate_id != NULL)
-		fu_common_string_append_kv(str, idt + 1, "AlternateId", priv->alternate_id);
+		fu_string_append(str, idt + 1, "AlternateId", priv->alternate_id);
 	if (priv->equivalent_id != NULL)
-		fu_common_string_append_kv(str, idt + 1, "EquivalentId", priv->equivalent_id);
+		fu_string_append(str, idt + 1, "EquivalentId", priv->equivalent_id);
 	if (priv->physical_id != NULL)
-		fu_common_string_append_kv(str, idt + 1, "PhysicalId", priv->physical_id);
+		fu_string_append(str, idt + 1, "PhysicalId", priv->physical_id);
 	if (priv->logical_id != NULL)
-		fu_common_string_append_kv(str, idt + 1, "LogicalId", priv->logical_id);
+		fu_string_append(str, idt + 1, "LogicalId", priv->logical_id);
 	if (priv->backend_id != NULL)
-		fu_common_string_append_kv(str, idt + 1, "BackendId", priv->backend_id);
+		fu_string_append(str, idt + 1, "BackendId", priv->backend_id);
 	if (priv->proxy != NULL)
-		fu_common_string_append_kv(str, idt + 1, "ProxyId", fu_device_get_id(priv->proxy));
+		fu_string_append(str, idt + 1, "ProxyId", fu_device_get_id(priv->proxy));
 	if (priv->proxy_guid != NULL)
-		fu_common_string_append_kv(str, idt + 1, "ProxyGuid", priv->proxy_guid);
+		fu_string_append(str, idt + 1, "ProxyGuid", priv->proxy_guid);
 	if (priv->remove_delay != 0)
-		fu_common_string_append_ku(str, idt + 1, "RemoveDelay", priv->remove_delay);
+		fu_string_append_ku(str, idt + 1, "RemoveDelay", priv->remove_delay);
 	if (priv->custom_flags != NULL)
-		fu_common_string_append_kv(str, idt + 1, "CustomFlags", priv->custom_flags);
+		fu_string_append(str, idt + 1, "CustomFlags", priv->custom_flags);
 	if (priv->firmware_gtype != G_TYPE_INVALID) {
-		fu_common_string_append_kv(str,
-					   idt + 1,
-					   "FirmwareGType",
-					   g_type_name(priv->firmware_gtype));
+		fu_string_append(str, idt + 1, "FirmwareGType", g_type_name(priv->firmware_gtype));
 	}
 	if (priv->size_min > 0) {
 		g_autofree gchar *sz = g_strdup_printf("%" G_GUINT64_FORMAT, priv->size_min);
-		fu_common_string_append_kv(str, idt + 1, "FirmwareSizeMin", sz);
+		fu_string_append(str, idt + 1, "FirmwareSizeMin", sz);
 	}
 	if (priv->size_max > 0) {
 		g_autofree gchar *sz = g_strdup_printf("%" G_GUINT64_FORMAT, priv->size_max);
-		fu_common_string_append_kv(str, idt + 1, "FirmwareSizeMax", sz);
+		fu_string_append(str, idt + 1, "FirmwareSizeMax", sz);
 	}
 	if (priv->order != G_MAXINT) {
 		g_autofree gchar *order = g_strdup_printf("%i", priv->order);
-		fu_common_string_append_kv(str, idt + 1, "Order", order);
+		fu_string_append(str, idt + 1, "Order", order);
 	}
 	if (priv->priority > 0)
-		fu_common_string_append_ku(str, idt + 1, "Priority", priv->priority);
+		fu_string_append_ku(str, idt + 1, "Priority", priv->priority);
 	if (priv->metadata != NULL) {
 		g_autoptr(GList) keys = g_hash_table_get_keys(priv->metadata);
 		for (GList *l = keys; l != NULL; l = l->next) {
 			const gchar *key = l->data;
 			const gchar *value = g_hash_table_lookup(priv->metadata, key);
-			fu_common_string_append_kv(str, idt + 1, key, value);
+			fu_string_append(str, idt + 1, key, value);
 		}
 	}
 	for (guint i = 0; i < priv->possible_plugins->len; i++) {
 		const gchar *name = g_ptr_array_index(priv->possible_plugins, i);
-		fu_common_string_append_kv(str, idt + 1, "PossiblePlugin", name);
+		fu_string_append(str, idt + 1, "PossiblePlugin", name);
 	}
 	if (priv->parent_physical_ids != NULL && priv->parent_physical_ids->len > 0) {
-		g_autofree gchar *flags = fu_common_strjoin_array(",", priv->parent_physical_ids);
-		fu_common_string_append_kv(str, idt + 1, "ParentPhysicalIds", flags);
+		g_autofree gchar *flags = fu_strjoin(",", priv->parent_physical_ids);
+		fu_string_append(str, idt + 1, "ParentPhysicalIds", flags);
 	}
 	if (priv->internal_flags != FU_DEVICE_INTERNAL_FLAG_NONE) {
 		g_autoptr(GString) tmp2 = g_string_new("");
@@ -3658,7 +3662,7 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 		}
 		if (tmp2->len > 0)
 			g_string_truncate(tmp2, tmp2->len - 1);
-		fu_common_string_append_kv(str, idt + 1, "InternalFlags", tmp2->str);
+		fu_string_append(str, idt + 1, "InternalFlags", tmp2->str);
 	}
 	if (priv->private_flags > 0) {
 		g_autoptr(GPtrArray) tmpv = g_ptr_array_new();
@@ -3673,8 +3677,8 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 				continue;
 			g_ptr_array_add(tmpv, item->value_str);
 		}
-		tmps = fu_common_strjoin_array(",", tmpv);
-		fu_common_string_append_kv(str, idt + 1, "PrivateFlags", tmps);
+		tmps = fu_strjoin(",", tmpv);
+		fu_string_append(str, idt + 1, "PrivateFlags", tmps);
 	}
 	if (priv->inhibits != NULL) {
 		g_autoptr(GList) values = g_hash_table_get_values(priv->inhibits);
@@ -3682,7 +3686,7 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 			FuDeviceInhibit *inhibit = (FuDeviceInhibit *)l->data;
 			g_autofree gchar *val =
 			    g_strdup_printf("[%s] %s", inhibit->inhibit_id, inhibit->reason);
-			fu_common_string_append_kv(str, idt + 1, "Inhibit", val);
+			fu_string_append(str, idt + 1, "Inhibit", val);
 		}
 	}
 
@@ -3815,7 +3819,10 @@ fu_device_get_results(FuDevice *self, GError **error)
 
 	/* no plugin-specific method */
 	if (klass->get_results == NULL) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "getting results not supported by device");
 		return FALSE;
 	}
 
@@ -3855,7 +3862,10 @@ fu_device_write_firmware(FuDevice *self,
 
 	/* no plugin-specific method */
 	if (klass->write_firmware == NULL) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "writing firmware not supported by device");
 		return FALSE;
 	}
 
@@ -3990,7 +4000,10 @@ fu_device_read_firmware(FuDevice *self, FuProgress *progress, GError **error)
 
 	/* device does not support reading for verification CRCs */
 	if (!fu_device_has_flag(self, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE)) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "reading firmware is not supported by device");
 		return NULL;
 	}
 
@@ -4031,7 +4044,10 @@ fu_device_dump_firmware(FuDevice *self, FuProgress *progress, GError **error)
 
 	/* use the default FuFirmware when only ->dump_firmware is provided */
 	if (klass->dump_firmware == NULL) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "dumping firmware is not supported by device");
 		return NULL;
 	}
 
@@ -4752,7 +4768,10 @@ fu_device_bind_driver(FuDevice *self, const gchar *subsystem, const gchar *drive
 
 	/* not implemented */
 	if (klass->bind_driver == NULL) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "binding drivers is not supported by device");
 		return FALSE;
 	}
 
@@ -4785,12 +4804,22 @@ fu_device_unbind_driver(FuDevice *self, GError **error)
 
 	/* not implemented */
 	if (klass->unbind_driver == NULL) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "not supported");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "unbinding drivers is not supported by device");
 		return FALSE;
 	}
 
 	/* subclass */
 	return klass->unbind_driver(self, error);
+}
+
+static const gchar *
+fu_device_instance_lookup(FuDevice *self, const gchar *key)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	return g_hash_table_lookup(priv->instance_hash, key);
 }
 
 /**
@@ -4811,6 +4840,8 @@ fu_device_incorporate(FuDevice *self, FuDevice *donor)
 	GPtrArray *instance_ids = fu_device_get_instance_ids(donor);
 	GPtrArray *parent_guids = fu_device_get_parent_guids(donor);
 	GPtrArray *parent_physical_ids = fu_device_get_parent_physical_ids(donor);
+	GHashTableIter iter;
+	gpointer key, value;
 
 	g_return_if_fail(FU_IS_DEVICE(self));
 	g_return_if_fail(FU_IS_DEVICE(donor));
@@ -4846,16 +4877,26 @@ fu_device_incorporate(FuDevice *self, FuDevice *donor)
 	}
 	g_rw_lock_reader_lock(&priv_donor->metadata_mutex);
 	if (priv->metadata != NULL) {
-		g_autoptr(GList) keys = g_hash_table_get_keys(priv_donor->metadata);
-		for (GList *l = keys; l != NULL; l = l->next) {
-			const gchar *key = l->data;
-			if (g_hash_table_lookup(priv->metadata, key) == NULL) {
-				const gchar *value = g_hash_table_lookup(priv_donor->metadata, key);
+		g_hash_table_iter_init(&iter, priv_donor->metadata);
+		while (g_hash_table_iter_next(&iter, &key, &value)) {
+			if (fu_device_get_metadata(self, key) == NULL)
 				fu_device_set_metadata(self, key, value);
-			}
 		}
 	}
 	g_rw_lock_reader_unlock(&priv_donor->metadata_mutex);
+
+	/* probably not required, but seems safer */
+	for (guint i = 0; i < priv_donor->possible_plugins->len; i++) {
+		const gchar *possible_plugin = g_ptr_array_index(priv_donor->possible_plugins, i);
+		fu_device_add_possible_plugin(self, possible_plugin);
+	}
+
+	/* copy all instance ID keys if not already set */
+	g_hash_table_iter_init(&iter, priv_donor->instance_hash);
+	while (g_hash_table_iter_next(&iter, &key, &value)) {
+		if (fu_device_instance_lookup(self, key) == NULL)
+			fu_device_add_instance_str(self, key, value);
+	}
 
 	/* now the base class, where all the interesting bits are */
 	fwupd_device_incorporate(FWUPD_DEVICE(self), FWUPD_DEVICE(donor));
@@ -4995,6 +5036,59 @@ fu_device_add_instance_str(FuDevice *self, const gchar *key, const gchar *value)
 	g_hash_table_insert(priv->instance_hash, g_strdup(key), g_strdup(value));
 }
 
+static gboolean
+fu_strsafe_instance_id_is_valid_char(gchar c)
+{
+	if (c == ' ')
+		return FALSE;
+	if (c == '_')
+		return FALSE;
+	if (c == '&')
+		return FALSE;
+	if (c == '/')
+		return FALSE;
+	if (c == '\\')
+		return FALSE;
+	return g_ascii_isprint(c);
+}
+
+/* NOTE: we can't use fu_strsafe as this behavior is now effectively ABI */
+static gchar *
+fu_common_instance_id_strsafe(const gchar *str)
+{
+	g_autoptr(GString) tmp = g_string_new(NULL);
+	gboolean has_content = FALSE;
+
+	/* sanity check */
+	if (str == NULL)
+		return NULL;
+
+	/* use - to replace problematic chars -- but only once per section */
+	for (guint i = 0; str[i] != '\0'; i++) {
+		gchar c = str[i];
+		if (!fu_strsafe_instance_id_is_valid_char(c)) {
+			if (has_content) {
+				g_string_append_c(tmp, '-');
+				has_content = FALSE;
+			}
+		} else {
+			g_string_append_c(tmp, c);
+			has_content = TRUE;
+		}
+	}
+
+	/* remove any trailing replacements */
+	if (tmp->len > 0 && tmp->str[tmp->len - 1] == '-')
+		g_string_truncate(tmp, tmp->len - 1);
+
+	/* nothing left! */
+	if (tmp->len == 0)
+		return NULL;
+
+	/* success */
+	return g_string_free(g_steal_pointer(&tmp), FALSE);
+}
+
 /**
  * fu_device_add_instance_strsafe:
  * @self: a #FuDevice
@@ -5111,13 +5205,6 @@ fu_device_add_instance_u32(FuDevice *self, const gchar *key, guint32 value)
 	g_return_if_fail(FU_IS_DEVICE(self));
 	g_return_if_fail(key != NULL);
 	g_hash_table_insert(priv->instance_hash, g_strdup(key), g_strdup_printf("%08X", value));
-}
-
-static const gchar *
-fu_device_instance_lookup(FuDevice *self, const gchar *key)
-{
-	FuDevicePrivate *priv = GET_PRIVATE(self);
-	return g_hash_table_lookup(priv->instance_hash, key);
 }
 
 /**
@@ -5456,23 +5543,10 @@ fu_device_finalize(GObject *object)
  *
  * Creates a new #Fudevice
  *
- * Since: 0.1.0
+ * Since: 1.8.2
  **/
 FuDevice *
-fu_device_new(void)
-{
-	return fu_device_new_with_context(NULL);
-}
-
-/**
- * fu_device_new_with_context:
- *
- * Creates a new #Fudevice
- *
- * Since: 1.6.2
- **/
-FuDevice *
-fu_device_new_with_context(FuContext *ctx)
+fu_device_new(FuContext *ctx)
 {
 	FuDevice *self = g_object_new(FU_TYPE_DEVICE, "context", ctx, NULL);
 	return FU_DEVICE(self);

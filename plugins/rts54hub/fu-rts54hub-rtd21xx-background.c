@@ -208,9 +208,9 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5); /* setup */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5); /* exit */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "setup");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, "exit");
 
 	/* open device */
 	locker = fu_device_locker_new(self, error);
@@ -256,7 +256,7 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 	}
 
 	/* verify project ID */
-	project_addr = fu_common_read_uint32(read_buf + 1, G_BIG_ENDIAN);
+	project_addr = fu_memread_uint32(read_buf + 1, G_BIG_ENDIAN);
 	project_id_count = read_buf[5];
 	write_buf[0] = ISP_CMD_SYNC_IDENTIFY_CODE;
 	if (!fu_memcpy_safe(write_buf,
@@ -284,7 +284,7 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 
 	/* background FW update start command */
 	write_buf[0] = ISP_CMD_FW_UPDATE_START;
-	fu_common_write_uint16(write_buf + 1, ISP_DATA_BLOCKSIZE, G_BIG_ENDIAN);
+	fu_memwrite_uint16(write_buf + 1, ISP_DATA_BLOCKSIZE, G_BIG_ENDIAN);
 	if (!fu_rts54hub_rtd21xx_device_i2c_write(FU_RTS54HUB_RTD21XX_DEVICE(self),
 						  UC_ISP_TARGET_ADDR,
 						  UC_BACKGROUND_OPCODE,

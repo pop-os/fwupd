@@ -8,12 +8,11 @@
 
 #include "config.h"
 
-#include <fwupd.h>
+#include <fwupdplugin.h>
 #ifdef HAVE_GIO_UNIX
 #include <gio/gunixfdlist.h>
 #endif
 #include <glib/gstdio.h>
-#include <xmlb.h>
 #ifdef HAVE_POLKIT
 #include <polkit/polkit.h>
 #endif
@@ -25,10 +24,8 @@
 #include "fwupd-release-private.h"
 #include "fwupd-remote-private.h"
 #include "fwupd-request-private.h"
-#include "fwupd-resources.h"
 #include "fwupd-security-attr-private.h"
 
-#include "fu-common.h"
 #include "fu-daemon.h"
 #include "fu-device-private.h"
 #include "fu-engine.h"
@@ -59,6 +56,7 @@ struct _FuDaemon {
 	PolkitAuthority *authority;
 #endif
 	FwupdStatus status; /* last emitted */
+	guint percentage;   /* last emitted */
 	guint owner_id;
 	guint process_quit_id;
 	FuEngine *engine;
@@ -303,7 +301,7 @@ fu_daemon_device_array_to_variant(FuDaemon *self,
 	g_variant_builder_init(&builder, G_VARIANT_TYPE_ARRAY);
 
 	/* override when required */
-	if (fu_engine_get_show_device_private(self->engine))
+	if (fu_config_get_show_device_private(fu_engine_get_config(self->engine)))
 		flags |= FWUPD_DEVICE_FLAG_TRUSTED;
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
@@ -630,6 +628,11 @@ fu_daemon_modify_config_cb(GObject *source, GAsyncResult *res, gpointer user_dat
 static void
 fu_daemon_progress_percentage_changed_cb(FuProgress *progress, guint percentage, FuDaemon *self)
 {
+	/* sanity check */
+	if (self->percentage == percentage)
+		return;
+	self->percentage = percentage;
+
 	g_debug("Emitting PropertyChanged('Percentage'='%u%%')", percentage);
 	fu_daemon_emit_property_changed(self, "Percentage", g_variant_new_uint32(percentage));
 }
@@ -1037,7 +1040,7 @@ fu_daemon_install_with_helper(FuMainAuthHelper *helper_ref, GError **error)
 
 	/* nothing suitable */
 	if (helper->releases->len == 0) {
-		GError *error_tmp = fu_common_error_array_get_best(helper->errors);
+		GError *error_tmp = fu_engine_error_array_get_best(helper->errors);
 		g_propagate_error(error, error_tmp);
 		return FALSE;
 	}
@@ -1858,8 +1861,9 @@ fu_daemon_daemon_method_call(GDBusConnection *connection,
 		/* parse the cab file before authenticating so we can work out
 		 * what action ID to use, for instance, if this is trusted --
 		 * this will also close the fd when done */
-		archive_size_max = fu_engine_get_archive_size_max(self->engine);
-		helper->blob_cab = fu_common_get_contents_fd(fd, archive_size_max, &error);
+		archive_size_max =
+		    fu_config_get_archive_size_max(fu_engine_get_config(self->engine));
+		helper->blob_cab = fu_bytes_get_contents_fd(fd, archive_size_max, &error);
 		if (helper->blob_cab == NULL) {
 			g_dbus_method_invocation_return_gerror(invocation, error);
 			return;
@@ -1955,6 +1959,9 @@ fu_daemon_daemon_get_property(GDBusConnection *connection_,
 	if (g_strcmp0(property_name, "Status") == 0)
 		return g_variant_new_uint32(self->status);
 
+	if (g_strcmp0(property_name, "Percentage") == 0)
+		return g_variant_new_uint32(self->percentage);
+
 	if (g_strcmp0(property_name, FWUPD_RESULT_KEY_BATTERY_LEVEL) == 0) {
 		FuContext *ctx = fu_engine_get_context(self->engine);
 		return g_variant_new_uint32(fu_context_get_battery_level(ctx));
@@ -1964,6 +1971,9 @@ fu_daemon_daemon_get_property(GDBusConnection *connection_,
 		FuContext *ctx = fu_engine_get_context(self->engine);
 		return g_variant_new_uint32(fu_context_get_battery_threshold(ctx));
 	}
+
+	if (g_strcmp0(property_name, "HostVendor") == 0)
+		return g_variant_new_string(fu_engine_get_host_vendor(self->engine));
 
 	if (g_strcmp0(property_name, "HostProduct") == 0)
 		return g_variant_new_string(fu_engine_get_host_product(self->engine));
@@ -1997,8 +2007,10 @@ fu_daemon_daemon_get_property(GDBusConnection *connection_,
 	if (g_strcmp0(property_name, "Interactive") == 0)
 		return g_variant_new_boolean(isatty(fileno(stdout)) != 0);
 
-	if (g_strcmp0(property_name, "OnlyTrusted") == 0)
-		return g_variant_new_boolean(fu_engine_get_only_trusted(self->engine));
+	if (g_strcmp0(property_name, "OnlyTrusted") == 0) {
+		return g_variant_new_boolean(
+		    fu_config_get_only_trusted(fu_engine_get_config(self->engine)));
+	}
 
 	/* return an error */
 	g_set_error(error,
@@ -2105,7 +2117,7 @@ fu_daemon_load_introspection(const gchar *filename, GError **error)
 
 	/* lookup data */
 	path = g_build_filename("/org/freedesktop/fwupd", filename, NULL);
-	data = g_resource_lookup_data(fu_get_resource(), path, G_RESOURCE_LOOKUP_FLAGS_NONE, error);
+	data = g_resources_lookup_data(path, G_RESOURCE_LOOKUP_FLAGS_NONE, error);
 	if (data == NULL)
 		return NULL;
 
@@ -2124,9 +2136,20 @@ gboolean
 fu_daemon_setup(FuDaemon *self, const gchar *socket_address, GError **error)
 {
 	const gchar *machine_kind = g_getenv("FWUPD_MACHINE_KIND");
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 
 	g_return_val_if_fail(FU_IS_DAEMON(self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* progress */
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_set_profile(progress, g_getenv("FWUPD_VERBOSE") != NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 99, "load-engine");
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 1, "load-introspection");
+#ifdef HAVE_POLKIT
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 1, "load-authority");
+#endif
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 1, "own-name");
 
 	/* allow overriding for development */
 	if (machine_kind != NULL) {
@@ -2142,7 +2165,7 @@ fu_daemon_setup(FuDaemon *self, const gchar *socket_address, GError **error)
 	}
 
 	/* load engine */
-	self->engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	self->engine = fu_engine_new();
 	g_signal_connect(FU_ENGINE(self->engine),
 			 "changed",
 			 G_CALLBACK(fu_daemon_engine_changed_cb),
@@ -2170,10 +2193,12 @@ fu_daemon_setup(FuDaemon *self, const gchar *socket_address, GError **error)
 	if (!fu_engine_load(self->engine,
 			    FU_ENGINE_LOAD_FLAG_COLDPLUG | FU_ENGINE_LOAD_FLAG_HWINFO |
 				FU_ENGINE_LOAD_FLAG_REMOTES,
+			    fu_progress_get_child(progress),
 			    error)) {
 		g_prefix_error(error, "failed to load engine: ");
 		return FALSE;
 	}
+	fu_progress_step_done(progress);
 
 	/* load introspection from file */
 	self->introspection_daemon =
@@ -2182,6 +2207,7 @@ fu_daemon_setup(FuDaemon *self, const gchar *socket_address, GError **error)
 		g_prefix_error(error, "failed to load introspection: ");
 		return FALSE;
 	}
+	fu_progress_step_done(progress);
 
 #ifdef HAVE_POLKIT
 	/* get authority */
@@ -2190,6 +2216,7 @@ fu_daemon_setup(FuDaemon *self, const gchar *socket_address, GError **error)
 		g_prefix_error(error, "failed to load authority: ");
 		return FALSE;
 	}
+	fu_progress_step_done(progress);
 #endif
 
 	/* own the object */
@@ -2223,6 +2250,14 @@ fu_daemon_setup(FuDaemon *self, const gchar *socket_address, GError **error)
 						fu_daemon_dbus_name_lost_cb,
 						self,
 						NULL);
+	}
+	fu_progress_step_done(progress);
+
+	/* a good place to do the traceback */
+	if (fu_progress_get_profile(progress)) {
+		g_autofree gchar *str = fu_progress_traceback(progress);
+		if (str != NULL)
+			g_print("\n%s\n", str);
 	}
 
 	/* success */

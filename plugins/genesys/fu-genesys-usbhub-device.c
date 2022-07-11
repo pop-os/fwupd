@@ -171,7 +171,7 @@ struct _FuGenesysUsbhubDevice {
 	gboolean read_first_bank;
 	gboolean write_recovery_bank;
 
-	guint8 public_key[0x212];
+	FuGenesysPublicKey public_key;
 	FuCfiDevice *cfi_device;
 };
 
@@ -325,7 +325,7 @@ fu_genesys_usbhub_device_cfi_setup(FuGenesysUsbhubDevice *self, GError **error)
 				else
 					len = 2;
 
-				fu_common_dump_raw(G_LOG_DOMAIN, "Flash ID", buf, len);
+				fu_dump_raw(G_LOG_DOMAIN, "Flash ID", buf, len);
 				g_debug("CFI: %s", fu_device_get_name(FU_DEVICE(cfi_device)));
 			}
 
@@ -334,7 +334,7 @@ fu_genesys_usbhub_device_cfi_setup(FuGenesysUsbhubDevice *self, GError **error)
 	}
 
 	/* failure */
-	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "no CFI device found");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no CFI device found");
 	return NULL;
 }
 #endif
@@ -408,6 +408,8 @@ fu_genesys_usbhub_device_set_isp_mode(FuGenesysUsbhubDevice *self,
 
 	if (mode == ISP_ENTER) {
 		FuGenesysWaitFlashRegisterHelper helper = {.reg = 5, .expected_val = 0};
+
+		/* 150ms */
 		if (!fu_device_retry(FU_DEVICE(self),
 				     fu_genesys_usbhub_device_wait_flash_status_register_cb,
 				     5,
@@ -471,7 +473,7 @@ fu_genesys_usbhub_device_authentication_request(FuGenesysUsbhubDevice *self,
 	if (buf != 1) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
-				    FWUPD_ERROR_INTERNAL,
+				    FWUPD_ERROR_AUTH_FAILED,
 				    "device authentication failed");
 		return FALSE;
 	}
@@ -515,64 +517,6 @@ fu_genesys_usbhub_device_authenticate(FuGenesysUsbhubDevice *self, GError **erro
 							     temp_byte,
 							     error)) {
 		g_prefix_error(error, "error authenticating device: ");
-		return FALSE;
-	}
-
-	/* success */
-	return TRUE;
-}
-
-static gboolean
-fu_genesys_usbhub_device_probe(FuDevice *device, GError **error)
-{
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_genesys_usbhub_device_parent_class)->probe(device, error)) {
-		g_prefix_error(error, "error probing device: ");
-		return FALSE;
-	}
-
-	/* success */
-	return TRUE;
-}
-
-static gboolean
-fu_genesys_usbhub_device_open(FuDevice *device, GError **error)
-{
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-
-	/* FuUsbDevice->open */
-	if (!FU_DEVICE_CLASS(fu_genesys_usbhub_device_parent_class)->open(device, error)) {
-		g_prefix_error(error, "error opening device: ");
-		return FALSE;
-	}
-
-	if (!g_usb_device_claim_interface(usb_device,
-					  0,
-					  G_USB_DEVICE_CLAIM_INTERFACE_BIND_KERNEL_DRIVER,
-					  error)) {
-		g_prefix_error(error, "error claiming interface: ");
-		return FALSE;
-	}
-
-	/* success */
-	return TRUE;
-}
-
-static gboolean
-fu_genesys_usbhub_device_close(FuDevice *device, GError **error)
-{
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-
-	if (!g_usb_device_release_interface(usb_device,
-					    0,
-					    G_USB_DEVICE_CLAIM_INTERFACE_BIND_KERNEL_DRIVER,
-					    error)) {
-		return FALSE;
-	}
-
-	/* FuUsbDevice->close */
-	if (!FU_DEVICE_CLASS(fu_genesys_usbhub_device_parent_class)->close(device, error)) {
-		g_prefix_error(error, "error closing device: ");
 		return FALSE;
 	}
 
@@ -637,7 +581,7 @@ fu_genesys_usbhub_device_check_fw_signature(FuGenesysUsbhubDevice *self,
 	if (memcmp(sig, GENESYS_USBHUB_FW_SIG_TEXT_HUB, GENESYS_USBHUB_FW_SIG_LEN) != 0) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
-				    FWUPD_ERROR_INTERNAL,
+				    FWUPD_ERROR_SIGNATURE_INVALID,
 				    "wrong firmware signature");
 		return FALSE;
 	}
@@ -758,18 +702,14 @@ static GBytes *
 fu_genesys_usbhub_device_dump_firmware(FuDevice *device, FuProgress *progress, GError **error)
 {
 	FuGenesysUsbhubDevice *self = FU_GENESYS_USBHUB_DEVICE(device);
-	gsize address = self->fw_bank_addr[0];
-	gsize size = self->code_size + self->extend_size;
+	gsize size = fu_cfi_device_get_size(self->cfi_device);
 	g_autoptr(FuDeviceLocker) locker = NULL;
 	g_autofree guint8 *buf = NULL;
 
-	if (self->fw_bank_vers[0] == 0 && fu_device_has_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE))
-		address = self->fw_bank_addr[1];
-
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 99);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 99, NULL);
 
 	/* require detach -> attach */
 	locker = fu_device_locker_new_full(device,
@@ -782,7 +722,7 @@ fu_genesys_usbhub_device_dump_firmware(FuDevice *device, FuProgress *progress, G
 
 	buf = g_malloc0(size);
 	if (!fu_genesys_usbhub_device_read_flash(self,
-						 address,
+						 0,
 						 buf,
 						 size,
 						 fu_progress_get_child(progress),
@@ -790,6 +730,7 @@ fu_genesys_usbhub_device_dump_firmware(FuDevice *device, FuProgress *progress, G
 		return NULL;
 	fu_progress_step_done(progress);
 
+	/* success */
 	return g_bytes_new_take(g_steal_pointer(&buf), size);
 }
 
@@ -802,6 +743,7 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 	gsize bufsz;
 	guint32 block_size;
 	guint32 sector_size;
+	guint64 revision_tmp = 0;
 	guint16 version_raw;
 	guint8 static_idx = 0;
 	guint8 dynamic_idx = 0;
@@ -857,10 +799,10 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_GENESYS_USBHUB_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN,
-				   "Static info",
-				   (guint8 *)&self->static_ts,
-				   sizeof(FuGenesysStaticToolString));
+		fu_dump_raw(G_LOG_DOMAIN,
+			    "Static info",
+			    (guint8 *)&self->static_ts,
+			    sizeof(FuGenesysStaticToolString));
 	}
 
 	if (memcmp(self->static_ts.mask_project_ic_type, "3521", 4) == 0) {
@@ -870,8 +812,8 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 	} else if (memcmp(self->static_ts.mask_project_ic_type, "3590", 4) == 0) {
 		self->chip.model = ISP_MODEL_HUB_GL3590;
 	} else {
-		ic_type = fu_common_strsafe((const gchar *)&self->static_ts.mask_project_ic_type,
-					    sizeof(self->static_ts.mask_project_ic_type));
+		ic_type = fu_strsafe((const gchar *)&self->static_ts.mask_project_ic_type,
+				     sizeof(self->static_ts.mask_project_ic_type));
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -880,7 +822,12 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	}
 	memcpy(rev, &self->static_ts.mask_project_ic_type[4], 2);
-	self->chip.revision = fu_common_strtoull(rev);
+
+	if (!fu_strtoull(rev, &revision_tmp, 0, G_MAXINT32, error)) {
+		g_prefix_error(error, "failed to parse %s: ", rev);
+		return FALSE;
+	}
+	self->chip.revision = revision_tmp;
 
 	dynamic_buf =
 	    g_usb_device_get_string_descriptor_bytes_full(usb_device,
@@ -900,10 +847,10 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_GENESYS_USBHUB_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN,
-				   "Dynamic info",
-				   (guint8 *)&self->dynamic_ts,
-				   sizeof(FuGenesysDynamicToolString));
+		fu_dump_raw(G_LOG_DOMAIN,
+			    "Dynamic info",
+			    (guint8 *)&self->dynamic_ts,
+			    sizeof(FuGenesysDynamicToolString));
 	}
 
 	fw_buf =
@@ -924,10 +871,10 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_GENESYS_USBHUB_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN,
-				   "Fw info",
-				   (guint8 *)&self->fwinfo_ts,
-				   sizeof(FuGenesysFirmwareInfoToolString));
+		fu_dump_raw(G_LOG_DOMAIN,
+			    "Fw info",
+			    (guint8 *)&self->fwinfo_ts,
+			    sizeof(FuGenesysFirmwareInfoToolString));
 	}
 
 	tool_string_version = fu_genesys_tsdigit_value(self->static_ts.tool_string_version);
@@ -951,10 +898,10 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 			return FALSE;
 		}
 		if (g_getenv("FWUPD_GENESYS_USBHUB_VERBOSE") != NULL) {
-			fu_common_dump_raw(G_LOG_DOMAIN,
-					   "Vendor support",
-					   (guint8 *)&self->vs_ts,
-					   sizeof(FuGenesysVendorSupportToolString));
+			fu_dump_raw(G_LOG_DOMAIN,
+				    "Vendor support",
+				    (guint8 *)&self->vs_ts,
+				    sizeof(FuGenesysVendorSupportToolString));
 		}
 	}
 
@@ -1097,7 +1044,7 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 	/* has public key */
 	if (fu_device_has_private_flag(device, FU_GENESYS_USBHUB_FLAG_HAS_PUBLIC_KEY)) {
 		g_autofree gchar *guid = NULL;
-		if (!fu_memcpy_safe(self->public_key,
+		if (!fu_memcpy_safe((guint8 *)&self->public_key,
 				    sizeof(self->public_key),
 				    0, /* dst */
 				    g_bytes_get_data(blob, NULL),
@@ -1106,15 +1053,23 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 				    sizeof(self->public_key),
 				    error))
 			return FALSE;
-		guid = fwupd_guid_hash_data(self->public_key,
+		if (memcmp(&self->public_key.N, "N = ", 4) != 0 &&
+		    memcmp(&self->public_key.E, "E = ", 4) != 0) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_SIGNATURE_INVALID,
+					    "invalid public-key");
+			return FALSE;
+		}
+		guid = fwupd_guid_hash_data((const guint8 *)&self->public_key,
 					    sizeof(self->public_key),
 					    FWUPD_GUID_FLAG_NONE);
 		fu_device_add_instance_strup(device, "PUBKEY", guid);
 	}
 
 	/* add specific product info */
-	ic_type = fu_common_strsafe((const gchar *)self->static_ts.mask_project_ic_type,
-				    sizeof(self->static_ts.mask_project_ic_type));
+	ic_type = fu_strsafe((const gchar *)self->static_ts.mask_project_ic_type,
+			     sizeof(self->static_ts.mask_project_ic_type));
 	fu_device_add_instance_str(device, "IC", ic_type);
 
 	if (self->running_bank != BANK_MASK_CODE) {
@@ -1154,6 +1109,7 @@ fu_genesys_usbhub_device_setup(FuDevice *device, GError **error)
 	/* success */
 	return TRUE;
 #else
+	/* failure */
 	g_set_error_literal(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -1167,20 +1123,20 @@ static void
 fu_genesys_usbhub_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuGenesysUsbhubDevice *self = FU_GENESYS_USBHUB_DEVICE(device);
-	fu_common_string_append_kx(str, idt, "FlashEraseDelay", self->flash_erase_delay);
-	fu_common_string_append_kx(str, idt, "FlashWriteDelay", self->flash_write_delay);
-	fu_common_string_append_kx(str, idt, "FlashBlockSize", self->flash_block_size);
-	fu_common_string_append_kx(str, idt, "FlashSectorSize", self->flash_sector_size);
-	fu_common_string_append_kx(str, idt, "FlashRwSize", self->flash_rw_size);
-	fu_common_string_append_kx(str, idt, "FwBank0Addr", self->fw_bank_addr[0]);
-	fu_common_string_append_kx(str, idt, "FwBank0Vers", self->fw_bank_vers[0]);
+	fu_string_append_kx(str, idt, "FlashEraseDelay", self->flash_erase_delay);
+	fu_string_append_kx(str, idt, "FlashWriteDelay", self->flash_write_delay);
+	fu_string_append_kx(str, idt, "FlashBlockSize", self->flash_block_size);
+	fu_string_append_kx(str, idt, "FlashSectorSize", self->flash_sector_size);
+	fu_string_append_kx(str, idt, "FlashRwSize", self->flash_rw_size);
+	fu_string_append_kx(str, idt, "FwBank0Addr", self->fw_bank_addr[0]);
+	fu_string_append_kx(str, idt, "FwBank0Vers", self->fw_bank_vers[0]);
 	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE)) {
-		fu_common_string_append_kx(str, idt, "FwBank1Addr", self->fw_bank_addr[1]);
-		fu_common_string_append_kx(str, idt, "FwBank1Vers", self->fw_bank_vers[1]);
+		fu_string_append_kx(str, idt, "FwBank1Addr", self->fw_bank_addr[1]);
+		fu_string_append_kx(str, idt, "FwBank1Vers", self->fw_bank_vers[1]);
 	}
-	fu_common_string_append_kx(str, idt, "CodeSize", self->code_size);
-	fu_common_string_append_kx(str, idt, "FwDataTotalCount", self->fw_data_total_count);
-	fu_common_string_append_kx(str, idt, "ExtendSize", self->extend_size);
+	fu_string_append_kx(str, idt, "CodeSize", self->code_size);
+	fu_string_append_kx(str, idt, "FwDataTotalCount", self->fw_data_total_count);
+	fu_string_append_kx(str, idt, "ExtendSize", self->extend_size);
 }
 
 static FuFirmware *
@@ -1202,10 +1158,11 @@ fu_genesys_usbhub_device_prepare_firmware(FuDevice *device,
 		const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
 		if (g_getenv("FWUPD_GENESYS_USBHUB_VERBOSE") != NULL)
-			fu_common_dump_raw(G_LOG_DOMAIN, "Footer", buf, bufsz);
+			fu_dump_raw(G_LOG_DOMAIN, "PublicKey", buf, bufsz);
 		if (memcmp(buf + fu_firmware_get_size(firmware),
-			   self->public_key,
-			   sizeof(self->public_key)) != 0) {
+			   &self->public_key,
+			   sizeof(self->public_key)) != 0 &&
+		    (flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
 			g_set_error_literal(error,
 					    FWUPD_ERROR,
 					    FWUPD_ERROR_SIGNATURE_INVALID,
@@ -1225,6 +1182,7 @@ fu_genesys_usbhub_device_prepare_firmware(FuDevice *device,
 		return NULL;
 	}
 
+	/* success */
 	return fu_firmware_new_from_bytes(fw);
 }
 
@@ -1272,6 +1230,7 @@ fu_genesys_usbhub_device_erase_flash(FuGenesysUsbhubDevice *self,
 			return FALSE;
 		}
 
+		/* 8s */
 		if (!fu_device_retry(FU_DEVICE(self),
 				     fu_genesys_usbhub_device_wait_flash_status_register_cb,
 				     self->flash_erase_delay / 30,
@@ -1332,6 +1291,7 @@ fu_genesys_usbhub_device_write_flash(FuGenesysUsbhubDevice *self,
 			return FALSE;
 		}
 
+		/* 5s */
 		if (!fu_device_retry(FU_DEVICE(self),
 				     fu_genesys_usbhub_device_wait_flash_status_register_cb,
 				     self->flash_write_delay / 30,
@@ -1360,10 +1320,10 @@ fu_genesys_usbhub_device_write_recovery(FuGenesysUsbhubDevice *self,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	if (self->read_first_bank)
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 30);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 20);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 20, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 30, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 20, NULL);
 
 	/* reuse fw on first bank for GL3523 */
 	if (self->read_first_bank) {
@@ -1420,7 +1380,7 @@ fu_genesys_usbhub_device_write_recovery(FuGenesysUsbhubDevice *self,
 						 fu_progress_get_child(progress),
 						 error))
 		return FALSE;
-	if (!fu_common_bytes_compare_raw(buf_verify, bufsz, buf, bufsz, error))
+	if (!fu_memcmp_safe(buf_verify, bufsz, buf, bufsz, error))
 		return FALSE;
 	fu_progress_step_done(progress);
 
@@ -1447,13 +1407,13 @@ fu_genesys_usbhub_device_write_firmware(FuDevice *device,
 	fu_progress_set_id(progress, G_STRLOC);
 	if (self->write_recovery_bank) {
 		if (self->read_first_bank)
-			fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 120);
+			fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 120, NULL);
 		else
-			fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100);
+			fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, NULL);
 	}
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 30);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 20);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 30, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 20, NULL);
 
 	/* write fw to recovery bank first? */
 	if (self->write_recovery_bank) {
@@ -1492,11 +1452,11 @@ fu_genesys_usbhub_device_write_firmware(FuDevice *device,
 						 fu_progress_get_child(progress),
 						 error))
 		return FALSE;
-	if (!fu_common_bytes_compare_raw(buf_verify,
-					 g_bytes_get_size(blob),
-					 g_bytes_get_data(blob, NULL),
-					 g_bytes_get_size(blob),
-					 error))
+	if (!fu_memcmp_safe(buf_verify,
+			    g_bytes_get_size(blob),
+			    g_bytes_get_data(blob, NULL),
+			    g_bytes_get_size(blob),
+			    error))
 		return FALSE;
 	fu_progress_step_done(progress);
 
@@ -1511,15 +1471,15 @@ fu_genesys_usbhub_device_set_progress(FuDevice *device, FuProgress *progress)
 
 	fu_progress_set_id(progress, G_STRLOC);
 	if (self->write_recovery_bank) {
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 30);	/* write */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 70);	/* reload */
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 30, "write");
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 70, "reload");
 	} else {
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 15);	/* write */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 85);	/* reload */
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 15, "write");
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 85, "reload");
 	}
 }
 
@@ -1533,7 +1493,7 @@ fu_genesys_usbhub_device_set_quirk_kv(FuDevice *device,
 	guint64 tmp;
 
 	if (g_strcmp0(key, "GenesysUsbhubDeviceTransferSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->flash_rw_size = tmp;
 
@@ -1541,7 +1501,7 @@ fu_genesys_usbhub_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "GenesysUsbhubSwitchRequest") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		self->vcs.req_switch = tmp;
 
@@ -1549,7 +1509,7 @@ fu_genesys_usbhub_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "GenesysUsbhubReadRequest") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		self->vcs.req_read = tmp;
 
@@ -1557,7 +1517,7 @@ fu_genesys_usbhub_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "GenesysUsbhubWriteRequest") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		self->vcs.req_write = tmp;
 
@@ -1565,6 +1525,7 @@ fu_genesys_usbhub_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 
+	/* failure */
 	g_set_error_literal(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -1579,19 +1540,21 @@ fu_genesys_usbhub_device_init(FuGenesysUsbhubDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_protocol(FU_DEVICE(self), "com.genesys.usbhub");
-	fu_device_retry_set_delay(FU_DEVICE(self), 30);	   /* ms */
-	fu_device_set_remove_delay(FU_DEVICE(self), 5000); /* ms */
+	fu_device_retry_set_delay(FU_DEVICE(self), 30);	   /* 30ms */
+	fu_device_set_remove_delay(FU_DEVICE(self), 5000); /* 5s */
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_GENESYS_USBHUB_FLAG_HAS_MSTAR_SCALER,
 					"has-mstar-scaler");
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_GENESYS_USBHUB_FLAG_HAS_PUBLIC_KEY,
 					"has-public-key");
+	fu_device_set_install_duration(FU_DEVICE(self), 9); /* 9 s */
+
 	self->vcs.req_switch = GENESYS_USBHUB_GL_HUB_SWITCH;
 	self->vcs.req_read = GENESYS_USBHUB_GL_HUB_READ;
 	self->vcs.req_write = GENESYS_USBHUB_GL_HUB_WRITE;
-	self->flash_erase_delay = 8000;
-	self->flash_write_delay = 500;
+	self->flash_erase_delay = 8000;	  /* 8s */
+	self->flash_write_delay = 500;	  /* 500ms */
 	self->flash_block_size = 0x10000; /* 64KB */
 	self->flash_sector_size = 0x1000; /* 4KB */
 	self->flash_rw_size = 0x40;	  /* 64B */
@@ -1601,9 +1564,6 @@ static void
 fu_genesys_usbhub_device_class_init(FuGenesysUsbhubDeviceClass *klass)
 {
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->probe = fu_genesys_usbhub_device_probe;
-	klass_device->open = fu_genesys_usbhub_device_open;
-	klass_device->close = fu_genesys_usbhub_device_close;
 	klass_device->setup = fu_genesys_usbhub_device_setup;
 	klass_device->dump_firmware = fu_genesys_usbhub_device_dump_firmware;
 	klass_device->prepare_firmware = fu_genesys_usbhub_device_prepare_firmware;

@@ -43,9 +43,9 @@ static void
 fu_rts54hub_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuRts54HubDevice *self = FU_RTS54HUB_DEVICE(device);
-	fu_common_string_append_kb(str, idt, "FwAuth", self->fw_auth);
-	fu_common_string_append_kb(str, idt, "DualBank", self->dual_bank);
-	fu_common_string_append_kb(str, idt, "RunningOnFlash", self->running_on_flash);
+	fu_string_append_kb(str, idt, "FwAuth", self->fw_auth);
+	fu_string_append_kb(str, idt, "DualBank", self->dual_bank);
+	fu_string_append_kb(str, idt, "RunningOnFlash", self->running_on_flash);
 }
 
 gboolean
@@ -437,10 +437,10 @@ fu_rts54hub_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 46);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 52);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 46, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 52, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, NULL);
 
 	/* get default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -524,7 +524,7 @@ fu_rts54hub_device_prepare_firmware(FuDevice *device,
 	guint8 tmp = 0;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
-	if (!fu_common_read_uint8_safe(buf, bufsz, 0x7ef3, &tmp, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, 0x7ef3, &tmp, error))
 		return NULL;
 	if ((tmp & 0xf0) != 0x80) {
 		g_set_error_literal(error,
@@ -540,10 +540,10 @@ static void
 fu_rts54hub_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0);	 /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 62);	 /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 38); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	 /* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 62, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 38, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

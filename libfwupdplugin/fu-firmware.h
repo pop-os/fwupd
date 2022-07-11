@@ -7,7 +7,6 @@
 #pragma once
 
 #include <fwupd.h>
-#include <glib-object.h>
 #include <xmlb.h>
 
 #include "fu-chunk.h"
@@ -52,8 +51,7 @@ struct _FuFirmwareClass {
 	GObjectClass parent_class;
 	gboolean (*parse)(FuFirmware *self,
 			  GBytes *fw,
-			  guint64 addr_start,
-			  guint64 addr_end,
+			  gsize offset,
 			  FwupdInstallFlags flags,
 			  GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	GBytes *(*write)(FuFirmware *self, GError **error)G_GNUC_WARN_UNUSED_RESULT;
@@ -116,6 +114,14 @@ struct _FuFirmwareClass {
  * Since: 1.7.3
  **/
 #define FU_FIRMWARE_FLAG_DONE_PARSE (1u << 4)
+/**
+ * FU_FIRMWARE_FLAG_HAS_STORED_SIZE:
+ *
+ * Encodes the image size in the firmware.
+ *
+ * Since: 1.8.2
+ **/
+#define FU_FIRMWARE_FLAG_HAS_STORED_SIZE (1u << 5)
 
 /**
  * FuFirmwareFlags:
@@ -250,6 +256,10 @@ void
 fu_firmware_add_chunk(FuFirmware *self, FuChunk *chk);
 GPtrArray *
 fu_firmware_get_chunks(FuFirmware *self, GError **error);
+FuFirmware *
+fu_firmware_get_parent(FuFirmware *self);
+void
+fu_firmware_set_parent(FuFirmware *self, FuFirmware *parent);
 
 gboolean
 fu_firmware_tokenize(FuFirmware *self, GBytes *fw, FwupdInstallFlags flags, GError **error)
@@ -269,8 +279,7 @@ fu_firmware_parse_file(FuFirmware *self, GFile *file, FwupdInstallFlags flags, G
 gboolean
 fu_firmware_parse_full(FuFirmware *self,
 		       GBytes *fw,
-		       guint64 addr_start,
-		       guint64 addr_end,
+		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error) G_GNUC_WARN_UNUSED_RESULT;
 GBytes *

@@ -1,5 +1,4 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
- *
+/*
  * Copyright (C) 2011 Lennart Poettering <lennart@poettering.net>
  * Copyright (C) 2012 Matthias Klumpp <matthias@tenstral.net>
  * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
@@ -14,10 +13,11 @@
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif
+#include <fwupdplugin.h>
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <glib.h>
 #include <inttypes.h>
 #include <poll.h>
 #include <signal.h>
@@ -26,7 +26,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "fu-common.h"
 #include "fu-polkit-agent.h"
 
 static pid_t agent_pid = 0;
@@ -181,7 +180,7 @@ fu_polkit_agent_open(GError **error)
 		return TRUE;
 
 	/* find binary */
-	pkttyagent_fn = fu_common_find_program_in_path("pkttyagent", error);
+	pkttyagent_fn = fu_path_find_program("pkttyagent", error);
 	if (pkttyagent_fn == NULL)
 		return FALSE;
 

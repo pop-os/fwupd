@@ -10,10 +10,13 @@
 
 #include <string.h>
 
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-chunk-private.h"
 #include "fu-common.h"
 #include "fu-dfu-firmware-private.h"
 #include "fu-dfuse-firmware.h"
+#include "fu-mem.h"
 
 /**
  * FuDfuseFirmware:
@@ -76,7 +79,7 @@ fu_firmware_image_chunk_parse(FuDfuseFirmware *self, GBytes *bytes, gsize *offse
 
 	/* create new chunk */
 	*offset += sizeof(hdr);
-	blob = fu_common_bytes_new_offset(bytes, *offset, GUINT32_FROM_LE(hdr.size), error);
+	blob = fu_bytes_new_offset(bytes, *offset, GUINT32_FROM_LE(hdr.size), error);
 	if (blob == NULL)
 		return NULL;
 	chk = fu_chunk_bytes_new(blob);
@@ -147,15 +150,13 @@ fu_dfuse_firmware_image_parse(FuDfuseFirmware *self, GBytes *bytes, gsize *offse
 static gboolean
 fu_dfuse_firmware_parse(FuFirmware *firmware,
 			GBytes *fw,
-			guint64 addr_start,
-			guint64 addr_end,
+			gsize offset,
 			FwupdInstallFlags flags,
 			GError **error)
 {
 	FuDfuFirmware *dfu_firmware = FU_DFU_FIRMWARE(firmware);
 	DfuSeHdr hdr = {0x0};
 	gsize bufsz = 0;
-	gsize offset = 0;
 	const guint8 *buf;
 
 	/* DFU footer first */

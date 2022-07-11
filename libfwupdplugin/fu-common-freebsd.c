@@ -6,7 +6,8 @@
 
 #define G_LOG_DOMAIN "FuCommon"
 
-#include <config.h>
+#include "config.h"
+
 #include <gio/gio.h>
 #include <string.h>
 #include <unistd.h>
@@ -16,6 +17,7 @@
 #endif
 
 #include "fu-common-private.h"
+#include "fu-path-private.h"
 
 /* bsdisks doesn't provide Manager object */
 #define UDISKS_DBUS_PATH	      "/org/freedesktop/UDisks2"
@@ -110,7 +112,7 @@ fu_common_get_block_devices(GError **error)
 }
 
 gboolean
-fu_common_fnmatch_impl(const gchar *pattern, const gchar *str)
+fu_path_fnmatch_impl(const gchar *pattern, const gchar *str)
 {
 #ifdef HAVE_FNMATCH_H
 	return fnmatch(pattern, str, FNM_NOESCAPE) == 0;

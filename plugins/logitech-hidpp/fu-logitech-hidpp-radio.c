@@ -20,7 +20,7 @@ static void
 fu_logitech_hidpp_radio_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuLogitechHidPpRadio *self = FU_HIDPP_RADIO(device);
-	fu_common_string_append_kx(str, idt, "Entity", self->entity);
+	fu_string_append_kx(str, idt, "Entity", self->entity);
 }
 
 static gboolean
@@ -84,16 +84,17 @@ static void
 fu_logitech_hidpp_radio_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 96);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 3);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 96, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 3, "reload");
 }
 
 static void
 fu_logitech_hidpp_radio_init(FuLogitechHidPpRadio *self)
 {
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_set_vendor(FU_DEVICE(self), "Logitech");
 	fu_device_set_name(FU_DEVICE(self), "Radio");
 	fu_device_set_install_duration(FU_DEVICE(self), 270);

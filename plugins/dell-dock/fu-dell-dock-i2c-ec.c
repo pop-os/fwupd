@@ -183,7 +183,7 @@ fu_dell_dock_module_is_usb4(FuDevice *device)
 }
 
 guint8
-fu_dell_dock_get_ec_type(FuDevice *device)
+fu_dell_dock_get_dock_type(FuDevice *device)
 {
 	FuDellDockEc *self = FU_DELL_DOCK_EC(device);
 	return self->base_type;
@@ -347,10 +347,10 @@ fu_dell_dock_is_valid_dock(FuDevice *device, GError **error)
 	self->base_type = result[0];
 
 	/* this will trigger setting up all the quirks */
-	if (self->base_type == WD19_BASE) {
+	if (self->base_type == DOCK_BASE_TYPE_SALOMON) {
 		fu_device_add_instance_id(device, DELL_DOCK_EC_INSTANCE_ID);
 		return TRUE;
-	} else if (self->base_type == ATOMIC_BASE) {
+	} else if (self->base_type == DOCK_BASE_TYPE_ATOMIC) {
 		fu_device_add_instance_id(device, DELL_DOCK_ATOMIC_EC_INSTANCE_ID);
 		return TRUE;
 	}
@@ -503,7 +503,7 @@ fu_dell_dock_ec_get_dock_info(FuDevice *device, GError **error)
 
 	/* Determine if the passive flow should be used when flashing */
 	hub_version = fu_device_get_version(fu_device_get_proxy(device));
-	if (fu_common_vercmp_full(hub_version, "1.42", FWUPD_VERSION_FORMAT_PAIR) < 0) {
+	if (fu_version_compare(hub_version, "1.42", FWUPD_VERSION_FORMAT_PAIR) < 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -597,27 +597,21 @@ fu_dell_dock_ec_to_string(FuDevice *device, guint idt, GString *str)
 	FuDellDockEc *self = FU_DELL_DOCK_EC(device);
 	gchar service_tag[8] = {0x00};
 
-	fu_common_string_append_ku(str, idt, "BaseType", self->base_type);
-	fu_common_string_append_ku(str, idt, "BoardId", self->data->board_id);
-	fu_common_string_append_ku(str, idt, "PowerSupply", self->data->power_supply_wattage);
-	fu_common_string_append_kx(str, idt, "StatusPort0", self->data->port0_dock_status);
-	fu_common_string_append_kx(str, idt, "StatusPort1", self->data->port1_dock_status);
+	fu_string_append_ku(str, idt, "BaseType", self->base_type);
+	fu_string_append_ku(str, idt, "BoardId", self->data->board_id);
+	fu_string_append_ku(str, idt, "PowerSupply", self->data->power_supply_wattage);
+	fu_string_append_kx(str, idt, "StatusPort0", self->data->port0_dock_status);
+	fu_string_append_kx(str, idt, "StatusPort1", self->data->port1_dock_status);
 	memcpy(service_tag, self->data->service_tag, 7);
-	fu_common_string_append_kv(str, idt, "ServiceTag", service_tag);
-	fu_common_string_append_ku(str, idt, "Configuration", self->data->dock_configuration);
-	fu_common_string_append_kx(str,
-				   idt,
-				   "PackageFirmwareVersion",
-				   self->data->dock_firmware_pkg_ver);
-	fu_common_string_append_ku(str, idt, "ModuleSerial", self->data->module_serial);
-	fu_common_string_append_ku(str,
-				   idt,
-				   "OriginalModuleSerial",
-				   self->data->original_module_serial);
-	fu_common_string_append_ku(str, idt, "Type", self->data->dock_type);
-	fu_common_string_append_kx(str, idt, "ModuleType", self->data->module_type);
-	fu_common_string_append_kv(str, idt, "MinimumEc", self->ec_minimum_version);
-	fu_common_string_append_ku(str, idt, "PassiveFlow", self->passive_flow);
+	fu_string_append(str, idt, "ServiceTag", service_tag);
+	fu_string_append_ku(str, idt, "Configuration", self->data->dock_configuration);
+	fu_string_append_kx(str, idt, "PackageFirmwareVersion", self->data->dock_firmware_pkg_ver);
+	fu_string_append_ku(str, idt, "ModuleSerial", self->data->module_serial);
+	fu_string_append_ku(str, idt, "OriginalModuleSerial", self->data->original_module_serial);
+	fu_string_append_ku(str, idt, "Type", self->data->dock_type);
+	fu_string_append_kx(str, idt, "ModuleType", self->data->module_type);
+	fu_string_append(str, idt, "MinimumEc", self->ec_minimum_version);
+	fu_string_append_ku(str, idt, "PassiveFlow", self->passive_flow);
 }
 
 gboolean
@@ -809,8 +803,8 @@ fu_dell_dock_ec_write_fw(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 15);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 85);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 15, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 85, NULL);
 
 	/* get default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -823,9 +817,9 @@ fu_dell_dock_ec_write_fw(FuDevice *device,
 
 	/* meet the minimum EC version */
 	if ((flags & FWUPD_INSTALL_FLAG_FORCE) == 0 &&
-	    (fu_common_vercmp_full(dynamic_version,
-				   self->ec_minimum_version,
-				   FWUPD_VERSION_FORMAT_QUAD) < 0)) {
+	    (fu_version_compare(dynamic_version,
+				self->ec_minimum_version,
+				FWUPD_VERSION_FORMAT_QUAD) < 0)) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -888,13 +882,13 @@ fu_dell_dock_ec_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *va
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "DellDockUnlockTarget") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		self->unlock_target = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DellDockBoardMin") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		self->board_min = tmp;
 		return TRUE;
@@ -908,7 +902,7 @@ fu_dell_dock_ec_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *va
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DellDockBlobVersionOffset") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->blob_version_offset = tmp;
 		return TRUE;
@@ -996,11 +990,10 @@ static void
 fu_dell_dock_ec_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

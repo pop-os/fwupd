@@ -10,11 +10,10 @@ fi
 # install deps
 ./contrib/ci/fwupd_setup_helpers.py --yes -o fedora -v mingw64 install-dependencies
 
-# update things that are not yet in Fedora updates-testing
+# update to latest version of meson
 if [ "$(id -u)" -eq 0 ]; then
-    dnf install -y  \
-        https://kojipkgs.fedoraproject.org//packages/msitools/0.101.32/5.fc36/x86_64/msitools-0.101.32-5.fc36.x86_64.rpm \
-        https://kojipkgs.fedoraproject.org//packages/msitools/0.101.32/5.fc36/x86_64/libmsi1-0.101.32-5.fc36.x86_64.rpm
+    dnf install -y python-pip
+    pip install meson --force-reinstall
 fi
 
 #prep
@@ -42,7 +41,6 @@ meson .. \
     --libexecdir="bin" \
     --bindir="bin" \
     -Dbuild=all \
-    -Ddocs=none \
     -Dhsi=false \
     -Dman=false \
     -Dfish_completion=false \
@@ -162,10 +160,10 @@ wixl -v \
 	-o "${MSI_FILENAME}"
 
 # check the msi archive can be installed and removed (use "wine uninstaller" to do manually)
-wine msiexec /i "${MSI_FILENAME}"
-ls -R ~/.wine/drive_c/Program\ Files/fwupd/
-wine ~/.wine/drive_c/Program\ Files/fwupd/bin/fwupdtool get-plugins --json
-wine msiexec /x "${MSI_FILENAME}"
+# wine msiexec /i "${MSI_FILENAME}"
+# ls -R ~/.wine/drive_c/Program\ Files/fwupd/
+# wine ~/.wine/drive_c/Program\ Files/fwupd/bin/fwupdtool get-plugins --json
+# wine msiexec /x "${MSI_FILENAME}"
 
 #generate news release
 contrib/ci/generate_news.py $VERSION > $DESTDIR/news.txt

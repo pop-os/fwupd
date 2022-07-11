@@ -8,12 +8,11 @@
 
 #include "config.h"
 
+#include <fwupdplugin.h>
+
 #include <fcntl.h>
-#include <fwupd.h>
-#include <gio/gio.h>
 #include <glib/gi18n.h>
 #include <glib/gstdio.h>
-#include <xmlb.h>
 #ifdef HAVE_GIO_UNIX
 #include <gio/gunixfdlist.h>
 #include <glib-unix.h>
@@ -31,7 +30,6 @@
 #include "fu-plugin-private.h"
 #include "fu-polkit-agent.h"
 #include "fu-progressbar.h"
-#include "fu-security-attrs.h"
 #include "fu-util-common.h"
 
 #ifdef HAVE_SYSTEMD
@@ -654,7 +652,7 @@ fu_util_download_if_required(FuUtilPrivate *priv, const gchar *perhapsfn, GError
 	filename = fu_util_get_user_cache_path(perhapsfn);
 	if (g_file_test(filename, G_FILE_TEST_EXISTS))
 		return g_steal_pointer(&filename);
-	if (!fu_common_mkdir_parent(filename, error))
+	if (!fu_path_mkdir_parent(filename, error))
 		return NULL;
 	blob = fwupd_client_download_bytes(priv->client,
 					   perhapsfn,
@@ -665,7 +663,7 @@ fu_util_download_if_required(FuUtilPrivate *priv, const gchar *perhapsfn, GError
 		return NULL;
 
 	/* save file to cache */
-	if (!fu_common_set_contents_bytes(filename, blob, error))
+	if (!fu_bytes_set_contents(filename, blob, error))
 		return NULL;
 	return g_steal_pointer(&filename);
 }
@@ -1495,9 +1493,9 @@ fu_util_get_release_for_device_version(FuUtilPrivate *priv,
 	/* find using vercmp */
 	for (guint j = 0; j < releases->len; j++) {
 		FwupdRelease *release = g_ptr_array_index(releases, j);
-		if (fu_common_vercmp_full(fwupd_release_get_version(release),
-					  version,
-					  fwupd_device_get_version_format(device)) == 0) {
+		if (fu_version_compare(fwupd_release_get_version(release),
+				       version,
+				       fwupd_device_get_version_format(device)) == 0) {
 			return g_object_ref(release);
 		}
 	}
@@ -2279,7 +2277,10 @@ fu_util_prompt_warning_composite(FuUtilPrivate *priv,
 		for (guint j = 0; j < rels->len; j++) {
 			FwupdRelease *rel_tmp = g_ptr_array_index(rels, j);
 			if (fwupd_release_has_checksum(rel_tmp, rel_csum)) {
-				const gchar *title = fwupd_client_get_host_product(priv->client);
+				g_autofree gchar *title =
+				    g_strdup_printf("%s %s",
+						    fwupd_client_get_host_product(priv->client),
+						    fwupd_client_get_host_product(priv->client));
 				if (!fu_util_prompt_warning(dev_tmp, rel_tmp, title, error))
 					return FALSE;
 				break;
@@ -3537,7 +3538,7 @@ static gboolean
 fu_util_check_polkit_actions(GError **error)
 {
 #ifdef HAVE_POLKIT
-	g_autofree gchar *directory = fu_common_get_path(FU_PATH_KIND_POLKIT_ACTIONS);
+	g_autofree gchar *directory = fu_path_from_kind(FU_PATH_KIND_POLKIT_ACTIONS);
 	g_autofree gchar *filename =
 	    g_build_filename(directory, "org.freedesktop.fwupd.policy", NULL);
 	if (!g_file_test(filename, G_FILE_TEST_IS_REGULAR)) {

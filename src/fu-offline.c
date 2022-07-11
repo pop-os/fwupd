@@ -6,7 +6,8 @@
 
 #include "config.h"
 
-#include <fwupd.h>
+#include <fwupdplugin.h>
+
 #include <glib/gi18n.h>
 #include <glib/gstdio.h>
 #include <locale.h>
@@ -14,6 +15,7 @@
 
 #include "fu-history.h"
 #include "fu-plugin-private.h"
+#include "fu-spawn.h"
 #include "fu-util-common.h"
 
 typedef enum {
@@ -46,7 +48,7 @@ fu_offline_set_splash_progress(FuUtilPrivate *priv, guint percentage, GError **e
 		argv[1] = "display-message";
 		argv[2] = "--text";
 	}
-	return fu_common_spawn_sync(argv, NULL, NULL, 200, NULL, error);
+	return fu_spawn_sync(argv, NULL, NULL, 200, NULL, error);
 }
 
 static gboolean
@@ -63,9 +65,9 @@ fu_offline_set_splash_mode(FuUtilPrivate *priv, GError **error)
 	}
 
 	/* try the new fancy mode, then fall back to really old mode */
-	if (!fu_common_spawn_sync(argv, NULL, NULL, 1500, NULL, &error_local)) {
+	if (!fu_spawn_sync(argv, NULL, NULL, 1500, NULL, &error_local)) {
 		argv[2] = "--updates";
-		if (!fu_common_spawn_sync(argv, NULL, NULL, 1500, NULL, error)) {
+		if (!fu_spawn_sync(argv, NULL, NULL, 1500, NULL, error)) {
 			g_prefix_error(error, "%s: ", error_local->message);
 			return FALSE;
 		}
@@ -92,10 +94,10 @@ fu_offline_set_splash_reboot(FuUtilPrivate *priv, GError **error)
 	}
 
 	/* try the new fancy mode, then fall back to really old mode */
-	if (!fu_common_spawn_sync(argv, NULL, NULL, 200, NULL, &error_local)) {
+	if (!fu_spawn_sync(argv, NULL, NULL, 200, NULL, &error_local)) {
 		/* fall back to really old mode that should be supported */
 		argv[2] = "--shutdown";
-		if (!fu_common_spawn_sync(argv, NULL, NULL, 200, NULL, error)) {
+		if (!fu_spawn_sync(argv, NULL, NULL, 200, NULL, error)) {
 			g_prefix_error(error, "%s: ", error_local->message);
 			return FALSE;
 		}
@@ -140,8 +142,8 @@ main(int argc, char *argv[])
 	gint vercmp;
 	guint cnt = 0;
 	g_autofree gchar *link = NULL;
-	g_autofree gchar *target = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
-	g_autofree gchar *trigger = fu_common_get_path(FU_PATH_KIND_OFFLINE_TRIGGER);
+	g_autofree gchar *target = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	g_autofree gchar *trigger = fu_path_from_kind(FU_PATH_KIND_OFFLINE_TRIGGER);
 	g_autoptr(FuHistory) history = NULL;
 	g_autoptr(FwupdClient) client = NULL;
 	g_autoptr(GError) error = NULL;
@@ -218,9 +220,9 @@ main(int argc, char *argv[])
 			continue;
 
 		/* tell the user what's going to happen */
-		vercmp = fu_common_vercmp_full(fwupd_device_get_version(dev),
-					       fwupd_release_get_version(rel),
-					       fwupd_device_get_version_format(dev));
+		vercmp = fu_version_compare(fwupd_device_get_version(dev),
+					    fwupd_release_get_version(rel),
+					    fwupd_device_get_version_format(dev));
 		if (vercmp == 0) {
 			/* TRANSLATORS: the first replacement is a display name
 			 * e.g. "ColorHugALS" and the second is a version number

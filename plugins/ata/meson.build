@@ -1,34 +1,30 @@
 if gudev.found()
 cargs = ['-DG_LOG_DOMAIN="FuPluginAta"']
 
-install_data([
-  'ata.quirk',
-  ],
-  install_dir: join_paths(datadir, 'fwupd', 'quirks.d')
-)
+plugin_quirks += join_paths(meson.current_source_dir(), 'ata.quirk')
 
 shared_module('fu_plugin_ata',
   fu_hash,
-  sources : [
+  sources: [
     'fu-plugin-ata.c',
     'fu-ata-device.c',
   ],
-  include_directories : [
+  include_directories: [
     root_incdir,
     fwupd_incdir,
     fwupdplugin_incdir,
   ],
-  install : true,
+  install: true,
   install_dir: plugin_dir,
-  c_args : [
+  c_args: [
     cargs,
     '-DLOCALSTATEDIR="' + localstatedir + '"',
   ],
-  link_with : [
+  link_with: [
     fwupd,
     fwupdplugin,
   ],
-  dependencies : [
+  dependencies: [
     plugin_deps,
   ],
 )
@@ -41,25 +37,25 @@ if get_option('tests')
   e = executable(
     'ata-self-test',
     fu_hash,
-    sources : [
+    sources: [
       'fu-self-test.c',
       'fu-ata-device.c',
     ],
-    include_directories : [
+    include_directories: [
       root_incdir,
       fwupd_incdir,
       fwupdplugin_incdir,
     ],
-    dependencies : [
+    dependencies: [
       plugin_deps,
     ],
-    link_with : [
+    link_with: [
       fwupd,
       fwupdplugin,
     ],
-    install : true,
-    install_dir : installed_test_bindir,
+    install: true,
+    install_dir: installed_test_bindir,
   )
-  test('ata-self-test', e, env : env)  # added to installed-tests
+  test('ata-self-test', e, env: env)  # added to installed-tests
 endif
 endif

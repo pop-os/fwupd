@@ -42,8 +42,7 @@ fu_elanfp_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 static gboolean
 fu_elanfp_firmware_parse(FuFirmware *firmware,
 			 GBytes *fw,
-			 guint64 addr_start,
-			 guint64 addr_end,
+			 gsize offset,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
@@ -51,12 +50,11 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 	const guint8 *buf;
 	gsize bufsz;
 	guint32 tag = 0;
-	gsize offset = 0x00;
 	guint img_cnt = 0;
 
 	/* check the tag */
 	buf = g_bytes_get_data(fw, &bufsz);
-	if (!fu_common_read_uint32_safe(buf, bufsz, offset + 0x0, &tag, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, offset + 0x0, &tag, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (tag != 0x46325354) {
 		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "tag is not valid");
@@ -64,12 +62,12 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 	}
 
 	/* file format version */
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					offset + 0x4,
-					&self->format_version,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    offset + 0x4,
+				    &self->format_version,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 
 	/* read indexes */
@@ -91,12 +89,12 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 		}
 
 		/* type, reserved, start-addr, len */
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset + 0x0,
-						&fwtype,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset + 0x0,
+					    &fwtype,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 
 		/* check not already added */
@@ -127,20 +125,20 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 			break;
 		}
 		fu_firmware_set_idx(img, fwtype);
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset + 0x8,
-						&start_addr,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset + 0x8,
+					    &start_addr,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		fu_firmware_set_addr(img, start_addr);
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset + 0xC,
-						&length,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset + 0xC,
+					    &length,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		if (length == 0) {
 			g_set_error(error,
@@ -150,7 +148,7 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 				    fwtype);
 			return FALSE;
 		}
-		blob = fu_common_bytes_new_offset(fw, start_addr, length, error);
+		blob = fu_bytes_new_offset(fw, start_addr, length, error);
 		if (blob == NULL)
 			return FALSE;
 		if (!fu_firmware_parse(img, blob, flags, error))

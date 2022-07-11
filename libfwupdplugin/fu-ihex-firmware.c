@@ -10,9 +10,13 @@
 
 #include <string.h>
 
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-firmware-common.h"
 #include "fu-ihex-firmware.h"
+#include "fu-mem.h"
+#include "fu-string.h"
 
 /**
  * FuIhexFirmware:
@@ -61,7 +65,7 @@ fu_ihex_firmware_get_records(FuIhexFirmware *self)
  * Set the padding value to fill incomplete address ranges.
  *
  * The default value of zero can be changed to `0xff` if functions like
- * fu_common_bytes_is_empty() are going to be used on subsections of the data.
+ * fu_bytes_is_empty() are going to be used on subsections of the data.
  *
  * Since: 1.6.0
  **/
@@ -93,7 +97,7 @@ fu_ihex_firmware_record_new(guint ln, const gchar *line, FwupdInstallFlags flags
 
 	/* check starting token */
 	if (line[0] != ':') {
-		g_autofree gchar *strsafe = fu_common_strsafe(line, 5);
+		g_autofree gchar *strsafe = fu_strsafe(line, 5);
 		if (strsafe != NULL) {
 			g_set_error(error,
 				    FWUPD_ERROR,
@@ -230,19 +234,18 @@ fu_ihex_firmware_tokenize(FuFirmware *firmware, GBytes *fw, FwupdInstallFlags fl
 {
 	FuIhexFirmware *self = FU_IHEX_FIRMWARE(firmware);
 	FuIhexFirmwareTokenHelper helper = {.self = self, .flags = flags};
-	return fu_common_strnsplit_full(g_bytes_get_data(fw, NULL),
-					g_bytes_get_size(fw),
-					"\n",
-					fu_ihex_firmware_tokenize_cb,
-					&helper,
-					error);
+	return fu_strsplit_full(g_bytes_get_data(fw, NULL),
+				g_bytes_get_size(fw),
+				"\n",
+				fu_ihex_firmware_tokenize_cb,
+				&helper,
+				error);
 }
 
 static gboolean
 fu_ihex_firmware_parse(FuFirmware *firmware,
 		       GBytes *fw,
-		       guint64 addr_start,
-		       guint64 addr_end,
+		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
 {
@@ -359,33 +362,33 @@ fu_ihex_firmware_parse(FuFirmware *firmware,
 			got_eof = TRUE;
 			break;
 		case FU_IHEX_FIRMWARE_RECORD_TYPE_EXTENDED_LINEAR:
-			if (!fu_common_read_uint16_safe(rcd->data->data,
-							rcd->data->len,
-							0x0,
-							&addr16,
-							G_BIG_ENDIAN,
-							error))
+			if (!fu_memread_uint16_safe(rcd->data->data,
+						    rcd->data->len,
+						    0x0,
+						    &addr16,
+						    G_BIG_ENDIAN,
+						    error))
 				return FALSE;
 			abs_addr = (guint32)addr16 << 16;
 			g_debug("  abs_addr:\t0x%02x on line %u", abs_addr, rcd->ln);
 			break;
 		case FU_IHEX_FIRMWARE_RECORD_TYPE_START_LINEAR:
-			if (!fu_common_read_uint32_safe(rcd->data->data,
-							rcd->data->len,
-							0x0,
-							&abs_addr,
-							G_BIG_ENDIAN,
-							error))
+			if (!fu_memread_uint32_safe(rcd->data->data,
+						    rcd->data->len,
+						    0x0,
+						    &abs_addr,
+						    G_BIG_ENDIAN,
+						    error))
 				return FALSE;
 			g_debug("  abs_addr:\t0x%08x on line %u", abs_addr, rcd->ln);
 			break;
 		case FU_IHEX_FIRMWARE_RECORD_TYPE_EXTENDED_SEGMENT:
-			if (!fu_common_read_uint16_safe(rcd->data->data,
-							rcd->data->len,
-							0x0,
-							&addr16,
-							G_BIG_ENDIAN,
-							error))
+			if (!fu_memread_uint16_safe(rcd->data->data,
+						    rcd->data->len,
+						    0x0,
+						    &addr16,
+						    G_BIG_ENDIAN,
+						    error))
 				return FALSE;
 			/* segment base address, so ~1Mb addressable */
 			seg_addr = (guint32)addr16 * 16;
@@ -393,12 +396,12 @@ fu_ihex_firmware_parse(FuFirmware *firmware,
 			break;
 		case FU_IHEX_FIRMWARE_RECORD_TYPE_START_SEGMENT:
 			/* initial content of the CS:IP registers */
-			if (!fu_common_read_uint32_safe(rcd->data->data,
-							rcd->data->len,
-							0x0,
-							&seg_addr,
-							G_BIG_ENDIAN,
-							error))
+			if (!fu_memread_uint32_safe(rcd->data->data,
+						    rcd->data->len,
+						    0x0,
+						    &seg_addr,
+						    G_BIG_ENDIAN,
+						    error))
 				return FALSE;
 			g_debug("  seg_addr:\t0x%02x on line %u", seg_addr, rcd->ln);
 			break;
@@ -494,7 +497,7 @@ fu_ihex_firmware_image_to_string(GBytes *bytes,
 		/* need to offset */
 		if (address_offset != address_offset_last) {
 			guint8 buf[2];
-			fu_common_write_uint16(buf, address_offset, G_BIG_ENDIAN);
+			fu_memwrite_uint16(buf, address_offset, G_BIG_ENDIAN);
 			fu_ihex_firmware_emit_chunk(str,
 						    0x0,
 						    FU_IHEX_FIRMWARE_RECORD_TYPE_EXTENDED_LINEAR,

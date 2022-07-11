@@ -37,8 +37,7 @@ fu_pxi_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuil
 static gboolean
 fu_pxi_firmware_parse(FuFirmware *firmware,
 		      GBytes *fw,
-		      guint64 addr_start,
-		      guint64 addr_end,
+		      gsize offset,
 		      FwupdInstallFlags flags,
 		      GError **error)
 {
@@ -80,17 +79,17 @@ fu_pxi_firmware_parse(FuFirmware *firmware,
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "fw header", fw_header, sizeof(fw_header));
+		fu_dump_raw(G_LOG_DOMAIN, "fw header", fw_header, sizeof(fw_header));
 	}
 
 	/* check the tag from fw header is correct */
 	for (guint32 i = 0x0; i < sizeof(tag); i++) {
 		guint8 tmp = 0;
-		if (!fu_common_read_uint8_safe(fw_header,
-					       sizeof(fw_header),
-					       i + PIXART_RF_FW_HEADER_TAG_OFFSET,
-					       &tmp,
-					       error))
+		if (!fu_memread_uint8_safe(fw_header,
+					   sizeof(fw_header),
+					   i + PIXART_RF_FW_HEADER_TAG_OFFSET,
+					   &tmp,
+					   error))
 			return FALSE;
 		if (tmp != tag[i]) {
 			g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "Fw tag is incorrect");
@@ -102,7 +101,7 @@ fu_pxi_firmware_parse(FuFirmware *firmware,
 	version_raw = (((guint32)(fw_header[0] - '0')) << 16) +
 		      (((guint32)(fw_header[2] - '0')) << 8) + (guint32)(fw_header[4] - '0');
 	fu_firmware_set_version_raw(firmware, version_raw);
-	version = fu_common_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_DELL_BIOS);
+	version = fu_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_DELL_BIOS);
 	fu_firmware_set_version(firmware, version);
 
 	/* set fw model name */

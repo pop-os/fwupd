@@ -59,7 +59,7 @@ fu_plugin_msr_init(FuPlugin *plugin)
 }
 
 static gboolean
-fu_plugin_msr_startup(FuPlugin *plugin, GError **error)
+fu_plugin_msr_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
 	guint eax = 0;
@@ -75,15 +75,15 @@ fu_plugin_msr_startup(FuPlugin *plugin, GError **error)
 	}
 
 	/* sdbg is supported: https://en.wikipedia.org/wiki/CPUID */
-	if (fu_common_get_cpu_vendor() == FU_CPU_VENDOR_INTEL) {
-		if (!fu_common_cpuid(0x01, NULL, NULL, &ecx, NULL, error))
+	if (fu_cpu_get_vendor() == FU_CPU_VENDOR_INTEL) {
+		if (!fu_cpuid(0x01, NULL, NULL, &ecx, NULL, error))
 			return FALSE;
 		priv->ia32_debug_supported = ((ecx >> 11) & 0x1) > 0;
 	}
 
 	/* indicates support for SME and SEV */
-	if (fu_common_get_cpu_vendor() == FU_CPU_VENDOR_AMD) {
-		if (!fu_common_cpuid(0x8000001f, &eax, &ebx, NULL, NULL, error))
+	if (fu_cpu_get_vendor() == FU_CPU_VENDOR_AMD) {
+		if (!fu_cpuid(0x8000001f, &eax, &ebx, NULL, NULL, error))
 			return FALSE;
 		g_debug("SME/SEV check MSR: eax 0%x, ebx 0%x", eax, ebx);
 		priv->amd64_syscfg_supported = ((eax >> 0) & 0x1) > 0;
@@ -121,20 +121,20 @@ fu_plugin_msr_backend_device_added(FuPlugin *plugin, FuDevice *device, GError **
 
 	/* grab Intel MSR */
 	if (priv->ia32_debug_supported) {
-		if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-					       PCI_MSR_IA32_DEBUG_INTERFACE,
-					       buf,
-					       sizeof(buf),
-					       error)) {
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(device),
+					  PCI_MSR_IA32_DEBUG_INTERFACE,
+					  buf,
+					  sizeof(buf),
+					  error)) {
 			g_prefix_error(error, "could not read IA32_DEBUG_INTERFACE: ");
 			return FALSE;
 		}
-		if (!fu_common_read_uint32_safe(buf,
-						sizeof(buf),
-						0x0,
-						&priv->ia32_debug.data,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    sizeof(buf),
+					    0x0,
+					    &priv->ia32_debug.data,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		g_debug("IA32_DEBUG_INTERFACE: enabled=%i, locked=%i, debug_occurred=%i",
 			priv->ia32_debug.fields.enabled,
@@ -144,40 +144,40 @@ fu_plugin_msr_backend_device_added(FuPlugin *plugin, FuDevice *device, GError **
 
 	/* grab AMD MSRs */
 	if (priv->amd64_syscfg_supported) {
-		if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-					       PCI_MSR_AMD64_SYSCFG,
-					       buf,
-					       sizeof(buf),
-					       error)) {
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(device),
+					  PCI_MSR_AMD64_SYSCFG,
+					  buf,
+					  sizeof(buf),
+					  error)) {
 			g_prefix_error(error, "could not read PCI_MSR_AMD64_SYSCFG: ");
 			return FALSE;
 		}
-		if (!fu_common_read_uint32_safe(buf,
-						sizeof(buf),
-						0x0,
-						&priv->amd64_syscfg.data,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    sizeof(buf),
+					    0x0,
+					    &priv->amd64_syscfg.data,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		g_debug("PCI_MSR_AMD64_SYSCFG: 0%x, sme_is_enabled=%i",
 			priv->amd64_syscfg.data,
 			priv->amd64_syscfg.fields.sme_is_enabled);
 	}
 	if (priv->amd64_sev_supported) {
-		if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-					       PCI_MSR_AMD64_SEV,
-					       buf,
-					       sizeof(buf),
-					       error)) {
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(device),
+					  PCI_MSR_AMD64_SEV,
+					  buf,
+					  sizeof(buf),
+					  error)) {
 			g_prefix_error(error, "could not read PCI_MSR_AMD64_SEV: ");
 			return FALSE;
 		}
-		if (!fu_common_read_uint32_safe(buf,
-						sizeof(buf),
-						0x0,
-						&priv->amd64_sev.data,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    sizeof(buf),
+					    0x0,
+					    &priv->amd64_sev.data,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		g_debug("PCI_MSR_AMD64_SEV: 0%x, sev_is_enabled=%i",
 			priv->amd64_sev.data,
@@ -187,26 +187,26 @@ fu_plugin_msr_backend_device_added(FuPlugin *plugin, FuDevice *device, GError **
 	/* get microcode version */
 	if (device_cpu != NULL) {
 		guint32 ver_raw;
-		if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-					       PCI_MSR_IA32_BIOS_SIGN_ID,
-					       buf,
-					       sizeof(buf),
-					       error)) {
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(device),
+					  PCI_MSR_IA32_BIOS_SIGN_ID,
+					  buf,
+					  sizeof(buf),
+					  error)) {
 			g_prefix_error(error, "could not read IA32_BIOS_SIGN_ID: ");
 			return FALSE;
 		}
-		fu_common_dump_raw(G_LOG_DOMAIN, "IA32_BIOS_SIGN_ID", buf, sizeof(buf));
-		if (!fu_common_read_uint32_safe(buf,
-						sizeof(buf),
-						0x4,
-						&ver_raw,
-						G_LITTLE_ENDIAN,
-						error))
+		fu_dump_raw(G_LOG_DOMAIN, "IA32_BIOS_SIGN_ID", buf, sizeof(buf));
+		if (!fu_memread_uint32_safe(buf,
+					    sizeof(buf),
+					    0x4,
+					    &ver_raw,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
-		if (ver_raw != 0) {
+		if (ver_raw != 0 && ver_raw != G_MAXUINT32) {
 			FwupdVersionFormat verfmt = fu_device_get_version_format(device_cpu);
 			g_autofree gchar *ver_str = NULL;
-			ver_str = fu_common_version_from_uint32(ver_raw, verfmt);
+			ver_str = fu_version_from_uint32(ver_raw, verfmt);
 			g_debug("setting microcode version to %s", ver_str);
 			fu_device_set_version(device_cpu, ver_str);
 			fu_device_set_version_raw(device_cpu, ver_raw);
@@ -234,7 +234,7 @@ fu_plugin_add_security_attr_dci_enabled(FuPlugin *plugin, FuSecurityAttrs *attrs
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
 
 	/* this MSR is only valid for a subset of Intel CPUs */
-	if (fu_common_get_cpu_vendor() != FU_CPU_VENDOR_INTEL)
+	if (fu_cpu_get_vendor() != FU_CPU_VENDOR_INTEL)
 		return;
 	if (!priv->ia32_debug_supported)
 		return;
@@ -266,7 +266,7 @@ fu_plugin_add_security_attr_dci_locked(FuPlugin *plugin, FuSecurityAttrs *attrs)
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
 
 	/* this MSR is only valid for a subset of Intel CPUs */
-	if (fu_common_get_cpu_vendor() != FU_CPU_VENDOR_INTEL)
+	if (fu_cpu_get_vendor() != FU_CPU_VENDOR_INTEL)
 		return;
 	if (!priv->ia32_debug_supported)
 		return;
@@ -299,7 +299,7 @@ fu_plugin_msr_safe_kernel_for_sme(FuPlugin *plugin, GError **error)
 		g_debug("Ignoring kernel safety checks");
 		return TRUE;
 	}
-	return fu_common_check_kernel_version(min, error);
+	return fu_kernel_check_version(min, error);
 }
 
 static gboolean
@@ -310,7 +310,7 @@ fu_plugin_msr_kernel_enabled_sme(GError **error)
 	if (!g_file_get_contents("/proc/cpuinfo", &buf, &bufsz, error))
 		return FALSE;
 	if (bufsz > 0) {
-		g_auto(GStrv) tokens = fu_common_strnsplit(buf, bufsz, " ", -1);
+		g_auto(GStrv) tokens = fu_strsplit(buf, bufsz, " ", -1);
 		for (guint i = 0; tokens[i] != NULL; i++) {
 			if (g_strcmp0(tokens[i], "sme") == 0)
 				return TRUE;
@@ -333,7 +333,7 @@ fu_plugin_add_security_attr_amd_sme_enabled(FuPlugin *plugin, FuSecurityAttrs *a
 	g_autoptr(GError) error_local = NULL;
 
 	/* this MSR is only valid for a subset of AMD CPUs */
-	if (fu_common_get_cpu_vendor() != FU_CPU_VENDOR_AMD)
+	if (fu_cpu_get_vendor() != FU_CPU_VENDOR_AMD)
 		return;
 
 	/* create attr */
@@ -343,6 +343,11 @@ fu_plugin_add_security_attr_amd_sme_enabled(FuPlugin *plugin, FuSecurityAttrs *a
 	if (device != NULL)
 		fwupd_security_attr_add_guids(attr, fu_device_get_guids(device));
 	fu_security_attrs_append(attrs, attr);
+
+	if (priv == NULL) {
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA);
+		return;
+	}
 
 	/* check fields */
 	if (!priv->amd64_syscfg_supported) {

@@ -8,9 +8,13 @@
 
 #include "config.h"
 
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-chunk-private.h"
 #include "fu-common.h"
 #include "fu-firmware.h"
+#include "fu-mem.h"
+#include "fu-string.h"
 
 /**
  * FuFirmware:
@@ -22,6 +26,7 @@
 
 typedef struct {
 	FuFirmwareFlags flags;
+	FuFirmware *parent; /* noref */
 	GPtrArray *images; /* FuFirmware */
 	gchar *version;
 	guint64 version_raw;
@@ -39,6 +44,8 @@ typedef struct {
 
 G_DEFINE_TYPE_WITH_PRIVATE(FuFirmware, fu_firmware, G_TYPE_OBJECT)
 #define GET_PRIVATE(o) (fu_firmware_get_instance_private(o))
+
+enum { PROP_0, PROP_PARENT, PROP_LAST };
 
 /**
  * fu_firmware_flag_to_string:
@@ -65,6 +72,8 @@ fu_firmware_flag_to_string(FuFirmwareFlags flag)
 		return "has-vid-pid";
 	if (flag == FU_FIRMWARE_FLAG_DONE_PARSE)
 		return "done-parse";
+	if (flag == FU_FIRMWARE_FLAG_HAS_STORED_SIZE)
+		return "has-stored-size";
 	return NULL;
 }
 
@@ -91,6 +100,8 @@ fu_firmware_flag_from_string(const gchar *flag)
 		return FU_FIRMWARE_FLAG_HAS_VID_PID;
 	if (g_strcmp0(flag, "done-parse") == 0)
 		return FU_FIRMWARE_FLAG_DONE_PARSE;
+	if (g_strcmp0(flag, "has-stored-size") == 0)
+		return FU_FIRMWARE_FLAG_HAS_STORED_SIZE;
 	return FU_FIRMWARE_FLAG_NONE;
 }
 
@@ -370,6 +381,46 @@ fu_firmware_get_offset(FuFirmware *self)
 	FuFirmwarePrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_FIRMWARE(self), G_MAXUINT64);
 	return priv->offset;
+}
+
+/**
+ * fu_firmware_get_parent:
+ * @self: a #FuFirmware
+ *
+ * Gets the parent.
+ *
+ * Returns: (transfer none): the parent firmware, or %NULL if unset
+ *
+ * Since: 1.8.2
+ **/
+FuFirmware *
+fu_firmware_get_parent(FuFirmware *self)
+{
+	FuFirmwarePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_FIRMWARE(self), NULL);
+	return priv->parent;
+}
+
+/**
+ * fu_firmware_set_parent:
+ * @self: a #FuFirmware
+ * @parent: (nullable): another #FuFirmware
+ *
+ * Sets the parent. Only used internally.
+ *
+ * Since: 1.8.2
+ **/
+void
+fu_firmware_set_parent(FuFirmware *self, FuFirmware *parent)
+{
+	FuFirmwarePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FU_IS_FIRMWARE(self));
+
+	if (priv->parent != NULL)
+		g_object_remove_weak_pointer(G_OBJECT(priv->parent), (gpointer *)&priv->parent);
+	if (parent != NULL)
+		g_object_add_weak_pointer(G_OBJECT(parent), (gpointer *)&priv->parent);
+	priv->parent = parent;
 }
 
 /**
@@ -723,8 +774,7 @@ fu_firmware_tokenize(FuFirmware *self, GBytes *fw, FwupdInstallFlags flags, GErr
  * fu_firmware_parse_full:
  * @self: a #FuFirmware
  * @fw: firmware blob
- * @addr_start: start address, useful for ignoring a bootloader
- * @addr_end: end address, useful for ignoring config bytes
+ * @offset: start offset, useful for ignoring a bootloader
  * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_FORCE
  * @error: (nullable): optional return location for an error
  *
@@ -732,13 +782,12 @@ fu_firmware_tokenize(FuFirmware *self, GBytes *fw, FwupdInstallFlags flags, GErr
  *
  * Returns: %TRUE for success
  *
- * Since: 1.3.1
+ * Since: 1.8.2
  **/
 gboolean
 fu_firmware_parse_full(FuFirmware *self,
 		       GBytes *fw,
-		       guint64 addr_start,
-		       guint64 addr_end,
+		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
 {
@@ -775,7 +824,7 @@ fu_firmware_parse_full(FuFirmware *self,
 			return FALSE;
 	}
 	if (klass->parse != NULL)
-		return klass->parse(self, fw, addr_start, addr_end, flags, error);
+		return klass->parse(self, fw, offset, flags, error);
 
 	/* verify alignment */
 	if (g_bytes_get_size(fw) % (1ull << priv->alignment) != 0) {
@@ -812,7 +861,7 @@ fu_firmware_parse_full(FuFirmware *self,
 gboolean
 fu_firmware_parse(FuFirmware *self, GBytes *fw, FwupdInstallFlags flags, GError **error)
 {
-	return fu_firmware_parse_full(self, fw, 0x0, 0x0, flags, error);
+	return fu_firmware_parse_full(self, fw, 0x0, flags, error);
 }
 
 /**
@@ -915,7 +964,7 @@ fu_firmware_build(FuFirmware *self, XbNode *n, GError **error)
 	tmp = xb_node_query_text(n, "filename", NULL);
 	if (tmp != NULL) {
 		g_autoptr(GBytes) blob = NULL;
-		blob = fu_common_get_contents_bytes(tmp, error);
+		blob = fu_bytes_get_contents(tmp, error);
 		if (blob == NULL)
 			return FALSE;
 		fu_firmware_set_bytes(self, blob);
@@ -940,7 +989,7 @@ fu_firmware_build(FuFirmware *self, XbNode *n, GError **error)
 		if (sz == 0 || sz == G_MAXUINT64) {
 			fu_firmware_set_bytes(self, blob);
 		} else {
-			g_autoptr(GBytes) blob_padded = fu_common_bytes_pad(blob, (gsize)sz);
+			g_autoptr(GBytes) blob_padded = fu_bytes_pad(blob, (gsize)sz);
 			fu_firmware_set_bytes(self, blob_padded);
 		}
 	}
@@ -1182,7 +1231,7 @@ fu_firmware_add_patch(FuFirmware *self, gsize offset, GBytes *blob)
  *
  * Gets a block of data from the image. If the contents of the image is
  * smaller than the requested chunk size then the #GBytes will be smaller
- * than @chunk_sz_max. Use fu_common_bytes_pad() if padding is required.
+ * than @chunk_sz_max. Use fu_bytes_pad() if padding is required.
  *
  * If the @address is larger than the size of the image then an error is returned.
  *
@@ -1226,11 +1275,11 @@ fu_firmware_write_chunk(FuFirmware *self, guint64 address, guint64 chunk_sz_max,
 	/* if we have less data than requested */
 	chunk_left = g_bytes_get_size(priv->bytes) - offset;
 	if (chunk_sz_max > chunk_left) {
-		return fu_common_bytes_new_offset(priv->bytes, offset, chunk_left, error);
+		return fu_bytes_new_offset(priv->bytes, offset, chunk_left, error);
 	}
 
 	/* check chunk */
-	return fu_common_bytes_new_offset(priv->bytes, offset, chunk_sz_max, error);
+	return fu_bytes_new_offset(priv->bytes, offset, chunk_sz_max, error);
 }
 
 /**
@@ -1305,6 +1354,9 @@ fu_firmware_add_image(FuFirmware *self, FuFirmware *img)
 	}
 
 	g_ptr_array_add(priv->images, g_object_ref(img));
+
+	/* set the other way around */
+	fu_firmware_set_parent(img, self);
 }
 
 /**
@@ -1626,7 +1678,7 @@ fu_firmware_export(FuFirmware *self, FuFirmwareExportFlags flags, XbBuilderNode 
 		g_autofree gchar *datastr = NULL;
 		g_autofree gchar *dataszstr = g_strdup_printf("0x%x", (guint)bufsz);
 		if (flags & FU_FIRMWARE_EXPORT_FLAG_ASCII_DATA) {
-			datastr = fu_common_strsafe((const gchar *)buf, MIN(bufsz, 16));
+			datastr = fu_strsafe((const gchar *)buf, MIN(bufsz, 16));
 		} else {
 #if GLIB_CHECK_VERSION(2, 61, 0)
 			datastr = g_base64_encode(buf, bufsz);
@@ -1721,6 +1773,35 @@ fu_firmware_to_string(FuFirmware *self)
 }
 
 static void
+fu_firmware_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
+{
+	FuFirmware *self = FU_FIRMWARE(object);
+	FuFirmwarePrivate *priv = GET_PRIVATE(self);
+	switch (prop_id) {
+	case PROP_PARENT:
+		g_value_set_object(value, priv->parent);
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+		break;
+	}
+}
+
+static void
+fu_firmware_set_property(GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec)
+{
+	FuFirmware *self = FU_FIRMWARE(object);
+	switch (prop_id) {
+	case PROP_PARENT:
+		fu_firmware_set_parent(self, g_value_get_object(value));
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+		break;
+	}
+}
+
+static void
 fu_firmware_init(FuFirmware *self)
 {
 	FuFirmwarePrivate *priv = GET_PRIVATE(self);
@@ -1741,6 +1822,8 @@ fu_firmware_finalize(GObject *object)
 		g_ptr_array_unref(priv->chunks);
 	if (priv->patches != NULL)
 		g_ptr_array_unref(priv->patches);
+	if (priv->parent != NULL)
+		g_object_remove_weak_pointer(G_OBJECT(priv->parent), (gpointer *)&priv->parent);
 	g_ptr_array_unref(priv->images);
 	G_OBJECT_CLASS(fu_firmware_parent_class)->finalize(object);
 }
@@ -1749,7 +1832,25 @@ static void
 fu_firmware_class_init(FuFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
+	GParamSpec *pspec;
+
 	object_class->finalize = fu_firmware_finalize;
+	object_class->get_property = fu_firmware_get_property;
+	object_class->set_property = fu_firmware_set_property;
+
+	/**
+	 * FuFirmware:parent:
+	 *
+	 * The firmware parent.
+	 *
+	 * Since: 1.8.2
+	 */
+	pspec = g_param_spec_object("parent",
+				    NULL,
+				    NULL,
+				    FU_TYPE_FIRMWARE,
+				    G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_PARENT, pspec);
 }
 
 /**

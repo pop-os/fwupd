@@ -8,10 +8,7 @@
 
 #include "config.h"
 
-#include <glib-object.h>
 #include <string.h>
-
-#include "fwupd-error.h"
 
 #include "fu-device-list.h"
 #include "fu-device-private.h"
@@ -217,6 +214,8 @@ fu_device_list_get_active(FuDeviceList *self)
 	for (guint i = 0; i < self->devices->len; i++) {
 		FuDeviceItem *item = g_ptr_array_index(self->devices, i);
 		if (fu_device_has_inhibit(item->device, "unconnected"))
+			continue;
+		if (fu_device_has_inhibit(item->device, "hidden"))
 			continue;
 		g_ptr_array_add(devices, g_object_ref(item->device));
 	}
@@ -932,7 +931,7 @@ fu_device_list_wait_for_replug(FuDeviceList *self, GError **error)
 			fu_device_remove_flag(device_tmp, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 			g_ptr_array_add(device_ids, g_strdup(fu_device_get_id(device_tmp)));
 		}
-		device_ids_str = fu_common_strjoin_array(",", device_ids);
+		device_ids_str = fu_strjoin(",", device_ids);
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_FOUND,

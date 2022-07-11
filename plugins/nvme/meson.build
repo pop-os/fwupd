@@ -5,35 +5,31 @@ if nvme_header and \
     error_message: 'gudev is needed for plugin_nvme').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginNvme"']
 
-install_data([
-  'nvme.quirk',
-  ],
-  install_dir: join_paths(datadir, 'fwupd', 'quirks.d')
-)
+plugin_quirks += join_paths(meson.current_source_dir(), 'nvme.quirk')
 
 shared_module('fu_plugin_nvme',
   fu_hash,
-  sources : [
+  sources: [
     'fu-plugin-nvme.c',
     'fu-nvme-common.c',
     'fu-nvme-device.c',
   ],
-  include_directories : [
+  include_directories: [
     root_incdir,
     fwupd_incdir,
     fwupdplugin_incdir,
   ],
-  install : true,
+  install: true,
   install_dir: plugin_dir,
-  c_args : [
+  c_args: [
     cargs,
     '-DLOCALSTATEDIR="' + localstatedir + '"',
   ],
-  link_with : [
+  link_with: [
     fwupd,
     fwupdplugin,
   ],
-  dependencies : [
+  dependencies: [
     plugin_deps,
   ],
 )
@@ -46,26 +42,26 @@ if get_option('tests')
   e = executable(
     'nvme-self-test',
     fu_hash,
-    sources : [
+    sources: [
       'fu-self-test.c',
       'fu-nvme-common.c',
       'fu-nvme-device.c',
     ],
-    include_directories : [
+    include_directories: [
       root_incdir,
       fwupd_incdir,
       fwupdplugin_incdir,
     ],
-    dependencies : [
+    dependencies: [
       plugin_deps,
     ],
-    link_with : [
+    link_with: [
       fwupd,
       fwupdplugin,
     ],
-    install : true,
-    install_dir : installed_test_bindir,
+    install: true,
+    install_dir: installed_test_bindir,
   )
-  test('nvme-self-test', e, env : env)  # added to installed-tests
+  test('nvme-self-test', e, env: env)  # added to installed-tests
 endif
 endif

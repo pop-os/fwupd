@@ -26,18 +26,18 @@ static void
 fu_vli_usbhub_pd_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuVliUsbhubPdDevice *self = FU_VLI_USBHUB_PD_DEVICE(device);
-	fu_common_string_append_kv(str,
-				   idt,
-				   "DeviceKind",
-				   fu_vli_common_device_kind_to_string(self->device_kind));
-	fu_common_string_append_kx(str,
-				   idt,
-				   "FwOffset",
-				   fu_vli_common_device_kind_get_offset(self->device_kind));
-	fu_common_string_append_kx(str,
-				   idt,
-				   "FwSize",
-				   fu_vli_common_device_kind_get_size(self->device_kind));
+	fu_string_append(str,
+			 idt,
+			 "DeviceKind",
+			 fu_vli_common_device_kind_to_string(self->device_kind));
+	fu_string_append_kx(str,
+			    idt,
+			    "FwOffset",
+			    fu_vli_common_device_kind_get_offset(self->device_kind));
+	fu_string_append_kx(str,
+			    idt,
+			    "FwSize",
+			    fu_vli_common_device_kind_get_size(self->device_kind));
 }
 
 static gboolean
@@ -97,7 +97,7 @@ fu_vli_usbhub_pd_device_setup(FuDevice *device, GError **error)
 
 	/* use header to populate device info */
 	fu_device_set_version_raw(device, fwver);
-	fwver_str = fu_common_version_from_uint32(fwver, FWUPD_VERSION_FORMAT_QUAD);
+	fwver_str = fu_version_from_uint32(fwver, FWUPD_VERSION_FORMAT_QUAD);
 	fu_device_set_version(device, fwver_str);
 
 	/* add standard GUIDs in order of priority */
@@ -201,8 +201,8 @@ fu_vli_usbhub_pd_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 78);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 22);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 78, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 22, NULL);
 
 	/* simple image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -262,10 +262,10 @@ fu_vli_usbhub_pd_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

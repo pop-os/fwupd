@@ -227,7 +227,7 @@ fu_ccgx_firmware_parse_md_block(FuCcgxFirmware *self, FwupdInstallFlags flags, G
 	}
 	for (guint i = 0; i < self->records->len - 1; i++) {
 		rcd = g_ptr_array_index(self->records, i);
-		checksum_calc += fu_common_sum8_bytes(rcd->data);
+		checksum_calc += fu_sum8_bytes(rcd->data);
 		fw_size += g_bytes_get_size(rcd->data);
 	}
 	if (fw_size != metadata.fw_size) {
@@ -265,12 +265,12 @@ fu_ccgx_firmware_parse_md_block(FuCcgxFirmware *self, FwupdInstallFlags flags, G
 					    "metadata record had zero size");
 			return FALSE;
 		}
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						CCGX_APP_VERSION_OFFSET % bufsz,
-						&version,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    CCGX_APP_VERSION_OFFSET % bufsz,
+					    &version,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		self->app_type = version & 0xffff;
 		version_str = fu_ccgx_version_to_string(version);
@@ -317,7 +317,7 @@ fu_ccgx_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 	if (token_idx == 0) {
 		guint32 device_id = 0;
 		if (token->len != 12) {
-			g_autofree gchar *strsafe = fu_common_strsafe(token->str, 12);
+			g_autofree gchar *strsafe = fu_strsafe(token->str, 12);
 			if (strsafe != NULL) {
 				g_set_error(error,
 					    FWUPD_ERROR,
@@ -355,8 +355,7 @@ fu_ccgx_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 static gboolean
 fu_ccgx_firmware_parse(FuFirmware *firmware,
 		       GBytes *fw,
-		       guint64 addr_start,
-		       guint64 addr_end,
+		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
 {
@@ -364,12 +363,12 @@ fu_ccgx_firmware_parse(FuFirmware *firmware,
 	FuCcgxFirmwareTokenHelper helper = {.self = self, .flags = flags};
 
 	/* tokenize */
-	if (!fu_common_strnsplit_full(g_bytes_get_data(fw, NULL),
-				      g_bytes_get_size(fw),
-				      "\n",
-				      fu_ccgx_firmware_tokenize_cb,
-				      &helper,
-				      error))
+	if (!fu_strsplit_full(g_bytes_get_data(fw, NULL),
+			      g_bytes_get_size(fw),
+			      "\n",
+			      fu_ccgx_firmware_tokenize_cb,
+			      &helper,
+			      error))
 		return FALSE;
 
 	/* address is first data entry */
@@ -466,7 +465,7 @@ fu_ccgx_firmware_write(FuFirmware *firmware, GError **error)
 	metadata.boot_seq = 0x0; /* unknown */
 
 	/* copy into place */
-	fu_byte_array_set_size(mdbuf, 0x80);
+	fu_byte_array_set_size(mdbuf, 0x80, 0x00);
 	if (!fu_memcpy_safe(mdbuf->data,
 			    mdbuf->len,
 			    0x40, /* dst */

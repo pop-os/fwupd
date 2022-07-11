@@ -16,23 +16,23 @@ _show_modifiers()
 
 _fwupdagent()
 {
-	local cur prev command
+	local cur prev command arg args
 	COMPREPLY=()
-	cur=`_get_cword`
-	prev=${COMP_WORDS[COMP_CWORD-1]}
-	command=${COMP_WORDS[1]}
+	_get_comp_words_by_ref cur prev
+	_get_first_arg
+	_count_args
 
-	case $command in
+	case $arg in
 	*)
 		#find first command
-		if [[ ${COMP_CWORD} = 1 ]]; then
+		if [[ "$args" = "1" ]]; then
 			COMPREPLY=( $(compgen -W '${_fwupdagent_cmd_list[@]}' -- "$cur") )
-		#modifiers for all commands
-		else
-			_show_modifiers
 		fi
 		;;
 	esac
+
+	#modifiers
+	_show_modifiers
 
 	return 0
 }

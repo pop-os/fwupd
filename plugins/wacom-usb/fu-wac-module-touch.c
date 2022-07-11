@@ -33,9 +33,9 @@ fu_wac_module_touch_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, NULL);
 
 	g_debug("using element at addr 0x%0x", (guint)fu_firmware_get_addr(firmware));
 
@@ -68,7 +68,7 @@ fu_wac_module_touch_write_firmware(FuDevice *device,
 		memset(buf, 0xff, sizeof(buf));
 		buf[0] = 0x01; /* writing */
 		buf[1] = fu_chunk_get_idx(chk) + 1;
-		fu_common_write_uint32(&buf[2], fu_chunk_get_address(chk), G_LITTLE_ENDIAN);
+		fu_memwrite_uint32(&buf[2], fu_chunk_get_address(chk), G_LITTLE_ENDIAN);
 		buf[6] = 0x10; /* no idea! */
 		if (!fu_memcpy_safe(buf,
 				    sizeof(buf),

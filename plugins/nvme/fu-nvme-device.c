@@ -31,12 +31,14 @@ struct _FuNvmeDevice {
 
 G_DEFINE_TYPE(FuNvmeDevice, fu_nvme_device, FU_TYPE_UDEV_DEVICE)
 
+#define FU_NVME_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 static void
 fu_nvme_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuNvmeDevice *self = FU_NVME_DEVICE(device);
 	FU_DEVICE_CLASS(fu_nvme_device_parent_class)->to_string(device, idt, str);
-	fu_common_string_append_ku(str, idt, "PciDepth", self->pci_depth);
+	fu_string_append_ku(str, idt, "PciDepth", self->pci_depth);
 }
 
 /* @addr_start and @addr_end are *inclusive* to match the NMVe specification */
@@ -86,6 +88,7 @@ fu_nvme_device_submit_admin_passthru(FuNvmeDevice *self, struct nvme_admin_cmd *
 				  NVME_IOCTL_ADMIN_CMD,
 				  (guint8 *)cmd,
 				  &rc,
+				  FU_NVME_DEVICE_IOCTL_TIMEOUT,
 				  error)) {
 		g_prefix_error(error, "failed to issue admin command 0x%02x: ", cmd->opcode);
 		return FALSE;
@@ -365,8 +368,8 @@ fu_nvme_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 10); /* commit */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 10, "commit");
 
 	/* get default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -376,7 +379,7 @@ fu_nvme_device_write_firmware(FuDevice *device,
 	/* some vendors provide firmware files whose sizes are not multiples
 	 * of blksz *and* the device won't accept blocks of different sizes */
 	if (fu_device_has_private_flag(device, FU_NVME_DEVICE_FLAG_FORCE_ALIGN)) {
-		fw2 = fu_common_bytes_align(fw, block_size, 0xff);
+		fw2 = fu_bytes_align(fw, block_size, 0xff);
 	} else {
 		fw2 = g_bytes_ref(fw);
 	}
@@ -423,7 +426,7 @@ fu_nvme_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *val
 	FuNvmeDevice *self = FU_NVME_DEVICE(device);
 	if (g_strcmp0(key, "NvmeBlockSize") == 0) {
 		guint64 tmp = 0;
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->write_block_size = tmp;
 		return TRUE;
@@ -437,10 +440,10 @@ static void
 fu_nvme_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

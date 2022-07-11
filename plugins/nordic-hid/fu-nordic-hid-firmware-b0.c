@@ -58,34 +58,34 @@ fu_nordic_hid_firmware_b0_read_fwinfo(FuFirmware *firmware,
 	/* find correct offset to fwinfo */
 	for (guint32 i = 0; i < G_N_ELEMENTS(hdr_offset); i++) {
 		offset = hdr_offset[i];
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset,
-						&magic_common,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset,
+					    &magic_common,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset + 0x04,
-						&magic_fwinfo,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset + 0x04,
+					    &magic_fwinfo,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset + 0x08,
-						&magic_compat,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset + 0x08,
+					    &magic_compat,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		/* version */
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset + 0x14,
-						&ver_build_nr,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset + 0x14,
+					    &ver_build_nr,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 
 		if (magic_common != UPDATE_IMAGE_MAGIC_COMMON ||
@@ -117,8 +117,7 @@ fu_nordic_hid_firmware_b0_read_fwinfo(FuFirmware *firmware,
 static gboolean
 fu_nordic_hid_firmware_b0_parse(FuFirmware *firmware,
 				GBytes *fw,
-				guint64 addr_start,
-				guint64 addr_end,
+				gsize offset,
 				FwupdInstallFlags flags,
 				GError **error)
 {
@@ -126,7 +125,7 @@ fu_nordic_hid_firmware_b0_parse(FuFirmware *firmware,
 	gsize bufsz = 0;
 
 	if (!FU_FIRMWARE_CLASS(fu_nordic_hid_firmware_b0_parent_class)
-		 ->parse(firmware, fw, addr_start, addr_end, flags, error))
+		 ->parse(firmware, fw, offset, flags, error))
 		return FALSE;
 
 	buf = g_bytes_get_data(fw, &bufsz);

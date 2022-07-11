@@ -19,11 +19,18 @@ jobs:
         env:
           OS: ${{ matrix.os }}
         run: ./contrib/ci/generate_docker.py
-      - name: Push to GitHub Packages
-        uses: docker/build-push-action@v1
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
         with:
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          registry: docker.pkg.github.com
-          repository: fwupd/fwupd/fwupd-${{matrix.os}}
-          tags: latest
+      - name: Push to GitHub Packages
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/fwupd/fwupd/fwupd-${{matrix.os}}:latest

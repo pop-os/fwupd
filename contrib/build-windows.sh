@@ -20,7 +20,6 @@ meson .. \
     --libexecdir="bin" \
     --bindir="bin" \
     -Dbuild=all \
-    -Ddocs=none \
     -Dhsi=false \
     -Dman=false \
     -Dfish_completion=false \

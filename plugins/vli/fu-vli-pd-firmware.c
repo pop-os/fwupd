@@ -69,8 +69,7 @@ fu_vli_pd_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbB
 static gboolean
 fu_vli_pd_firmware_parse(FuFirmware *firmware,
 			 GBytes *fw,
-			 guint64 addr_start,
-			 guint64 addr_end,
+			 gsize offset,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
@@ -128,7 +127,7 @@ fu_vli_pd_firmware_parse(FuFirmware *firmware,
 			    fwver);
 		return FALSE;
 	}
-	fwver_str = fu_common_version_from_uint32(fwver, FWUPD_VERSION_FORMAT_QUAD);
+	fwver_str = fu_version_from_uint32(fwver, FWUPD_VERSION_FORMAT_QUAD);
 	fu_firmware_set_version(firmware, fwver_str);
 	fu_firmware_set_version_raw(firmware, fwver);
 
@@ -147,16 +146,16 @@ fu_vli_pd_firmware_parse(FuFirmware *firmware,
 	if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
 		guint16 crc_actual;
 		guint16 crc_file = 0x0;
-		if (!fu_common_read_uint16_safe(buf,
-						bufsz,
-						bufsz - 2,
-						&crc_file,
-						G_LITTLE_ENDIAN,
-						error)) {
+		if (!fu_memread_uint16_safe(buf,
+					    bufsz,
+					    bufsz - 2,
+					    &crc_file,
+					    G_LITTLE_ENDIAN,
+					    error)) {
 			g_prefix_error(error, "failed to read file CRC: ");
 			return FALSE;
 		}
-		crc_actual = fu_common_crc16(buf, bufsz - 2);
+		crc_actual = fu_crc16(buf, bufsz - 2);
 		if (crc_actual != crc_file) {
 			g_set_error(error,
 				    FWUPD_ERROR,

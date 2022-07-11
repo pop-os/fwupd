@@ -88,10 +88,7 @@ fu_ch341a_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUsbDevice->to_string */
 	FU_DEVICE_CLASS(fu_ch341a_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kv(str,
-				   idt,
-				   "Speed",
-				   fu_ch341a_device_speed_to_string(self->speed));
+	fu_string_append(str, idt, "Speed", fu_ch341a_device_speed_to_string(self->speed));
 }
 
 static gboolean
@@ -102,7 +99,7 @@ fu_ch341a_device_write(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GError **
 
 	/* debug */
 	if (g_getenv("FWUPD_CH341A_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "write", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "write", buf, bufsz);
 
 	if (!g_usb_device_bulk_transfer(usb_device,
 					CH341A_EP_OUT,
@@ -158,10 +155,41 @@ fu_ch341a_device_read(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GError **e
 
 	/* debug */
 	if (g_getenv("FWUPD_CH341A_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "read", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "read", buf, bufsz);
 
 	/* success */
 	return TRUE;
+}
+
+/**
+ * fu_ch341a_reverse_uint8:
+ * @value: integer
+ *
+ * Calculates the reverse bit order for a single byte.
+ *
+ * Returns: the @value, reversed
+ **/
+static guint8
+fu_ch341a_reverse_uint8(guint8 value)
+{
+	guint8 tmp = 0;
+	if (value & 0x01)
+		tmp = 0x80;
+	if (value & 0x02)
+		tmp |= 0x40;
+	if (value & 0x04)
+		tmp |= 0x20;
+	if (value & 0x08)
+		tmp |= 0x10;
+	if (value & 0x10)
+		tmp |= 0x08;
+	if (value & 0x20)
+		tmp |= 0x04;
+	if (value & 0x40)
+		tmp |= 0x02;
+	if (value & 0x80)
+		tmp |= 0x01;
+	return tmp;
 }
 
 gboolean
@@ -173,11 +201,11 @@ fu_ch341a_device_spi_transfer(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GE
 	/* requires LSB first */
 	buf2[0] = CH341A_CMD_SPI_STREAM;
 	for (gsize i = 0; i < bufsz; i++)
-		buf2[i + 1] = fu_common_reverse_uint8(buf[i]);
+		buf2[i + 1] = fu_ch341a_reverse_uint8(buf[i]);
 
 	/* debug */
 	if (g_getenv("FWUPD_CH341A_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "SPIwrite", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "SPIwrite", buf, bufsz);
 	if (!fu_ch341a_device_write(self, buf2, buf2sz, error))
 		return FALSE;
 
@@ -186,11 +214,11 @@ fu_ch341a_device_spi_transfer(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GE
 
 	/* requires LSB first */
 	for (gsize i = 0; i < bufsz; i++)
-		buf[i] = fu_common_reverse_uint8(buf[i]);
+		buf[i] = fu_ch341a_reverse_uint8(buf[i]);
 
 	/* debug */
 	if (g_getenv("FWUPD_CH341A_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "SPIread", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "SPIread", buf, bufsz);
 
 	/* success */
 	return TRUE;

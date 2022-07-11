@@ -18,13 +18,6 @@ typedef struct {
 G_DEFINE_TYPE_WITH_PRIVATE(FuSteelseriesDevice, fu_steelseries_device, FU_TYPE_USB_DEVICE)
 #define GET_PRIVATE(o) (fu_steelseries_device_get_instance_private(o))
 
-gsize
-fu_steelseries_device_get_transfer_size(FuSteelseriesDevice *self)
-{
-	FuSteelseriesDevicePrivate *priv = GET_PRIVATE(self);
-	return priv->ep_in_size;
-}
-
 /* @iface_idx_offset can be negative to specify from the end */
 void
 fu_steelseries_device_set_iface_idx_offset(FuSteelseriesDevice *self, gint iface_idx_offset)
@@ -34,7 +27,11 @@ fu_steelseries_device_set_iface_idx_offset(FuSteelseriesDevice *self, gint iface
 }
 
 gboolean
-fu_steelseries_device_cmd(FuSteelseriesDevice *self, guint8 *data, gboolean answer, GError **error)
+fu_steelseries_device_cmd(FuSteelseriesDevice *self,
+			  guint8 *data,
+			  gsize datasz,
+			  gboolean answer,
+			  GError **error)
 {
 	FuSteelseriesDevicePrivate *priv = GET_PRIVATE(self);
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
@@ -49,7 +46,7 @@ fu_steelseries_device_cmd(FuSteelseriesDevice *self, guint8 *data, gboolean answ
 					    0x0200,
 					    priv->iface_idx,
 					    data,
-					    STEELSERIES_BUFFER_CONTROL_SIZE,
+					    datasz,
 					    &actual_len,
 					    STEELSERIES_TRANSACTION_TIMEOUT,
 					    NULL,
@@ -58,7 +55,7 @@ fu_steelseries_device_cmd(FuSteelseriesDevice *self, guint8 *data, gboolean answ
 		g_prefix_error(error, "failed to do control transfer: ");
 		return FALSE;
 	}
-	if (actual_len != STEELSERIES_BUFFER_CONTROL_SIZE) {
+	if (actual_len != datasz) {
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_DATA,
@@ -68,7 +65,7 @@ fu_steelseries_device_cmd(FuSteelseriesDevice *self, guint8 *data, gboolean answ
 	}
 
 	/* cleanup the buffer before receiving any data */
-	memset(data, 0x00, STEELSERIES_BUFFER_CONTROL_SIZE);
+	memset(data, 0x00, datasz);
 
 	/* do not expect the answer from device */
 	if (answer != TRUE)
@@ -112,10 +109,6 @@ fu_steelseries_device_probe(FuDevice *device, GError **error)
 	guint16 packet_size;
 	g_autoptr(GPtrArray) ifaces = NULL;
 	g_autoptr(GPtrArray) endpoints = NULL;
-
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_steelseries_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	ifaces = g_usb_device_get_interfaces(usb_device, error);
 	if (ifaces == NULL)
@@ -177,8 +170,8 @@ fu_steelseries_device_to_string(FuDevice *device, guint idt, GString *str)
 
 	FU_DEVICE_CLASS(fu_steelseries_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kx(str, idt, "Interface", priv->iface_idx);
-	fu_common_string_append_kx(str, idt, "Endpoint", priv->ep);
+	fu_string_append_kx(str, idt, "Interface", priv->iface_idx);
+	fu_string_append_kx(str, idt, "Endpoint", priv->ep);
 }
 
 static void

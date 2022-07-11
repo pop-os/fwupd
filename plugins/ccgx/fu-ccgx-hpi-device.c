@@ -63,23 +63,23 @@ static void
 fu_ccgx_hpi_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCcgxHpiDevice *self = FU_CCGX_HPI_DEVICE(device);
-	fu_common_string_append_kx(str, idt, "ScbIndex", self->scb_index);
-	fu_common_string_append_kx(str, idt, "SiliconId", self->silicon_id);
-	fu_common_string_append_kx(str, idt, "FwAppType", self->fw_app_type);
-	fu_common_string_append_kx(str, idt, "HpiAddrsz", self->hpi_addrsz);
-	fu_common_string_append_kx(str, idt, "NumPorts", self->num_ports);
-	fu_common_string_append_kv(str, idt, "FWMode", fu_ccgx_fw_mode_to_string(self->fw_mode));
-	fu_common_string_append_kv(str,
-				   idt,
-				   "FwImageType",
-				   fu_ccgx_fw_image_type_to_string(self->fw_image_type));
-	fu_common_string_append_kx(str, idt, "EpBulkIn", self->ep_bulk_in);
-	fu_common_string_append_kx(str, idt, "EpBulkOut", self->ep_bulk_out);
-	fu_common_string_append_kx(str, idt, "EpIntrIn", self->ep_intr_in);
+	fu_string_append_kx(str, idt, "ScbIndex", self->scb_index);
+	fu_string_append_kx(str, idt, "SiliconId", self->silicon_id);
+	fu_string_append_kx(str, idt, "FwAppType", self->fw_app_type);
+	fu_string_append_kx(str, idt, "HpiAddrsz", self->hpi_addrsz);
+	fu_string_append_kx(str, idt, "NumPorts", self->num_ports);
+	fu_string_append(str, idt, "FWMode", fu_ccgx_fw_mode_to_string(self->fw_mode));
+	fu_string_append(str,
+			 idt,
+			 "FwImageType",
+			 fu_ccgx_fw_image_type_to_string(self->fw_image_type));
+	fu_string_append_kx(str, idt, "EpBulkIn", self->ep_bulk_in);
+	fu_string_append_kx(str, idt, "EpBulkOut", self->ep_bulk_out);
+	fu_string_append_kx(str, idt, "EpIntrIn", self->ep_intr_in);
 	if (self->flash_row_size > 0)
-		fu_common_string_append_kx(str, idt, "CcgxFlashRowSize", self->flash_row_size);
+		fu_string_append_kx(str, idt, "CcgxFlashRowSize", self->flash_row_size);
 	if (self->flash_size > 0)
-		fu_common_string_append_kx(str, idt, "CcgxFlashSize", self->flash_size);
+		fu_string_append_kx(str, idt, "CcgxFlashSize", self->flash_size);
 }
 
 typedef struct {
@@ -253,12 +253,12 @@ fu_ccgx_hpi_device_wait_for_notify(FuCcgxHpiDevice *self, guint16 *bytes_pending
 	/* @bytes_pending available on failure */
 	if (buf[0] & CY_I2C_ERROR_BIT) {
 		if (bytes_pending != NULL) {
-			if (!fu_common_read_uint16_safe(buf,
-							sizeof(buf),
-							0x01,
-							bytes_pending,
-							G_LITTLE_ENDIAN,
-							error))
+			if (!fu_memread_uint16_safe(buf,
+						    sizeof(buf),
+						    0x01,
+						    bytes_pending,
+						    G_LITTLE_ENDIAN,
+						    error))
 				return FALSE;
 		}
 		if (buf[0] & 0x80) {
@@ -1273,10 +1273,10 @@ fu_ccgx_hpi_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5); /* invalidate metadata */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5); /* leave-flash */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "invalidate-metadata");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "leave-flash");
 
 	/* enter flash mode */
 	locker = fu_device_locker_new_full(self,
@@ -1340,12 +1340,12 @@ fu_ccgx_hpi_device_ensure_silicon_id(FuCcgxHpiDevice *self, GError **error)
 		g_prefix_error(error, "get silicon id error: ");
 		return FALSE;
 	}
-	if (!fu_common_read_uint16_safe(buf,
-					sizeof(buf),
-					0x0,
-					&self->silicon_id,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    sizeof(buf),
+				    0x0,
+				    &self->silicon_id,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 
 	/* add quirks */
@@ -1430,21 +1430,21 @@ fu_ccgx_hpi_device_setup(FuDevice *device, GError **error)
 		}
 
 		/* fw1 */
-		if (!fu_common_read_uint32_safe(bufver,
-						sizeof(bufver),
-						0x0c,
-						&versions[FW_MODE_FW1],
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(bufver,
+					    sizeof(bufver),
+					    0x0c,
+					    &versions[FW_MODE_FW1],
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 
 		/* fw2 */
-		if (!fu_common_read_uint32_safe(bufver,
-						sizeof(bufver),
-						0x14,
-						&versions[FW_MODE_FW2],
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(bufver,
+					    sizeof(bufver),
+					    0x14,
+					    &versions[FW_MODE_FW2],
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 
 		/* add GUIDs that are specific to the firmware app type */
@@ -1500,19 +1500,19 @@ fu_ccgx_hpi_device_set_quirk_kv(FuDevice *device,
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "SiliconId") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		self->silicon_id = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CcgxFlashRowSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->flash_row_size = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CcgxFlashSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->flash_size = tmp;
 		return TRUE;
@@ -1547,10 +1547,10 @@ fu_ccgx_hpi_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

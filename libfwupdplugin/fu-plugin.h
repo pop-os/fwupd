@@ -13,7 +13,6 @@
 
 #include "fu-bluez-device.h"
 #include "fu-common-guid.h"
-#include "fu-common-version.h"
 #include "fu-common.h"
 #include "fu-context.h"
 #include "fu-device-locker.h"
@@ -23,6 +22,7 @@
 #include "fu-quirks.h"
 #include "fu-security-attrs.h"
 #include "fu-usb-device.h"
+#include "fu-version-common.h"
 //#include "fu-hid-device.h"
 #ifdef HAVE_GUDEV
 #include "fu-udev-device.h"
@@ -110,6 +110,7 @@ typedef struct {
 	/**
 	 * startup:
 	 * @self: a #FuPlugin
+	 * @progress: a #FuProgress
 	 * @error: (nullable): optional return location for an error
 	 *
 	 * Tries to start the plugin.
@@ -121,17 +122,18 @@ typedef struct {
 	 *
 	 * Since: 1.7.2
 	 **/
-	gboolean (*startup)(FuPlugin *self, GError **error);
+	gboolean (*startup)(FuPlugin *self, FuProgress *progress, GError **error);
 	/**
 	 * coldplug:
 	 * @self: a #FuPlugin
+	 * @progress: a #FuProgress
 	 * @error: (nullable): optional return location for an error
 	 *
 	 * Probes for devices.
 	 *
 	 * Since: 1.7.2
 	 **/
-	gboolean (*coldplug)(FuPlugin *self, GError **error);
+	gboolean (*coldplug)(FuPlugin *self, FuProgress *progress, GError **error);
 	/**
 	 * device_created
 	 * @self: a #FuPlugin
@@ -167,6 +169,7 @@ typedef struct {
 	 * verify:
 	 * @self: a #FuPlugin
 	 * @dev: a device
+	 * @progress: a #FuProgress
 	 * @flags: verify flags
 	 * @error: (nullable): optional return location for an error
 	 *
@@ -176,6 +179,7 @@ typedef struct {
 	 **/
 	gboolean (*verify)(FuPlugin *self,
 			   FuDevice *device,
+			   FuProgress *progress,
 			   FuPluginVerifyFlags flags,
 			   GError **error);
 	/**
@@ -456,6 +460,3 @@ gboolean
 fu_plugin_get_config_value_boolean(FuPlugin *self, const gchar *key);
 gboolean
 fu_plugin_set_config_value(FuPlugin *self, const gchar *key, const gchar *value, GError **error);
-gboolean
-fu_plugin_has_custom_flag(FuPlugin *self, const gchar *flag)
-    G_DEPRECATED_FOR(fu_context_has_hwid_flag);

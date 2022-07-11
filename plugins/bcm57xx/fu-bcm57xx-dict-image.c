@@ -32,8 +32,7 @@ fu_bcm57xx_dict_image_export(FuFirmware *firmware, FuFirmwareExportFlags flags, 
 static gboolean
 fu_bcm57xx_dict_image_parse(FuFirmware *firmware,
 			    GBytes *fw,
-			    guint64 addr_start,
-			    guint64 addr_end,
+			    gsize offset,
 			    FwupdInstallFlags flags,
 			    GError **error)
 {
@@ -42,8 +41,7 @@ fu_bcm57xx_dict_image_parse(FuFirmware *firmware,
 		if (!fu_bcm57xx_verify_crc(fw, error))
 			return FALSE;
 	}
-	fw_nocrc =
-	    fu_common_bytes_new_offset(fw, 0x0, g_bytes_get_size(fw) - sizeof(guint32), error);
+	fw_nocrc = fu_bytes_new_offset(fw, 0x0, g_bytes_get_size(fw) - sizeof(guint32), error);
 	if (fw_nocrc == NULL)
 		return FALSE;
 	fu_firmware_set_bytes(firmware, fw_nocrc);

@@ -3,32 +3,30 @@ if get_option('plugin_parade_lspcon').require(gudev.found(),
 
 cargs = ['-DG_LOG_DOMAIN="FuPluginParadeLspcon"']
 
-install_data(['parade-lspcon.quirk'],
-  install_dir: join_paths(get_option('datadir'), 'fwupd', 'quirks.d')
-)
+plugin_quirks += join_paths(meson.current_source_dir(), 'parade-lspcon.quirk')
 
 shared_module('fu_plugin_parade_lspcon',
   fu_hash,
-  sources : [
+  sources: [
     'fu-parade-lspcon-device.c',
     'fu-plugin-parade-lspcon.c',
   ],
-  include_directories : [
+  include_directories: [
     root_incdir,
     fwupd_incdir,
     fwupdplugin_incdir,
   ],
-  install : true,
+  install: true,
   install_dir: plugin_dir,
-  link_with : [
+  link_with: [
     fwupd,
     fwupdplugin,
   ],
-  c_args : [
+  c_args: [
     cargs,
     '-DLOCALSTATEDIR="' + localstatedir + '"',
   ],
-  dependencies : [
+  dependencies: [
     plugin_deps,
   ],
 )

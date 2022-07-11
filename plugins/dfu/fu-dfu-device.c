@@ -79,27 +79,24 @@ fu_dfu_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuDfuDevice *self = FU_DFU_DEVICE(device);
 	FuDfuDevicePrivate *priv = GET_PRIVATE(self);
-	fu_common_string_append_kv(str, idt, "State", fu_dfu_state_to_string(priv->state));
-	fu_common_string_append_kv(str, idt, "Status", fu_dfu_status_to_string(priv->status));
-	fu_common_string_append_kb(str, idt, "DoneUploadOrDownload", priv->done_upload_or_download);
-	fu_common_string_append_kb(str, idt, "ClaimedInterface", priv->claimed_interface);
+	fu_string_append(str, idt, "State", fu_dfu_state_to_string(priv->state));
+	fu_string_append(str, idt, "Status", fu_dfu_status_to_string(priv->status));
+	fu_string_append_kb(str, idt, "DoneUploadOrDownload", priv->done_upload_or_download);
+	fu_string_append_kb(str, idt, "ClaimedInterface", priv->claimed_interface);
 	if (priv->chip_id != NULL)
-		fu_common_string_append_kv(str, idt, "ChipId", priv->chip_id);
-	fu_common_string_append_kx(str, idt, "Version", priv->version);
-	fu_common_string_append_kx(str, idt, "ForceVersion", priv->force_version);
+		fu_string_append(str, idt, "ChipId", priv->chip_id);
+	fu_string_append_kx(str, idt, "Version", priv->version);
+	fu_string_append_kx(str, idt, "ForceVersion", priv->force_version);
 	if (priv->force_transfer_size != 0x0) {
-		fu_common_string_append_kx(str,
-					   idt,
-					   "ForceTransferSize",
-					   priv->force_transfer_size);
+		fu_string_append_kx(str, idt, "ForceTransferSize", priv->force_transfer_size);
 	}
-	fu_common_string_append_kx(str, idt, "RuntimePid", priv->runtime_pid);
-	fu_common_string_append_kx(str, idt, "RuntimeVid", priv->runtime_vid);
-	fu_common_string_append_kx(str, idt, "RuntimeRelease", priv->runtime_release);
-	fu_common_string_append_kx(str, idt, "TransferSize", priv->transfer_size);
-	fu_common_string_append_kx(str, idt, "IfaceNumber", priv->iface_number);
-	fu_common_string_append_kx(str, idt, "DnloadTimeout", priv->dnload_timeout);
-	fu_common_string_append_kx(str, idt, "TimeoutMs", priv->timeout_ms);
+	fu_string_append_kx(str, idt, "RuntimePid", priv->runtime_pid);
+	fu_string_append_kx(str, idt, "RuntimeVid", priv->runtime_vid);
+	fu_string_append_kx(str, idt, "RuntimeRelease", priv->runtime_release);
+	fu_string_append_kx(str, idt, "TransferSize", priv->transfer_size);
+	fu_string_append_kx(str, idt, "IfaceNumber", priv->iface_number);
+	fu_string_append_kx(str, idt, "DnloadTimeout", priv->dnload_timeout);
+	fu_string_append_kx(str, idt, "TimeoutMs", priv->timeout_ms);
 
 	for (guint i = 0; i < priv->targets->len; i++) {
 		FuDfuTarget *target = g_ptr_array_index(priv->targets, i);
@@ -786,7 +783,7 @@ fu_dfu_device_refresh(FuDfuDevice *self, GError **error)
 	if (fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_IGNORE_POLLTIMEOUT)) {
 		priv->dnload_timeout = DFU_DEVICE_DNLOAD_TIMEOUT_DEFAULT;
 	} else {
-		priv->dnload_timeout = fu_common_read_uint24(&buf[1], G_LITTLE_ENDIAN);
+		priv->dnload_timeout = fu_memread_uint24(&buf[1], G_LITTLE_ENDIAN);
 		if (priv->dnload_timeout == 0 &&
 		    !fu_device_has_private_flag(FU_DEVICE(self),
 						FU_DFU_DEVICE_FLAG_ALLOW_ZERO_POLLTIMEOUT)) {
@@ -807,7 +804,11 @@ fu_dfu_device_request_detach(FuDfuDevice *self, FuProgress *progress, GError **e
 	FuDfuDevicePrivate *priv = GET_PRIVATE(self);
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	const guint16 timeout_reset_ms = 1000;
+	guint16 ctrl_setup_index = priv->iface_number;
 	g_autoptr(GError) error_local = NULL;
+
+	if (fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_INDEX_FORCE_DETACH))
+		ctrl_setup_index |= 0x01u << 8;
 
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
@@ -815,7 +816,7 @@ fu_dfu_device_request_detach(FuDfuDevice *self, FuProgress *progress, GError **e
 					   G_USB_DEVICE_RECIPIENT_INTERFACE,
 					   FU_DFU_REQUEST_DETACH,
 					   timeout_reset_ms,
-					   priv->iface_number,
+					   ctrl_setup_index,
 					   NULL,
 					   0,
 					   NULL,
@@ -1067,7 +1068,7 @@ fu_dfu_device_open(FuDevice *device, GError **error)
 		if (serial_blob == NULL)
 			return FALSE;
 		if (g_getenv("FWUPD_DFU_VERBOSE") != NULL)
-			fu_common_dump_bytes(G_LOG_DOMAIN, "GD32 serial", serial_blob);
+			fu_dump_bytes(G_LOG_DOMAIN, "GD32 serial", serial_blob);
 		buf = g_bytes_get_data(serial_blob, &bufsz);
 		if (bufsz < 2) {
 			g_set_error_literal(error,
@@ -1146,10 +1147,6 @@ fu_dfu_device_probe(FuDevice *device, GError **error)
 {
 	FuDfuDevice *self = FU_DFU_DEVICE(device);
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_dfu_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	/* add all the targets */
 	if (!fu_dfu_device_add_targets(self, error)) {
@@ -1457,7 +1454,8 @@ fu_dfu_device_download(FuDfuDevice *self,
 			return FALSE;
 		fu_progress_add_step(progress,
 				     FWUPD_STATUS_DEVICE_WRITE,
-				     fu_dfu_device_calculate_chunks_size(chunks));
+				     fu_dfu_device_calculate_chunks_size(chunks),
+				     NULL);
 	}
 	for (guint i = 0; i < images->len; i++) {
 		FuFirmware *image = g_ptr_array_index(images, i);
@@ -1614,13 +1612,13 @@ fu_dfu_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 		return FALSE;
 	}
 	if (g_strcmp0(key, "DfuForceTimeout") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT, error))
 			return FALSE;
 		priv->timeout_ms = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DfuForceTransferSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		priv->force_transfer_size = tmp;
 		return TRUE;
@@ -1639,10 +1637,10 @@ static void
 fu_dfu_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 88);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 88, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "reload");
 }
 
 static void
@@ -1765,4 +1763,7 @@ fu_dfu_device_init(FuDfuDevice *self)
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_DFU_DEVICE_FLAG_ALLOW_ZERO_POLLTIMEOUT,
 					"allow-zero-polltimeout");
+	fu_device_register_private_flag(FU_DEVICE(self),
+					FU_DFU_DEVICE_FLAG_INDEX_FORCE_DETACH,
+					"index-force-detach");
 }

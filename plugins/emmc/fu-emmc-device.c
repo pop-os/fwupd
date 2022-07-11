@@ -64,6 +64,8 @@
 #define EXT_CSD_UPDATE_DISABLE (1 << 0)
 #define EXT_CSD_CMD_SET_NORMAL (1 << 0)
 
+#define FU_EMMC_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 struct _FuEmmcDevice {
 	FuUdevDevice parent_instance;
 	guint32 sect_size;
@@ -76,7 +78,7 @@ fu_emmc_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
 	FU_DEVICE_CLASS(fu_emmc_device_parent_class)->to_string(device, idt, str);
-	fu_common_string_append_ku(str, idt, "SectorSize", self->sect_size);
+	fu_string_append_ku(str, idt, "SectorSize", self->sect_size);
 }
 
 static const gchar *
@@ -142,10 +144,6 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	g_autofree gchar *vendor_id = NULL;
 	g_autoptr(GRegex) dev_regex = NULL;
 
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_emmc_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	udev_parent = g_udev_device_get_parent_with_subsystem(udev_device, "mmc", NULL);
 	if (udev_parent == NULL) {
 		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no MMC parent");
@@ -207,6 +205,15 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	fu_device_build_instance_id(device, NULL, "EMMC", "NAME", NULL);
 	fu_device_set_name(device, tmp);
 
+	/* firmware version */
+	tmp = g_udev_device_get_sysfs_attr(udev_parent, "fwrev");
+	if (tmp != NULL) {
+		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_NUMBER);
+		fu_device_set_version(device, tmp);
+	}
+	fu_device_add_instance_strsafe(device, "REV", tmp);
+	fu_device_build_instance_id(device, NULL, "EMMC", "NAME", "REV", NULL);
+
 	/* manfid + oemid, manfid + oemid + name */
 	if (!fu_emmc_device_get_sysattr_guint64(udev_parent, "manfid", &manfid, error))
 		return FALSE;
@@ -216,6 +223,8 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	fu_device_add_instance_u16(device, "OEM", oemid);
 	fu_device_build_instance_id(device, NULL, "EMMC", "MAN", "OEM", NULL);
 	fu_device_build_instance_id(device, NULL, "EMMC", "MAN", "OEM", "NAME", NULL);
+	fu_device_build_instance_id(device, NULL, "EMMC", "MAN", "NAME", "REV", NULL);
+	fu_device_build_instance_id(device, NULL, "EMMC", "MAN", "OEM", "NAME", "REV", NULL);
 
 	/* set the vendor */
 	tmp = g_udev_device_get_sysfs_attr(udev_parent, "manfid");
@@ -232,13 +241,6 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 	if (flag == 0)
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_INTERNAL);
-
-	/* firmware version */
-	tmp = g_udev_device_get_sysfs_attr(udev_parent, "fwrev");
-	if (tmp != NULL) {
-		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_NUMBER);
-		fu_device_set_version(device, tmp);
-	}
 
 	return TRUE;
 }
@@ -258,6 +260,7 @@ fu_emmc_read_extcsd(FuEmmcDevice *self, guint8 *ext_csd, gsize ext_csd_sz, GErro
 				    MMC_IOC_CMD,
 				    (guint8 *)&idata,
 				    NULL,
+				    FU_EMMC_DEVICE_IOCTL_TIMEOUT,
 				    error);
 }
 
@@ -354,9 +357,9 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5); /* ffu */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 45);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "ffu");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 45, NULL);
 
 	if (!fu_emmc_read_extcsd(FU_EMMC_DEVICE(device), ext_csd, sizeof(ext_csd), error))
 		return FALSE;
@@ -412,6 +415,7 @@ fu_emmc_device_write_firmware(FuDevice *device,
 						  MMC_IOC_MULTI_CMD,
 						  (guint8 *)multi_cmd,
 						  NULL,
+						  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
 						  error)) {
 				g_autoptr(GError) error_local = NULL;
 				g_prefix_error(error, "multi-cmd failed: ");
@@ -420,6 +424,7 @@ fu_emmc_device_write_firmware(FuDevice *device,
 							  MMC_IOC_CMD,
 							  (guint8 *)&multi_cmd->cmds[2],
 							  NULL,
+							  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
 							  &error_local)) {
 					g_prefix_error(error, "%s: ", error_local->message);
 				}
@@ -490,6 +495,7 @@ fu_emmc_device_write_firmware(FuDevice *device,
 					  MMC_IOC_MULTI_CMD,
 					  (guint8 *)multi_cmd,
 					  NULL,
+					  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
 					  error)) {
 			g_autoptr(GError) error_local = NULL;
 			/* In case multi-cmd ioctl failed before exiting from ffu mode */
@@ -498,6 +504,7 @@ fu_emmc_device_write_firmware(FuDevice *device,
 						  MMC_IOC_CMD,
 						  (guint8 *)&multi_cmd->cmds[2],
 						  NULL,
+						  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
 						  &error_local)) {
 				g_prefix_error(error, "%s: ", error_local->message);
 			}
@@ -526,10 +533,10 @@ fu_emmc_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

@@ -113,6 +113,8 @@ struct _FuRealtekMstDevice {
 
 G_DEFINE_TYPE(FuRealtekMstDevice, fu_realtek_mst_device, FU_TYPE_I2C_DEVICE)
 
+#define FU_REALTEK_MST_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 static gboolean
 fu_realtek_mst_device_set_quirk_kv(FuDevice *device,
 				   const gchar *key,
@@ -184,8 +186,7 @@ fu_realtek_mst_device_use_aux_dev(FuRealtekMstDevice *self, GError **error)
 		g_autoptr(FuUdevDevice) device = NULL;
 		g_autoptr(GPtrArray) i2c_devices = NULL;
 
-		device = fu_udev_device_new_with_context(fu_device_get_context(FU_DEVICE(self)),
-							 element->data);
+		device = fu_udev_device_new(fu_device_get_context(FU_DEVICE(self)), element->data);
 		if (bus_device != NULL) {
 			g_debug("Ignoring additional aux device %s",
 				fu_udev_device_get_sysfs_path(device));
@@ -226,8 +227,8 @@ fu_realtek_mst_device_use_drm_card(FuRealtekMstDevice *self, GError **error)
 		g_autoptr(FuUdevDevice) drm_device = NULL;
 		g_autoptr(GPtrArray) i2c_devices = NULL;
 
-		drm_device = fu_udev_device_new_with_context(fu_device_get_context(FU_DEVICE(self)),
-							     element->data);
+		drm_device =
+		    fu_udev_device_new(fu_device_get_context(FU_DEVICE(self)), element->data);
 		if (bus_device != NULL) {
 			g_debug("Ignoring additional drm device %s",
 				fu_udev_device_get_sysfs_path(drm_device));
@@ -257,6 +258,7 @@ mst_ensure_device_address(FuRealtekMstDevice *self, guint8 address, GError **err
 				    I2C_SLAVE,
 				    (guint8 *)(guintptr)address,
 				    NULL,
+				    FU_REALTEK_MST_DEVICE_IOCTL_TIMEOUT,
 				    error);
 }
 
@@ -265,7 +267,7 @@ static gboolean
 mst_write_register(FuRealtekMstDevice *self, guint8 address, guint8 value, GError **error)
 {
 	const guint8 command[] = {address, value};
-	return fu_i2c_device_write_full(FU_I2C_DEVICE(self), command, sizeof(command), error);
+	return fu_i2c_device_write(FU_I2C_DEVICE(self), command, sizeof(command), error);
 }
 
 static gboolean
@@ -278,16 +280,16 @@ mst_write_register_multi(FuRealtekMstDevice *self,
 	g_autofree guint8 *command = g_malloc0(count + 1);
 	memcpy(command + 1, data, count);
 	command[0] = address;
-	return fu_i2c_device_write_full(FU_I2C_DEVICE(self), command, count + 1, error);
+	return fu_i2c_device_write(FU_I2C_DEVICE(self), command, count + 1, error);
 }
 
 /** Read a register from the device */
 static gboolean
 mst_read_register(FuRealtekMstDevice *self, guint8 address, guint8 *value, GError **error)
 {
-	if (!fu_i2c_device_write(FU_I2C_DEVICE(self), address, error))
+	if (!fu_i2c_device_write(FU_I2C_DEVICE(self), &address, 0x1, error))
 		return FALSE;
-	return fu_i2c_device_read(FU_I2C_DEVICE(self), value, error);
+	return fu_i2c_device_read(FU_I2C_DEVICE(self), value, 0x1, error);
 }
 
 static gboolean
@@ -383,32 +385,19 @@ fu_realtek_mst_device_probe(FuDevice *device, GError **error)
 {
 	FuRealtekMstDevice *self = FU_REALTEK_MST_DEVICE(device);
 	FuContext *context = fu_device_get_context(device);
-	const gchar *quirk_name = NULL;
 
-	/* set custom instance ID and load matching quirks */
-	fu_device_add_instance_str(
-	    device,
-	    "NAME",
-	    fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(device), "name", NULL));
-	if (!fu_device_build_instance_id(device, error, "REALTEK-MST", "NAME", NULL))
+	/* FuI2cDevice->probe */
+	if (!FU_DEVICE_CLASS(fu_realtek_mst_device_parent_class)->probe(device, error))
 		return FALSE;
 
+	/* add custom instance ID and load matching quirks */
 	fu_device_add_instance_str(device,
 				   "FAMILY",
 				   fu_context_get_hwid_value(context, FU_HWIDS_KEY_FAMILY));
-	fu_device_build_instance_id_quirk(device, NULL, "REALTEK-MST", "NAME", "FAMILY", NULL);
+	if (!fu_device_build_instance_id_quirk(device, error, "I2C", "NAME", "FAMILY", NULL))
+		return FALSE;
 
 	/* having loaded quirks, check this device is supported */
-	quirk_name = fu_device_get_name(device);
-	if (g_strcmp0(quirk_name, "RTD2142") != 0 && g_strcmp0(quirk_name, "RTD2141B") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "device name %s is not supported",
-			    quirk_name);
-		return FALSE;
-	}
-
 	if (self->dp_aux_dev_name != NULL) {
 		if (!fu_realtek_mst_device_use_aux_dev(self, error))
 			return FALSE;
@@ -426,10 +415,6 @@ fu_realtek_mst_device_probe(FuDevice *device, GError **error)
 
 	/* locate its sibling i2c device and use that instead */
 
-	/* FuI2cDevice */
-	if (!FU_DEVICE_CLASS(fu_realtek_mst_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	/* success */
 	return TRUE;
 }
@@ -439,6 +424,7 @@ fu_realtek_mst_device_get_dual_bank_info(FuRealtekMstDevice *self,
 					 struct dual_bank_info *info,
 					 GError **error)
 {
+	const guint8 request[] = {0x01};
 	guint8 response[11] = {0x0};
 
 	if (!mst_ensure_device_address(self, I2C_ADDR_DEBUG, error))
@@ -452,9 +438,9 @@ fu_realtek_mst_device_get_dual_bank_info(FuRealtekMstDevice *self,
 	g_usleep(200 * G_TIME_SPAN_MILLISECOND);
 
 	/* request dual bank state and read back */
-	if (!fu_i2c_device_write(FU_I2C_DEVICE(self), 0x01, error))
+	if (!fu_i2c_device_write(FU_I2C_DEVICE(self), request, sizeof(request), error))
 		return FALSE;
-	if (!fu_i2c_device_read_full(FU_I2C_DEVICE(self), response, sizeof(response), error))
+	if (!fu_i2c_device_read(FU_I2C_DEVICE(self), response, sizeof(response), error))
 		return FALSE;
 
 	if (response[0] != 0xca || response[1] != 9) {
@@ -556,6 +542,7 @@ flash_iface_read(FuRealtekMstDevice *self,
 {
 	gsize bytes_read = 0;
 	guint8 byte;
+	const guint8 req[] = {0x70};
 
 	g_return_val_if_fail(address < FLASH_SIZE, FALSE);
 	g_return_val_if_fail(buf_size <= FLASH_SIZE, FALSE);
@@ -575,9 +562,9 @@ flash_iface_read(FuRealtekMstDevice *self,
 		return FALSE;
 
 	/* ignore first byte of data */
-	if (!fu_i2c_device_write(FU_I2C_DEVICE(self), 0x70, error))
+	if (!fu_i2c_device_write(FU_I2C_DEVICE(self), req, sizeof(req), error))
 		return FALSE;
-	if (!fu_i2c_device_read(FU_I2C_DEVICE(self), &byte, error))
+	if (!fu_i2c_device_read(FU_I2C_DEVICE(self), &byte, 0x1, error))
 		return FALSE;
 
 	while (bytes_read < buf_size) {
@@ -586,10 +573,7 @@ flash_iface_read(FuRealtekMstDevice *self,
 		if (read_len > 256)
 			read_len = 256;
 
-		if (!fu_i2c_device_read_full(FU_I2C_DEVICE(self),
-					     buf + bytes_read,
-					     read_len,
-					     error))
+		if (!fu_i2c_device_read(FU_I2C_DEVICE(self), buf + bytes_read, read_len, error))
 			return FALSE;
 
 		bytes_read += read_len;
@@ -764,10 +748,10 @@ fu_realtek_mst_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 70);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 9);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* flag */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 20, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 70, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 9, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "flag");
 
 	if (!mst_ensure_device_address(self, I2C_ADDR_ISP, error))
 		return FALSE;
@@ -928,10 +912,10 @@ fu_realtek_mst_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

@@ -8,8 +8,6 @@
 
 #include "config.h"
 
-#include <gio/gio.h>
-#include <glib-object.h>
 #include <glib/gi18n.h>
 #include <xmlb.h>
 
@@ -18,11 +16,8 @@
 #include <sys/inotify.h>
 #endif
 
-#include "fwupd-common.h"
-#include "fwupd-error.h"
 #include "fwupd-remote-private.h"
 
-#include "fu-common.h"
 #include "fu-remote-list.h"
 
 enum { SIGNAL_CHANGED, SIGNAL_LAST };
@@ -215,7 +210,7 @@ fu_remote_list_add_for_path(FuRemoteList *self, const gchar *path, GError **erro
 		}
 
 		/* set directory to store data */
-		remotesdir = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_METADATA);
+		remotesdir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_METADATA);
 		fwupd_remote_set_remotes_dir(remote, remotesdir);
 
 		/* load from keyfile */
@@ -260,13 +255,11 @@ fu_remote_list_add_for_path(FuRemoteList *self, const gchar *path, GError **erro
 			tmp = g_hash_table_lookup(os_release, "NAME");
 			if (tmp == NULL)
 				tmp = "this distribution";
-			fu_common_string_replace(agreement_markup, "$OS_RELEASE:NAME$", tmp);
+			fu_string_replace(agreement_markup, "$OS_RELEASE:NAME$", tmp);
 			tmp = g_hash_table_lookup(os_release, "BUG_REPORT_URL");
 			if (tmp == NULL)
 				tmp = "https://github.com/fwupd/fwupd/issues";
-			fu_common_string_replace(agreement_markup,
-						 "$OS_RELEASE:BUG_REPORT_URL$",
-						 tmp);
+			fu_string_replace(agreement_markup, "$OS_RELEASE:BUG_REPORT_URL$", tmp);
 			fwupd_remote_set_agreement(remote, agreement_markup->str);
 		}
 
@@ -390,10 +383,10 @@ fu_remote_list_reload(FuRemoteList *self, GError **error)
 	g_ptr_array_set_size(self->monitors, 0);
 
 	/* use sysremotes, and then fall back to /etc */
-	remotesdir = fu_common_get_path(FU_PATH_KIND_SYSCONFDIR_PKG);
+	remotesdir = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR_PKG);
 	if (!fu_remote_list_add_for_path(self, remotesdir, error))
 		return FALSE;
-	remotesdir_mut = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	remotesdir_mut = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 	if (!fu_remote_list_add_for_path(self, remotesdir_mut, error))
 		return FALSE;
 
@@ -429,7 +422,7 @@ fu_remote_list_load_metainfos(XbBuilder *builder, GError **error)
 	g_autoptr(GDir) dir = NULL;
 
 	/* pkg metainfo dir */
-	datadir = fu_common_get_path(FU_PATH_KIND_DATADIR_PKG);
+	datadir = fu_path_from_kind(FU_PATH_KIND_DATADIR_PKG);
 	metainfo_path = g_build_filename(datadir, "metainfo", NULL);
 	if (!g_file_test(metainfo_path, G_FILE_TEST_EXISTS))
 		return TRUE;
@@ -486,7 +479,7 @@ fu_remote_list_load(FuRemoteList *self, FuRemoteListLoadFlags flags, GError **er
 		if (xmlb == NULL)
 			return FALSE;
 	} else {
-		g_autofree gchar *cachedirpkg = fu_common_get_path(FU_PATH_KIND_CACHEDIR_PKG);
+		g_autofree gchar *cachedirpkg = fu_path_from_kind(FU_PATH_KIND_CACHEDIR_PKG);
 		g_autofree gchar *xmlbfn = g_build_filename(cachedirpkg, "metainfo.xmlb", NULL);
 		xmlb = g_file_new_for_path(xmlbfn);
 	}

@@ -8,8 +8,11 @@
 
 #include "config.h"
 
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-cfu-payload.h"
 #include "fu-common.h"
+#include "fu-mem.h"
 
 /**
  * FuCfuPayload:
@@ -28,12 +31,10 @@ G_DEFINE_TYPE(FuCfuPayload, fu_cfu_payload, FU_TYPE_FIRMWARE)
 static gboolean
 fu_cfu_payload_parse(FuFirmware *firmware,
 		     GBytes *fw,
-		     guint64 addr_start,
-		     guint64 addr_end,
+		     gsize offset,
 		     FwupdInstallFlags flags,
 		     GError **error)
 {
-	guint32 offset = 0;
 	gsize bufsz = 0;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
@@ -45,17 +46,17 @@ fu_cfu_payload_parse(FuFirmware *firmware,
 		g_autoptr(GBytes) blob = NULL;
 
 		/* read chunk header */
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset,
-						&chunk_addr,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset,
+					    &chunk_addr,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
-		if (!fu_common_read_uint8_safe(buf, bufsz, offset + 0x4, &chunk_size, error))
+		if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x4, &chunk_size, error))
 			return FALSE;
 		offset += 0x5;
-		blob = fu_common_bytes_new_offset(fw, offset, chunk_size, error);
+		blob = fu_bytes_new_offset(fw, offset, chunk_size, error);
 		if (blob == NULL)
 			return FALSE;
 		chk = fu_chunk_bytes_new(blob);

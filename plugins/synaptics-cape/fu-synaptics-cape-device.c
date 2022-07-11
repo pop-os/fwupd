@@ -96,7 +96,7 @@ fu_synaptics_cape_device_set_report(FuSynapticsCapeDevice *self,
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	if (g_getenv("FWUPD_SYNAPTICS_CAPE_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "SetReport", (guint8 *)data, sizeof(*data));
+		fu_dump_raw(G_LOG_DOMAIN, "SetReport", (guint8 *)data, sizeof(*data));
 
 	return fu_hid_device_set_report(FU_HID_DEVICE(self),
 					FU_SYNAPTICS_CAPE_DEVICE_GOLEM_REPORT_ID,
@@ -127,7 +127,7 @@ fu_synaptics_cape_device_get_report(FuSynapticsCapeDevice *self,
 		return FALSE;
 
 	if (g_getenv("FWUPD_SYNAPTICS_CAPE_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
+		fu_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
 
 	/* success */
 	return TRUE;
@@ -157,7 +157,7 @@ fu_synaptics_cape_device_get_report_intr(FuSynapticsCapeDevice *self,
 	}
 
 	if (g_getenv("FWUPD_SYNAPTICS_CAPE_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
+		fu_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
 
 	/* success */
 	return TRUE;
@@ -250,7 +250,7 @@ fu_synaptics_cape_device_sendcmd_ex(FuSynapticsCapeDevice *self,
 		report.cmd.data_len = GINT16_TO_LE(report.cmd.data_len);
 	}
 
-	report.cmd.cmd_id = GUINT32_TO_LE(report.cmd.cmd_id);
+	report.cmd.cmd_id = GUINT16_TO_LE(report.cmd.cmd_id);
 	report.cmd.module_id = GUINT32_TO_LE(report.cmd.module_id);
 
 	if (!fu_synaptics_cape_device_set_report(self, &report, error)) {
@@ -327,8 +327,7 @@ fu_synaptics_cape_device_sendcmd_ex(FuSynapticsCapeDevice *self,
 
 	/* copies returned data if it is GET command */
 	if (is_get) {
-		req->data_len =
-		    (gint16)fu_common_read_uint16((guint8 *)&report.cmd, G_LITTLE_ENDIAN);
+		req->data_len = (gint16)fu_memread_uint16((guint8 *)&report.cmd, G_LITTLE_ENDIAN);
 
 		for (int i = 0; i < FU_SYNAPTICS_CAPE_CMD_MAX_DATA_LEN; i++)
 			req->data[i] = GUINT32_FROM_LE(report.cmd.data[i]);
@@ -352,8 +351,8 @@ fu_synaptics_cape_device_sendcmd(FuSynapticsCapeDevice *self,
 
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
-	cmd.cmd_id = cmd_id;
-	cmd.module_id = module_id;
+	cmd.cmd_id = GUINT16_TO_LE(cmd_id);
+	cmd.module_id = GUINT32_TO_LE(module_id);
 
 	if (data_len != 0 && data != NULL) {
 		cmd.data_len = data_len;
@@ -377,7 +376,7 @@ fu_synaptics_cape_device_to_string(FuDevice *device, guint idt, GString *str)
 
 	g_return_if_fail(FU_IS_SYNAPTICS_CAPE_DEVICE(self));
 
-	fu_common_string_append_ku(str, idt, "ActivePartition", self->active_partition);
+	fu_string_append_ku(str, idt, "ActivePartition", self->active_partition);
 }
 
 /* resets device */
@@ -460,9 +459,9 @@ fu_synaptics_cape_device_setup_version(FuSynapticsCapeDevice *self, GError **err
 	FuCapCmd cmd = {0};
 	g_autofree gchar *version_str = NULL;
 
-	cmd.cmd_id = GUINT32_TO_LE(FU_SYNAPTICS_CMD_GET_VERSION);
-	cmd.module_id = FU_SYNAPTICS_CAPE_CMD_APP_ID_CTRL;
-	cmd.data_len = 4;
+	cmd.cmd_id = GUINT16_TO_LE(FU_SYNAPTICS_CMD_GET_VERSION);
+	cmd.module_id = GUINT32_TO_LE(FU_SYNAPTICS_CAPE_CMD_APP_ID_CTRL);
+	cmd.data_len = GUINT16_TO_LE(4);
 
 	g_return_val_if_fail(FU_IS_SYNAPTICS_CAPE_DEVICE(self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
@@ -475,7 +474,7 @@ fu_synaptics_cape_device_setup_version(FuSynapticsCapeDevice *self, GError **err
 	    (GUINT32_FROM_LE(cmd.data[0]) << 24) | ((GUINT32_FROM_LE(cmd.data[1]) & 0xFF) << 16) |
 	    ((GUINT32_FROM_LE(cmd.data[2]) & 0xFF) << 8) | (GUINT32_FROM_LE(cmd.data[3]) & 0xFF);
 
-	version_str = fu_common_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_QUAD);
+	version_str = fu_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_QUAD);
 	fu_device_set_version(FU_DEVICE(self), version_str);
 	fu_device_set_version_raw(FU_DEVICE(self), version_raw);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
@@ -703,10 +702,10 @@ fu_synaptics_cape_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 2); /* header */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 69);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 0);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 29);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 2, "device-write-hdr");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 69, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 29, NULL);
 
 	fw_header = fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_HEADER, error);
 	if (fw_header == NULL)
@@ -757,10 +756,10 @@ static void
 fu_synaptics_cape_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

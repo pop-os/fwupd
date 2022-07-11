@@ -20,8 +20,7 @@ G_DEFINE_TYPE(FuBcm57xxStage2Image, fu_bcm57xx_stage2_image, FU_TYPE_FIRMWARE)
 static gboolean
 fu_bcm57xx_stage2_image_parse(FuFirmware *image,
 			      GBytes *fw,
-			      guint64 addr_start,
-			      guint64 addr_end,
+			      gsize offset,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
@@ -30,8 +29,7 @@ fu_bcm57xx_stage2_image_parse(FuFirmware *image,
 		if (!fu_bcm57xx_verify_crc(fw, error))
 			return FALSE;
 	}
-	fw_nocrc =
-	    fu_common_bytes_new_offset(fw, 0x0, g_bytes_get_size(fw) - sizeof(guint32), error);
+	fw_nocrc = fu_bytes_new_offset(fw, 0x0, g_bytes_get_size(fw) - sizeof(guint32), error);
 	if (fw_nocrc == NULL)
 		return FALSE;
 	fu_firmware_set_bytes(image, fw_nocrc);

@@ -60,6 +60,7 @@ fu_pxi_ble_device_get_raw_info(FuPxiBleDevice *self, struct hidraw_devinfo *info
 				  HIDIOCGRAWINFO,
 				  (guint8 *)info,
 				  NULL,
+				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
 				  error)) {
 		return FALSE;
 	}
@@ -75,9 +76,9 @@ fu_pxi_ble_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUdevDevice->to_string */
 	FU_DEVICE_CLASS(fu_pxi_ble_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kv(str, idt, "ModelName", self->model_name);
+	fu_string_append(str, idt, "ModelName", self->model_name);
 	fu_pxi_ota_fw_state_to_string(&self->fwstate, idt, str);
-	fu_common_string_append_kx(str, idt, "RetransmitID", self->retransmit_id);
+	fu_string_append_kx(str, idt, "RetransmitID", self->retransmit_id);
 }
 
 static FuFirmware *
@@ -127,6 +128,7 @@ fu_pxi_ble_device_set_feature_cb(FuDevice *device, gpointer user_data, GError **
 				    HIDIOCSFEATURE(req->len),
 				    (guint8 *)req->data,
 				    NULL,
+				    FU_PXI_DEVICE_IOCTL_TIMEOUT,
 				    error);
 }
 #endif
@@ -136,7 +138,7 @@ fu_pxi_ble_device_set_feature(FuPxiBleDevice *self, GByteArray *req, GError **er
 {
 #ifdef HAVE_HIDRAW_H
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "SetFeature", req->data, req->len);
+		fu_dump_raw(G_LOG_DOMAIN, "SetFeature", req->data, req->len);
 	}
 	return fu_device_retry(FU_DEVICE(self),
 			       fu_pxi_ble_device_set_feature_cb,
@@ -156,11 +158,16 @@ static gboolean
 fu_pxi_ble_device_get_feature(FuPxiBleDevice *self, guint8 *buf, guint bufsz, GError **error)
 {
 #ifdef HAVE_HIDRAW_H
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self), HIDIOCGFEATURE(bufsz), buf, NULL, error)) {
+	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
+				  HIDIOCGFEATURE(bufsz),
+				  buf,
+				  NULL,
+				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
+				  error)) {
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
 
 	/* prepend the report-id and cmd for versions of bluez that do not have
 	 * https://github.com/bluez/bluez/commit/35a2c50437cca4d26ac6537ce3a964bb509c9b62 */
@@ -190,7 +197,7 @@ fu_pxi_ble_device_search_hid_usage_page(guint8 *report_descriptor,
 	gint pos = 0;
 
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "target usage_page", usage_page, usage_page_sz);
+		fu_dump_raw(G_LOG_DOMAIN, "target usage_page", usage_page, usage_page_sz);
 	}
 
 	while (pos < size) {
@@ -211,10 +218,7 @@ fu_pxi_ble_device_search_hid_usage_page(guint8 *report_descriptor,
 		if (memcmp(usage_page, usage_page_tmp, usage_page_sz) == 0) {
 			if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL) {
 				g_debug("hit item: %x  ", item);
-				fu_common_dump_raw(G_LOG_DOMAIN,
-						   "usage_page",
-						   usage_page,
-						   report_size);
+				fu_dump_raw(G_LOG_DOMAIN, "usage_page", usage_page, report_size);
 				g_debug("hit pos %d", pos);
 			}
 			return TRUE; /* finished processing */
@@ -239,6 +243,7 @@ fu_pxi_ble_device_check_support_report_id(FuPxiBleDevice *self, GError **error)
 				  HIDIOCGRDESCSIZE,
 				  (guint8 *)&desc_size,
 				  NULL,
+				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
 				  error))
 		return FALSE;
 
@@ -247,10 +252,11 @@ fu_pxi_ble_device_check_support_report_id(FuPxiBleDevice *self, GError **error)
 				  HIDIOCGRDESC,
 				  (guint8 *)&rpt_desc,
 				  NULL,
+				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
 				  error))
 		return FALSE;
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "HID descriptor", rpt_desc.value, rpt_desc.size);
+		fu_dump_raw(G_LOG_DOMAIN, "HID descriptor", rpt_desc.value, rpt_desc.size);
 
 	/* check ota retransmit feature report usage page exist or not */
 	fu_byte_array_append_uint16(req, PXI_HID_DEV_OTA_RETRANSMIT_USAGE_PAGE, G_LITTLE_ENDIAN);
@@ -315,7 +321,7 @@ fu_pxi_ble_device_check_support_resume(FuPxiBleDevice *self,
 	/* calculate device current checksum */
 	for (guint i = 0; i < self->fwstate.offset; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
-		checksum_tmp += fu_common_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
+		checksum_tmp += fu_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 	}
 
 	/* check current file is different with previous fw bin or not */
@@ -347,11 +353,11 @@ fu_pxi_ble_device_wait_notify(FuPxiBleDevice *self,
 
 	/* skip the wrong report id ,and keep polling until result is correct */
 	while (g_timer_elapsed(timer, NULL) * 1000.f < FU_PXI_BLE_DEVICE_NOTIFY_TIMEOUT_MS) {
-		if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(self),
-					       port,
-					       res,
-					       (FU_PXI_BLE_DEVICE_NOTIFY_RET_LEN + 1) - port,
-					       error))
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self),
+					  port,
+					  res,
+					  (FU_PXI_BLE_DEVICE_NOTIFY_RET_LEN + 1) - port,
+					  error))
 			return FALSE;
 		if (res[0] == PXI_HID_DEV_OTA_INPUT_REPORT_ID)
 			break;
@@ -368,11 +374,11 @@ fu_pxi_ble_device_wait_notify(FuPxiBleDevice *self,
 	/* get the opcode if status is not null */
 	if (status != NULL) {
 		guint8 status_tmp = 0x0;
-		if (!fu_common_read_uint8_safe(res, sizeof(res), 0x1, &status_tmp, error))
+		if (!fu_memread_uint8_safe(res, sizeof(res), 0x1, &status_tmp, error))
 			return FALSE;
 		/* need check command result if command is fw upgrade */
 		if (status_tmp == FU_PXI_DEVICE_CMD_FW_UPGRADE) {
-			if (!fu_common_read_uint8_safe(res, sizeof(res), 0x2, &cmd_status, error))
+			if (!fu_memread_uint8_safe(res, sizeof(res), 0x2, &cmd_status, error))
 				return FALSE;
 			if (cmd_status != ERR_COMMAND_SUCCESS) {
 				g_set_error(error,
@@ -388,12 +394,12 @@ fu_pxi_ble_device_wait_notify(FuPxiBleDevice *self,
 		*status = status_tmp;
 	}
 	if (checksum != NULL) {
-		if (!fu_common_read_uint16_safe(res,
-						sizeof(res),
-						0x3,
-						checksum,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(res,
+					    sizeof(res),
+					    0x3,
+					    checksum,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 	}
 
@@ -487,7 +493,7 @@ fu_pxi_ble_device_write_chunk(FuPxiBleDevice *self, FuChunk *chk, GError **error
 	}
 
 	/* the last chunk */
-	checksum = fu_common_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
+	checksum = fu_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 	self->fwstate.checksum += checksum;
 	if (checksum_device != self->fwstate.checksum) {
 		g_set_error(error,
@@ -589,7 +595,7 @@ fu_pxi_ble_device_fw_upgrade(FuPxiBleDevice *self,
 	fw = fu_firmware_get_bytes(firmware, error);
 	if (fw == NULL)
 		return FALSE;
-	checksum = fu_common_sum16_bytes(fw);
+	checksum = fu_sum16_bytes(fw);
 	fu_byte_array_append_uint8(req, PXI_HID_DEV_OTA_FEATURE_REPORT_ID);
 	fu_byte_array_append_uint8(req, FU_PXI_DEVICE_CMD_FW_UPGRADE);
 	fu_byte_array_append_uint32(req, g_bytes_get_size(fw), G_LITTLE_ENDIAN);
@@ -611,7 +617,7 @@ fu_pxi_ble_device_fw_upgrade(FuPxiBleDevice *self,
 		return FALSE;
 
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "fw upgrade", req->data, req->len);
+		fu_dump_raw(G_LOG_DOMAIN, "fw upgrade", req->data, req->len);
 
 	/* wait fw upgrade command result */
 	if (!fu_pxi_ble_device_wait_notify(self, 0x1, &opcode, NULL, error)) {
@@ -650,11 +656,11 @@ fu_pxi_ble_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 9); /* ota-init */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 9, "ota-init");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1, "check-support-resume");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, NULL);
 
 	/* get the default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -732,7 +738,7 @@ fu_pxi_ble_device_fw_get_info(FuPxiBleDevice *self, GError **error)
 
 	if (!fu_pxi_ble_device_get_feature(self, res, FU_PXI_BLE_DEVICE_FW_INFO_RET_LEN + 3, error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(res, sizeof(res), 0x4, &opcode, error))
+	if (!fu_memread_uint8_safe(res, sizeof(res), 0x4, &opcode, error))
 		return FALSE;
 	if (opcode != FU_PXI_DEVICE_CMD_FW_GET_INFO) {
 		g_set_error(error,
@@ -747,7 +753,7 @@ fu_pxi_ble_device_fw_get_info(FuPxiBleDevice *self, GError **error)
 	fu_device_set_version(FU_DEVICE(self), version_str);
 
 	/* add current checksum */
-	if (!fu_common_read_uint16_safe(res, sizeof(res), 0xb, &checksum, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint16_safe(res, sizeof(res), 0xb, &checksum, G_LITTLE_ENDIAN, error))
 		return FALSE;
 
 	/* success */
@@ -774,7 +780,7 @@ fu_pxi_ble_device_get_model_info(FuPxiBleDevice *self, GError **error)
 	res[0] = PXI_HID_DEV_OTA_FEATURE_REPORT_ID;
 	if (!fu_pxi_ble_device_get_feature(self, res, sizeof(res), error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(res, sizeof(res), 0x4, &opcode, error))
+	if (!fu_memread_uint8_safe(res, sizeof(res), 0x4, &opcode, error))
 		return FALSE;
 
 	/* old firmware */
@@ -822,12 +828,12 @@ fu_pxi_ble_device_setup_guid(FuPxiBleDevice *self, GError **error)
 		return FALSE;
 	dev_name = g_string_new(fu_device_get_name(device));
 	g_string_ascii_up(dev_name);
-	fu_common_string_replace(dev_name, " ", "_");
+	fu_string_replace(dev_name, " ", "_");
 
 	/* extra GUID with model name*/
 	model_name = g_string_new(self->model_name);
 	g_string_ascii_up(model_name);
-	fu_common_string_replace(model_name, " ", "_");
+	fu_string_replace(model_name, " ", "_");
 
 	/* generate IDs */
 	fu_device_add_instance_u16(device, "VEN", hid_raw_info.vendor);
@@ -880,10 +886,10 @@ fu_pxi_ble_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

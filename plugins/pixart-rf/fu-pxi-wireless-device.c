@@ -34,9 +34,9 @@ fu_pxi_wireless_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuPxiWirelessDevice *self = FU_PXI_WIRELESS_DEVICE(device);
 	fu_pxi_ota_fw_state_to_string(&self->fwstate, idt, str);
-	fu_common_string_append_kv(str, idt, "ModelName", (gchar *)self->model.name);
-	fu_common_string_append_kx(str, idt, "ModelType", self->model.type);
-	fu_common_string_append_kx(str, idt, "ModelTarget", self->model.target);
+	fu_string_append(str, idt, "ModelName", (gchar *)self->model.name);
+	fu_string_append_kx(str, idt, "ModelType", self->model.type);
+	fu_string_append_kx(str, idt, "ModelTarget", self->model.target);
 }
 
 static gboolean
@@ -44,11 +44,12 @@ fu_pxi_wireless_device_set_feature(FuDevice *self, const guint8 *buf, guint bufs
 {
 #ifdef HAVE_HIDRAW_H
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    HIDIOCSFEATURE(bufsz),
 				    (guint8 *)buf,
 				    NULL,
+				    FU_PXI_DEVICE_IOCTL_TIMEOUT,
 				    error);
 #else
 	g_set_error_literal(error,
@@ -63,11 +64,16 @@ static gboolean
 fu_pxi_wireless_device_get_feature(FuDevice *self, guint8 *buf, guint bufsz, GError **error)
 {
 #ifdef HAVE_HIDRAW_H
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self), HIDIOCGFEATURE(bufsz), buf, NULL, error)) {
+	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
+				  HIDIOCGFEATURE(bufsz),
+				  buf,
+				  NULL,
+				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
+				  error)) {
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
 	return TRUE;
 #else
 	g_set_error_literal(error,
@@ -113,7 +119,7 @@ fu_pxi_wireless_device_get_cmd_response(FuPxiWirelessDevice *device,
 		if (!fu_pxi_wireless_device_get_feature(FU_DEVICE(parent), buf, bufsz, error))
 			return FALSE;
 
-		if (!fu_common_read_uint8_safe(buf, bufsz, 0x4, &sn, error))
+		if (!fu_memread_uint8_safe(buf, bufsz, 0x4, &sn, error))
 			return FALSE;
 
 		if (device->sn != sn)
@@ -132,7 +138,7 @@ fu_pxi_wireless_device_get_cmd_response(FuPxiWirelessDevice *device,
 		}
 
 		/*if wireless device not reply to receiver, keep to wait */
-		if (!fu_common_read_uint8_safe(buf, bufsz, 0x5, &status, error))
+		if (!fu_memread_uint8_safe(buf, bufsz, 0x5, &status, error))
 			return FALSE;
 		if (status == OTA_RSP_NOT_READY) {
 			retry = 0x0;
@@ -182,16 +188,16 @@ fu_pxi_wireless_device_check_crc(FuDevice *device, guint16 checksum, GError **er
 		return FALSE;
 
 	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "crc buf", buf, sizeof(buf));
+		fu_dump_raw(G_LOG_DOMAIN, "crc buf", buf, sizeof(buf));
 
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(buf,
-					sizeof(buf),
-					0x6,
-					&checksum_device,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    sizeof(buf),
+				    0x6,
+				    &checksum_device,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 	if (status == OTA_RSP_CODE_ERROR) {
 		g_set_error(error,
@@ -298,7 +304,7 @@ fu_pxi_wireless_device_write_payload(FuDevice *device, FuChunk *chk, GError **er
 
 	if (!fu_pxi_wireless_device_get_cmd_response(self, buf, sizeof(buf), error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 	if (status != OTA_RSP_OK) {
 		g_set_error(error,
@@ -334,7 +340,7 @@ fu_pxi_wireless_device_write_chunk(FuDevice *device, FuChunk *chk, GError **erro
 				    self->fwstate.mtu_size);
 
 	/* calculate checksum of chunk */
-	checksum = fu_common_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
+	checksum = fu_sum16(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 	self->fwstate.checksum += checksum;
 
 	for (guint i = 0; i < chunks->len; i++) {
@@ -436,7 +442,7 @@ fu_pxi_wireless_device_fw_ota_ini_new_check(FuDevice *device, GError **error)
 
 	if (!fu_pxi_wireless_device_get_cmd_response(self, buf, sizeof(buf), error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 	if (status != OTA_RSP_OK) {
 		g_set_error(error,
@@ -469,8 +475,8 @@ fu_pxi_wireless_device_fw_upgrade(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 5);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 95);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 5, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 95, NULL);
 
 	/* proxy */
 	parent = fu_pxi_wireless_device_get_parent(device, error);
@@ -490,7 +496,7 @@ fu_pxi_wireless_device_fw_upgrade(FuDevice *device,
 				    g_bytes_get_size(fw),
 				    G_LITTLE_ENDIAN); /* ota fw upgrade command fw size */
 	fu_byte_array_append_uint16(ota_cmd,
-				    fu_common_sum16_bytes(fw),
+				    fu_sum16_bytes(fw),
 				    G_LITTLE_ENDIAN); /* ota fw upgrade command checksum */
 
 	version = fu_firmware_get_version(firmware);
@@ -577,10 +583,10 @@ fu_pxi_wireless_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 9); /* ota-init */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 9, "ota-init");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, NULL);
 
 	/* get the default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -633,10 +639,10 @@ fu_pxi_wireless_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

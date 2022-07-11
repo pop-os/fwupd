@@ -36,14 +36,14 @@ static void
 fu_synaptics_cxaudio_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuSynapticsCxaudioDevice *self = FU_SYNAPTICS_CXAUDIO_DEVICE(device);
-	fu_common_string_append_ku(str, idt, "ChipIdBase", self->chip_id_base);
-	fu_common_string_append_ku(str, idt, "ChipId", self->chip_id);
-	fu_common_string_append_kx(str, idt, "EepromLayoutVersion", self->eeprom_layout_version);
-	fu_common_string_append_kx(str, idt, "EepromStorageAddress", self->eeprom_storage_address);
-	fu_common_string_append_kx(str, idt, "EepromStorageSz", self->eeprom_storage_sz);
-	fu_common_string_append_kx(str, idt, "EepromSz", self->eeprom_sz);
-	fu_common_string_append_kb(str, idt, "SwResetSupported", self->sw_reset_supported);
-	fu_common_string_append_kb(str, idt, "SerialNumberSet", self->serial_number_set);
+	fu_string_append_ku(str, idt, "ChipIdBase", self->chip_id_base);
+	fu_string_append_ku(str, idt, "ChipId", self->chip_id);
+	fu_string_append_kx(str, idt, "EepromLayoutVersion", self->eeprom_layout_version);
+	fu_string_append_kx(str, idt, "EepromStorageAddress", self->eeprom_storage_address);
+	fu_string_append_kx(str, idt, "EepromStorageSz", self->eeprom_storage_sz);
+	fu_string_append_kx(str, idt, "EepromSz", self->eeprom_sz);
+	fu_string_append_kb(str, idt, "SwResetSupported", self->sw_reset_supported);
+	fu_string_append_kb(str, idt, "SerialNumberSet", self->serial_number_set);
 }
 
 static gboolean
@@ -155,7 +155,7 @@ fu_synaptics_cxaudio_device_operation(FuSynapticsCxaudioDevice *self,
 		if (fu_chunk_get_address(chk) >= 64 * 1024)
 			outbuf[1] |= 1 << 4;
 		outbuf[2] = fu_chunk_get_data_sz(chk);
-		fu_common_write_uint16(outbuf + 3, fu_chunk_get_address(chk), G_BIG_ENDIAN);
+		fu_memwrite_uint16(outbuf + 3, fu_chunk_get_address(chk), G_BIG_ENDIAN);
 
 		/* set memtype */
 		if (mem_kind == FU_SYNAPTICS_CXAUDIO_MEM_KIND_EEPROM)
@@ -199,11 +199,11 @@ fu_synaptics_cxaudio_device_operation(FuSynapticsCxaudioDevice *self,
 		}
 		if (operation == FU_SYNAPTICS_CXAUDIO_OPERATION_WRITE &&
 		    flags & FU_SYNAPTICS_CXAUDIO_OPERATION_FLAG_VERIFY) {
-			if (!fu_common_bytes_compare_raw(outbuf + idx_write,
-							 payload_max,
-							 inbuf + idx_read,
-							 payload_max,
-							 error)) {
+			if (!fu_memcmp_safe(outbuf + idx_write,
+					    payload_max,
+					    inbuf + idx_read,
+					    payload_max,
+					    error)) {
 				g_prefix_error(error,
 					       "failed to verify on packet %u @0x%x: ",
 					       fu_chunk_get_idx(chk),
@@ -479,7 +479,7 @@ fu_synaptics_cxaudio_device_setup(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to read EEPROM signature bytes: ");
 		return FALSE;
 	}
-	self->eeprom_storage_sz = fu_common_read_uint16(sigbuf, G_LITTLE_ENDIAN);
+	self->eeprom_storage_sz = fu_memread_uint16(sigbuf, G_LITTLE_ENDIAN);
 	if (self->eeprom_storage_sz <
 	    self->eeprom_sz - FU_SYNAPTICS_CXAUDIO_EEPROM_STORAGE_PADDING_SIZE) {
 		self->eeprom_storage_address = self->eeprom_sz - self->eeprom_storage_sz -
@@ -626,11 +626,11 @@ fu_synaptics_cxaudio_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 3); /* park */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* init */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* invalidate */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* unpark */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 3, "park");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "init");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "invalidate");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "unpark");
 
 	/* check if a patch file fits completely into the EEPROM */
 	for (guint i = 0; i < records->len; i++) {
@@ -814,25 +814,25 @@ fu_synaptics_cxaudio_device_set_quirk_kv(FuDevice *device,
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "CxaudioChipIdBase") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->chip_id_base = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CxaudioSoftwareReset") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->sw_reset_supported = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CxaudioPatch1ValidAddr") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->eeprom_patch_valid_addr = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CxaudioPatch2ValidAddr") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->eeprom_patch2_valid_addr = tmp;
 		return TRUE;
@@ -848,10 +848,10 @@ static void
 fu_synaptics_cxaudio_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 3); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 37);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 60);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 3, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 37, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 60, "reload");
 }
 
 static void

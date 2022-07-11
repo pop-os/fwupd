@@ -217,6 +217,7 @@ fu_vli_device_spi_read(FuVliDevice *self,
 
 	/* get data from hardware */
 	chunks = fu_chunk_array_mutable_new(buf, bufsz, address, 0x0, FU_VLI_DEVICE_TXSIZE);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
@@ -273,7 +274,7 @@ fu_vli_device_spi_write_block(FuVliDevice *self,
 		g_prefix_error(error, "SPI data read failed: ");
 		return FALSE;
 	}
-	return fu_common_bytes_compare_raw(buf, bufsz, buf_tmp, bufsz, error);
+	return fu_memcmp_safe(buf, bufsz, buf_tmp, bufsz, error);
 }
 
 gboolean
@@ -289,8 +290,8 @@ fu_vli_device_spi_write(FuVliDevice *self,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1); /* chk0 */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1, "device-write-chk0");
 
 	/* write SPI data, then CRC bytes last */
 	g_debug("writing 0x%x bytes @0x%x", (guint)bufsz, address);
@@ -337,8 +338,8 @@ fu_vli_device_spi_erase_all(FuVliDevice *self, FuProgress *progress, GError **er
 {
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 99);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 99, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
 
 	if (!fu_vli_device_spi_write_enable(self, error))
 		return FALSE;
@@ -385,6 +386,7 @@ fu_vli_device_spi_erase(FuVliDevice *self,
 {
 	g_autoptr(GPtrArray) chunks = fu_chunk_array_new(NULL, sz, addr, 0x0, 0x1000);
 	g_debug("erasing 0x%x bytes @0x%x", (guint)sz, addr);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
@@ -519,15 +521,15 @@ fu_vli_device_to_string(FuDevice *device, guint idt, GString *str)
 	FU_DEVICE_CLASS(fu_vli_device_parent_class)->to_string(device, idt, str);
 
 	if (priv->kind != FU_VLI_DEVICE_KIND_UNKNOWN) {
-		fu_common_string_append_kv(str,
-					   idt,
-					   "DeviceKind",
-					   fu_vli_common_device_kind_to_string(priv->kind));
+		fu_string_append(str,
+				 idt,
+				 "DeviceKind",
+				 fu_vli_common_device_kind_to_string(priv->kind));
 	}
-	fu_common_string_append_kb(str, idt, "SpiAutoDetect", priv->spi_auto_detect);
+	fu_string_append_kb(str, idt, "SpiAutoDetect", priv->spi_auto_detect);
 	if (priv->flash_id != 0x0) {
 		g_autofree gchar *tmp = fu_vli_device_get_flash_id_str(self);
-		fu_common_string_append_kv(str, idt, "FlashId", tmp);
+		fu_string_append(str, idt, "FlashId", tmp);
 	}
 	fu_device_add_string(FU_DEVICE(priv->cfi_device), idt + 1, str);
 }
@@ -559,23 +561,23 @@ fu_vli_device_spi_read_flash_id(FuVliDevice *self, GError **error)
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "SpiCmdReadId", buf, sizeof(buf));
+		fu_dump_raw(G_LOG_DOMAIN, "SpiCmdReadId", buf, sizeof(buf));
 	if (priv->spi_cmd_read_id_sz == 4) {
-		if (!fu_common_read_uint32_safe(buf,
-						sizeof(buf),
-						0x0,
-						&priv->flash_id,
-						G_BIG_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    sizeof(buf),
+					    0x0,
+					    &priv->flash_id,
+					    G_BIG_ENDIAN,
+					    error))
 			return FALSE;
 	} else if (priv->spi_cmd_read_id_sz == 2) {
 		guint16 tmp = 0;
-		if (!fu_common_read_uint16_safe(buf, sizeof(buf), 0x0, &tmp, G_BIG_ENDIAN, error))
+		if (!fu_memread_uint16_safe(buf, sizeof(buf), 0x0, &tmp, G_BIG_ENDIAN, error))
 			return FALSE;
 		priv->flash_id = tmp;
 	} else if (priv->spi_cmd_read_id_sz == 1) {
 		guint8 tmp = 0;
-		if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x0, &tmp, error))
+		if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x0, &tmp, error))
 			return FALSE;
 		priv->flash_id = tmp;
 	}
@@ -639,13 +641,13 @@ fu_vli_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "CfiDeviceCmdReadIdSz") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		priv->spi_cmd_read_id_sz = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "VliSpiAutoDetect") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		priv->spi_auto_detect = tmp > 0;
 		return TRUE;

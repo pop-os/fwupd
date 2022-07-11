@@ -51,8 +51,8 @@ fu_thunderbolt_retimer_get_udev_grandparent(FuDevice *device, GError **error)
 				    "failed to get host router device for retimer");
 		return NULL;
 	}
-	return fu_udev_device_new_with_context(fu_device_get_context(FU_DEVICE(self)),
-					       g_steal_pointer(&udev_parent2));
+	return fu_udev_device_new(fu_device_get_context(FU_DEVICE(self)),
+				  g_steal_pointer(&udev_parent2));
 }
 
 gboolean
@@ -78,10 +78,6 @@ fu_thunderbolt_retimer_probe(FuDevice *device, GError **error)
 {
 	const gchar *devpath = fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device));
 	g_autofree gchar *physical_id = g_path_get_basename(devpath);
-
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_thunderbolt_retimer_parent_class)->probe(device, error))
-		return FALSE;
 
 	/* device */
 	if (physical_id != NULL)

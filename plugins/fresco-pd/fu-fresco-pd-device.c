@@ -22,7 +22,7 @@ static void
 fu_fresco_pd_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuFrescoPdDevice *self = FU_FRESCO_PD_DEVICE(device);
-	fu_common_string_append_ku(str, idt, "CustomerID", self->customer_id);
+	fu_string_append_ku(str, idt, "CustomerID", self->customer_id);
 }
 
 static gboolean
@@ -40,7 +40,7 @@ fu_fresco_pd_device_transfer_read(FuFrescoPdDevice *self,
 
 	/* to device */
 	if (g_getenv("FWUPD_FRESCO_PD_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "read", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "read", buf, bufsz);
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
@@ -86,7 +86,7 @@ fu_fresco_pd_device_transfer_write(FuFrescoPdDevice *self,
 
 	/* to device */
 	if (g_getenv("FWUPD_FRESCO_PD_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "write", buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, "write", buf, bufsz);
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
@@ -254,11 +254,11 @@ fu_fresco_pd_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* enable mtp write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);	/* copy-mmio */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 46); /* customize */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* boot */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "enable-mtp-write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, "copy-mmio");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 46, "customize");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "boot");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, NULL);
 
 	/* get default blob, which we know is already bigger than FirmwareMin */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -408,10 +408,10 @@ fu_fresco_pd_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

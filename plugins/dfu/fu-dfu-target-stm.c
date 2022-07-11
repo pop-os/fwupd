@@ -108,10 +108,10 @@ fu_dfu_target_stm_upload_element(FuDfuTarget *target,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 40);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 58);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 40, "set-addr");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "abort");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 58, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
 
 	/* for DfuSe devices we need to handle the address manually */
 	sector = fu_dfu_target_get_sector_for_addr(target, offset);
@@ -209,7 +209,7 @@ fu_dfu_target_stm_upload_element(FuDfuTarget *target,
 	/* create new image */
 	contents = fu_dfu_utils_bytes_join_array(chunks);
 	if (expected_size > 0) {
-		contents_truncated = fu_common_bytes_new_offset(contents, 0, expected_size, error);
+		contents_truncated = fu_bytes_new_offset(contents, 0, expected_size, error);
 		if (contents_truncated == NULL)
 			return NULL;
 	} else {
@@ -420,9 +420,9 @@ fu_dfu_target_stm_download_element(FuDfuTarget *target,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 49);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 49, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
 
 	/* 1st pass: work out which sectors need erasing */
 	bytes = fu_chunk_get_bytes(chk);

@@ -32,6 +32,7 @@ fu_tpm_device_parse_line(const gchar *line, gpointer user_data)
 	g_autofree gchar *idxstr = NULL;
 	g_auto(GStrv) split = NULL;
 	g_autoptr(GString) str = NULL;
+	g_autoptr(GError) error_local = NULL;
 
 	/* split into index:hash */
 	if (line == NULL || line[0] == '\0')
@@ -43,16 +44,15 @@ fu_tpm_device_parse_line(const gchar *line, gpointer user_data)
 	}
 
 	/* get index */
-	idxstr = fu_common_strstrip(split[0]);
-	idx = fu_common_strtoull(idxstr);
-	if (idx > 64) {
-		g_debug("unexpected index, skipping: %s", idxstr);
+	idxstr = fu_strstrip(split[0]);
+	if (!fu_strtoull(idxstr, &idx, 0, 64, &error_local)) {
+		g_debug("unexpected index %s, skipping: %s", idxstr, error_local->message);
 		return;
 	}
 
 	/* parse hash */
 	str = g_string_new(split[1]);
-	fu_common_string_replace(str, " ", "");
+	fu_string_replace(str, " ", "");
 	if ((str->len != 40 && str->len != 64) || !_g_string_isxdigit(str)) {
 		g_debug("not SHA-1 or SHA-256, skipping: %s", split[1]);
 		return;
@@ -67,10 +67,6 @@ fu_tpm_v1_device_probe(FuDevice *device, GError **error)
 	FuTpmV1Device *self = FU_TPM_V1_DEVICE(device);
 	g_auto(GStrv) lines = NULL;
 	g_autofree gchar *buf_pcrs = NULL;
-
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_tpm_v1_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	/* get entire contents */
 	if (!g_file_get_contents(fu_udev_device_get_device_file(FU_UDEV_DEVICE(device)),

@@ -875,9 +875,9 @@ fu_dell_dock_mst_write_bank(FuDevice *device,
 
 		/* progress */
 		fu_progress_set_id(progress, G_STRLOC);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 15);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 84);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 15, NULL);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 84, NULL);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
 
 		if (!fu_dell_dock_mst_erase_panamera_bank(device, bank, error))
 			return FALSE;
@@ -933,9 +933,8 @@ fu_dell_dock_mst_write_panamera(FuDevice *device,
 	FuProgress *progress_local;
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10); /* stop esm */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "stop-esm");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99, NULL);
 	/* determine the flash order */
 	if (!fu_dell_dock_mst_query_active_bank(fu_device_get_proxy(device), &bank_in_use, error))
 		return FALSE;
@@ -988,9 +987,8 @@ fu_dell_dock_mst_write_cayenne(FuDevice *device,
 	guint retries = 2;
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 15); /* erase */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 3, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97, NULL);
 
 	for (guint i = 0; i < retries; i++) {
 		if (!fu_dell_dock_mst_erase_cayenne(device, error))
@@ -1101,30 +1099,30 @@ fu_dell_dock_mst_set_quirk_kv(FuDevice *device,
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "DellDockUnlockTarget") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
 			return FALSE;
 		self->unlock_target = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DellDockBlobMajorOffset") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->blob_major_offset = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DellDockBlobMinorOffset") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->blob_minor_offset = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DellDockBlobBuildOffset") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		self->blob_build_offset = tmp;
 		return TRUE;
 	} else if (g_strcmp0(key, "DellDockInstallDurationI2C") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, 60 * 60 * 24, error))
+		if (!fu_strtoull(value, &tmp, 0, 60 * 60 * 24, error))
 			return FALSE;
 		fu_device_set_install_duration(device, tmp);
 		return TRUE;
@@ -1227,10 +1225,10 @@ static void
 fu_dell_dock_mst_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

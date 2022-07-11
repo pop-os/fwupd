@@ -6,9 +6,16 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
+#include "fu-byte-array.h"
 #include "fu-ifd-image.h"
+
+/**
+ * FuIfdImage:
+ *
+ * An Intel Flash Descriptor image, e.g. BIOS.
+ *
+ * See also: [class@FuFirmware]
+ */
 
 typedef struct {
 	FuIfdAccess access[FU_IFD_REGION_MAX];
@@ -104,7 +111,8 @@ fu_ifd_image_write(FuFirmware *firmware, GError **error)
 
 	/* align up */
 	fu_byte_array_set_size(buf,
-			       fu_common_align_up(buf->len, fu_firmware_get_alignment(firmware)));
+			       fu_common_align_up(buf->len, fu_firmware_get_alignment(firmware)),
+			       0x00);
 
 	/* success */
 	return g_byte_array_free_to_bytes(g_steal_pointer(&buf));

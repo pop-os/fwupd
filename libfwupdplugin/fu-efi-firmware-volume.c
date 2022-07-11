@@ -6,11 +6,12 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-efi-common.h"
 #include "fu-efi-firmware-filesystem.h"
 #include "fu-efi-firmware-volume.h"
+#include "fu-mem.h"
 
 /**
  * FuEfiFirmwareVolume:
@@ -59,8 +60,7 @@ fu_ifd_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuil
 static gboolean
 fu_efi_firmware_volume_parse(FuFirmware *firmware,
 			     GBytes *fw,
-			     guint64 addr_start,
-			     guint64 addr_end,
+			     gsize offset,
 			     FwupdInstallFlags flags,
 			     GError **error)
 {
@@ -69,7 +69,6 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 	fwupd_guid_t guid = {0x0};
 	gsize blockmap_sz = 0;
 	gsize bufsz = 0;
-	gsize offset = 0;
 	guint16 checksum = 0;
 	guint16 ext_hdr = 0;
 	guint16 hdr_length = 0;
@@ -83,12 +82,12 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 	g_autoptr(GBytes) blob = NULL;
 
 	/* sanity check */
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_SIGNATURE,
-					&sig,
-					G_LITTLE_ENDIAN,
-					error)) {
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_SIGNATURE,
+				    &sig,
+				    G_LITTLE_ENDIAN,
+				    error)) {
 		g_prefix_error(error, "failed to read signature: ");
 		return FALSE;
 	}
@@ -118,12 +117,12 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 	g_debug("volume GUID: %s [%s]", guid_str, fu_efi_guid_to_name(guid_str));
 
 	/* length */
-	if (!fu_common_read_uint64_safe(buf,
-					bufsz,
-					offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_LENGTH,
-					&fv_length,
-					G_LITTLE_ENDIAN,
-					error)) {
+	if (!fu_memread_uint64_safe(buf,
+				    bufsz,
+				    offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_LENGTH,
+				    &fv_length,
+				    G_LITTLE_ENDIAN,
+				    error)) {
 		g_prefix_error(error, "failed to read length: ");
 		return FALSE;
 	}
@@ -135,12 +134,12 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 		return FALSE;
 	}
 	fu_firmware_set_size(firmware, fv_length);
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_ATTRS,
-					&attrs,
-					G_LITTLE_ENDIAN,
-					error)) {
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_ATTRS,
+				    &attrs,
+				    G_LITTLE_ENDIAN,
+				    error)) {
 		g_prefix_error(error, "failed to read attrs: ");
 		return FALSE;
 	}
@@ -156,12 +155,12 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 	}
 	fu_firmware_set_alignment(firmware, alignment);
 	priv->attrs = attrs & 0xffff;
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_HDR_LEN,
-					&hdr_length,
-					G_LITTLE_ENDIAN,
-					error)) {
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_HDR_LEN,
+				    &hdr_length,
+				    G_LITTLE_ENDIAN,
+				    error)) {
 		g_prefix_error(error, "failed to read hdr_length: ");
 		return FALSE;
 	}
@@ -172,29 +171,29 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 				    "invalid volume header length");
 		return FALSE;
 	}
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_CHECKSUM,
-					&checksum,
-					G_LITTLE_ENDIAN,
-					error)) {
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_CHECKSUM,
+				    &checksum,
+				    G_LITTLE_ENDIAN,
+				    error)) {
 		g_prefix_error(error, "failed to read checksum: ");
 		return FALSE;
 	}
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_EXT_HDR,
-					&ext_hdr,
-					G_LITTLE_ENDIAN,
-					error)) {
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_EXT_HDR,
+				    &ext_hdr,
+				    G_LITTLE_ENDIAN,
+				    error)) {
 		g_prefix_error(error, "failed to read ext_hdr: ");
 		return FALSE;
 	}
-	if (!fu_common_read_uint8_safe(buf,
-				       bufsz,
-				       offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_REVISION,
-				       &revision,
-				       error))
+	if (!fu_memread_uint8_safe(buf,
+				   bufsz,
+				   offset + FU_EFI_FIRMWARE_VOLUME_OFFSET_REVISION,
+				   &revision,
+				   error))
 		return FALSE;
 	if (revision != FU_EFI_FIRMWARE_VOLUME_REVISION) {
 		g_set_error(error,
@@ -211,12 +210,12 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 		guint16 checksum_verify = 0;
 		for (guint j = 0; j < hdr_length; j += sizeof(guint16)) {
 			guint16 checksum_tmp = 0;
-			if (!fu_common_read_uint16_safe(buf,
-							bufsz,
-							offset + j,
-							&checksum_tmp,
-							G_LITTLE_ENDIAN,
-							error)) {
+			if (!fu_memread_uint16_safe(buf,
+						    bufsz,
+						    offset + j,
+						    &checksum_tmp,
+						    G_LITTLE_ENDIAN,
+						    error)) {
 				g_prefix_error(error, "failed to hdr checksum 0x%x: ", j);
 				return FALSE;
 			}
@@ -234,7 +233,7 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 	}
 
 	/* add image */
-	blob = fu_common_bytes_new_offset(fw, offset + hdr_length, fv_length - hdr_length, error);
+	blob = fu_bytes_new_offset(fw, offset + hdr_length, fv_length - hdr_length, error);
 	if (blob == NULL)
 		return FALSE;
 	fu_firmware_set_offset(firmware, offset);
@@ -257,19 +256,19 @@ fu_efi_firmware_volume_parse(FuFirmware *firmware,
 	while (offset < bufsz) {
 		guint32 num_blocks = 0;
 		guint32 length = 0;
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset,
-						&num_blocks,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset,
+					    &num_blocks,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
-		if (!fu_common_read_uint32_safe(buf,
-						bufsz,
-						offset + sizeof(guint32),
-						&length,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    bufsz,
+					    offset + sizeof(guint32),
+					    &length,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		offset += 2 * sizeof(guint32);
 		if (num_blocks == 0x0 && length == 0x0)
@@ -379,26 +378,26 @@ fu_efi_firmware_volume_write(FuFirmware *firmware, GError **error)
 	/* fix up checksum */
 	for (guint j = buf->len - hdr_length; j < buf->len; j += sizeof(guint16)) {
 		guint16 checksum_tmp = 0;
-		if (!fu_common_read_uint16_safe(buf->data,
-						buf->len,
-						j,
-						&checksum_tmp,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(buf->data,
+					    buf->len,
+					    j,
+					    &checksum_tmp,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return NULL;
 		checksum += checksum_tmp;
 	}
-	if (!fu_common_write_uint16_safe(buf->data,
-					 buf->len,
-					 buf->len - 0x16,
-					 0x10000 - checksum,
-					 G_LITTLE_ENDIAN,
-					 error))
+	if (!fu_memwrite_uint16_safe(buf->data,
+				     buf->len,
+				     buf->len - 0x16,
+				     0x10000 - checksum,
+				     G_LITTLE_ENDIAN,
+				     error))
 		return NULL;
 
 	/* pad contents to alignment */
 	fu_byte_array_append_bytes(buf, img_blob);
-	fu_byte_array_set_size_full(buf, fv_length, 0xFF);
+	fu_byte_array_set_size(buf, fv_length, 0xFF);
 
 	/* success */
 	return g_byte_array_free_to_bytes(g_steal_pointer(&buf));

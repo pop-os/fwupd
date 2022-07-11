@@ -44,7 +44,7 @@ fu_uefi_cod_device_get_results_for_idx(FuDevice *device, guint idx, GError **err
 	}
 
 	/* sanity check */
-	if (!fu_common_read_uint32_safe(buf, bufsz, 0x00, &total_size, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, 0x00, &total_size, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (total_size < 0x3A) {
 		g_set_error_literal(error,
@@ -76,7 +76,7 @@ fu_uefi_cod_device_get_results_for_idx(FuDevice *device, guint idx, GError **err
 	}
 
 	/* get status */
-	if (!fu_common_read_uint32_safe(buf, bufsz, 0x28, &status, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, 0x28, &status, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	fu_uefi_device_set_status(device_uefi, status);
 	return TRUE;
@@ -88,6 +88,7 @@ static gboolean
 fu_uefi_cod_device_get_variable_idx(const gchar *name, guint *value, GError **error)
 {
 	gsize bufsz = 0;
+	guint64 tmp = 0;
 	g_autofree guint8 *buf = NULL;
 	g_autofree gchar *str = NULL;
 	gunichar2 buf16[VARIABLE_IDX_SIZE] = {0x0};
@@ -116,8 +117,10 @@ fu_uefi_cod_device_get_variable_idx(const gchar *name, guint *value, GError **er
 			    str);
 		return FALSE;
 	}
+	if (!fu_strtoull(str + strlen("Capsule"), &tmp, 0, G_MAXUINT32, error))
+		return FALSE;
 	if (value != NULL)
-		*value = fu_common_strtoull(str + strlen("Capsule"));
+		*value = tmp;
 	return TRUE;
 }
 
@@ -172,9 +175,9 @@ fu_uefi_cod_device_write_firmware(FuDevice *device,
 		return FALSE;
 	basename = g_strdup_printf("fwupd-%s.cap", fu_uefi_device_get_guid(self));
 	cod_path = g_build_filename(esp_path, "EFI", "UpdateCapsule", basename, NULL);
-	if (!fu_common_mkdir_parent(cod_path, error))
+	if (!fu_path_mkdir_parent(cod_path, error))
 		return FALSE;
-	if (!fu_common_set_contents_bytes(cod_path, fw, error))
+	if (!fu_bytes_set_contents(cod_path, fw, error))
 		return FALSE;
 
 	/*
@@ -198,12 +201,12 @@ fu_uefi_cod_device_write_firmware(FuDevice *device,
 					&error_local)) {
 			g_debug("failed to read EFI variable: %s", error_local->message);
 		} else {
-			if (!fu_common_read_uint64_safe(buf,
-							bufsz,
-							0x0,
-							&os_indications,
-							G_LITTLE_ENDIAN,
-							error))
+			if (!fu_memread_uint64_safe(buf,
+						    bufsz,
+						    0x0,
+						    &os_indications,
+						    G_LITTLE_ENDIAN,
+						    error))
 				return FALSE;
 		}
 		os_indications |= EFI_OS_INDICATIONS_FILE_CAPSULE_DELIVERY_SUPPORTED;

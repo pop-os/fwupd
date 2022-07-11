@@ -60,6 +60,8 @@
 
 #define FLASH_BLOCK_SIZE 0x10000
 
+#define FU_PARADE_LSPCON_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 /*
  * user1: 0x10000 - 0x20000
  * user2: 0x20000 - 0x30000
@@ -119,30 +121,17 @@ fu_parade_lspcon_device_probe(FuDevice *device, GError **error)
 {
 	FuParadeLspconDevice *self = FU_PARADE_LSPCON_DEVICE(device);
 	FuContext *context = fu_device_get_context(device);
-	FuUdevDevice *udev_device = FU_UDEV_DEVICE(device);
-	const gchar *device_name;
+
+	/* FuI2cDevice->probe */
+	if (!FU_DEVICE_CLASS(fu_parade_lspcon_device_parent_class)->probe(device, error))
+		return FALSE;
 
 	/* custom instance IDs to get device quirks */
 	fu_device_add_instance_str(device,
-				   "NAME",
-				   fu_udev_device_get_sysfs_attr(udev_device, "name", NULL));
-	fu_device_add_instance_str(device,
 				   "FAMILY",
 				   fu_context_get_hwid_value(context, FU_HWIDS_KEY_FAMILY));
-	if (!fu_device_build_instance_id(device, error, "PARADE-LSPCON", "NAME", NULL))
+	if (!fu_device_build_instance_id_quirk(device, error, "I2C", "NAME", "FAMILY", NULL))
 		return FALSE;
-	fu_device_build_instance_id_quirk(device, NULL, "PARADE-LSPCON", "NAME", "FAMILY", NULL);
-
-	/* probably set from quirk */
-	device_name = fu_device_get_name(device);
-	if (g_strcmp0(device_name, "PS175") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "device name %s is not supported by this plugin",
-			    device_name);
-		return FALSE;
-	}
 
 	/* should know which aux device over which we read DPCD version */
 	if (self->aux_device_name == NULL) {
@@ -153,8 +142,8 @@ fu_parade_lspcon_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 	}
 
-	/* FuI2cDevice->probe */
-	return FU_DEVICE_CLASS(fu_parade_lspcon_device_parent_class)->probe(device, error);
+	/* success */
+	return TRUE;
 }
 
 static gboolean
@@ -164,6 +153,7 @@ fu_parade_lspcon_ensure_i2c_address(FuParadeLspconDevice *self, guint8 address, 
 				  I2C_SLAVE,
 				  (guint8 *)(guintptr)address,
 				  NULL,
+				  FU_PARADE_LSPCON_DEVICE_IOCTL_TIMEOUT,
 				  error)) {
 		g_prefix_error(error, "failed to set I2C address: ");
 		return FALSE;
@@ -226,10 +216,7 @@ fu_parade_lspcon_write_register(FuParadeLspconDevice *self,
 				GError **error)
 {
 	guint8 transaction[] = {register_addr, value};
-	return fu_i2c_device_write_full(FU_I2C_DEVICE(self),
-					transaction,
-					sizeof(transaction),
-					error);
+	return fu_i2c_device_write(FU_I2C_DEVICE(self), transaction, sizeof(transaction), error);
 }
 
 static gboolean
@@ -239,9 +226,9 @@ fu_parade_lspcon_read_register(FuParadeLspconDevice *self,
 			       GError **error)
 {
 	FuI2cDevice *i2c_device = FU_I2C_DEVICE(self);
-	if (!fu_i2c_device_write(i2c_device, register_addr, error))
+	if (!fu_i2c_device_write(i2c_device, &register_addr, 0x1, error))
 		return FALSE;
-	return fu_i2c_device_read(i2c_device, value, error);
+	return fu_i2c_device_read(i2c_device, value, 0x1, error);
 }
 
 /* map the page containing the given address into page 7 */
@@ -308,7 +295,7 @@ fu_parade_lspcon_flash_read(FuParadeLspconDevice *self,
 		guard = fu_parade_lspcon_i2c_address_guard_new(self, I2C_ADDR_PAGE7, error);
 		if (guard == NULL)
 			return FALSE;
-		if (!fu_i2c_device_read_full(i2c_device, page_data, 256, error))
+		if (!fu_i2c_device_read(i2c_device, page_data, 256, error))
 			return FALSE;
 
 		if (!fu_memcpy_safe(data,
@@ -478,7 +465,7 @@ fu_parade_lspcon_flash_write(FuParadeLspconDevice *self,
 				    error))
 			return FALSE;
 
-		if (!fu_i2c_device_write_full(i2c_device, write_data, chunk_size + 1, error))
+		if (!fu_i2c_device_write(i2c_device, write_data, chunk_size + 1, error))
 			return FALSE;
 
 		fu_progress_set_percentage_full(progress, address - base_address, data_len);
@@ -595,8 +582,8 @@ fu_parade_lspcon_device_reload(FuDevice *device, GError **error)
 			    self->aux_device_name);
 		return FALSE;
 	}
-	aux_device = fu_udev_device_new_with_context(fu_device_get_context(device),
-						     g_steal_pointer(&aux_devices->data));
+	aux_device =
+	    fu_udev_device_new(fu_device_get_context(device), g_steal_pointer(&aux_devices->data));
 	g_debug("using aux dev %s", fu_udev_device_get_sysfs_path(aux_device));
 
 	/* the following open() requires the device have IDs set */
@@ -608,7 +595,7 @@ fu_parade_lspcon_device_reload(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* DPCD address 00500-00502: device OUI */
-	if (!fu_udev_device_pread_full(aux_device, 0x500, (guint8 *)&oui, 3, error))
+	if (!fu_udev_device_pread(aux_device, 0x500, (guint8 *)&oui, 3, error))
 		return FALSE;
 	oui = GUINT32_FROM_BE(oui) >> 8;
 	oui_string = g_strdup_printf("OUI:%06X", oui);
@@ -625,7 +612,7 @@ fu_parade_lspcon_device_reload(FuDevice *device, GError **error)
 
 	/* DPCD address 0x50A, 0x50B: branch device firmware
 	 * major and minor revision */
-	if (!fu_udev_device_pread_full(aux_device, 0x50a, version_buf, sizeof(version_buf), error))
+	if (!fu_udev_device_pread(aux_device, 0x50a, version_buf, sizeof(version_buf), error))
 		return FALSE;
 	version = g_strdup_printf("%d.%d", version_buf[0], version_buf[1]);
 	fu_device_set_version(device, version);
@@ -660,11 +647,11 @@ fu_parade_lspcon_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 5);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 70);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 25);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 3);  /* boot */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 2); /* boot */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 5, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 70, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 25, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 3, "device-write-boot");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 2, "device-verify-boot");
 
 	blob_fw = fu_firmware_get_bytes(firmware, error);
 	if (blob_fw == NULL)
@@ -730,7 +717,7 @@ fu_parade_lspcon_device_write_firmware(FuDevice *device,
 					 fu_progress_get_child(progress),
 					 error))
 		return FALSE;
-	if (!fu_common_bytes_compare_raw(buf, bufsz, readback_buf, bufsz, error)) {
+	if (!fu_memcmp_safe(buf, bufsz, readback_buf, bufsz, error)) {
 		g_prefix_error(error, "flash contents do not match: ");
 		return FALSE;
 	}
@@ -759,11 +746,11 @@ fu_parade_lspcon_device_write_firmware(FuDevice *device,
 					 fu_progress_get_child(progress),
 					 error))
 		return FALSE;
-	if (!fu_common_bytes_compare_raw(flag_data,
-					 sizeof(flag_data),
-					 readback_buf,
-					 MIN(sizeof(flag_data), bufsz),
-					 error)) {
+	if (!fu_memcmp_safe(flag_data,
+			    sizeof(flag_data),
+			    readback_buf,
+			    MIN(sizeof(flag_data), bufsz),
+			    error)) {
 		g_prefix_error(error, "flag partition contents do not match: ");
 		return FALSE;
 	}
@@ -831,10 +818,10 @@ fu_parade_lspcon_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

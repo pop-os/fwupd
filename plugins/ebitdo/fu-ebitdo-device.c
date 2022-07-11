@@ -74,7 +74,7 @@ fu_ebitdo_device_send(FuEbitdoDevice *self,
 
 	/* debug */
 	if (g_getenv("FWUPD_EBITDO_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "->DEVICE", packet, (gsize)hdr->pkt_len + 1);
+		fu_dump_raw(G_LOG_DOMAIN, "->DEVICE", packet, (gsize)hdr->pkt_len + 1);
 		fu_ebitdo_dump_pkt(hdr);
 	}
 
@@ -132,7 +132,7 @@ fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GErro
 
 	/* debug */
 	if (g_getenv("FWUPD_EBITDO_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "<-DEVICE", packet, actual_length);
+		fu_dump_raw(G_LOG_DOMAIN, "<-DEVICE", packet, actual_length);
 		fu_ebitdo_dump_pkt(hdr);
 	}
 
@@ -491,9 +491,9 @@ fu_ebitdo_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* header */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 2);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "header");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 2, NULL);
 
 	/* get header and payload */
 	fw_hdr = fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_HEADER, error);
@@ -631,10 +631,6 @@ fu_ebitdo_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 static gboolean
 fu_ebitdo_device_probe(FuDevice *device, GError **error)
 {
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_ebitdo_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	/* allowed, but requires manual bootloader step */
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_set_remove_delay(device, FU_DEVICE_REMOVE_DELAY_USER_REPLUG);
@@ -661,10 +657,10 @@ fu_ebitdo_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

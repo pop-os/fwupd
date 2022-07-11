@@ -10,9 +10,11 @@
 
 #include <string.h>
 
+#include "fu-byte-array.h"
 #include "fu-common.h"
 #include "fu-firmware-common.h"
 #include "fu-srec-firmware.h"
+#include "fu-string.h"
 
 /**
  * FuSrecFirmware:
@@ -156,7 +158,7 @@ fu_srec_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 
 	/* check starting token */
 	if (token->str[0] != 'S' || token->len < 3) {
-		g_autofree gchar *strsafe = fu_common_strsafe(token->str, 3);
+		g_autofree gchar *strsafe = fu_strsafe(token->str, 3);
 		if (strsafe != NULL) {
 			g_set_error(error,
 				    FWUPD_ERROR,
@@ -330,12 +332,12 @@ fu_srec_firmware_tokenize(FuFirmware *firmware, GBytes *fw, FwupdInstallFlags fl
 	FuSrecFirmwareTokenHelper helper = {.self = self, .flags = flags, .got_eof = FALSE};
 
 	/* parse records */
-	if (!fu_common_strnsplit_full(g_bytes_get_data(fw, NULL),
-				      g_bytes_get_size(fw),
-				      "\n",
-				      fu_srec_firmware_tokenize_cb,
-				      &helper,
-				      error))
+	if (!fu_strsplit_full(g_bytes_get_data(fw, NULL),
+			      g_bytes_get_size(fw),
+			      "\n",
+			      fu_srec_firmware_tokenize_cb,
+			      &helper,
+			      error))
 		return FALSE;
 
 	/* no EOF */
@@ -352,8 +354,7 @@ fu_srec_firmware_tokenize(FuFirmware *firmware, GBytes *fw, FwupdInstallFlags fl
 static gboolean
 fu_srec_firmware_parse(FuFirmware *firmware,
 		       GBytes *fw,
-		       guint64 addr_start,
-		       guint64 addr_end,
+		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
 {
@@ -438,11 +439,11 @@ fu_srec_firmware_parse(FuFirmware *firmware,
 					    rcd->ln);
 				return FALSE;
 			}
-			if (rcd->addr < addr_start) {
+			if (rcd->addr < offset) {
 				g_debug(
 				    "ignoring data at 0x%x as before start address 0x%x at line %u",
 				    (guint)rcd->addr,
-				    (guint)addr_start,
+				    (guint)offset,
 				    rcd->ln);
 			} else {
 				guint32 len_hole = rcd->addr - addr32_last;

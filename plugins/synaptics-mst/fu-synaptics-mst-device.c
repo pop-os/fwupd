@@ -104,21 +104,18 @@ fu_synaptics_mst_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUdevDevice->to_string */
 	FU_DEVICE_CLASS(fu_synaptics_mst_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kv(str, idt, "DeviceKind", self->device_kind);
+	fu_string_append(str, idt, "DeviceKind", self->device_kind);
 	if (self->mode != FU_SYNAPTICS_MST_MODE_UNKNOWN) {
-		fu_common_string_append_kv(str,
-					   idt,
-					   "Mode",
-					   fu_synaptics_mst_mode_to_string(self->mode));
+		fu_string_append(str, idt, "Mode", fu_synaptics_mst_mode_to_string(self->mode));
 	}
 	if (self->family == FU_SYNAPTICS_MST_FAMILY_PANAMERA)
-		fu_common_string_append_kx(str, idt, "ActiveBank", self->active_bank);
-	fu_common_string_append_kx(str, idt, "Layer", self->layer);
-	fu_common_string_append_kx(str, idt, "Rad", self->rad);
+		fu_string_append_kx(str, idt, "ActiveBank", self->active_bank);
+	fu_string_append_kx(str, idt, "Layer", self->layer);
+	fu_string_append_kx(str, idt, "Rad", self->rad);
 	if (self->board_id != 0x0)
-		fu_common_string_append_ku(str, idt, "BoardId", self->board_id);
+		fu_string_append_ku(str, idt, "BoardId", self->board_id);
 	if (self->chip_id != 0x0)
-		fu_common_string_append_kx(str, idt, "ChipId", self->chip_id);
+		fu_string_append_kx(str, idt, "ChipId", self->chip_id);
 }
 
 static gboolean
@@ -319,7 +316,7 @@ fu_synaptics_mst_device_update_esm(FuSynapticsMstDevice *self,
 	}
 
 	/* ESM checksum same */
-	checksum = fu_common_sum32(payload_data + EEPROM_ESM_OFFSET, esm_sz);
+	checksum = fu_sum32(payload_data + EEPROM_ESM_OFFSET, esm_sz);
 	if (checksum == flash_checksum) {
 		g_debug("ESM checksum already matches");
 		return TRUE;
@@ -348,6 +345,7 @@ fu_synaptics_mst_device_update_esm(FuSynapticsMstDevice *self,
 		g_usleep(FLASH_SETTLE_TIME);
 
 		/* write firmware */
+		fu_progress_set_id(progress, G_STRLOC);
 		fu_progress_set_steps(progress, write_loops);
 		for (guint32 i = 0; i < write_loops; i++) {
 			g_autoptr(GError) error_local = NULL;
@@ -469,7 +467,7 @@ fu_synaptics_mst_device_update_tesla_leaf_firmware(FuSynapticsMstDevice *self,
 								&flash_checksum,
 								error))
 			return FALSE;
-		checksum = fu_common_sum32(payload_data, payload_len);
+		checksum = fu_sum32(payload_data, payload_len);
 		if (checksum == flash_checksum)
 			break;
 		g_debug("attempt %u: checksum %x didn't match %x",
@@ -543,12 +541,12 @@ fu_synaptics_mst_device_update_panamera_firmware(FuSynapticsMstDevice *self,
 	g_debug("bank to update:%x", bank_to_update);
 
 	/* get firmware size */
-	if (!fu_common_read_uint32_safe(payload_data,
-					payload_len,
-					0x400,
-					&fw_size,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(payload_data,
+				    payload_len,
+				    0x400,
+				    &fw_size,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 	fw_size += 0x410;
 
@@ -1045,8 +1043,8 @@ fu_synaptics_mst_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10, NULL);
 
 	fw = fu_firmware_get_bytes(firmware, error);
 	if (fw == NULL)
@@ -1378,7 +1376,7 @@ fu_synaptics_mst_device_rescan(FuDevice *device, GError **error)
 	/* read board ID */
 	if (!fu_synaptics_mst_device_read_board_id(self, connection, buf_ver, error))
 		return FALSE;
-	self->board_id = fu_common_read_uint16(buf_ver, G_BIG_ENDIAN);
+	self->board_id = fu_memread_uint16(buf_ver, G_BIG_ENDIAN);
 
 	/* recursively look for cascade devices */
 	if (!fu_device_locker_close(locker, error)) {
@@ -1499,10 +1497,10 @@ fu_synaptics_mst_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

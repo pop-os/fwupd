@@ -20,8 +20,7 @@ G_DEFINE_TYPE(FuSteelseriesFirmware, fu_steelseries_firmware, FU_TYPE_FIRMWARE)
 static gboolean
 fu_steelseries_firmware_parse(FuFirmware *firmware,
 			      GBytes *fw,
-			      guint64 addr_start,
-			      guint64 addr_end,
+			      gsize offset,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
@@ -29,15 +28,15 @@ fu_steelseries_firmware_parse(FuFirmware *firmware,
 	guint32 checksum_tmp;
 	guint32 checksum;
 
-	if (!fu_common_read_uint32_safe(g_bytes_get_data(fw, NULL),
-					g_bytes_get_size(fw),
-					g_bytes_get_size(fw) - sizeof(checksum),
-					&checksum,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(g_bytes_get_data(fw, NULL),
+				    g_bytes_get_size(fw),
+				    g_bytes_get_size(fw) - sizeof(checksum),
+				    &checksum,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	checksum_tmp = fu_common_crc32(g_bytes_get_data(fw, NULL),
-				       g_bytes_get_size(fw) - sizeof(checksum_tmp));
+	checksum_tmp =
+	    fu_crc32(g_bytes_get_data(fw, NULL), g_bytes_get_size(fw) - sizeof(checksum_tmp));
 	if (checksum_tmp != checksum) {
 		if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
 			g_set_error(error,

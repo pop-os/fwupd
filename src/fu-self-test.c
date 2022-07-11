@@ -8,27 +8,29 @@
 
 #include <fwupdplugin.h>
 
-#include <glib-object.h>
 #include <glib/gstdio.h>
 #include <libgcab.h>
 #include <stdlib.h>
 #include <string.h>
-#include <xmlb.h>
 
 #include "fwupd-security-attr-private.h"
 
+#include "fu-cabinet-common.h"
 #include "fu-config.h"
 #include "fu-context-private.h"
 #include "fu-device-list.h"
 #include "fu-device-private.h"
 #include "fu-engine.h"
+#include "fu-firmware-builder.h"
 #include "fu-hash.h"
 #include "fu-history.h"
 #include "fu-plugin-list.h"
 #include "fu-plugin-private.h"
 #include "fu-progressbar.h"
+#include "fu-release-common.h"
 #include "fu-security-attr.h"
 #include "fu-smbios-private.h"
+#include "fu-spawn.h"
 
 typedef struct {
 	FuPlugin *plugin;
@@ -75,7 +77,7 @@ fu_self_test_mkroot(void)
 {
 	if (g_file_test("/tmp/fwupd-self-test", G_FILE_TEST_EXISTS)) {
 		g_autoptr(GError) error = NULL;
-		if (!fu_common_rmtree("/tmp/fwupd-self-test", &error))
+		if (!fu_path_rmtree("/tmp/fwupd-self-test", &error))
 			g_warning("failed to mkroot: %s", error->message);
 	}
 	g_assert_cmpint(g_mkdir_with_parents("/tmp/fwupd-self-test/var/lib/fwupd", 0755), ==, 0);
@@ -87,7 +89,7 @@ fu_test_compare_lines(const gchar *txt1, const gchar *txt2, GError **error)
 	g_autofree gchar *output = NULL;
 	if (g_strcmp0(txt1, txt2) == 0)
 		return TRUE;
-	if (fu_common_fnmatch(txt2, txt1))
+	if (fu_path_fnmatch(txt2, txt1))
 		return TRUE;
 	if (!g_file_set_contents("/tmp/a", txt1, -1, error))
 		return FALSE;
@@ -121,8 +123,9 @@ fu_engine_generate_md_func(gconstpointer user_data)
 	const gchar *tmp;
 	gboolean ret;
 	g_autofree gchar *filename = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GBytes) data = NULL;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(XbNode) component = NULL;
@@ -130,18 +133,17 @@ fu_engine_generate_md_func(gconstpointer user_data)
 	/* put cab file somewhere we can parse it */
 	filename =
 	    g_test_build_filename(G_TEST_DIST, "tests", "colorhug", "colorhug-als-3.0.2.cab", NULL);
-	data = fu_common_get_contents_bytes(filename, &error);
+	data = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(data);
-	ret = fu_common_set_contents_bytes("/tmp/fwupd-self-test/var/cache/fwupd/foo.cab",
-					   data,
-					   &error);
+	ret = fu_bytes_set_contents("/tmp/fwupd-self-test/var/cache/fwupd/foo.cab", data, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* load engine and check the device was found */
 	ret = fu_engine_load(engine,
 			     FU_ENGINE_LOAD_FLAG_REMOTES | FU_ENGINE_LOAD_FLAG_NO_CACHE,
+			     progress,
 			     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -167,11 +169,12 @@ fu_plugin_hash_func(gconstpointer user_data)
 {
 	GError *error = NULL;
 	g_autofree gchar *pluginfn = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(FuPlugin) plugin = fu_plugin_new(NULL);
 	gboolean ret = FALSE;
 
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -203,7 +206,7 @@ fu_engine_requirements_missing_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -243,7 +246,7 @@ fu_engine_requirements_soft_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -283,7 +286,7 @@ fu_engine_requirements_client_fail_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -320,7 +323,7 @@ fu_engine_requirements_client_invalid_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -357,7 +360,7 @@ fu_engine_requirements_client_pass_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -396,7 +399,7 @@ fu_engine_requirements_version_require_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -446,7 +449,7 @@ fu_engine_requirements_version_lowest_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -496,7 +499,7 @@ fu_engine_requirements_unsupported_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -535,9 +538,9 @@ fu_engine_requirements_child_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) child = fu_device_new();
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) child = fu_device_new(NULL);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -595,9 +598,9 @@ fu_engine_requirements_child_fail_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) child = fu_device_new();
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) child = fu_device_new(NULL);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -656,7 +659,7 @@ static void
 fu_engine_requirements_func(gconstpointer user_data)
 {
 	gboolean ret;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(GError) error = NULL;
@@ -698,8 +701,8 @@ fu_engine_requirements_device_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -760,8 +763,8 @@ fu_engine_requirements_device_plain_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -811,7 +814,7 @@ fu_engine_requirements_version_format_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -862,7 +865,7 @@ fu_engine_requirements_only_upgrade_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -907,11 +910,11 @@ fu_engine_requirements_sibling_device_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) unrelated_device3 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) parent = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) unrelated_device3 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) parent = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release1 = fu_release_new();
 	g_autoptr(FuRelease) release2 = fu_release_new();
@@ -1021,9 +1024,9 @@ fu_engine_requirements_other_device_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -1090,9 +1093,9 @@ static void
 fu_engine_requirements_protocol_check_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(FuRelease) release1 = fu_release_new();
@@ -1179,9 +1182,9 @@ fu_engine_requirements_parent_device_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
@@ -1250,10 +1253,10 @@ static void
 fu_engine_device_parent_guid_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device3 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device3 = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
 
 	/* no metadata in daemon */
@@ -1304,11 +1307,11 @@ static void
 fu_engine_device_parent_id_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device3 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device4 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device3 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device4 = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
 
 	/* no metadata in daemon */
@@ -1375,9 +1378,9 @@ fu_engine_partial_hash_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuPlugin) plugin = fu_plugin_new(NULL);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GError) error_none = NULL;
@@ -1444,8 +1447,9 @@ fu_engine_device_unlock_func(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
 	g_autofree gchar *filename = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GFile) file = NULL;
 	g_autoptr(XbBuilder) builder = xb_builder_new();
@@ -1453,7 +1457,7 @@ fu_engine_device_unlock_func(gconstpointer user_data)
 	g_autoptr(XbSilo) silo = NULL;
 
 	/* load engine to get FuConfig set up */
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -1488,9 +1492,10 @@ fu_engine_require_hwid_func(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
 	g_autofree gchar *filename = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GBytes) blob_cab = NULL;
 	g_autoptr(GError) error = NULL;
@@ -1508,14 +1513,14 @@ fu_engine_require_hwid_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* load engine to get FuConfig set up */
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* get generated file as a blob */
 	filename =
 	    g_test_build_filename(G_TEST_BUILT, "tests", "missing-hwid", "hwid-1.2.3.cab", NULL);
-	blob_cab = fu_common_get_contents_bytes(filename, &error);
+	blob_cab = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_cab);
 	silo = fu_engine_get_silo_from_blob(engine, blob_cab, &error);
@@ -1557,14 +1562,121 @@ fu_engine_require_hwid_func(gconstpointer user_data)
 }
 
 static void
+fu_engine_get_details_added_func(gconstpointer user_data)
+{
+	FuTest *self = (FuTest *)user_data;
+	FuDevice *device_tmp;
+	FwupdRelease *release;
+	gboolean ret;
+	g_autofree gchar *filename = NULL;
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
+	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(GBytes) blob_cab = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GPtrArray) devices = NULL;
+	g_autoptr(XbSilo) silo_empty = xb_silo_new();
+
+#if defined(__s390x__)
+	/* See https://github.com/fwupd/fwupd/issues/318 for more information */
+	g_test_skip("Skipping HWID test on s390x due to known problem with gcab");
+	return;
+#endif
+
+	/* no metadata in daemon */
+	fu_engine_set_silo(engine, silo_empty);
+
+	/* load engine to get FuConfig set up */
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* add a dummy device */
+	fu_device_set_id(device, "test_device");
+	fu_device_set_name(device, "test device");
+	fu_device_add_vendor_id(device, "USB:FFFF");
+	fu_device_add_protocol(device, "com.acme");
+	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
+	fu_device_set_version(device, "1.2.2");
+	fu_device_add_guid(device, "12345678-1234-1234-1234-123456789012");
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_engine_add_device(engine, device);
+
+	/* get details */
+	filename =
+	    g_test_build_filename(G_TEST_BUILT, "tests", "missing-hwid", "hwid-1.2.3.cab", NULL);
+	blob_cab = fu_bytes_get_contents(filename, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(blob_cab);
+	devices = fu_engine_get_details_for_bytes(engine, request, blob_cab, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(devices);
+	g_assert_cmpint(devices->len, ==, 1);
+	device_tmp = g_ptr_array_index(devices, 0);
+	g_assert_cmpstr(fu_device_get_name(device_tmp), ==, "test device");
+	release = fu_device_get_release_default(device_tmp);
+	g_assert_nonnull(release);
+	g_assert_cmpstr(fwupd_release_get_version(release), ==, "1.2.3");
+}
+
+static void
+fu_engine_get_details_missing_func(gconstpointer user_data)
+{
+	FuDevice *device_tmp;
+	FwupdRelease *release;
+	gboolean ret;
+	g_autofree gchar *filename = NULL;
+	g_autoptr(FuEngine) engine = fu_engine_new();
+	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(GBytes) blob_cab = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GPtrArray) devices = NULL;
+	g_autoptr(XbSilo) silo_empty = xb_silo_new();
+
+#if defined(__s390x__)
+	/* See https://github.com/fwupd/fwupd/issues/318 for more information */
+	g_test_skip("Skipping HWID test on s390x due to known problem with gcab");
+	return;
+#endif
+
+	/* no metadata in daemon */
+	fu_engine_set_silo(engine, silo_empty);
+
+	/* load engine to get FuConfig set up */
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* get details */
+	filename =
+	    g_test_build_filename(G_TEST_BUILT, "tests", "missing-hwid", "hwid-1.2.3.cab", NULL);
+	blob_cab = fu_bytes_get_contents(filename, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(blob_cab);
+	devices = fu_engine_get_details_for_bytes(engine, request, blob_cab, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(devices);
+	g_assert_cmpint(devices->len, ==, 1);
+	device_tmp = g_ptr_array_index(devices, 0);
+	g_assert_cmpstr(fu_device_get_name(device_tmp), ==, NULL);
+	release = fu_device_get_release_default(device_tmp);
+	g_assert_nonnull(release);
+	g_assert_cmpstr(fwupd_release_get_version(release), ==, "1.2.3");
+}
+
+static void
 fu_engine_downgrade_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	FwupdRelease *rel;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GPtrArray) devices_pre = NULL;
@@ -1664,6 +1776,7 @@ fu_engine_downgrade_func(gconstpointer user_data)
 
 	ret = fu_engine_load(engine,
 			     FU_ENGINE_LOAD_FLAG_REMOTES | FU_ENGINE_LOAD_FLAG_NO_CACHE,
+			     progress,
 			     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -1749,9 +1862,10 @@ fu_engine_install_duration_func(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	FwupdRelease *rel;
 	gboolean ret;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GPtrArray) releases = NULL;
@@ -1790,6 +1904,7 @@ fu_engine_install_duration_func(gconstpointer user_data)
 
 	ret = fu_engine_load(engine,
 			     FU_ENGINE_LOAD_FLAG_REMOTES | FU_ENGINE_LOAD_FLAG_NO_CACHE,
+			     progress,
 			     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -1836,8 +1951,8 @@ fu_engine_history_func(gconstpointer user_data)
 	g_autofree gchar *device_str = NULL;
 	g_autofree gchar *filename = NULL;
 	g_autoptr(FuDevice) device2 = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuHistory) history = NULL;
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
@@ -1859,7 +1974,7 @@ fu_engine_history_func(gconstpointer user_data)
 	/* set up dummy plugin */
 	fu_engine_add_plugin(engine, self->plugin);
 
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -1885,7 +2000,7 @@ fu_engine_history_func(gconstpointer user_data)
 
 	filename =
 	    g_test_build_filename(G_TEST_BUILT, "tests", "missing-hwid", "noreqs-1.2.3.cab", NULL);
-	blob_cab = fu_common_get_contents_bytes(filename, &error);
+	blob_cab = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_cab);
 	silo = fu_engine_get_silo_from_blob(engine, blob_cab, &error);
@@ -1981,8 +2096,8 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
 	g_autofree gchar *filename = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GBytes) blob_cab = NULL;
 	g_autoptr(GError) error = NULL;
@@ -2005,7 +2120,7 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	/* set up dummy plugin */
 	fu_engine_add_plugin(engine, self->plugin);
 
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -2030,7 +2145,7 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 					 "multiple-rels",
 					 "multiple-rels-1.2.4.cab",
 					 NULL);
-	blob_cab = fu_common_get_contents_bytes(filename, &error);
+	blob_cab = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_cab);
 	silo = fu_engine_get_silo_from_blob(engine, blob_cab, &error);
@@ -2075,6 +2190,7 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	}
 
 	/* install them */
+	fu_progress_reset(progress);
 	ret = fu_engine_install_releases(engine,
 					 request,
 					 releases,
@@ -2098,8 +2214,8 @@ fu_engine_history_inherit(gconstpointer user_data)
 	g_autofree gchar *filename = NULL;
 	g_autofree gchar *localstatedir = NULL;
 	g_autofree gchar *history_db = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GBytes) blob_cab = NULL;
@@ -2115,7 +2231,7 @@ fu_engine_history_inherit(gconstpointer user_data)
 #endif
 
 	/* delete history */
-	localstatedir = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	localstatedir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 	history_db = g_build_filename(localstatedir, "pending.db", NULL);
 	(void)g_unlink(history_db);
 
@@ -2125,7 +2241,7 @@ fu_engine_history_inherit(gconstpointer user_data)
 	/* set up dummy plugin */
 	(void)g_setenv("FWUPD_PLUGIN_TEST", "fail", TRUE);
 	fu_engine_add_plugin(engine, self->plugin);
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -2150,7 +2266,7 @@ fu_engine_history_inherit(gconstpointer user_data)
 
 	filename =
 	    g_test_build_filename(G_TEST_BUILT, "tests", "missing-hwid", "noreqs-1.2.3.cab", NULL);
-	blob_cab = fu_common_get_contents_bytes(filename, &error);
+	blob_cab = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_cab);
 	silo = fu_engine_get_silo_from_blob(engine, blob_cab, &error);
@@ -2208,10 +2324,10 @@ fu_engine_history_inherit(gconstpointer user_data)
 	g_assert_true(ret);
 	g_object_unref(engine);
 	g_object_unref(device);
-	engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	engine = fu_engine_new();
 	fu_engine_set_silo(engine, silo_empty);
 	fu_engine_add_plugin(engine, self->plugin);
-	device = fu_device_new_with_context(self->ctx);
+	device = fu_device_new(self->ctx);
 	fu_device_add_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_INHERIT_ACTIVATION);
 	fu_device_set_id(device, "test_device");
 	fu_device_add_vendor_id(device, "USB:FFFF");
@@ -2226,10 +2342,10 @@ fu_engine_history_inherit(gconstpointer user_data)
 	/* emulate not getting the flag */
 	g_object_unref(engine);
 	g_object_unref(device);
-	engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	engine = fu_engine_new();
 	fu_engine_set_silo(engine, silo_empty);
 	fu_engine_add_plugin(engine, self->plugin);
-	device = fu_device_new_with_context(self->ctx);
+	device = fu_device_new(self->ctx);
 	fu_device_set_id(device, "test_device");
 	fu_device_add_vendor_id(device, "USB:FFFF");
 	fu_device_add_protocol(device, "com.acme");
@@ -2247,8 +2363,8 @@ fu_engine_install_needs_reboot(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
 	g_autofree gchar *filename = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GBytes) blob_cab = NULL;
@@ -2264,7 +2380,7 @@ fu_engine_install_needs_reboot(gconstpointer user_data)
 	/* set up dummy plugin */
 	(void)g_setenv("FWUPD_PLUGIN_TEST", "fail", TRUE);
 	fu_engine_add_plugin(engine, self->plugin);
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NONE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NONE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -2289,7 +2405,7 @@ fu_engine_install_needs_reboot(gconstpointer user_data)
 
 	filename =
 	    g_test_build_filename(G_TEST_BUILT, "tests", "missing-hwid", "noreqs-1.2.3.cab", NULL);
-	blob_cab = fu_common_get_contents_bytes(filename, &error);
+	blob_cab = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_cab);
 	silo = fu_engine_get_silo_from_blob(engine, blob_cab, &error);
@@ -2335,8 +2451,8 @@ fu_engine_history_error_func(gconstpointer user_data)
 	g_autofree gchar *device_str = NULL;
 	g_autofree gchar *filename = NULL;
 	g_autoptr(FuDevice) device2 = NULL;
-	g_autoptr(FuDevice) device = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuHistory) history = NULL;
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
@@ -2354,7 +2470,7 @@ fu_engine_history_error_func(gconstpointer user_data)
 	/* set up dummy plugin */
 	(void)g_setenv("FWUPD_PLUGIN_TEST", "fail", TRUE);
 	fu_engine_add_plugin(engine, self->plugin);
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, &error);
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -2380,7 +2496,7 @@ fu_engine_history_error_func(gconstpointer user_data)
 	/* install the wrong thing */
 	filename =
 	    g_test_build_filename(G_TEST_BUILT, "tests", "missing-hwid", "noreqs-1.2.3.cab", NULL);
-	blob_cab = fu_common_get_contents_bytes(filename, &error);
+	blob_cab = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_cab);
 	silo = fu_engine_get_silo_from_blob(engine, blob_cab, &error);
@@ -2455,8 +2571,8 @@ _device_list_count_cb(FuDeviceList *device_list, FuDevice *device, gpointer user
 static void
 fu_device_list_no_auto_remove_children_func(gconstpointer user_data)
 {
-	g_autoptr(FuDevice) child = fu_device_new();
-	g_autoptr(FuDevice) parent = fu_device_new();
+	g_autoptr(FuDevice) child = fu_device_new(NULL);
+	g_autoptr(FuDevice) parent = fu_device_new(NULL);
 	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
 	g_autoptr(GPtrArray) active1 = NULL;
 	g_autoptr(GPtrArray) active2 = NULL;
@@ -2488,8 +2604,8 @@ static void
 fu_device_list_delay_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
 	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
 	guint added_cnt = 0;
 	guint changed_cnt = 0;
@@ -2571,9 +2687,9 @@ static void
 fu_device_list_replug_auto_func(gconstpointer user_data)
 {
 	gboolean ret;
-	g_autoptr(FuDevice) device1 = fu_device_new();
-	g_autoptr(FuDevice) device2 = fu_device_new();
-	g_autoptr(FuDevice) parent = fu_device_new();
+	g_autoptr(FuDevice) device1 = fu_device_new(NULL);
+	g_autoptr(FuDevice) device2 = fu_device_new(NULL);
+	g_autoptr(FuDevice) parent = fu_device_new(NULL);
 	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
 	g_autoptr(GError) error = NULL;
 	FuDeviceListReplugHelper helper;
@@ -2635,8 +2751,8 @@ fu_device_list_replug_user_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
 	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
 	g_autoptr(GError) error = NULL;
 	FuDeviceListReplugHelper helper;
@@ -2709,8 +2825,8 @@ static void
 fu_device_list_compatible_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
 	g_autoptr(FuDevice) device_old = NULL;
 	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
 	g_autoptr(GPtrArray) devices_all = NULL;
@@ -2792,8 +2908,8 @@ fu_device_list_remove_chain_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
-	g_autoptr(FuDevice) device_child = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device_parent = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device_child = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device_parent = fu_device_new(self->ctx);
 
 	guint added_cnt = 0;
 	guint changed_cnt = 0;
@@ -2843,8 +2959,8 @@ fu_device_list_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
 	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
-	g_autoptr(FuDevice) device1 = fu_device_new_with_context(self->ctx);
-	g_autoptr(FuDevice) device2 = fu_device_new_with_context(self->ctx);
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GPtrArray) devices2 = NULL;
 	g_autoptr(GError) error = NULL;
@@ -3070,7 +3186,7 @@ fu_plugin_module_func(gconstpointer user_data)
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDevice) device2 = NULL;
 	g_autoptr(FuDevice) device3 = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuHistory) history = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GBytes) blob_cab = NULL;
@@ -3082,7 +3198,7 @@ fu_plugin_module_func(gconstpointer user_data)
 
 	/* create a fake device */
 	(void)g_setenv("FWUPD_PLUGIN_TEST", "registration", TRUE);
-	ret = fu_plugin_runner_startup(self->plugin, &error);
+	ret = fu_plugin_runner_startup(self->plugin, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	g_signal_connect(FU_PLUGIN(self->plugin),
@@ -3093,7 +3209,7 @@ fu_plugin_module_func(gconstpointer user_data)
 			 "device-register",
 			 G_CALLBACK(_plugin_device_register_cb),
 			 &device);
-	ret = fu_plugin_runner_coldplug(self->plugin, &error);
+	ret = fu_plugin_runner_coldplug(self->plugin, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -3180,7 +3296,7 @@ fu_plugin_module_func(gconstpointer user_data)
 	g_assert_cmpstr(fu_device_get_update_error(device3), ==, NULL);
 
 	/* get the status */
-	device_tmp = fu_device_new();
+	device_tmp = fu_device_new(NULL);
 	fu_device_set_id(device_tmp, "FakeDevice");
 	ret = fu_plugin_runner_get_results(self->plugin, device_tmp, &error);
 	g_assert_no_error(error);
@@ -3197,7 +3313,7 @@ fu_plugin_module_func(gconstpointer user_data)
 	g_clear_error(&error);
 
 	/* delete files */
-	localstatedir = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	localstatedir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 	history_db = g_build_filename(localstatedir, "pending.db", NULL);
 	(void)g_unlink(history_db);
 	(void)g_unlink(pending_cap);
@@ -3228,14 +3344,14 @@ fu_history_func(gconstpointer user_data)
 	g_assert_nonnull(history);
 
 	/* delete the database */
-	dirname = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	dirname = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 	if (!g_file_test(dirname, G_FILE_TEST_IS_DIR))
 		return;
 	filename = g_build_filename(dirname, "pending.db", NULL);
 	(void)g_unlink(filename);
 
 	/* add a device */
-	device = fu_device_new_with_context(self->ctx);
+	device = fu_device_new(self->ctx);
 	fu_device_set_id(device, "self-test");
 	fu_device_set_name(device, "ColorHug"),
 	    fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
@@ -3408,7 +3524,7 @@ fu_plugin_composite_func(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	GError *error = NULL;
 	gboolean ret;
-	g_autoptr(FuEngine) engine = fu_engine_new(FU_APP_FLAGS_NONE);
+	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GPtrArray) components = NULL;
@@ -3464,7 +3580,7 @@ fu_plugin_composite_func(gconstpointer user_data)
 	    "firmware.bin",
 	    "world",
 	    NULL);
-	silo = fu_common_cab_build_silo(blob, 10240, &error);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(silo);
 	components = xb_silo_query(silo, "components/component", 0, &error);
@@ -3476,7 +3592,7 @@ fu_plugin_composite_func(gconstpointer user_data)
 	(void)g_setenv("FWUPD_PLUGIN_TEST", "composite", TRUE);
 	fu_engine_add_plugin(engine, self->plugin);
 
-	ret = fu_plugin_runner_startup(self->plugin, &error);
+	ret = fu_plugin_runner_startup(self->plugin, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	devices = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
@@ -3485,7 +3601,7 @@ fu_plugin_composite_func(gconstpointer user_data)
 			 G_CALLBACK(_plugin_composite_device_added_cb),
 			 devices);
 
-	ret = fu_plugin_runner_coldplug(self->plugin, &error);
+	ret = fu_plugin_runner_coldplug(self->plugin, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -3795,13 +3911,100 @@ fu_release_compare_func_cb(gconstpointer a, gconstpointer b)
 }
 
 static void
+fu_spawn_stdout_cb(const gchar *line, gpointer user_data)
+{
+	guint *lines = (guint *)user_data;
+	g_debug("got '%s'", line);
+	(*lines)++;
+}
+
+static void
+fu_spawn_func(void)
+{
+	gboolean ret;
+	guint lines = 0;
+	g_autoptr(GError) error = NULL;
+	g_autofree gchar *fn = NULL;
+	const gchar *argv[4] = {"/bin/sh", "replace", "test", NULL};
+
+#ifdef _WIN32
+	g_test_skip("Known failures on Windows right now, skipping spawn func test");
+	return;
+#endif
+
+	fn = g_test_build_filename(G_TEST_DIST, "tests", "spawn.sh", NULL);
+	argv[1] = fn;
+	ret = fu_spawn_sync(argv, fu_spawn_stdout_cb, &lines, 0, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(lines, ==, 6);
+}
+
+static void
+fu_spawn_timeout_func(void)
+{
+	gboolean ret;
+	guint lines = 0;
+	g_autoptr(GError) error = NULL;
+	g_autofree gchar *fn = NULL;
+	const gchar *argv[4] = {"/bin/sh", "replace", "test", NULL};
+
+#ifdef _WIN32
+	g_test_skip("Known failures on Windows right now, skipping spawn timeout test");
+	return;
+#endif
+
+	fn = g_test_build_filename(G_TEST_DIST, "tests", "spawn.sh", NULL);
+	argv[1] = fn;
+	ret = fu_spawn_sync(argv, fu_spawn_stdout_cb, &lines, 500, NULL, &error);
+	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_CANCELLED);
+	g_assert_false(ret);
+	g_assert_cmpint(lines, ==, 1);
+}
+
+static void
+fu_firmware_builder_process_func(void)
+{
+	const gchar *data;
+	g_autofree gchar *archive_fn = NULL;
+	g_autoptr(GBytes) archive_blob = NULL;
+	g_autoptr(GBytes) firmware_blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	/* get test file */
+	archive_fn = g_test_build_filename(G_TEST_BUILT, "tests", "builder", "firmware.tar", NULL);
+	archive_blob = fu_bytes_get_contents(archive_fn, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(archive_blob);
+
+	/* generate the firmware */
+	firmware_blob =
+	    fu_firmware_builder_process(archive_blob, "startup.sh", "firmware.bin", &error);
+	if (firmware_blob == NULL) {
+		if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_PERMISSION_DENIED)) {
+			g_test_skip("Missing permissions to create namespace in container");
+			return;
+		}
+		if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+			g_test_skip("User namespaces not supported in container");
+			return;
+		}
+		g_assert_no_error(error);
+	}
+
+	/* check it */
+	data = g_bytes_get_data(firmware_blob, NULL);
+	g_assert_cmpstr(data, ==, "xobdnas eht ni gninnur");
+}
+
+static void
 fu_release_compare_func(gconstpointer user_data)
 {
 	FuDevice *device_tmp;
 	g_autoptr(GPtrArray) releases = g_ptr_array_new();
-	g_autoptr(FuDevice) device1 = fu_device_new();
-	g_autoptr(FuDevice) device2 = fu_device_new();
-	g_autoptr(FuDevice) device3 = fu_device_new();
+	g_autoptr(FuDevice) device1 = fu_device_new(NULL);
+	g_autoptr(FuDevice) device2 = fu_device_new(NULL);
+	g_autoptr(FuDevice) device3 = fu_device_new(NULL);
 	g_autoptr(FuRelease) release1 = fu_release_new();
 	g_autoptr(FuRelease) release2 = fu_release_new();
 	g_autoptr(FuRelease) release3 = fu_release_new();
@@ -3825,6 +4028,479 @@ fu_release_compare_func(gconstpointer user_data)
 	g_assert_cmpint(fu_device_get_order(device_tmp), ==, 33);
 	device_tmp = fu_release_get_device(g_ptr_array_index(releases, 2));
 	g_assert_cmpint(fu_device_get_order(device_tmp), ==, 99);
+}
+
+static void
+fu_release_uri_scheme_func(void)
+{
+	struct {
+		const gchar *in;
+		const gchar *op;
+	} strs[] = {{"https://foo.bar/baz", "https"},
+		    {"HTTP://FOO.BAR/BAZ", "http"},
+		    {"ftp://", "ftp"},
+		    {"ftp:", "ftp"},
+		    {"foobarbaz", NULL},
+		    {"", NULL},
+		    {NULL, NULL}};
+	for (guint i = 0; strs[i].in != NULL; i++) {
+		g_autofree gchar *tmp = fu_release_uri_get_scheme(strs[i].in);
+		g_assert_cmpstr(tmp, ==, strs[i].op);
+	}
+}
+
+static void
+fu_common_store_cab_func(void)
+{
+	GBytes *blob_tmp;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(XbNode) component = NULL;
+	g_autoptr(XbNode) csum = NULL;
+	g_autoptr(XbNode) rel = NULL;
+	g_autoptr(XbNode) req = NULL;
+	g_autoptr(XbSilo) silo = NULL;
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+	g_autoptr(XbQuery) query = NULL;
+#endif
+
+	/* create silo */
+	blob = _build_cab(
+	    GCAB_COMPRESSION_NONE,
+	    "acme.metainfo.xml",
+	    "<component type=\"firmware\">\n"
+	    "  <id>com.acme.example.firmware</id>\n"
+	    "  <name>ACME Firmware</name>\n"
+	    "  <provides>\n"
+	    "    <firmware type=\"flashed\">ae56e3fb-6528-5bc4-8b03-012f124075d7</firmware>\n"
+	    "  </provides>\n"
+	    "  <releases>\n"
+	    "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
+	    "      <size type=\"installed\">5</size>\n"
+	    "      <checksum filename=\"firmware.dfu\" target=\"content\" "
+	    "type=\"sha1\">7c211433f02071597741e6ff5a8ea34789abbf43</checksum>\n"
+	    "      <description><p>We fixed things</p></description>\n"
+	    "    </release>\n"
+	    "  </releases>\n"
+	    "  <requires>\n"
+	    "    <id compare=\"ge\" version=\"1.0.1\">org.freedesktop.fwupd</id>\n"
+	    "  </requires>\n"
+	    "</component>",
+	    "firmware.dfu",
+	    "world",
+	    "firmware.dfu.asc",
+	    "signature",
+	    NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+
+	/* verify */
+	component =
+	    xb_silo_query_first(silo,
+				"components/component/id[text()='com.acme.example.firmware']/..",
+				&error);
+	g_assert_no_error(error);
+	g_assert_nonnull(component);
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+	query = xb_query_new_full(xb_node_get_silo(component),
+				  "releases/release",
+				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
+				  &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(query);
+	rel = xb_node_query_first_full(component, query, &error);
+#else
+	rel = xb_node_query_first(component, "releases/release", &error);
+#endif
+	g_assert_no_error(error);
+	g_assert_nonnull(rel);
+	g_assert_cmpstr(xb_node_get_attr(rel, "version"), ==, "1.2.3");
+	csum = xb_node_query_first(rel, "checksum[@target='content']", &error);
+	g_assert_nonnull(csum);
+	g_assert_cmpstr(xb_node_get_text(csum), ==, "7c211433f02071597741e6ff5a8ea34789abbf43");
+	blob_tmp = xb_node_get_data(rel, "fwupd::FirmwareBlob");
+	g_assert_nonnull(blob_tmp);
+	req = xb_node_query_first(component, "requires/id", &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(req);
+}
+
+static void
+fu_common_store_cab_artifact_func(void)
+{
+	g_autoptr(GBytes) blob1 = NULL;
+	g_autoptr(GBytes) blob2 = NULL;
+	g_autoptr(GBytes) blob3 = NULL;
+	g_autoptr(GBytes) blob4 = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(XbSilo) silo = NULL;
+
+	/* create silo (sha256, using artifacts object) */
+	blob1 = _build_cab(
+	    GCAB_COMPRESSION_NONE,
+	    "acme.metainfo.xml",
+	    "<component type=\"firmware\">\n"
+	    "  <id>com.acme.example.firmware</id>\n"
+	    "  <releases>\n"
+	    "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
+	    "      <artifacts>\n"
+	    "        <artifact type=\"binary\">\n"
+	    "          <filename>firmware.dfu</filename>\n"
+	    "          <checksum "
+	    "type=\"sha256\">486EA46224D1BB4FB680F34F7C9AD96A8F24EC88BE73EA8E5A6C65260E9CB8A7</"
+	    "checksum>\n"
+	    "        </artifact>\n"
+	    "      </artifacts>\n"
+	    "    </release>\n"
+	    "  </releases>\n"
+	    "</component>",
+	    "firmware.dfu",
+	    "world",
+	    "firmware.dfu.asc",
+	    "signature",
+	    NULL);
+	silo = fu_cabinet_build_silo(blob1, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+	g_clear_object(&silo);
+
+	/* create silo (sha1, using artifacts object; mixed case) */
+	blob2 = _build_cab(GCAB_COMPRESSION_NONE,
+			   "acme.metainfo.xml",
+			   "<component type=\"firmware\">\n"
+			   "  <id>com.acme.example.firmware</id>\n"
+			   "  <releases>\n"
+			   "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
+			   "      <artifacts>\n"
+			   "        <artifact type=\"binary\">\n"
+			   "          <filename>firmware.dfu</filename>\n"
+			   "          <checksum "
+			   "type=\"sha1\">7c211433f02071597741e6ff5a8ea34789abbF43</"
+			   "checksum>\n"
+			   "        </artifact>\n"
+			   "      </artifacts>\n"
+			   "    </release>\n"
+			   "  </releases>\n"
+			   "</component>",
+			   "firmware.dfu",
+			   "world",
+			   "firmware.dfu.asc",
+			   "signature",
+			   NULL);
+	silo = fu_cabinet_build_silo(blob2, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+	g_clear_object(&silo);
+
+	/* create silo (sha512, using artifacts object; lower case) */
+	blob3 =
+	    _build_cab(GCAB_COMPRESSION_NONE,
+		       "acme.metainfo.xml",
+		       "<component type=\"firmware\">\n"
+		       "  <id>com.acme.example.firmware</id>\n"
+		       "  <releases>\n"
+		       "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
+		       "      <artifacts>\n"
+		       "        <artifact type=\"binary\">\n"
+		       "          <filename>firmware.dfu</filename>\n"
+		       "          <checksum "
+		       "type=\"sha512\">"
+		       "11853df40f4b2b919d3815f64792e58d08663767a494bcbb38c0b2389d9140bbb170281b"
+		       "4a847be7757bde12c9cd0054ce3652d0ad3a1a0c92babb69798246ee</"
+		       "checksum>\n"
+		       "        </artifact>\n"
+		       "      </artifacts>\n"
+		       "    </release>\n"
+		       "  </releases>\n"
+		       "</component>",
+		       "firmware.dfu",
+		       "world",
+		       "firmware.dfu.asc",
+		       "signature",
+		       NULL);
+	silo = fu_cabinet_build_silo(blob3, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+	g_clear_object(&silo);
+
+	/* create silo (legacy release object) */
+	blob4 = _build_cab(GCAB_COMPRESSION_NONE,
+			   "acme.metainfo.xml",
+			   "<component type=\"firmware\">\n"
+			   "  <id>com.acme.example.firmware</id>\n"
+			   "  <releases>\n"
+			   "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
+			   "        <checksum "
+			   "target=\"content\" "
+			   "filename=\"firmware.dfu\">"
+			   "486EA46224D1BB4FB680F34F7C9AD96A8F24EC88BE73EA8E5A6C65260E9CB8A7</"
+			   "checksum>\n"
+			   "    </release>\n"
+			   "  </releases>\n"
+			   "</component>",
+			   "firmware.dfu",
+			   "world",
+			   "firmware.dfu.asc",
+			   "signature",
+			   NULL);
+	silo = fu_cabinet_build_silo(blob4, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+}
+
+static void
+fu_common_store_cab_unsigned_func(void)
+{
+	GBytes *blob_tmp;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(XbNode) component = NULL;
+	g_autoptr(XbNode) csum = NULL;
+	g_autoptr(XbNode) rel = NULL;
+	g_autoptr(XbSilo) silo = NULL;
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+	g_autoptr(XbQuery) query = NULL;
+#endif
+
+	/* create silo */
+	blob = _build_cab(GCAB_COMPRESSION_NONE,
+			  "acme.metainfo.xml",
+			  "<component type=\"firmware\">\n"
+			  "  <id>com.acme.example.firmware</id>\n"
+			  "  <releases>\n"
+			  "    <release version=\"1.2.3\"/>\n"
+			  "  </releases>\n"
+			  "</component>",
+			  "firmware.bin",
+			  "world",
+			  NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+
+	/* verify */
+	component =
+	    xb_silo_query_first(silo,
+				"components/component/id[text()='com.acme.example.firmware']/..",
+				&error);
+	g_assert_no_error(error);
+	g_assert_nonnull(component);
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+	query = xb_query_new_full(xb_node_get_silo(component),
+				  "releases/release",
+				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
+				  &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(query);
+	rel = xb_node_query_first_full(component, query, &error);
+#else
+	rel = xb_node_query_first(component, "releases/release", &error);
+#endif
+	g_assert_no_error(error);
+	g_assert_nonnull(rel);
+	g_assert_cmpstr(xb_node_get_attr(rel, "version"), ==, "1.2.3");
+	csum = xb_node_query_first(rel, "checksum[@target='content']", &error);
+	g_assert_null(csum);
+	blob_tmp = xb_node_get_data(rel, "fwupd::FirmwareBlob");
+	g_assert_nonnull(blob_tmp);
+}
+
+static void
+fu_common_store_cab_sha256_func(void)
+{
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(XbSilo) silo = NULL;
+
+	/* create silo */
+	blob = _build_cab(
+	    GCAB_COMPRESSION_NONE,
+	    "acme.metainfo.xml",
+	    "<component type=\"firmware\">\n"
+	    "  <id>com.acme.example.firmware</id>\n"
+	    "  <releases>\n"
+	    "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
+	    "      <checksum target=\"content\" "
+	    "type=\"sha256\">486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7</"
+	    "checksum>\n"
+	    "    </release>\n"
+	    "  </releases>\n"
+	    "</component>",
+	    "firmware.bin",
+	    "world",
+	    NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+}
+
+static void
+fu_common_store_cab_folder_func(void)
+{
+	GBytes *blob_tmp;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(XbNode) component = NULL;
+	g_autoptr(XbNode) rel = NULL;
+	g_autoptr(XbSilo) silo = NULL;
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+	g_autoptr(XbQuery) query = NULL;
+#endif
+
+	/* create silo */
+	blob = _build_cab(GCAB_COMPRESSION_NONE,
+			  "lvfs\\acme.metainfo.xml",
+			  "<component type=\"firmware\">\n"
+			  "  <id>com.acme.example.firmware</id>\n"
+			  "  <releases>\n"
+			  "    <release version=\"1.2.3\"/>\n"
+			  "  </releases>\n"
+			  "</component>",
+			  "lvfs\\firmware.bin",
+			  "world",
+			  NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+
+	/* verify */
+	component =
+	    xb_silo_query_first(silo,
+				"components/component/id[text()='com.acme.example.firmware']/..",
+				&error);
+	g_assert_no_error(error);
+	g_assert_nonnull(component);
+#if LIBXMLB_CHECK_VERSION(0, 2, 0)
+	query = xb_query_new_full(xb_node_get_silo(component),
+				  "releases/release",
+				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
+				  &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(query);
+	rel = xb_node_query_first_full(component, query, &error);
+#else
+	rel = xb_node_query_first(component, "releases/release", &error);
+#endif
+	g_assert_no_error(error);
+	g_assert_nonnull(rel);
+	g_assert_cmpstr(xb_node_get_attr(rel, "version"), ==, "1.2.3");
+	blob_tmp = xb_node_get_data(rel, "fwupd::FirmwareBlob");
+	g_assert_nonnull(blob_tmp);
+}
+
+static void
+fu_common_store_cab_error_no_metadata_func(void)
+{
+	g_autoptr(XbSilo) silo = NULL;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	blob = _build_cab(GCAB_COMPRESSION_NONE, "foo.txt", "hello", "bar.txt", "world", NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_null(silo);
+}
+
+static void
+fu_common_store_cab_error_wrong_size_func(void)
+{
+	g_autoptr(XbSilo) silo = NULL;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	blob = _build_cab(GCAB_COMPRESSION_NONE,
+			  "acme.metainfo.xml",
+			  "<component type=\"firmware\">\n"
+			  "  <id>com.acme.example.firmware</id>\n"
+			  "  <releases>\n"
+			  "    <release version=\"1.2.3\">\n"
+			  "      <size type=\"installed\">7004701</size>\n"
+			  "      <checksum filename=\"firmware.bin\" target=\"content\" "
+			  "type=\"sha1\">deadbeef</checksum>\n"
+			  "    </release>\n"
+			  "  </releases>\n"
+			  "</component>",
+			  "firmware.bin",
+			  "world",
+			  NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_null(silo);
+}
+
+static void
+fu_common_store_cab_error_missing_file_func(void)
+{
+	g_autoptr(XbSilo) silo = NULL;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	blob = _build_cab(GCAB_COMPRESSION_NONE,
+			  "acme.metainfo.xml",
+			  "<component type=\"firmware\">\n"
+			  "  <id>com.acme.example.firmware</id>\n"
+			  "  <releases>\n"
+			  "    <release version=\"1.2.3\">\n"
+			  "      <checksum filename=\"firmware.dfu\" target=\"content\"/>\n"
+			  "    </release>\n"
+			  "  </releases>\n"
+			  "</component>",
+			  "firmware.bin",
+			  "world",
+			  NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_null(silo);
+}
+
+static void
+fu_common_store_cab_error_size_func(void)
+{
+	g_autoptr(XbSilo) silo = NULL;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	blob = _build_cab(GCAB_COMPRESSION_NONE,
+			  "acme.metainfo.xml",
+			  "<component type=\"firmware\">\n"
+			  "  <id>com.acme.example.firmware</id>\n"
+			  "  <releases>\n"
+			  "    <release version=\"1.2.3\"/>\n"
+			  "  </releases>\n"
+			  "</component>",
+			  "firmware.bin",
+			  "world",
+			  NULL);
+	silo = fu_cabinet_build_silo(blob, 123, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_null(silo);
+}
+
+static void
+fu_common_store_cab_error_wrong_checksum_func(void)
+{
+	g_autoptr(XbSilo) silo = NULL;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	blob = _build_cab(GCAB_COMPRESSION_NONE,
+			  "acme.metainfo.xml",
+			  "<component type=\"firmware\">\n"
+			  "  <id>com.acme.example.firmware</id>\n"
+			  "  <releases>\n"
+			  "    <release version=\"1.2.3\">\n"
+			  "      <checksum filename=\"firmware.bin\" target=\"content\" "
+			  "type=\"sha1\">deadbeef</checksum>\n"
+			  "    </release>\n"
+			  "  </releases>\n"
+			  "</component>",
+			  "firmware.bin",
+			  "world",
+			  NULL);
+	silo = fu_cabinet_build_silo(blob, 10240, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_null(silo);
 }
 
 int
@@ -3893,6 +4569,13 @@ main(int argc, char **argv)
 			     self,
 			     fu_device_list_remove_chain_func);
 	g_test_add_data_func("/fwupd/release{compare}", self, fu_release_compare_func);
+	g_test_add_func("/fwupd/release{uri-scheme}", fu_release_uri_scheme_func);
+	g_test_add_data_func("/fwupd/engine{get-details-added}",
+			     self,
+			     fu_engine_get_details_added_func);
+	g_test_add_data_func("/fwupd/engine{get-details-missing}",
+			     self,
+			     fu_engine_get_details_missing_func);
 	g_test_add_data_func("/fwupd/engine{device-unlock}", self, fu_engine_device_unlock_func);
 	g_test_add_data_func("/fwupd/engine{multiple-releases}",
 			     self,
@@ -3986,5 +4669,22 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/history{migrate}", self, fu_history_migrate_func);
 	g_test_add_data_func("/fwupd/plugin-list", self, fu_plugin_list_func);
 	g_test_add_data_func("/fwupd/plugin-list{depsolve}", self, fu_plugin_list_depsolve_func);
+	g_test_add_func("/fwupd/spawn", fu_spawn_func);
+	g_test_add_func("/fwupd/spawn-timeou)", fu_spawn_timeout_func);
+	g_test_add_func("/fwupd/firmware-builder", fu_firmware_builder_process_func);
+	g_test_add_func("/fwupd/common{cab-success}", fu_common_store_cab_func);
+	g_test_add_func("/fwupd/common{cab-success-artifact}", fu_common_store_cab_artifact_func);
+	g_test_add_func("/fwupd/common{cab-success-unsigned}", fu_common_store_cab_unsigned_func);
+	g_test_add_func("/fwupd/common{cab-success-folder}", fu_common_store_cab_folder_func);
+	g_test_add_func("/fwupd/common{cab-success-sha256}", fu_common_store_cab_sha256_func);
+	g_test_add_func("/fwupd/common{cab-error-no-metadata}",
+			fu_common_store_cab_error_no_metadata_func);
+	g_test_add_func("/fwupd/common{cab-error-wrong-size}",
+			fu_common_store_cab_error_wrong_size_func);
+	g_test_add_func("/fwupd/common{cab-error-wrong-checksum}",
+			fu_common_store_cab_error_wrong_checksum_func);
+	g_test_add_func("/fwupd/common{cab-error-missing-file}",
+			fu_common_store_cab_error_missing_file_func);
+	g_test_add_func("/fwupd/common{cab-error-size}", fu_common_store_cab_error_size_func);
 	return g_test_run();
 }

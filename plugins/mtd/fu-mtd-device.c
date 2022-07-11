@@ -19,12 +19,14 @@ struct _FuMtdDevice {
 
 G_DEFINE_TYPE(FuMtdDevice, fu_mtd_device, FU_TYPE_UDEV_DEVICE)
 
+#define FU_MTD_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 static void
 fu_mtd_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuMtdDevice *self = FU_MTD_DEVICE(device);
 	if (self->erasesize > 0)
-		fu_common_string_append_kx(str, idt, "EraseSize", self->erasesize);
+		fu_string_append_kx(str, idt, "EraseSize", self->erasesize);
 }
 
 static gboolean
@@ -111,10 +113,6 @@ fu_mtd_device_probe(FuDevice *device, GError **error)
 	guint64 size = 0;
 	g_autoptr(GError) error_local = NULL;
 
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_mtd_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	/* set physical ID */
 	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "mtd", error))
 		return FALSE;
@@ -194,7 +192,12 @@ fu_mtd_device_erase(FuMtdDevice *self, GBytes *fw, FuProgress *progress, GError 
 		    .start = fu_chunk_get_address(chk),
 		    .length = fu_chunk_get_data_sz(chk),
 		};
-		if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self), 2, (guint8 *)&erase, NULL, error)) {
+		if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
+					  2,
+					  (guint8 *)&erase,
+					  NULL,
+					  FU_MTD_DEVICE_IOCTL_TIMEOUT,
+					  error)) {
 			g_prefix_error(error, "failed to erase @0x%x: ", (guint)erase.start);
 			return FALSE;
 		}
@@ -228,11 +231,11 @@ fu_mtd_device_write(FuMtdDevice *self, GPtrArray *chunks, FuProgress *progress, 
 	/* write each chunk */
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
-		if (!fu_udev_device_pwrite_full(FU_UDEV_DEVICE(self),
-						fu_chunk_get_address(chk),
-						fu_chunk_get_data(chk),
-						fu_chunk_get_data_sz(chk),
-						error)) {
+		if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self),
+					   fu_chunk_get_address(chk),
+					   fu_chunk_get_data(chk),
+					   fu_chunk_get_data_sz(chk),
+					   error)) {
 			g_prefix_error(error,
 				       "failed to write @0x%x: ",
 				       (guint)fu_chunk_get_address(chk));
@@ -259,18 +262,18 @@ fu_mtd_device_verify(FuMtdDevice *self, GPtrArray *chunks, FuProgress *progress,
 		g_autoptr(GBytes) blob1 = fu_chunk_get_bytes(chk);
 		g_autoptr(GBytes) blob2 = NULL;
 
-		if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(self),
-					       fu_chunk_get_address(chk),
-					       buf,
-					       fu_chunk_get_data_sz(chk),
-					       error)) {
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self),
+					  fu_chunk_get_address(chk),
+					  buf,
+					  fu_chunk_get_data_sz(chk),
+					  error)) {
 			g_prefix_error(error,
 				       "failed to read @0x%x: ",
 				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 		blob2 = g_bytes_new_static(buf, fu_chunk_get_data_sz(chk));
-		if (!fu_common_bytes_compare(blob1, blob2, error)) {
+		if (!fu_bytes_compare(blob1, blob2, error)) {
 			g_prefix_error(error,
 				       "failed to verify @0x%x: ",
 				       (guint)fu_chunk_get_address(chk));
@@ -291,8 +294,8 @@ fu_mtd_device_write_verify(FuMtdDevice *self, GBytes *fw, FuProgress *progress, 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 50);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 50, NULL);
 
 	/* write */
 	if (!fu_mtd_device_write(self, chunks, fu_progress_get_child(progress), error))
@@ -325,11 +328,11 @@ fu_mtd_device_dump_firmware(FuDevice *device, FuProgress *progress, GError **err
 	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
-		if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(self),
-					       fu_chunk_get_address(chk),
-					       fu_chunk_get_data_out(chk),
-					       fu_chunk_get_data_sz(chk),
-					       error)) {
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self),
+					  fu_chunk_get_address(chk),
+					  fu_chunk_get_data_out(chk),
+					  fu_chunk_get_data_sz(chk),
+					  error)) {
 			g_prefix_error(error,
 				       "failed to read @0x%x: ",
 				       (guint)fu_chunk_get_address(chk));
@@ -373,8 +376,8 @@ fu_mtd_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 50);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
 
 	/* erase */
 	if (!fu_mtd_device_erase(self, fw, fu_progress_get_child(progress), error))

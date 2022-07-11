@@ -23,27 +23,20 @@ G_DEFINE_TYPE(FuAcpiPhatVersionRecord, fu_acpi_phat_version_record, FU_TYPE_FIRM
 static gboolean
 fu_acpi_phat_version_record_parse(FuFirmware *firmware,
 				  GBytes *fw,
-				  guint64 addr_start,
-				  guint64 addr_end,
+				  gsize offset,
 				  FwupdInstallFlags flags,
 				  GError **error)
 {
 	gsize bufsz = 0;
-	gsize offset = 0;
 	guint32 record_count = 0;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					offset + 8,
-					&record_count,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf, bufsz, offset + 8, &record_count, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	for (guint32 i = 0; i < record_count; i++) {
 		g_autoptr(FuFirmware) firmware_tmp = fu_acpi_phat_version_element_new();
 		g_autoptr(GBytes) fw_tmp = NULL;
-		fw_tmp = fu_common_bytes_new_offset(fw, offset + 12, 28, error);
+		fw_tmp = fu_bytes_new_offset(fw, offset + 12, 28, error);
 		if (fw_tmp == NULL)
 			return FALSE;
 		fu_firmware_set_offset(firmware_tmp, offset + 12);

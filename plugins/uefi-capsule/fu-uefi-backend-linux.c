@@ -89,7 +89,7 @@ fu_uefi_backend_linux_device_new(FuUefiBackendLinux *self, const gchar *path)
 static gboolean
 fu_uefi_backend_linux_check_efivarfs(FuUefiBackendLinux *self, GError **error)
 {
-	g_autofree gchar *sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW);
+	g_autofree gchar *sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 	g_autofree gchar *sysfsefivardir = g_build_filename(sysfsfwdir, "efi", "efivars", NULL);
 	g_autoptr(GUnixMountEntry) mount = g_unix_mount_at(sysfsefivardir, NULL);
 
@@ -124,7 +124,7 @@ fu_uefi_backend_linux_check_efivarfs(FuUefiBackendLinux *self, GError **error)
 }
 
 static gboolean
-fu_uefi_backend_linux_coldplug(FuBackend *backend, GError **error)
+fu_uefi_backend_linux_coldplug(FuBackend *backend, FuProgress *progress, GError **error)
 {
 	FuUefiBackendLinux *self = FU_UEFI_BACKEND_LINUX(backend);
 	const gchar *fn;
@@ -138,7 +138,7 @@ fu_uefi_backend_linux_coldplug(FuBackend *backend, GError **error)
 		return FALSE;
 
 	/* get the directory of ESRT entries */
-	sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW);
+	sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 	esrt_path = g_build_filename(sysfsfwdir, "efi", "esrt", NULL);
 	esrt_entries = g_build_filename(esrt_path, "entries", NULL);
 	dir = g_dir_open(esrt_entries, 0, error);
@@ -199,7 +199,7 @@ fu_uefi_backend_linux_check_smbios_enabled(FuContext *ctx, GError **error)
 }
 
 static gboolean
-fu_uefi_backend_linux_setup(FuBackend *backend, GError **error)
+fu_uefi_backend_linux_setup(FuBackend *backend, FuProgress *progress, GError **error)
 {
 	g_autoptr(GError) error_local = NULL;
 
@@ -210,7 +210,7 @@ fu_uefi_backend_linux_setup(FuBackend *backend, GError **error)
 	/* check SMBIOS for 'UEFI Specification is supported' */
 	if (!fu_uefi_backend_linux_check_smbios_enabled(fu_backend_get_context(backend),
 							&error_local)) {
-		g_autofree gchar *fw = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW);
+		g_autofree gchar *fw = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 		g_autofree gchar *fn = g_build_filename(fw, "efi", NULL);
 		if (g_file_test(fn, G_FILE_TEST_EXISTS)) {
 			g_warning("SMBIOS BIOS Characteristics Extension Byte 2 is invalid -- "

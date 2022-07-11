@@ -23,8 +23,8 @@ static void
 fu_analogix_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuAnalogixDevice *self = FU_ANALOGIX_DEVICE(device);
-	fu_common_string_append_kx(str, idt, "OcmVersion", self->ocm_version);
-	fu_common_string_append_kx(str, idt, "CustomVersion", self->custom_version);
+	fu_string_append_kx(str, idt, "OcmVersion", self->ocm_version);
+	fu_string_append_kx(str, idt, "CustomVersion", self->custom_version);
 }
 
 static gboolean
@@ -166,7 +166,7 @@ fu_analogix_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	if (!fu_analogix_device_receive(self, ANX_BB_RQT_READ_FW_RVER, 0, 0, &buf_fw[0], 1, error))
 		return FALSE;
-	self->ocm_version = fu_common_read_uint16(buf_fw, G_LITTLE_ENDIAN);
+	self->ocm_version = fu_memread_uint16(buf_fw, G_LITTLE_ENDIAN);
 
 	/*  get custom version */
 	if (!fu_analogix_device_receive(self,
@@ -185,7 +185,7 @@ fu_analogix_device_setup(FuDevice *device, GError **error)
 					1,
 					error))
 		return FALSE;
-	self->custom_version = fu_common_read_uint16(buf_custom, G_LITTLE_ENDIAN);
+	self->custom_version = fu_memread_uint16(buf_custom, G_LITTLE_ENDIAN);
 
 	/* device version is both versions as a pair */
 	version = g_strdup_printf("%04x.%04x", self->custom_version, self->ocm_version);
@@ -233,9 +233,6 @@ fu_analogix_device_find_interface(FuUsbDevice *device, GError **error)
 static gboolean
 fu_analogix_device_probe(FuDevice *device, GError **error)
 {
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_analogix_device_parent_class)->probe(device, error))
-		return FALSE;
 	if (!fu_analogix_device_find_interface(FU_USB_DEVICE(device), error)) {
 		g_prefix_error(error, "failed to find update interface: ");
 		return FALSE;
@@ -260,8 +257,8 @@ fu_analogix_device_write_image(FuAnalogixDevice *self,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10); /* initialization */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "initialization");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
 
 	/* offset into firmware */
 	block_bytes = fu_firmware_get_bytes(image, error);
@@ -269,7 +266,7 @@ fu_analogix_device_write_image(FuAnalogixDevice *self,
 		return FALSE;
 
 	/* initialization */
-	fu_common_write_uint32(buf_init, g_bytes_get_size(block_bytes), G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf_init, g_bytes_get_size(block_bytes), G_LITTLE_ENDIAN);
 	if (!fu_analogix_device_send(self,
 				     ANX_BB_RQT_SEND_UPDATE_DATA,
 				     req_val,
@@ -328,10 +325,10 @@ fu_analogix_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25); /* cus */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25); /* stx */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25); /* srx */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25); /* ocm */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25, "cus");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25, "stx");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25, "srx");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25, "ocm");
 
 	/* CUSTOM_DEF */
 	fw_cus = fu_firmware_get_image_by_id(firmware, "custom", NULL);
@@ -398,10 +395,10 @@ fu_analogix_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

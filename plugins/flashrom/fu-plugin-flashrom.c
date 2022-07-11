@@ -1,5 +1,4 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
- *
+/*
  * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
  * Copyright (C) 2019 9elements Agency GmbH <patrick.rudolph@9elements.com>
  *
@@ -36,12 +35,12 @@ fu_plugin_flashrom_init(FuPlugin *plugin)
 static void
 fu_plugin_flashrom_destroy(FuPlugin *plugin)
 {
-	FuPluginData *data = fu_plugin_get_data(plugin);
-	if (data->flashctx != NULL)
-		flashrom_flash_release(data->flashctx);
-	if (data->flashprog != NULL)
-		flashrom_programmer_shutdown(data->flashprog);
-	g_free(data->guid);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
+	if (priv->flashctx != NULL)
+		flashrom_flash_release(priv->flashctx);
+	if (priv->flashprog != NULL)
+		flashrom_programmer_shutdown(priv->flashprog);
+	g_free(priv->guid);
 }
 
 static int
@@ -51,7 +50,7 @@ fu_plugin_flashrom_debug_cb(enum flashrom_log_level lvl, const char *fmt, va_lis
 #pragma clang diagnostic ignored "-Wformat-nonliteral"
 	g_autofree gchar *tmp = g_strdup_vprintf(fmt, args);
 #pragma clang diagnostic pop
-	g_autofree gchar *str = fu_common_strstrip(tmp);
+	g_autofree gchar *str = fu_strstrip(tmp);
 	if (g_strcmp0(str, "OK.") == 0 || g_strcmp0(str, ".") == 0)
 		return 0;
 	switch (lvl) {
@@ -124,14 +123,14 @@ fu_plugin_flashrom_device_set_bios_info(FuPlugin *plugin, FuDevice *device)
 	buf = g_bytes_get_data(bios_table, &bufsz);
 	if (fu_device_get_firmware_size_max(device) == 0) {
 		guint8 bios_sz = 0x0;
-		if (fu_common_read_uint8_safe(buf, bufsz, 0x9, &bios_sz, NULL)) {
+		if (fu_memread_uint8_safe(buf, bufsz, 0x9, &bios_sz, NULL)) {
 			guint64 firmware_size = (bios_sz + 1) * 64 * 1024;
 			fu_device_set_firmware_size_max(device, firmware_size);
 		}
 	}
 
 	/* BIOS characteristics */
-	if (fu_common_read_uint32_safe(buf, bufsz, 0xa, &bios_char, G_LITTLE_ENDIAN, NULL)) {
+	if (fu_memread_uint32_safe(buf, bufsz, 0xa, &bios_char, G_LITTLE_ENDIAN, NULL)) {
 		if ((bios_char & (1 << 11)) == 0) {
 			fu_device_inhibit(device,
 					  "bios-characteristics",
@@ -170,13 +169,13 @@ fu_plugin_flashrom_add_device(FuPlugin *plugin,
 			      GError **error)
 {
 	FuContext *ctx = fu_plugin_get_context(plugin);
-	FuPluginData *data = fu_plugin_get_data(plugin);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
 	const gchar *dmi_vendor;
 	const gchar *product = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_PRODUCT_NAME);
 	const gchar *vendor = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER);
 	const gchar *region_str = fu_ifd_region_to_string(region);
 	g_autofree gchar *name = g_strdup_printf("%s (%s)", product, region_str);
-	g_autoptr(FuDevice) device = fu_flashrom_device_new(ctx, data->flashctx, region);
+	g_autoptr(FuDevice) device = fu_flashrom_device_new(ctx, priv->flashctx, region);
 
 	fu_device_set_name(device, name);
 	fu_device_set_vendor(device, vendor);
@@ -219,7 +218,7 @@ static void
 fu_plugin_flashrom_device_registered(FuPlugin *plugin, FuDevice *device)
 {
 	g_autoptr(FuDevice) me_device = NULL;
-	FuPluginData *data = fu_plugin_get_data(plugin);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
 	const gchar *me_region_str = fu_ifd_region_to_string(FU_IFD_REGION_ME);
 
 	/* we're only interested in a device from intel-spi plugin that corresponds to ME
@@ -229,7 +228,7 @@ fu_plugin_flashrom_device_registered(FuPlugin *plugin, FuDevice *device)
 	if (g_strcmp0(fu_device_get_logical_id(device), me_region_str) != 0)
 		return;
 
-	me_device = fu_plugin_flashrom_add_device(plugin, data->guid, FU_IFD_REGION_ME, NULL);
+	me_device = fu_plugin_flashrom_add_device(plugin, priv->guid, FU_IFD_REGION_ME, NULL);
 	if (me_device == NULL)
 		return;
 
@@ -239,11 +238,11 @@ fu_plugin_flashrom_device_registered(FuPlugin *plugin, FuDevice *device)
 }
 
 static gboolean
-fu_plugin_flashrom_coldplug(FuPlugin *plugin, GError **error)
+fu_plugin_flashrom_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
-	FuPluginData *data = fu_plugin_get_data(plugin);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
 	g_autoptr(FuDevice) device =
-	    fu_plugin_flashrom_add_device(plugin, data->guid, FU_IFD_REGION_BIOS, error);
+	    fu_plugin_flashrom_add_device(plugin, priv->guid, FU_IFD_REGION_BIOS, error);
 	return (device != NULL);
 }
 
@@ -267,17 +266,24 @@ fu_plugin_flashrom_find_guid(FuPlugin *plugin, GError **error)
 }
 
 static gboolean
-fu_plugin_flashrom_startup(FuPlugin *plugin, GError **error)
+fu_plugin_flashrom_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	gint rc;
 	const gchar *guid;
-	FuPluginData *data = fu_plugin_get_data(plugin);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
+
+	/* progress */
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 5, "find-guid");
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 90, "init");
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 5, "probe");
 
 	guid = fu_plugin_flashrom_find_guid(plugin, error);
 	if (guid == NULL)
 		return FALSE;
+	fu_progress_step_done(progress);
 
-	data->guid = g_strdup(guid);
+	priv->guid = g_strdup(guid);
 
 	if (flashrom_init(SELFCHECK_TRUE)) {
 		g_set_error_literal(error,
@@ -287,8 +293,9 @@ fu_plugin_flashrom_startup(FuPlugin *plugin, GError **error)
 		return FALSE;
 	}
 	flashrom_set_log_callback(fu_plugin_flashrom_debug_cb);
+	fu_progress_step_done(progress);
 
-	if (flashrom_programmer_init(&data->flashprog, "internal", NULL)) {
+	if (flashrom_programmer_init(&priv->flashprog, "internal", NULL)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
@@ -296,7 +303,7 @@ fu_plugin_flashrom_startup(FuPlugin *plugin, GError **error)
 		return FALSE;
 	}
 
-	rc = flashrom_flash_probe(&data->flashctx, data->flashprog, NULL);
+	rc = flashrom_flash_probe(&priv->flashctx, priv->flashprog, NULL);
 	if (rc == 3) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -318,6 +325,7 @@ fu_plugin_flashrom_startup(FuPlugin *plugin, GError **error)
 				    "flash probe failed: unknown error");
 		return FALSE;
 	}
+	fu_progress_step_done(progress);
 
 	return TRUE;
 }

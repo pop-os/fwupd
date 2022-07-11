@@ -9,7 +9,6 @@
 #include <fwupdplugin.h>
 
 #include <string.h>
-#include <xmlb.h>
 
 #include "fu-fastboot-device.h"
 
@@ -34,8 +33,8 @@ static void
 fu_fastboot_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuFastbootDevice *self = FU_FASTBOOT_DEVICE(device);
-	fu_common_string_append_kx(str, idt, "BlockSize", self->blocksz);
-	fu_common_string_append_kb(str, idt, "Secure", self->secure);
+	fu_string_append_kx(str, idt, "BlockSize", self->blocksz);
+	fu_string_append_kb(str, idt, "Secure", self->secure);
 }
 
 static gboolean
@@ -289,6 +288,7 @@ fu_fastboot_device_download(FuDevice *device, GBytes *fw, FuProgress *progress, 
 					       0x00, /* start addr */
 					       0x00, /* page_sz */
 					       self->blocksz);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
@@ -475,7 +475,10 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 		struct {
 			GChecksumType kind;
 			const gchar *str;
-		} csum_kinds[] = {{G_CHECKSUM_MD5, "MD5"}, {G_CHECKSUM_SHA1, "SHA1"}, {0, NULL}};
+		} csum_kinds[] = {{G_CHECKSUM_MD5, "MD5"},
+				  {G_CHECKSUM_SHA1, "SHA1"},
+				  {G_CHECKSUM_SHA256, "SHA256"},
+				  {0, NULL}};
 
 		/* check required args */
 		if (partition == NULL || filename == NULL) {
@@ -661,13 +664,13 @@ fu_fastboot_device_set_quirk_kv(FuDevice *device,
 
 	/* load from quirks */
 	if (g_strcmp0(key, "FastbootBlockSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0x40, 0x100000, error))
+		if (!fu_strtoull(value, &tmp, 0x40, 0x100000, error))
 			return FALSE;
 		self->blocksz = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "FastbootOperationDelay") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXSIZE, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXSIZE, error))
 			return FALSE;
 		self->operation_delay = tmp;
 		return TRUE;
@@ -696,10 +699,10 @@ fu_fastboot_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

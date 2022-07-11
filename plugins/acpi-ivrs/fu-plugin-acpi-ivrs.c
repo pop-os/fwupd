@@ -22,7 +22,7 @@ fu_plugin_acpi_ivrs_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 	g_autoptr(GError) error_local = NULL;
 
 	/* only AMD */
-	if (fu_common_get_cpu_vendor() != FU_CPU_VENDOR_AMD)
+	if (fu_cpu_get_vendor() != FU_CPU_VENDOR_AMD)
 		return;
 
 	/* create attr */
@@ -32,9 +32,9 @@ fu_plugin_acpi_ivrs_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 	fu_security_attrs_append(attrs, attr);
 
 	/* load IVRS table */
-	path = fu_common_get_path(FU_PATH_KIND_ACPI_TABLES);
+	path = fu_path_from_kind(FU_PATH_KIND_ACPI_TABLES);
 	fn = g_build_filename(path, "IVRS", NULL);
-	blob = fu_common_get_contents_bytes(fn, &error_local);
+	blob = fu_bytes_get_contents(fn, &error_local);
 	if (blob == NULL) {
 		g_debug("failed to load %s: %s", fn, error_local->message);
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_VALID);

@@ -3,34 +3,30 @@ gpio_header = cc.has_header_symbol('linux/gpio.h', 'GPIO_V2_LINE_FLAG_OUTPUT', r
 if gpio_header and gudev.found()
 cargs = ['-DG_LOG_DOMAIN="FuPluginGpio"']
 
-install_data([
-  'gpio.quirk',
-  ],
-  install_dir: join_paths(datadir, 'fwupd', 'quirks.d')
-)
+plugin_quirks += join_paths(meson.current_source_dir(), 'gpio.quirk')
 
 shared_module('fu_plugin_gpio',
   fu_hash,
-  sources : [
+  sources: [
     'fu-plugin-gpio.c',
     'fu-gpio-device.c',
   ],
-  include_directories : [
+  include_directories: [
     root_incdir,
     fwupd_incdir,
     fwupdplugin_incdir,
   ],
-  install : true,
+  install: true,
   install_dir: plugin_dir,
-  c_args : [
+  c_args: [
     cargs,
     '-DLOCALSTATEDIR="' + localstatedir + '"',
   ],
-  link_with : [
+  link_with: [
     fwupd,
     fwupdplugin,
   ],
-  dependencies : [
+  dependencies: [
     plugin_deps,
   ],
 )

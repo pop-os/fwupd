@@ -7,13 +7,13 @@
 #pragma once
 
 #include <fwupd.h>
-#include <glib-object.h>
 
-#include "fu-common-version.h"
 #include "fu-context.h"
+#include "fu-device-locker.h"
 #include "fu-firmware.h"
 #include "fu-progress.h"
 #include "fu-security-attrs.h"
+#include "fu-version-common.h"
 
 #define FU_TYPE_DEVICE (fu_device_get_type())
 G_DECLARE_DERIVABLE_TYPE(FuDevice, fu_device, FU, DEVICE, FwupdDevice)
@@ -137,9 +137,7 @@ typedef gboolean (*FuDeviceRetryFunc)(FuDevice *self,
 				      GError **error) G_GNUC_WARN_UNUSED_RESULT;
 
 FuDevice *
-fu_device_new(void);
-FuDevice *
-fu_device_new_with_context(FuContext *ctx);
+fu_device_new(FuContext *ctx);
 
 /* helpful casting macros */
 #define fu_device_has_flag(d, v)	   fwupd_device_has_flag(FWUPD_DEVICE(d), v)

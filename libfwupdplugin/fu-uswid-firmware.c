@@ -8,8 +8,11 @@
 
 #include "config.h"
 
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-coswid-firmware.h"
+#include "fu-mem.h"
 #include "fu-uswid-firmware.h"
 
 /**
@@ -63,8 +66,7 @@ fu_uswid_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBu
 static gboolean
 fu_uswid_firmware_parse(FuFirmware *firmware,
 			GBytes *fw,
-			guint64 addr_start,
-			guint64 addr_end,
+			gsize offset_ignored,
 			FwupdInstallFlags flags,
 			GError **error)
 {
@@ -90,7 +92,7 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 	offset += sizeof(USWID_HEADER_MAGIC);
 
 	/* hdrver */
-	if (!fu_common_read_uint8_safe(buf, bufsz, offset, &priv->hdrver, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, offset, &priv->hdrver, error))
 		return FALSE;
 	if (priv->hdrver < USWID_HEADER_VERSION_V1) {
 		g_set_error_literal(error,
@@ -102,7 +104,7 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 	offset += sizeof(guint8);
 
 	/* hdrsz */
-	if (!fu_common_read_uint16_safe(buf, bufsz, offset, &hdrsz, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint16_safe(buf, bufsz, offset, &hdrsz, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (hdrsz < USWID_HEADER_SIZE_V1) {
 		g_set_error_literal(error,
@@ -114,7 +116,7 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 	offset += sizeof(guint16);
 
 	/* payloadsz */
-	if (!fu_common_read_uint32_safe(buf, bufsz, offset, &payloadsz, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, offset, &payloadsz, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (payloadsz == 0x0) {
 		g_set_error_literal(error,
@@ -123,11 +125,12 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 				    "payload size is invalid");
 		return FALSE;
 	}
+	fu_firmware_set_size(firmware, hdrsz + payloadsz);
 	offset += sizeof(guint32);
 
 	/* flags */
 	if (priv->hdrver >= 0x02) {
-		if (!fu_common_read_uint8_safe(buf, bufsz, offset, &uswid_flags, error))
+		if (!fu_memread_uint8_safe(buf, bufsz, offset, &uswid_flags, error))
 			return FALSE;
 		priv->compressed = (uswid_flags & USWID_HEADER_FLAG_COMPRESSED) > 0;
 	}
@@ -139,18 +142,18 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 		g_autoptr(GInputStream) istream1 = NULL;
 		g_autoptr(GInputStream) istream2 = NULL;
 
-		payload_tmp = fu_common_bytes_new_offset(fw, hdrsz, payloadsz, error);
+		payload_tmp = fu_bytes_new_offset(fw, hdrsz, payloadsz, error);
 		if (payload_tmp == NULL)
 			return FALSE;
 		istream1 = g_memory_input_stream_new_from_bytes(payload_tmp);
 		conv = G_CONVERTER(g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB));
 		istream2 = g_converter_input_stream_new(istream1, conv);
-		payload = fu_common_get_contents_stream(istream2, G_MAXSIZE, error);
+		payload = fu_bytes_get_contents_stream(istream2, G_MAXSIZE, error);
 		if (payload == NULL)
 			return FALSE;
 		payloadsz = g_bytes_get_size(payload);
 	} else {
-		payload = fu_common_bytes_new_offset(fw, hdrsz, payloadsz, error);
+		payload = fu_bytes_new_offset(fw, hdrsz, payloadsz, error);
 		if (payload == NULL)
 			return FALSE;
 	}
@@ -161,7 +164,7 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 		g_autoptr(GBytes) fw2 = NULL;
 
 		/* CBOR parse */
-		fw2 = fu_common_bytes_new_offset(payload, offset, payloadsz - offset, error);
+		fw2 = fu_bytes_new_offset(payload, offset, payloadsz - offset, error);
 		if (fw2 == NULL)
 			return FALSE;
 		if (!fu_firmware_parse(firmware_coswid, fw2, flags, error))
@@ -252,6 +255,7 @@ fu_uswid_firmware_init(FuUswidFirmware *self)
 	FuUswidFirmwarePrivate *priv = GET_PRIVATE(self);
 	priv->hdrver = USWID_HEADER_VERSION_V1;
 	priv->compressed = FALSE;
+	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_STORED_SIZE);
 }
 
 static void

@@ -94,14 +94,14 @@ fu_plugin_dell_esrt_init(FuPlugin *plugin)
 }
 
 static gboolean
-fu_plugin_dell_esrt_startup(FuPlugin *plugin, GError **error)
+fu_plugin_dell_esrt_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	gboolean capsule_disable = FALSE;
 	g_autofree gchar *sysfsfwdir = NULL;
 	g_autofree gchar *esrtdir = NULL;
 
 	/* already exists */
-	sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW);
+	sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 	esrtdir = g_build_filename(sysfsfwdir, "efi", "esrt", NULL);
 	if (g_file_test(esrtdir, G_FILE_TEST_EXISTS)) {
 		g_set_error_literal(error,
@@ -155,9 +155,9 @@ fu_plugin_dell_esrt_unlock(FuPlugin *plugin, FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_plugin_dell_esrt_coldplug(FuPlugin *plugin, GError **error)
+fu_plugin_dell_esrt_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
-	g_autoptr(FuDevice) dev = fu_device_new();
+	g_autoptr(FuDevice) dev = fu_device_new(NULL);
 
 	/* create a dummy device so we can unlock the feature */
 	fu_device_set_id(dev, "UEFI-dummy");

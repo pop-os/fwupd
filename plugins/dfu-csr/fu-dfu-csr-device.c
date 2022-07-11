@@ -53,8 +53,8 @@ static void
 fu_dfu_csr_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuDfuCsrDevice *self = FU_DFU_CSR_DEVICE(device);
-	fu_common_string_append_kv(str, idt, "State", fu_dfu_state_to_string(self->dfu_state));
-	fu_common_string_append_ku(str, idt, "DownloadTimeout", self->dnload_timeout);
+	fu_string_append(str, idt, "State", fu_dfu_state_to_string(self->dfu_state));
+	fu_string_append_ku(str, idt, "DownloadTimeout", self->dnload_timeout);
 }
 
 static gboolean
@@ -104,7 +104,7 @@ fu_dfu_csr_device_get_status(FuDfuCsrDevice *self, GError **error)
 	}
 
 	self->dfu_state = buf[5];
-	self->dnload_timeout = fu_common_read_uint24(&buf[2], G_LITTLE_ENDIAN);
+	self->dnload_timeout = fu_memread_uint24(&buf[2], G_LITTLE_ENDIAN);
 	g_debug("timeout=%" G_GUINT32_FORMAT, self->dnload_timeout);
 	g_debug("state=%s", fu_dfu_state_to_string(self->dfu_state));
 	g_debug("status=%s", fu_dfu_status_to_string(buf[6]));
@@ -164,7 +164,7 @@ fu_dfu_csr_device_upload_chunk(FuDfuCsrDevice *self, GError **error)
 	}
 
 	/* check the length */
-	data_sz = fu_common_read_uint16(&buf[1], G_LITTLE_ENDIAN);
+	data_sz = fu_memread_uint16(&buf[1], G_LITTLE_ENDIAN);
 	if (data_sz + FU_DFU_CSR_COMMAND_HEADER_SIZE != (guint16)sizeof(buf)) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -207,12 +207,12 @@ fu_dfu_csr_device_upload(FuDevice *device, FuProgress *progress, GError **error)
 			if (memcmp(buf, "DFU_CSR-dfu", 7) == 0) {
 				guint16 hdr_ver;
 				guint16 hdr_len;
-				if (!fu_common_read_uint16_safe(buf,
-								chunk_sz,
-								8,
-								&hdr_ver,
-								G_LITTLE_ENDIAN,
-								error))
+				if (!fu_memread_uint16_safe(buf,
+							    chunk_sz,
+							    8,
+							    &hdr_ver,
+							    G_LITTLE_ENDIAN,
+							    error))
 					return NULL;
 				if (hdr_ver != 0x03) {
 					g_set_error(error,
@@ -223,12 +223,12 @@ fu_dfu_csr_device_upload(FuDevice *device, FuProgress *progress, GError **error)
 						    hdr_ver);
 					return NULL;
 				}
-				if (!fu_common_read_uint32_safe(buf,
-								chunk_sz,
-								10,
-								&total_sz,
-								G_LITTLE_ENDIAN,
-								error))
+				if (!fu_memread_uint32_safe(buf,
+							    chunk_sz,
+							    10,
+							    &total_sz,
+							    G_LITTLE_ENDIAN,
+							    error))
 					return NULL;
 				if (total_sz == 0) {
 					g_set_error(error,
@@ -239,12 +239,12 @@ fu_dfu_csr_device_upload(FuDevice *device, FuProgress *progress, GError **error)
 						    total_sz);
 					return NULL;
 				}
-				if (!fu_common_read_uint16_safe(buf,
-								chunk_sz,
-								14,
-								&hdr_len,
-								G_LITTLE_ENDIAN,
-								error))
+				if (!fu_memread_uint16_safe(buf,
+							    chunk_sz,
+							    14,
+							    &hdr_len,
+							    G_LITTLE_ENDIAN,
+							    error))
 					return NULL;
 				g_debug("DFU_CSR header length: %" G_GUINT16_FORMAT, hdr_len);
 			}
@@ -286,8 +286,8 @@ fu_dfu_csr_device_download_chunk(FuDfuCsrDevice *self, guint16 idx, GBytes *chun
 	/* create packet */
 	buf[0] = FU_DFU_CSR_REPORT_ID_COMMAND;
 	buf[1] = FU_DFU_CSR_COMMAND_UPGRADE;
-	fu_common_write_uint16(&buf[2], idx, G_LITTLE_ENDIAN);
-	fu_common_write_uint16(&buf[4], chunk_sz, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(&buf[2], idx, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(&buf[4], chunk_sz, G_LITTLE_ENDIAN);
 	if (!fu_memcpy_safe(buf,
 			    sizeof(buf),
 			    FU_DFU_CSR_COMMAND_HEADER_SIZE, /* dst */
@@ -379,6 +379,7 @@ fu_dfu_csr_device_download(FuDevice *device,
 	}
 
 	/* send to hardware */
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, chunks->len);
 	for (idx = 0; idx < chunks->len; idx++) {
 		FuChunk *chk = g_ptr_array_index(chunks, idx);
@@ -395,20 +396,6 @@ fu_dfu_csr_device_download(FuDevice *device,
 	/* all done */
 	blob_empty = g_bytes_new(NULL, 0);
 	return fu_dfu_csr_device_download_chunk(self, idx, blob_empty, error);
-}
-
-static gboolean
-fu_dfu_csr_device_probe(FuDevice *device, GError **error)
-{
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_dfu_csr_device_parent_class)->probe(device, error))
-		return FALSE;
-
-	/* hardcoded */
-	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
-
-	/* success */
-	return TRUE;
 }
 
 static gboolean
@@ -432,10 +419,10 @@ fu_dfu_csr_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void
@@ -443,6 +430,7 @@ fu_dfu_csr_device_init(FuDfuCsrDevice *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.qualcomm.dfu");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_DFU_FIRMWARE);
 	fu_device_register_private_flag(FU_DEVICE(self),
@@ -459,6 +447,5 @@ fu_dfu_csr_device_class_init(FuDfuCsrDeviceClass *klass)
 	klass_device->dump_firmware = fu_dfu_csr_device_upload;
 	klass_device->attach = fu_dfu_csr_device_attach;
 	klass_device->setup = fu_dfu_csr_device_setup;
-	klass_device->probe = fu_dfu_csr_device_probe;
 	klass_device->set_progress = fu_dfu_csr_device_set_progress;
 }

@@ -28,7 +28,7 @@ fu_plugin_thunderbolt_safe_kernel(FuPlugin *plugin, GError **error)
 		g_debug("Ignoring kernel safety checks");
 		return TRUE;
 	}
-	return fu_common_check_kernel_version(minimum_kernel, error);
+	return fu_kernel_check_version(minimum_kernel, error);
 }
 
 static gboolean
@@ -69,7 +69,7 @@ fu_plugin_thunderbolt_init(FuPlugin *plugin)
 }
 
 static gboolean
-fu_plugin_thunderbolt_startup(FuPlugin *plugin, GError **error)
+fu_plugin_thunderbolt_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	return fu_plugin_thunderbolt_safe_kernel(plugin, error);
 }

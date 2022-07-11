@@ -72,7 +72,7 @@ fu_vli_usbhub_device_i2c_write(FuVliUsbhubDevice *self,
 			    error))
 		return FALSE;
 	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, datasz + 2);
+		fu_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, datasz + 2);
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
@@ -119,7 +119,7 @@ fu_vli_usbhub_device_i2c_read(FuVliUsbhubDevice *self,
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "I2cReadData", data, datasz);
+		fu_dump_raw(G_LOG_DOMAIN, "I2cReadData", data, datasz);
 	return TRUE;
 }
 
@@ -322,9 +322,9 @@ fu_vli_usbhub_rtd21xx_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10); /* enable ISP */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10); /* restart */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "enable-isp");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10, NULL);
 
 	/* open device */
 	locker = fu_device_locker_new(parent, error);
@@ -381,12 +381,12 @@ fu_vli_usbhub_rtd21xx_device_write_firmware(FuDevice *device,
 	}
 
 	/* verify project ID */
-	if (!fu_common_read_uint32_safe(read_buf,
-					sizeof(read_buf),
-					0x1,
-					&project_addr,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(read_buf,
+				    sizeof(read_buf),
+				    0x1,
+				    &project_addr,
+				    G_BIG_ENDIAN,
+				    error))
 		return FALSE;
 	project_id_count = read_buf[5];
 	write_buf[0] = ISP_CMD_SYNC_IDENTIFY_CODE;
@@ -415,7 +415,7 @@ fu_vli_usbhub_rtd21xx_device_write_firmware(FuDevice *device,
 
 	/* background FW update start command */
 	write_buf[0] = ISP_CMD_FW_UPDATE_START;
-	fu_common_write_uint16(write_buf + 1, ISP_DATA_BLOCKSIZE, G_BIG_ENDIAN);
+	fu_memwrite_uint16(write_buf + 1, ISP_DATA_BLOCKSIZE, G_BIG_ENDIAN);
 	if (!fu_vli_usbhub_device_i2c_write(parent,
 					    UC_FOREGROUND_TARGET_ADDR,
 					    UC_FOREGROUND_OPCODE,
@@ -525,10 +525,10 @@ fu_vli_usbhub_rtd21xx_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

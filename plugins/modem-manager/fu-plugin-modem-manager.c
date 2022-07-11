@@ -99,7 +99,7 @@ fu_plugin_mm_udev_device_ports_timeout(gpointer user_data)
 				     fu_device_get_physical_id(FU_DEVICE(priv->shadow_device)));
 	if (dev != NULL) {
 		if (!fu_device_probe(FU_DEVICE(dev), &error)) {
-			g_warning("failed to probe MM device: %s", error->message);
+			g_debug("failed to probe MM device: %s", error->message);
 		} else {
 			fu_plugin_device_add(plugin, FU_DEVICE(dev));
 		}
@@ -325,7 +325,7 @@ fu_plugin_mm_setup_manager(FuPlugin *plugin)
 	const gchar *version = mm_manager_get_version(priv->manager);
 	GList *list;
 
-	if (fu_common_vercmp_full(version, MM_REQUIRED_VERSION, FWUPD_VERSION_FORMAT_TRIPLET) < 0) {
+	if (fu_version_compare(version, MM_REQUIRED_VERSION, FWUPD_VERSION_FORMAT_TRIPLET) < 0) {
 		g_warning("ModemManager %s is available, but need at least %s",
 			  version,
 			  MM_REQUIRED_VERSION);
@@ -368,7 +368,7 @@ fu_plugin_mm_name_owner_updated(FuPlugin *plugin)
 }
 
 static gboolean
-fu_plugin_mm_coldplug(FuPlugin *plugin, GError **error)
+fu_plugin_mm_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
 	g_signal_connect_swapped(MM_MANAGER(priv->manager),
@@ -395,7 +395,7 @@ fu_plugin_mm_modem_power_changed_cb(GFileMonitor *monitor,
 }
 
 static gboolean
-fu_plugin_mm_startup(FuPlugin *plugin, GError **error)
+fu_plugin_mm_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
 	g_autoptr(GDBusConnection) connection = NULL;

@@ -18,9 +18,13 @@
 
 #include "fwupd-error.h"
 
+#include "fu-byte-array.h"
 #include "fu-common.h"
 #include "fu-kenv.h"
+#include "fu-mem.h"
+#include "fu-path.h"
 #include "fu-smbios-private.h"
+#include "fu-string.h"
 
 /**
  * FuSmbios:
@@ -356,16 +360,11 @@ fu_smbios_setup_from_data(FuSmbios *self, const guint8 *buf, gsize sz, GError **
 		guint8 str_type = 0;
 
 		/* le */
-		if (!fu_common_read_uint8_safe(buf, sz, i + 0x0, &str_type, error))
+		if (!fu_memread_uint8_safe(buf, sz, i + 0x0, &str_type, error))
 			return FALSE;
-		if (!fu_common_read_uint8_safe(buf, sz, i + 0x1, &str_len, error))
+		if (!fu_memread_uint8_safe(buf, sz, i + 0x1, &str_len, error))
 			return FALSE;
-		if (!fu_common_read_uint16_safe(buf,
-						sz,
-						i + 0x2,
-						&str_handle,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(buf, sz, i + 0x2, &str_handle, G_LITTLE_ENDIAN, error))
 			return FALSE;
 
 		/* invalid */
@@ -495,9 +494,9 @@ fu_smbios_encode_byte_from_kernel(FuSmbios *self,
  * the textual version of the field back into the raw SMBIOS table
  * representation.
  */
-#define SYSFS_DMI_FIELD(_name, _type, _offset, kind)                                               \
+#define SYSFS_DMI_FIELD(_name, _type, offset_ignored, kind)                                        \
 	{                                                                                          \
-		.name = _name, .type = _type, .offset = _offset,                                   \
+		.name = _name, .type = _type, .offset = offset_ignored,                            \
 		.encode = fu_smbios_encode_##kind##_from_kernel                                    \
 	}
 const struct kernel_dmi_field {
@@ -754,8 +753,7 @@ fu_smbios_setup_from_path_dmi(FuSmbios *self, const gchar *path, GError **error)
 static gboolean
 fu_smbios_parse(FuFirmware *firmware,
 		GBytes *fw,
-		guint64 addr_start,
-		guint64 addr_end,
+		gsize offset,
 		FwupdInstallFlags flags,
 		GError **error)
 {
@@ -859,7 +857,7 @@ fu_smbios_setup(FuSmbios *self, GError **error)
 	g_return_val_if_fail(FU_IS_SMBIOS(self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
-	sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW);
+	sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 
 	/* DMI */
 	path = g_build_filename(sysfsfwdir, "dmi", "tables", NULL);
@@ -913,27 +911,10 @@ fu_smbios_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuilderNod
 		for (guint j = 0; j < item->strings->len; j++) {
 			const gchar *tmp = g_ptr_array_index(item->strings, j);
 			g_autofree gchar *title = g_strdup_printf("%02u", j);
-			g_autofree gchar *value = fu_common_strsafe(tmp, 20);
+			g_autofree gchar *value = fu_strsafe(tmp, 20);
 			xb_builder_node_insert_text(bc, "string", value, "idx", title, NULL);
 		}
 	}
-}
-
-/**
- * fu_smbios_to_string:
- * @self: a #FuSmbios
- *
- * Dumps the parsed SMBIOS data to a string.
- *
- * Returns: a UTF-8 string
- *
- * Since: 1.0.0
- **/
-gchar *
-fu_smbios_to_string(FuSmbios *self)
-{
-	g_return_val_if_fail(FU_IS_SMBIOS(self), NULL);
-	return fu_firmware_to_string(FU_FIRMWARE(self));
 }
 
 static FuSmbiosItem *

@@ -191,7 +191,7 @@ fu_plugin_pci_bcr_backend_device_added(FuPlugin *plugin, FuDevice *device, GErro
 		return FALSE;
 
 	/* grab BIOS Control Register */
-	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), priv->bcr_addr, &priv->bcr, error)) {
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), priv->bcr_addr, &priv->bcr, 1, error)) {
 		g_prefix_error(error, "could not read BCR: ");
 		return FALSE;
 	}
@@ -210,7 +210,7 @@ static void
 fu_plugin_pci_bcr_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 {
 	/* only Intel */
-	if (fu_common_get_cpu_vendor() != FU_CPU_VENDOR_INTEL)
+	if (fu_cpu_get_vendor() != FU_CPU_VENDOR_INTEL)
 		return;
 
 	/* add attrs */

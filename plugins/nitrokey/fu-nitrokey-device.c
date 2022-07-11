@@ -35,7 +35,7 @@ nitrokey_execute_cmd_cb(FuDevice *device, gpointer user_data, GError **error)
 	if (req->buf_in != NULL)
 		memcpy(&buf[1], req->buf_in, req->buf_in_sz);
 	crc_tmp = fu_nitrokey_perform_crc32(buf, sizeof(buf) - 4);
-	fu_common_write_uint32(&buf[NITROKEY_REQUEST_DATA_LENGTH + 1], crc_tmp, G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(&buf[NITROKEY_REQUEST_DATA_LENGTH + 1], crc_tmp, G_LITTLE_ENDIAN);
 
 	/* send request */
 	if (!fu_hid_device_set_report(FU_HID_DEVICE(device),
@@ -134,7 +134,7 @@ fu_nitrokey_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_NITROKEY_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "payload", buf_reply, sizeof(buf_reply));
+		fu_dump_raw(G_LOG_DOMAIN, "payload", buf_reply, sizeof(buf_reply));
 	memcpy(&payload, buf_reply, sizeof(payload));
 	version = g_strdup_printf("%u.%u", payload.VersionMajor, payload.VersionMinor);
 	fu_device_set_version(FU_DEVICE(device), version);

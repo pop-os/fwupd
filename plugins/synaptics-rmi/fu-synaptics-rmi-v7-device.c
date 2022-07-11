@@ -294,6 +294,7 @@ fu_synaptics_rmi_v7_device_write_partition(FuSynapticsRmiDevice *self,
 					  0x00, /* start addr */
 					  0x00, /* page_sz */
 					  (gsize)flash->payload_length * (gsize)flash->block_size);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
@@ -347,11 +348,11 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "disable-sleep");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20, "flash-config");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20, "core-code");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 20, "core-config");
 
 	/* we should be in bootloader mode now, but check anyway */
 	if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER)) {
@@ -509,12 +510,12 @@ fu_synaptics_rmi_device_read_flash_config_v7(FuSynapticsRmiDevice *self, GError 
 
 	/* debugging */
 	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-		fu_common_dump_full(G_LOG_DOMAIN,
-				    "FlashConfig",
-				    res->data,
-				    res->len,
-				    80,
-				    FU_DUMP_FLAGS_NONE);
+		fu_dump_full(G_LOG_DOMAIN,
+			     "FlashConfig",
+			     res->data,
+			     res->len,
+			     80,
+			     FU_DUMP_FLAGS_NONE);
 	}
 
 	/* parse the config length */
@@ -571,45 +572,45 @@ fu_synaptics_rmi_v7_device_setup(FuSynapticsRmiDevice *self, GError **error)
 	f34_dataX = fu_synaptics_rmi_device_read(self, f34->query_base + offset, 21, error);
 	if (f34_dataX == NULL)
 		return FALSE;
-	if (!fu_common_read_uint8_safe(f34_dataX->data,
-				       f34_dataX->len,
-				       0x0,
-				       &flash->bootloader_id[0],
-				       error))
+	if (!fu_memread_uint8_safe(f34_dataX->data,
+				   f34_dataX->len,
+				   0x0,
+				   &flash->bootloader_id[0],
+				   error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(f34_dataX->data,
-				       f34_dataX->len,
-				       0x1,
-				       &flash->bootloader_id[1],
-				       error))
+	if (!fu_memread_uint8_safe(f34_dataX->data,
+				   f34_dataX->len,
+				   0x1,
+				   &flash->bootloader_id[1],
+				   error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(f34_dataX->data,
-					f34_dataX->len,
-					0x07,
-					&flash->block_size,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(f34_dataX->data,
+				    f34_dataX->len,
+				    0x07,
+				    &flash->block_size,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(f34_dataX->data,
-					f34_dataX->len,
-					0x0d,
-					&flash->config_length,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(f34_dataX->data,
+				    f34_dataX->len,
+				    0x0d,
+				    &flash->config_length,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(f34_dataX->data,
-					f34_dataX->len,
-					0x0f,
-					&flash->payload_length,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(f34_dataX->data,
+				    f34_dataX->len,
+				    0x0f,
+				    &flash->payload_length,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(f34_dataX->data,
-					f34_dataX->len,
-					0x02,
-					&flash->build_id,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(f34_dataX->data,
+				    f34_dataX->len,
+				    0x02,
+				    &flash->build_id,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 
 	/* sanity check */

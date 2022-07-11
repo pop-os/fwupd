@@ -51,7 +51,7 @@ fu_vli_pd_device_read_regs(FuVliPdDevice *self,
 	}
 	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL) {
 		g_autofree gchar *title = g_strdup_printf("ReadRegs@0x%x", addr);
-		fu_common_dump_raw(G_LOG_DOMAIN, title, buf, bufsz);
+		fu_dump_raw(G_LOG_DOMAIN, title, buf, bufsz);
 	}
 	return TRUE;
 }
@@ -67,7 +67,7 @@ fu_vli_pd_device_write_reg(FuVliPdDevice *self, guint16 addr, guint8 value, GErr
 {
 	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL) {
 		g_autofree gchar *title = g_strdup_printf("WriteReg@0x%x", addr);
-		fu_common_dump_raw(G_LOG_DOMAIN, title, &value, sizeof(value));
+		fu_dump_raw(G_LOG_DOMAIN, title, &value, sizeof(value));
 	}
 	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
@@ -348,15 +348,10 @@ fu_vli_pd_device_setup(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to get version: ");
 		return FALSE;
 	}
-	if (!fu_common_read_uint32_safe(verbuf,
-					sizeof(verbuf),
-					0x0,
-					&version_raw,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(verbuf, sizeof(verbuf), 0x0, &version_raw, G_BIG_ENDIAN, error))
 		return FALSE;
 	fu_device_set_version_raw(FU_DEVICE(self), version_raw);
-	version_str = fu_common_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_QUAD);
+	version_str = fu_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_QUAD);
 	fu_device_set_version(FU_DEVICE(self), version_str);
 
 	/* get device kind if not already in ROM mode */
@@ -500,9 +495,9 @@ fu_vli_pd_device_write_dual_firmware(FuVliPdDevice *self,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10); /* crc */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "crc");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45, "backup");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45, "primary");
 
 	/* check spi fw1 crc16 */
 	spi_fw = fu_vli_device_spi_read(FU_VLI_DEVICE(self),
@@ -515,16 +510,11 @@ fu_vli_pd_device_write_dual_firmware(FuVliPdDevice *self,
 	sbuf = g_bytes_get_data(spi_fw, &sbufsz);
 	if (sbufsz != 0x8000)
 		sec_addr = 0x30000;
-	if (!fu_common_read_uint16_safe(sbuf,
-					sbufsz,
-					sbufsz - 2,
-					&crc_file,
-					G_LITTLE_ENDIAN,
-					error)) {
+	if (!fu_memread_uint16_safe(sbuf, sbufsz, sbufsz - 2, &crc_file, G_LITTLE_ENDIAN, error)) {
 		g_prefix_error(error, "failed to read file CRC: ");
 		return FALSE;
 	}
-	crc_actual = fu_common_crc16(sbuf, sbufsz - 2);
+	crc_actual = fu_crc16(sbuf, sbufsz - 2);
 	fu_progress_step_done(progress);
 
 	/* update fw2 first if fw1 correct */
@@ -606,8 +596,8 @@ fu_vli_pd_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 63);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 37);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 63, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 37, NULL);
 
 	/* erase */
 	if (!fu_vli_device_spi_erase_all(FU_VLI_DEVICE(self),
@@ -813,10 +803,10 @@ fu_vli_pd_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

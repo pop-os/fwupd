@@ -59,8 +59,8 @@ fu_superio_it55_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuSuperioDevice->to_string */
 	FU_DEVICE_CLASS(fu_superio_it55_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kv(str, idt, "PrjName", self->prj_name);
-	fu_common_string_append_kx(str, idt, "AutoloadAction", self->autoload_action);
+	fu_string_append(str, idt, "PrjName", self->prj_name);
+	fu_string_append_kx(str, idt, "AutoloadAction", self->autoload_action);
 }
 
 static gboolean
@@ -237,6 +237,7 @@ fu_superio_it55_device_get_firmware(FuDevice *device, FuProgress *progress, GErr
 	g_autofree guint8 *buf = NULL;
 
 	buf = g_malloc0(fwsize);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, block_count);
 	for (guint i = 0; i < block_count; ++i) {
 		if (!fu_superio_device_ec_write_cmd(self, SIO_CMD_EC_READ_BLOCK, error) ||
@@ -341,10 +342,10 @@ fu_superio_it55_device_write_attempt(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1); /* block 0 */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 9);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 80, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1, "device-write-blk0");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 9, NULL);
 
 	if (!fu_superio_it55_device_erase(device, error))
 		return FALSE;
@@ -355,7 +356,7 @@ fu_superio_it55_device_write_attempt(FuDevice *device,
 		g_prefix_error(error, "failed to read erased firmware");
 		return FALSE;
 	}
-	if (!fu_common_bytes_is_empty(erased_fw)) {
+	if (!fu_bytes_is_empty(erased_fw)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_READ,
@@ -424,7 +425,7 @@ fu_superio_it55_device_write_attempt(FuDevice *device,
 		g_prefix_error(error, "failed to read firmware");
 		return FALSE;
 	}
-	if (!fu_common_bytes_compare(written_fw, firmware, error)) {
+	if (!fu_bytes_compare(written_fw, firmware, error)) {
 		g_prefix_error(error, "firmware verification");
 		return FALSE;
 	}
@@ -448,8 +449,8 @@ fu_superio_it55_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
 
 	/* require detach -> attach */
 	locker = fu_device_locker_new_full(device,

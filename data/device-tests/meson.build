@@ -4,6 +4,10 @@ install_data([
     '8bitdo-sfc30.json',
     'aiaiai-h05.json',
     'bizlink-no-sku-vli.json',
+    'corsair-harpoon-rgb-wireless.json',
+    'corsair-katar-pro-wireless.json',
+    'corsair-katar-pro-xt.json',
+    'corsair-sabre-pro.json',
     'dell-kh08p.json',
     'dell-wd19tb.json',
     'fwupd-a3bu-xplained.json',
@@ -42,5 +46,5 @@ install_data([
     'wacom-intuos-bt-m-main.json',
     'wacom-intuos-bt-s.json',
   ],
-  install_dir : join_paths(datadir, 'fwupd', 'device-tests'),
+  install_dir: join_paths(datadir, 'fwupd', 'device-tests'),
 )

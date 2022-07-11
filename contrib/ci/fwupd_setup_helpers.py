@@ -10,8 +10,14 @@ import os
 import sys
 import argparse
 
+WARNING = "\033[93m"
+ENDC = "\033[0m"
+
 # Minimum version of markdown required
 MINIMUM_MARKDOWN = (3, 3, 3)
+
+# Minimum meson required
+MINIMUM_MESON = "0.60.0"
 
 
 def get_possible_profiles():
@@ -30,7 +36,16 @@ def detect_profile():
     return target
 
 
-def test_markdown():
+def pip_install_package(debug, name):
+    import subprocess
+
+    cmd = ["python3", "-m", "pip", "install", "--upgrade", name]
+    if debug:
+        print(cmd)
+    subprocess.call(cmd)
+
+
+def test_markdown(debug):
     try:
         import markdown
 
@@ -39,7 +54,16 @@ def test_markdown():
         new_enough = False
     if not new_enough:
         print("python3-markdown must be installed/upgraded")
-    sys.exit(not new_enough)
+        pip_install_package(debug, "markdown")
+
+
+def test_meson(debug):
+    from importlib.metadata import version
+
+    new_enough = version("meson") >= MINIMUM_MESON
+    if not new_enough:
+        print("meson must be installed/upgraded")
+        pip_install_package(debug, "meson")
 
 
 def parse_dependencies(OS, variant, requested_type):
@@ -74,8 +98,29 @@ def parse_dependencies(OS, variant, requested_type):
     return deps
 
 
+def _validate_deps(os, deps):
+    validated = deps
+    if os == "debian" or os == "ubuntu":
+        try:
+            from apt import cache
+
+            cache = cache.Cache()
+            for pkg in deps:
+                if not cache.has_key(pkg) and not cache.is_virtual_package(pkg):
+                    print(
+                        f"{WARNING}WARNING:{ENDC} ignoring unavailable package %s" % pkg
+                    )
+                    validated.remove(pkg)
+        except ModuleNotFoundError:
+            print(
+                f"{WARNING}WARNING:{ENDC} Unable to validate package dependency list without python3-apt"
+            )
+    return validated
+
+
 def get_build_dependencies(os, variant):
-    return parse_dependencies(os, variant, "build")
+    parsed = parse_dependencies(os, variant, "build")
+    return _validate_deps(os, parsed)
 
 
 def _get_installer_cmd(os, yes):
@@ -122,6 +167,7 @@ if __name__ == "__main__":
             choices=[
                 "get-dependencies",
                 "test-markdown",
+                "test-meson",
                 "detect-profile",
                 "install-dependencies",
                 "install-pip",
@@ -154,7 +200,9 @@ if __name__ == "__main__":
 
     # command to run
     if command == "test-markdown":
-        test_markdown()
+        test_markdown(args.debug)
+    elif command == "test-meson":
+        test_meson(args.debug)
     elif command == "detect-profile":
         print(detect_profile())
     elif command == "get-dependencies":

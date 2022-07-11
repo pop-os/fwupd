@@ -25,7 +25,6 @@ meson .. \
 	-Dplugin_mtd=false \
 	-Dplugin_powerd=disabled \
 	-Dintrospection=false \
-	-Ddocs=none \
 	-Dlibxmlb:introspection=false \
 	-Dlibxmlb:gtkdoc=false \
 	-Dman=false

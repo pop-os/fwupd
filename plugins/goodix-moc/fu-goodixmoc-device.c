@@ -47,11 +47,11 @@ goodixmoc_device_cmd_send(FuGoodixMocDevice *self,
 	fu_byte_array_append_uint8(buf, type);		    /* pkg_flag */
 	fu_byte_array_append_uint8(buf, self->dummy_seq++); /* reserved */
 	fu_byte_array_append_uint16(buf, req->len + GX_SIZE_CRC32, G_LITTLE_ENDIAN);
-	crc_hdr = fu_common_crc8(buf->data, buf->len);
+	crc_hdr = fu_crc8(buf->data, buf->len);
 	fu_byte_array_append_uint8(buf, crc_hdr);
 	fu_byte_array_append_uint8(buf, ~crc_hdr);
 	g_byte_array_append(buf, req->data, req->len);
-	crc_all = fu_common_crc32(buf->data, buf->len);
+	crc_all = fu_crc32(buf->data, buf->len);
 	fu_byte_array_append_uint32(buf, crc_all, G_LITTLE_ENDIAN);
 
 	/* send zero length package */
@@ -67,12 +67,12 @@ goodixmoc_device_cmd_send(FuGoodixMocDevice *self,
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_GOODIXFP_VERBOSE") != NULL) {
-		fu_common_dump_full(G_LOG_DOMAIN,
-				    "REQST",
-				    buf->data,
-				    buf->len,
-				    16,
-				    FU_DUMP_FLAGS_SHOW_ADDRESSES);
+		fu_dump_full(G_LOG_DOMAIN,
+			     "REQST",
+			     buf->data,
+			     buf->len,
+			     16,
+			     FU_DUMP_FLAGS_SHOW_ADDRESSES);
 	}
 
 	/* send data */
@@ -118,7 +118,7 @@ goodixmoc_device_cmd_recv(FuGoodixMocDevice *self,
 		guint16 header_len = 0x0;
 		guint8 header_cmd0 = 0x0;
 		g_autoptr(GByteArray) reply = g_byte_array_new();
-		fu_byte_array_set_size(reply, GX_FLASH_TRANSFER_BLOCK_SIZE);
+		fu_byte_array_set_size(reply, GX_FLASH_TRANSFER_BLOCK_SIZE, 0x00);
 		if (!g_usb_device_bulk_transfer(usb_device,
 						GX_USB_BULK_EP_IN,
 						reply->data,
@@ -135,32 +135,32 @@ goodixmoc_device_cmd_recv(FuGoodixMocDevice *self,
 		if (actual_len == 0)
 			continue;
 		if (g_getenv("FWUPD_GOODIXFP_VERBOSE") != NULL) {
-			fu_common_dump_full(G_LOG_DOMAIN,
-					    "REPLY",
-					    reply->data,
-					    actual_len,
-					    16,
-					    FU_DUMP_FLAGS_SHOW_ADDRESSES);
+			fu_dump_full(G_LOG_DOMAIN,
+				     "REPLY",
+				     reply->data,
+				     actual_len,
+				     16,
+				     FU_DUMP_FLAGS_SHOW_ADDRESSES);
 		}
 
 		/* parse package header */
-		if (!fu_common_read_uint8_safe(reply->data, reply->len, 0x0, &header_cmd0, error))
+		if (!fu_memread_uint8_safe(reply->data, reply->len, 0x0, &header_cmd0, error))
 			return FALSE;
-		if (!fu_common_read_uint16_safe(reply->data,
-						reply->len,
-						0x4,
-						&header_len,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(reply->data,
+					    reply->len,
+					    0x4,
+					    &header_len,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		offset = sizeof(GxfpPkgHeader) + header_len - GX_SIZE_CRC32;
-		crc_actual = fu_common_crc32(reply->data, offset);
-		if (!fu_common_read_uint32_safe(reply->data,
-						reply->len,
-						offset,
-						&crc_calculated,
-						G_LITTLE_ENDIAN,
-						error))
+		crc_actual = fu_crc32(reply->data, offset);
+		if (!fu_memread_uint32_safe(reply->data,
+					    reply->len,
+					    offset,
+					    &crc_calculated,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		if (crc_actual != crc_calculated) {
 			g_set_error(error,
@@ -173,11 +173,11 @@ goodixmoc_device_cmd_recv(FuGoodixMocDevice *self,
 		}
 
 		/* parse package data */
-		if (!fu_common_read_uint8_safe(reply->data,
-					       reply->len,
-					       sizeof(GxfpPkgHeader) + 0x00,
-					       &presponse->result,
-					       error))
+		if (!fu_memread_uint8_safe(reply->data,
+					   reply->len,
+					   sizeof(GxfpPkgHeader) + 0x00,
+					   &presponse->result,
+					   error))
 			return FALSE;
 		if (header_cmd0 == GX_CMD_ACK) {
 			if (header_len == 0) {
@@ -187,11 +187,11 @@ goodixmoc_device_cmd_recv(FuGoodixMocDevice *self,
 						    "invalid bufsz");
 				return FALSE;
 			}
-			if (!fu_common_read_uint8_safe(reply->data,
-						       reply->len,
-						       sizeof(GxfpPkgHeader) + 0x01,
-						       &presponse->ack_msg.cmd,
-						       error))
+			if (!fu_memread_uint8_safe(reply->data,
+						   reply->len,
+						   sizeof(GxfpPkgHeader) + 0x01,
+						   &presponse->ack_msg.cmd,
+						   error))
 				return FALSE;
 		} else if (header_cmd0 == GX_CMD_VERSION) {
 			if (!fu_memcpy_safe((guint8 *)&presponse->version_info,
@@ -355,8 +355,8 @@ fu_goodixmoc_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1); /* init */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "init");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99, NULL);
 
 	/* get default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -435,10 +435,10 @@ fu_goodixmoc_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

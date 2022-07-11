@@ -16,7 +16,7 @@
 guint32
 fu_bcm57xx_nvram_crc(const guint8 *buf, gsize bufsz)
 {
-	return fu_common_crc32(buf, bufsz);
+	return fu_crc32(buf, bufsz);
 }
 
 gboolean
@@ -28,12 +28,12 @@ fu_bcm57xx_verify_crc(GBytes *fw, GError **error)
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
 	/* expected */
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					bufsz - sizeof(guint32),
-					&crc_file,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    bufsz - sizeof(guint32),
+				    &crc_file,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 
 	/* reality */
@@ -60,7 +60,7 @@ fu_bcm57xx_verify_magic(GBytes *fw, gsize offset, GError **error)
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
 	/* hardcoded value */
-	if (!fu_common_read_uint32_safe(buf, bufsz, offset, &magic, G_BIG_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, offset, &magic, G_BIG_ENDIAN, error))
 		return FALSE;
 	if (magic != BCM_NVRAM_MAGIC) {
 		g_set_error(error,

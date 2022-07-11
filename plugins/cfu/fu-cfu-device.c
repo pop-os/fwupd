@@ -32,7 +32,7 @@ fu_cfu_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUdevDevice->to_string */
 	FU_DEVICE_CLASS(fu_cfu_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kx(str, idt, "ProtocolVersion", self->protocol_version);
+	fu_string_append_kx(str, idt, "ProtocolVersion", self->protocol_version);
 }
 
 static gboolean
@@ -124,21 +124,21 @@ fu_cfu_device_write_payload(FuCfuDevice *self,
 		databuf[1] = fu_chunk_get_data_sz(chk);
 
 		/* sequence number */
-		if (!fu_common_write_uint16_safe(databuf,
-						 sizeof(databuf),
-						 0x2,
-						 i + 1,
-						 G_LITTLE_ENDIAN,
-						 error))
+		if (!fu_memwrite_uint16_safe(databuf,
+					     sizeof(databuf),
+					     0x2,
+					     i + 1,
+					     G_LITTLE_ENDIAN,
+					     error))
 			return FALSE;
 
 		/* address */
-		if (!fu_common_write_uint32_safe(databuf,
-						 sizeof(databuf),
-						 0x4,
-						 fu_chunk_get_address(chk),
-						 G_LITTLE_ENDIAN,
-						 error))
+		if (!fu_memwrite_uint32_safe(databuf,
+					     sizeof(databuf),
+					     0x4,
+					     fu_chunk_get_address(chk),
+					     G_LITTLE_ENDIAN,
+					     error))
 			return FALSE;
 
 		/* data */
@@ -186,8 +186,8 @@ fu_cfu_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);   /* offer */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98); /* payload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "offer");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "payload");
 
 	/* send offer */
 	fw_offer = fu_firmware_get_image_by_id(firmware, FU_FIRMWARE_ID_HEADER, error);
@@ -237,9 +237,9 @@ fu_cfu_device_setup(FuDevice *device, GError **error)
 				      error)) {
 		return FALSE;
 	}
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x0, &component_cnt, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x0, &component_cnt, error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf, sizeof(buf), 0x3, &tmp, error))
+	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x3, &tmp, error))
 		return FALSE;
 	self->protocol_version = tmp & 0b1111;
 

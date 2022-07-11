@@ -34,17 +34,17 @@ static void
 fu_mei_hfsts_to_string(FuPlugin *plugin, guint idt, GString *str)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
-	fu_common_string_append_kv(str, idt, "HFSTS1", NULL);
+	fu_string_append(str, idt, "HFSTS1", NULL);
 	fu_mei_hfsts1_to_string(priv->hfsts1, idt + 1, str);
-	fu_common_string_append_kv(str, idt, "HFSTS2", NULL);
+	fu_string_append(str, idt, "HFSTS2", NULL);
 	fu_mei_hfsts2_to_string(priv->hfsts2, idt + 1, str);
-	fu_common_string_append_kv(str, idt, "HFSTS3", NULL);
+	fu_string_append(str, idt, "HFSTS3", NULL);
 	fu_mei_hfsts3_to_string(priv->hfsts3, idt + 1, str);
-	fu_common_string_append_kv(str, idt, "HFSTS4", NULL);
+	fu_string_append(str, idt, "HFSTS4", NULL);
 	fu_mei_hfsts4_to_string(priv->hfsts4, idt + 1, str);
-	fu_common_string_append_kv(str, idt, "HFSTS5", NULL);
+	fu_string_append(str, idt, "HFSTS5", NULL);
 	fu_mei_hfsts5_to_string(priv->hfsts5, idt + 1, str);
-	fu_common_string_append_kv(str, idt, "HFSTS6", NULL);
+	fu_string_append(str, idt, "HFSTS6", NULL);
 	fu_mei_hfsts6_to_string(priv->hfsts6, idt + 1, str);
 }
 
@@ -58,9 +58,9 @@ fu_plugin_pci_mei_init(FuPlugin *plugin)
 static void
 fu_plugin_pci_mei_destroy(FuPlugin *plugin)
 {
-	FuPluginData *data = fu_plugin_get_data(plugin);
-	if (data->pci_device != NULL)
-		g_object_unref(data->pci_device);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
+	if (priv->pci_device != NULL)
+		g_object_unref(priv->pci_device);
 }
 
 static FuMeiFamily
@@ -87,6 +87,7 @@ static gboolean
 fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 {
 	FuPluginData *priv = fu_plugin_get_data(plugin);
+	guint64 tmp64 = 0;
 	g_auto(GStrv) lines = NULL;
 	g_auto(GStrv) sections = NULL;
 	g_auto(GStrv) split = NULL;
@@ -114,7 +115,11 @@ fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 	}
 
 	/* parse platform and versions */
-	priv->vers.platform = fu_common_strtoull(sections[0]);
+	if (!fu_strtoull(sections[0], &tmp64, 0, G_MAXUINT8, error)) {
+		g_prefix_error(error, "failed to process platform version %s: ", sections[0]);
+		return FALSE;
+	}
+	priv->vers.platform = tmp64;
 	split = g_strsplit(sections[1], ".", -1);
 	if (g_strv_length(split) != 4) {
 		g_set_error(error,
@@ -124,10 +129,27 @@ fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 			    sections[1]);
 		return FALSE;
 	}
-	priv->vers.major = fu_common_strtoull(split[0]);
-	priv->vers.minor = fu_common_strtoull(split[1]);
-	priv->vers.hotfix = fu_common_strtoull(split[2]);
-	priv->vers.buildno = fu_common_strtoull(split[3]);
+
+	if (!fu_strtoull(split[0], &tmp64, 0, G_MAXUINT8, error)) {
+		g_prefix_error(error, "failed to process major version %s: ", split[0]);
+		return FALSE;
+	}
+	priv->vers.major = tmp64;
+	if (!fu_strtoull(split[1], &tmp64, 0, G_MAXUINT8, error)) {
+		g_prefix_error(error, "failed to process minor version %s: ", split[1]);
+		return FALSE;
+	}
+	priv->vers.minor = tmp64;
+	if (!fu_strtoull(split[2], &tmp64, 0, G_MAXUINT8, error)) {
+		g_prefix_error(error, "failed to process hotfix version %s: ", split[2]);
+		return FALSE;
+	}
+	priv->vers.hotfix = tmp64;
+	if (!fu_strtoull(split[3], &tmp64, 0, G_MAXUINT16, error)) {
+		g_prefix_error(error, "failed to process buildno version %s: ", split[3]);
+		return FALSE;
+	}
+	priv->vers.buildno = tmp64;
 
 	/* check the AMT version for issues using the data from:
 	 * https://downloadcenter.intel.com/download/28632 */
@@ -171,60 +193,36 @@ fu_plugin_pci_mei_backend_device_added(FuPlugin *plugin, FuDevice *device, GErro
 		return FALSE;
 
 	/* grab MEI config registers */
-	if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-				       PCI_CFG_HFS_1,
-				       buf,
-				       sizeof(buf),
-				       error)) {
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), PCI_CFG_HFS_1, buf, sizeof(buf), error)) {
 		g_prefix_error(error, "could not read HFS1: ");
 		return FALSE;
 	}
-	priv->hfsts1.data = fu_common_read_uint32(buf, G_LITTLE_ENDIAN);
-	if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-				       PCI_CFG_HFS_2,
-				       buf,
-				       sizeof(buf),
-				       error)) {
+	priv->hfsts1.data = fu_memread_uint32(buf, G_LITTLE_ENDIAN);
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), PCI_CFG_HFS_2, buf, sizeof(buf), error)) {
 		g_prefix_error(error, "could not read HFS2: ");
 		return FALSE;
 	}
-	priv->hfsts2.data = fu_common_read_uint32(buf, G_LITTLE_ENDIAN);
-	if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-				       PCI_CFG_HFS_3,
-				       buf,
-				       sizeof(buf),
-				       error)) {
+	priv->hfsts2.data = fu_memread_uint32(buf, G_LITTLE_ENDIAN);
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), PCI_CFG_HFS_3, buf, sizeof(buf), error)) {
 		g_prefix_error(error, "could not read HFS3: ");
 		return FALSE;
 	}
-	priv->hfsts3.data = fu_common_read_uint32(buf, G_LITTLE_ENDIAN);
-	if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-				       PCI_CFG_HFS_4,
-				       buf,
-				       sizeof(buf),
-				       error)) {
+	priv->hfsts3.data = fu_memread_uint32(buf, G_LITTLE_ENDIAN);
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), PCI_CFG_HFS_4, buf, sizeof(buf), error)) {
 		g_prefix_error(error, "could not read HFS4: ");
 		return FALSE;
 	}
-	priv->hfsts4.data = fu_common_read_uint32(buf, G_LITTLE_ENDIAN);
-	if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-				       PCI_CFG_HFS_5,
-				       buf,
-				       sizeof(buf),
-				       error)) {
+	priv->hfsts4.data = fu_memread_uint32(buf, G_LITTLE_ENDIAN);
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), PCI_CFG_HFS_5, buf, sizeof(buf), error)) {
 		g_prefix_error(error, "could not read HFS5: ");
 		return FALSE;
 	}
-	priv->hfsts5.data = fu_common_read_uint32(buf, G_LITTLE_ENDIAN);
-	if (!fu_udev_device_pread_full(FU_UDEV_DEVICE(device),
-				       PCI_CFG_HFS_6,
-				       buf,
-				       sizeof(buf),
-				       error)) {
+	priv->hfsts5.data = fu_memread_uint32(buf, G_LITTLE_ENDIAN);
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(device), PCI_CFG_HFS_6, buf, sizeof(buf), error)) {
 		g_prefix_error(error, "could not read HFS6: ");
 		return FALSE;
 	}
-	priv->hfsts6.data = fu_common_read_uint32(buf, G_LITTLE_ENDIAN);
+	priv->hfsts6.data = fu_memread_uint32(buf, G_LITTLE_ENDIAN);
 	g_set_object(&priv->pci_device, device);
 
 	/* dump to console */
@@ -504,7 +502,7 @@ fu_plugin_pci_mei_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 	FuPluginData *priv = fu_plugin_get_data(plugin);
 
 	/* only Intel */
-	if (fu_common_get_cpu_vendor() != FU_CPU_VENDOR_INTEL)
+	if (fu_cpu_get_vendor() != FU_CPU_VENDOR_INTEL)
 		return;
 	if (priv->pci_device == NULL)
 		return;

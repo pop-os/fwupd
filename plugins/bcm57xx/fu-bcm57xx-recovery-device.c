@@ -344,6 +344,7 @@ fu_bcm57xx_recovery_device_nvram_read(FuBcm57xxRecoveryDevice *self,
 				      FuProgress *progress,
 				      GError **error)
 {
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, bufsz);
 	for (guint i = 0; i < bufsz; i++) {
 		BcmRegNVMCommand tmp = {0};
@@ -406,6 +407,7 @@ fu_bcm57xx_recovery_device_nvram_write(FuBcm57xxRecoveryDevice *self,
 		return FALSE;
 	}
 
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, bufsz_dwrds);
 	for (guint i = 0; i < bufsz_dwrds; i++) {
 		BcmRegNVMCommand tmp = {0};
@@ -582,9 +584,9 @@ fu_bcm57xx_recovery_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 95);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 95, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, NULL);
 
 	/* build the images into one linear blob of the correct size */
 	blob = fu_firmware_write(firmware, error);
@@ -655,10 +657,10 @@ fu_bcm57xx_recovery_device_setup(FuDevice *device, GError **error)
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10); /* enable */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 80); /* nvram */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10); /* veraddr */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10); /* version */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "enable");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 80, "nvram");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "veraddr");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "version");
 
 	locker = fu_device_locker_new_full(
 	    self,
@@ -689,8 +691,8 @@ fu_bcm57xx_recovery_device_setup(FuDevice *device, GError **error)
 		g_autofree gchar *fwversion_str = NULL;
 
 		/* this is only set on the OSS firmware */
-		fwversion_str = fu_common_version_from_uint32(GUINT32_FROM_BE(fwversion),
-							      FWUPD_VERSION_FORMAT_TRIPLET);
+		fwversion_str = fu_version_from_uint32(GUINT32_FROM_BE(fwversion),
+						       FWUPD_VERSION_FORMAT_TRIPLET);
 		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
 		fu_device_set_version(device, fwversion_str);
 		fu_device_set_version_raw(device, fwversion);
@@ -846,10 +848,10 @@ fu_bcm57xx_recovery_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void
@@ -878,9 +880,6 @@ fu_bcm57xx_recovery_device_init(FuBcm57xxRecoveryDevice *self)
 static gboolean
 fu_bcm57xx_recovery_device_probe(FuDevice *device, GError **error)
 {
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_bcm57xx_recovery_device_parent_class)->probe(device, error))
-		return FALSE;
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "pci", error);
 }
 

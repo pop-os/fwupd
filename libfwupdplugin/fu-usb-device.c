@@ -9,6 +9,9 @@
 #include "config.h"
 
 #include "fu-device-private.h"
+#include "fu-dump.h"
+#include "fu-mem.h"
+#include "fu-string.h"
 #include "fu-usb-device-private.h"
 
 /**
@@ -196,7 +199,7 @@ fu_usb_device_query_hub(FuUsbDevice *self, GError **error)
 		return FALSE;
 	}
 	if (g_getenv("FU_USB_DEVICE_DEBUG") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "HUB_DT", data, sz);
+		fu_dump_raw(G_LOG_DOMAIN, "HUB_DT", data, sz);
 
 	/* for USB 3: size is fixed as max ports is 15,
 	 * for USB 2: size is variable as max ports is 255 */
@@ -207,7 +210,7 @@ fu_usb_device_query_hub(FuUsbDevice *self, GError **error)
 		guint8 numbytes = fu_common_align_up(data[2] + 1, 0x03) / 8;
 		for (guint i = 0; i < numbytes; i++) {
 			guint8 tmp = 0x0;
-			if (!fu_common_read_uint8_safe(data, sz, 7 + i, &tmp, error))
+			if (!fu_memread_uint8_safe(data, sz, 7 + i, &tmp, error))
 				return FALSE;
 			g_string_append_printf(hub, "%02X", tmp);
 		}
@@ -452,7 +455,7 @@ fu_usb_device_probe(FuDevice *device, GError **error)
 	if (release != 0x0 &&
 	    fu_device_get_version_format(device) == FWUPD_VERSION_FORMAT_UNKNOWN) {
 		g_autofree gchar *version = NULL;
-		version = fu_common_version_from_uint16(release, FWUPD_VERSION_FORMAT_BCD);
+		version = fu_version_from_uint16(release, FWUPD_VERSION_FORMAT_BCD);
 		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_BCD);
 		fu_device_set_version(device, version);
 	}
@@ -729,7 +732,7 @@ fu_udev_device_bind_driver(FuDevice *device,
 	dev = fu_usb_device_find_udev_device(self, error);
 	if (dev == NULL)
 		return FALSE;
-	udev_device = fu_udev_device_new_with_context(fu_device_get_context(device), dev);
+	udev_device = fu_udev_device_new(fu_device_get_context(device), dev);
 	return fu_device_bind_driver(FU_DEVICE(udev_device), subsystem, driver, error);
 }
 
@@ -744,12 +747,12 @@ fu_udev_device_unbind_driver(FuDevice *device, GError **error)
 	dev = fu_usb_device_find_udev_device(self, error);
 	if (dev == NULL)
 		return FALSE;
-	udev_device = fu_udev_device_new_with_context(fu_device_get_context(device), dev);
+	udev_device = fu_udev_device_new(fu_device_get_context(device), dev);
 	return fu_device_unbind_driver(FU_DEVICE(udev_device), error);
 }
 
 /**
- * fu_usb_device_new_with_context:
+ * fu_usb_device_new:
  * @ctx: (nullable): a #FuContext
  * @usb_device: a USB device
  *
@@ -757,28 +760,12 @@ fu_udev_device_unbind_driver(FuDevice *device, GError **error)
  *
  * Returns: (transfer full): a #FuUsbDevice
  *
- * Since: 1.7.1
+ * Since: 1.8.2
  **/
 FuUsbDevice *
-fu_usb_device_new_with_context(FuContext *ctx, GUsbDevice *usb_device)
+fu_usb_device_new(FuContext *ctx, GUsbDevice *usb_device)
 {
 	return g_object_new(FU_TYPE_USB_DEVICE, "context", ctx, "usb-device", usb_device, NULL);
-}
-
-/**
- * fu_usb_device_new:
- * @usb_device: a USB device
- *
- * Creates a new #FuUsbDevice.
- *
- * Returns: (transfer full): a #FuUsbDevice
- *
- * Since: 1.0.2
- **/
-FuUsbDevice *
-fu_usb_device_new(GUsbDevice *usb_device)
-{
-	return fu_usb_device_new_with_context(NULL, usb_device);
 }
 
 #ifdef HAVE_GUSB
@@ -838,20 +825,20 @@ fu_usb_device_to_string(FuDevice *device, guint idt, GString *str)
 	FuUsbDevicePrivate *priv = GET_PRIVATE(self);
 
 	if (priv->configuration > 0)
-		fu_common_string_append_kx(str, idt, "Configuration", priv->configuration);
+		fu_string_append_kx(str, idt, "Configuration", priv->configuration);
 	for (guint i = 0; priv->interfaces != NULL && i < priv->interfaces->len; i++) {
 		FuUsbDeviceInterface *iface = g_ptr_array_index(priv->interfaces, i);
 		g_autofree gchar *tmp = g_strdup_printf("InterfaceNumber#%02x", iface->number);
-		fu_common_string_append_kv(str, idt, tmp, iface->claimed ? "claimed" : "released");
+		fu_string_append(str, idt, tmp, iface->claimed ? "claimed" : "released");
 	}
 
 #ifdef HAVE_GUSB
 	if (priv->usb_device != NULL) {
 		GUsbDeviceClassCode code = g_usb_device_get_device_class(priv->usb_device);
-		fu_common_string_append_kv(str,
-					   idt,
-					   "UsbDeviceClass",
-					   fu_usb_device_class_code_to_string(code));
+		fu_string_append(str,
+				 idt,
+				 "UsbDeviceClass",
+				 fu_usb_device_class_code_to_string(code));
 	}
 #endif
 }

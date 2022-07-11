@@ -37,8 +37,7 @@ fu_synaptics_mst_firmware_export(FuFirmware *firmware,
 static gboolean
 fu_synaptics_mst_firmware_parse(FuFirmware *firmware,
 				GBytes *fw,
-				guint64 addr_start,
-				guint64 addr_end,
+				gsize offset,
 				FwupdInstallFlags flags,
 				GError **error)
 {
@@ -46,12 +45,12 @@ fu_synaptics_mst_firmware_parse(FuFirmware *firmware,
 	const guint8 *buf;
 	gsize bufsz;
 	buf = g_bytes_get_data(fw, &bufsz);
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					ADDR_CUSTOMER_ID,
-					&self->board_id,
-					G_BIG_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    ADDR_CUSTOMER_ID,
+				    &self->board_id,
+				    G_BIG_ENDIAN,
+				    error))
 		return FALSE;
 	fu_firmware_set_bytes(firmware, fw);
 	return TRUE;
@@ -64,13 +63,13 @@ fu_synaptics_mst_firmware_write(FuFirmware *firmware, GError **error)
 	g_autoptr(GBytes) blob = NULL;
 
 	/* assumed header */
-	fu_byte_array_set_size(buf, ADDR_CUSTOMER_ID + sizeof(guint16));
-	if (!fu_common_write_uint16_safe(buf->data,
-					 buf->len,
-					 ADDR_CUSTOMER_ID,
-					 fu_firmware_get_idx(firmware),
-					 G_BIG_ENDIAN,
-					 error))
+	fu_byte_array_set_size(buf, ADDR_CUSTOMER_ID + sizeof(guint16), 0x00);
+	if (!fu_memwrite_uint16_safe(buf->data,
+				     buf->len,
+				     ADDR_CUSTOMER_ID,
+				     fu_firmware_get_idx(firmware),
+				     G_BIG_ENDIAN,
+				     error))
 		return NULL;
 
 	/* payload */

@@ -47,8 +47,7 @@ fu_wac_module_bluetooth_id6_reverse_bits(guint8 value)
 static guint8
 fu_wac_module_bluetooth_id6_calculate_crc(const guint8 *data, gsize sz)
 {
-	guint8 crc =
-	    ~fu_common_crc8_full(data, sz, 0x00, FU_WAC_MODULE_BLUETOOTH_ID6_CRC8_POLYNOMIAL);
+	guint8 crc = ~fu_crc8_full(data, sz, 0x00, FU_WAC_MODULE_BLUETOOTH_ID6_CRC8_POLYNOMIAL);
 	return fu_wac_module_bluetooth_id6_reverse_bits(crc);
 }
 
@@ -106,9 +105,9 @@ fu_wac_module_bluetooth_id6_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 8);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 59);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 33);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 8, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 59, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 33, NULL);
 
 	/* get default image */
 	fw = fu_firmware_get_bytes(firmware, error);

@@ -234,14 +234,14 @@ main(int argc, char *argv[])
 
 	/* override the default ESP path */
 	if (esp_path != NULL) {
-		esp = fu_common_get_esp_for_path(esp_path, &error);
+		esp = fu_volume_new_esp_for_path(esp_path, &error);
 		if (esp == NULL) {
 			/* TRANSLATORS: ESP is EFI System Partition */
 			g_print("%s: %s\n", _("ESP specified was not valid"), error->message);
 			return EXIT_FAILURE;
 		}
 	} else {
-		esp = fu_common_get_esp_default(&error);
+		esp = fu_volume_new_esp_default(&error);
 		if (esp == NULL) {
 			g_printerr("failed: %s\n", error->message);
 			return EXIT_FAILURE;
@@ -277,6 +277,7 @@ main(int argc, char *argv[])
 	if (action_list || action_supported || action_info) {
 		g_autoptr(FuContext) ctx = fu_context_new();
 		g_autoptr(FuBackend) backend = fu_uefi_backend_new(ctx);
+		g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 		g_autoptr(GError) error_local = NULL;
 
 		/* load SMBIOS */
@@ -286,7 +287,7 @@ main(int argc, char *argv[])
 		}
 
 		/* add each device */
-		if (!fu_backend_coldplug(backend, &error_local)) {
+		if (!fu_backend_coldplug(backend, progress, &error_local)) {
 			g_printerr("failed: %s\n", error_local->message);
 			return EXIT_FAILURE;
 		}
@@ -404,9 +405,9 @@ main(int argc, char *argv[])
 		/* progress */
 		fu_progress_set_id(progress, G_STRLOC);
 		fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);   /* prepare */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98); /* write */
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);   /* cleanup */
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "prepare");
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, NULL);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "cleanup");
 
 		/* load SMBIOS */
 		if (!fu_context_load_hwinfo(ctx, &error_local)) {
@@ -435,7 +436,7 @@ main(int argc, char *argv[])
 			g_printerr("capsule filename required\n");
 			return EXIT_FAILURE;
 		}
-		fw = fu_common_get_contents_bytes(argv[1], &error_local);
+		fw = fu_bytes_get_contents(argv[1], &error_local);
 		if (fw == NULL) {
 			g_printerr("failed: %s\n", error_local->message);
 			return EXIT_FAILURE;

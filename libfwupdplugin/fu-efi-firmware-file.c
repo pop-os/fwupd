@@ -6,12 +6,22 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-efi-common.h"
 #include "fu-efi-firmware-common.h"
 #include "fu-efi-firmware-file.h"
 #include "fu-efi-firmware-section.h"
+#include "fu-mem.h"
+#include "fu-sum.h"
+
+/**
+ * FuEfiFirmwareFile:
+ *
+ * A UEFI file.
+ *
+ * See also: [class@FuFirmware]
+ */
 
 typedef struct {
 	guint8 type;
@@ -134,8 +144,7 @@ fu_efi_firmware_file_hdr_checksum8(GBytes *blob)
 static gboolean
 fu_efi_firmware_file_parse(FuFirmware *firmware,
 			   GBytes *fw,
-			   guint64 addr_start,
-			   guint64 addr_end,
+			   gsize offset,
 			   FwupdInstallFlags flags,
 			   GError **error)
 {
@@ -163,11 +172,11 @@ fu_efi_firmware_file_parse(FuFirmware *firmware,
 		return FALSE;
 	guid_str = fwupd_guid_to_string(&guid, FWUPD_GUID_FLAG_MIXED_ENDIAN);
 	fu_firmware_set_id(firmware, guid_str);
-	if (!fu_common_read_uint8_safe(buf,
-				       bufsz,
-				       FU_EFI_FIRMWARE_FILE_OFFSET_STATE,
-				       &img_state,
-				       error))
+	if (!fu_memread_uint8_safe(buf,
+				   bufsz,
+				   FU_EFI_FIRMWARE_FILE_OFFSET_STATE,
+				   &img_state,
+				   error))
 		return FALSE;
 	if (img_state != 0xF8) {
 		g_set_error(error,
@@ -178,36 +187,36 @@ fu_efi_firmware_file_parse(FuFirmware *firmware,
 			    (guint)0xF8);
 		return FALSE;
 	}
-	if (!fu_common_read_uint8_safe(buf,
-				       bufsz,
-				       FU_EFI_FIRMWARE_FILE_OFFSET_HDR_CHECKSUM,
-				       &hdr_checksum,
-				       error))
+	if (!fu_memread_uint8_safe(buf,
+				   bufsz,
+				   FU_EFI_FIRMWARE_FILE_OFFSET_HDR_CHECKSUM,
+				   &hdr_checksum,
+				   error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf,
-				       bufsz,
-				       FU_EFI_FIRMWARE_FILE_OFFSET_DATA_CHECKSUM,
-				       &data_checksum,
-				       error))
+	if (!fu_memread_uint8_safe(buf,
+				   bufsz,
+				   FU_EFI_FIRMWARE_FILE_OFFSET_DATA_CHECKSUM,
+				   &data_checksum,
+				   error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf,
-				       bufsz,
-				       FU_EFI_FIRMWARE_FILE_OFFSET_TYPE,
-				       &priv->type,
-				       error))
+	if (!fu_memread_uint8_safe(buf,
+				   bufsz,
+				   FU_EFI_FIRMWARE_FILE_OFFSET_TYPE,
+				   &priv->type,
+				   error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf,
-				       bufsz,
-				       FU_EFI_FIRMWARE_FILE_OFFSET_ATTRS,
-				       &priv->attrib,
-				       error))
+	if (!fu_memread_uint8_safe(buf,
+				   bufsz,
+				   FU_EFI_FIRMWARE_FILE_OFFSET_ATTRS,
+				   &priv->attrib,
+				   error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz, /* uint24_t! */
-					FU_EFI_FIRMWARE_FILE_OFFSET_SIZE,
-					&size,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz, /* uint24_t! */
+				    FU_EFI_FIRMWARE_FILE_OFFSET_SIZE,
+				    &size,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 	size &= 0xFFFFFF;
 	if (size < FU_EFI_FIRMWARE_FILE_SIZE) {
@@ -236,10 +245,10 @@ fu_efi_firmware_file_parse(FuFirmware *firmware,
 	}
 
 	/* add simple blob */
-	blob = fu_common_bytes_new_offset(fw,
-					  FU_EFI_FIRMWARE_FILE_SIZE,
-					  size - FU_EFI_FIRMWARE_FILE_SIZE,
-					  error);
+	blob = fu_bytes_new_offset(fw,
+				   FU_EFI_FIRMWARE_FILE_SIZE,
+				   size - FU_EFI_FIRMWARE_FILE_SIZE,
+				   error);
 	if (blob == NULL)
 		return FALSE;
 
@@ -254,7 +263,7 @@ fu_efi_firmware_file_parse(FuFirmware *firmware,
 	/* verify data checksum */
 	if ((priv->attrib & FU_EFI_FIRMWARE_FILE_ATTRIB_CHECKSUM) > 0 &&
 	    (flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
-		guint8 data_checksum_verify = 0x100 - fu_common_sum8_bytes(blob);
+		guint8 data_checksum_verify = 0x100 - fu_sum8_bytes(blob);
 		if (data_checksum_verify != data_checksum) {
 			g_set_error(error,
 				    FWUPD_ERROR,
@@ -333,7 +342,7 @@ fu_efi_firmware_file_write(FuFirmware *firmware, GError **error)
 		return NULL;
 	g_byte_array_append(buf, (guint8 *)&guid, sizeof(guid));
 	fu_byte_array_append_uint8(buf, 0x0); /* hdr_checksum */
-	fu_byte_array_append_uint8(buf, 0x100 - fu_common_sum8_bytes(blob));
+	fu_byte_array_append_uint8(buf, 0x100 - fu_sum8_bytes(blob));
 	fu_byte_array_append_uint8(buf, priv->type);   /* data_checksum */
 	fu_byte_array_append_uint8(buf, priv->attrib); /* data_checksum */
 	fu_byte_array_append_uint32(buf,

@@ -8,9 +8,6 @@
 
 #include "config.h"
 
-#include <fwupd.h>
-#include <gio/gio.h>
-#include <glib-object.h>
 #include <glib/gstdio.h>
 #include <json-glib/json-glib.h>
 #ifdef HAVE_SQLITE
@@ -20,7 +17,6 @@
 
 #include "fwupd-security-attr-private.h"
 
-#include "fu-common.h"
 #include "fu-device-private.h"
 #include "fu-history.h"
 #include "fu-mutex.h"
@@ -55,7 +51,7 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 	FwupdRelease *release;
 
 	/* create new result */
-	device = fu_device_new();
+	device = fu_device_new(NULL);
 	release = fu_device_get_release_default(device);
 
 	/* device_id */
@@ -465,7 +461,7 @@ fu_history_load(FuHistory *self, GError **error)
 	g_return_val_if_fail(locker != NULL, FALSE);
 
 	/* create directory */
-	dirname = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	dirname = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 	file = g_file_new_for_path(dirname);
 	if (!g_file_query_exists(file, NULL)) {
 		if (!g_file_make_directory_with_parents(file, NULL, error))

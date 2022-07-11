@@ -22,8 +22,8 @@ static void
 fu_cfu_module_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCfuModule *self = FU_CFU_MODULE(device);
-	fu_common_string_append_kx(str, idt, "ComponentId", self->component_id);
-	fu_common_string_append_kx(str, idt, "Bank", self->bank);
+	fu_string_append_kx(str, idt, "ComponentId", self->component_id);
+	fu_string_append_kx(str, idt, "Bank", self->bank);
 }
 
 guint8
@@ -49,7 +49,7 @@ fu_cfu_module_setup(FuCfuModule *self, const guint8 *buf, gsize bufsz, gsize off
 	g_autofree gchar *version = NULL;
 
 	/* component ID */
-	if (!fu_common_read_uint8_safe(buf, bufsz, offset + 0x5, &self->component_id, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x5, &self->component_id, error))
 		return FALSE;
 
 	/* these GUIDs may cause the name or version-format to be overwritten */
@@ -60,7 +60,7 @@ fu_cfu_module_setup(FuCfuModule *self, const guint8 *buf, gsize bufsz, gsize off
 		return FALSE;
 
 	/* bank */
-	if (!fu_common_read_uint8_safe(buf, bufsz, offset + 0x4, &tmp, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x4, &tmp, error))
 		return FALSE;
 	self->bank = tmp & 0b11;
 	fu_device_add_instance_u4(device, "BANK", self->bank);
@@ -85,10 +85,10 @@ fu_cfu_module_setup(FuCfuModule *self, const guint8 *buf, gsize bufsz, gsize off
 	}
 
 	/* version */
-	if (!fu_common_read_uint32_safe(buf, bufsz, offset, &version_raw, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, offset, &version_raw, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	fu_device_set_version_raw(device, version_raw);
-	version = fu_common_version_from_uint32(version_raw, fu_device_get_version_format(device));
+	version = fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
 	fu_device_set_version(device, version);
 
 	/* logical ID */
@@ -117,7 +117,7 @@ fu_cfu_module_prepare_firmware(FuDevice *device,
 	fu_firmware_add_image(firmware, offer);
 
 	/* payload */
-	fw_offset = fu_common_bytes_new_offset(fw, 0x10, g_bytes_get_size(fw) - 0x10, error);
+	fw_offset = fu_bytes_new_offset(fw, 0x10, g_bytes_get_size(fw) - 0x10, error);
 	if (fw_offset == NULL)
 		return NULL;
 	if (!fu_firmware_parse(payload, fw_offset, flags, error))
@@ -161,10 +161,10 @@ fu_cfu_module_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 96);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 96, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

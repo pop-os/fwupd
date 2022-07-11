@@ -347,9 +347,14 @@ def _build(bld: Builder) -> None:
     # built in formats
     for fzr in [
         Fuzzer("dfuse"),
+        Fuzzer("fdt"),
+        Fuzzer("fit"),
         Fuzzer("fmap"),
         Fuzzer("ihex"),
         Fuzzer("srec"),
+        Fuzzer("ifwi-cpd"),
+        Fuzzer("ifwi-fpt"),
+        Fuzzer("oprom"),
         Fuzzer("uswid"),
         Fuzzer("efi-firmware-filesystem", pattern="efi-firmware-filesystem"),
         Fuzzer("efi-firmware-volume", pattern="efi-firmware-volume"),

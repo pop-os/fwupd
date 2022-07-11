@@ -15,10 +15,14 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "fu-bytes.h"
 #include "fu-context-private.h"
 #include "fu-device-private.h"
+#include "fu-kernel.h"
 #include "fu-mutex.h"
+#include "fu-path.h"
 #include "fu-plugin-private.h"
+#include "fu-string.h"
 
 /**
  * FuPlugin:
@@ -425,7 +429,7 @@ fu_plugin_config_monitor_changed_cb(GFileMonitor *monitor,
 static gchar *
 fu_plugin_get_config_filename(FuPlugin *self)
 {
-	g_autofree gchar *conf_dir = fu_common_get_path(FU_PATH_KIND_SYSCONFDIR_PKG);
+	g_autofree gchar *conf_dir = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR_PKG);
 	g_autofree gchar *conf_file = g_strdup_printf("%s.conf", fu_plugin_get_name(self));
 	return g_build_filename(conf_dir, conf_file, NULL);
 }
@@ -502,8 +506,8 @@ fu_plugin_device_add(FuPlugin *self, FuDevice *device)
  * fu_plugin_get_devices:
  * @self: a #FuPlugin
  *
- * Returns all devices added by the plugin using fu_plugin_device_add() and
- * not yet removed with fu_plugin_device_remove().
+ * Returns all devices added by the plugin using [method@FuPlugin.device_add] and
+ * not yet removed with [method@FuPlugin.device_remove].
  *
  * Returns: (transfer none) (element-type FuDevice): devices
  *
@@ -526,7 +530,7 @@ fu_plugin_get_devices(FuPlugin *self)
  * Registers the device with other plugins so they can set metadata.
  *
  * Plugins do not have to call this manually as this is done automatically
- * when using fu_plugin_device_add(). They may wish to use this manually
+ * when using [method@FuPlugin.device_add]. They may wish to use this manually
  * if for instance the coldplug should be ignored based on the metadata
  * set from other plugins.
  *
@@ -575,28 +579,6 @@ fu_plugin_device_remove(FuPlugin *self, FuDevice *device)
 
 	g_debug("emit removed from %s: %s", fu_plugin_get_name(self), fu_device_get_id(device));
 	g_signal_emit(self, signals[SIGNAL_DEVICE_REMOVED], 0, device);
-}
-
-/**
- * fu_plugin_has_custom_flag:
- * @self: a #FuPlugin
- * @flag: a custom text flag, specific to the plugin, e.g. `uefi-force-enable`
- *
- * Returns if a per-plugin HwId custom flag exists, typically added from a DMI quirk.
- *
- * Returns: %TRUE if the quirk entry exists
- *
- * Since: 1.3.1
- **/
-gboolean
-fu_plugin_has_custom_flag(FuPlugin *self, const gchar *flag)
-{
-	FuPluginPrivate *priv = GET_PRIVATE(self);
-
-	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
-	g_return_val_if_fail(flag != NULL, FALSE);
-
-	return fu_context_has_hwid_flag(priv->ctx, flag);
 }
 
 /**
@@ -693,15 +675,15 @@ fu_plugin_device_write_firmware(FuPlugin *self,
 		/* progress */
 		fu_progress_set_id(progress, G_STRLOC);
 		fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 75);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_READ, 25, NULL);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 75, NULL);
 
 		fw_old = fu_device_dump_firmware(device, fu_progress_get_child(progress), error);
 		if (fw_old == NULL) {
 			g_prefix_error(error, "failed to backup old firmware: ");
 			return FALSE;
 		}
-		localstatedir = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+		localstatedir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 		fn = g_strdup_printf("%s.bin", fu_device_get_version(device));
 		path = g_build_filename(
 		    localstatedir,
@@ -711,7 +693,7 @@ fu_plugin_device_write_firmware(FuPlugin *self,
 		    fn,
 		    NULL);
 		fu_progress_step_done(progress);
-		if (!fu_common_set_contents_bytes(path, fw_old, error))
+		if (!fu_bytes_set_contents(path, fw_old, error))
 			return FALSE;
 		if (!fu_device_write_firmware(device,
 					      fw,
@@ -795,7 +777,7 @@ fu_plugin_device_read_firmware(FuPlugin *self,
  * Since: 0.8.0
  **/
 gboolean
-fu_plugin_runner_startup(FuPlugin *self, GError **error)
+fu_plugin_runner_startup(FuPlugin *self, FuProgress *progress, GError **error)
 {
 	FuPluginPrivate *priv = GET_PRIVATE(self);
 	FuPluginVfuncs *vfuncs = fu_plugin_get_vfuncs(self);
@@ -804,6 +786,9 @@ fu_plugin_runner_startup(FuPlugin *self, GError **error)
 	g_autoptr(GFile) file = g_file_new_for_path(config_filename);
 
 	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
+
+	/* progress */
+	fu_progress_set_name(progress, fu_plugin_get_name(self));
 
 	/* be helpful for unit tests */
 	fu_plugin_runner_init(self);
@@ -816,7 +801,7 @@ fu_plugin_runner_startup(FuPlugin *self, GError **error)
 	if (vfuncs->startup == NULL)
 		return TRUE;
 	g_debug("startup(%s)", fu_plugin_get_name(self));
-	if (!vfuncs->startup(self, &error_local)) {
+	if (!vfuncs->startup(self, progress, &error_local)) {
 		if (error_local == NULL) {
 			g_critical("unset plugin error in startup(%s)", fu_plugin_get_name(self));
 			g_set_error_literal(&error_local,
@@ -1030,6 +1015,7 @@ fu_plugin_runner_device_array_generic(FuPlugin *self,
 /**
  * fu_plugin_runner_coldplug:
  * @self: a #FuPlugin
+ * @progress: a #FuProgress
  * @error: (nullable): optional return location for an error
  *
  * Runs the coldplug routine for the plugin
@@ -1039,13 +1025,16 @@ fu_plugin_runner_device_array_generic(FuPlugin *self,
  * Since: 0.8.0
  **/
 gboolean
-fu_plugin_runner_coldplug(FuPlugin *self, GError **error)
+fu_plugin_runner_coldplug(FuPlugin *self, FuProgress *progress, GError **error)
 {
 	FuPluginPrivate *priv = GET_PRIVATE(self);
 	FuPluginVfuncs *vfuncs = fu_plugin_get_vfuncs(self);
 	g_autoptr(GError) error_local = NULL;
 
 	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
+
+	/* progress */
+	fu_progress_set_name(progress, fu_plugin_get_name(self));
 
 	/* not enabled */
 	if (fu_plugin_has_flag(self, FWUPD_PLUGIN_FLAG_DISABLED))
@@ -1059,7 +1048,7 @@ fu_plugin_runner_coldplug(FuPlugin *self, GError **error)
 	if (vfuncs->coldplug == NULL)
 		return TRUE;
 	g_debug("coldplug(%s)", fu_plugin_get_name(self));
-	if (!vfuncs->coldplug(self, &error_local)) {
+	if (!vfuncs->coldplug(self, progress, &error_local)) {
 		if (error_local == NULL) {
 			g_critical("unset plugin error in coldplug(%s)", fu_plugin_get_name(self));
 			g_set_error_literal(&error_local,
@@ -1356,7 +1345,7 @@ fu_plugin_check_amdgpu_dpaux(FuPlugin *self, GError **error)
 	for (guint i = 0; lines[i] != NULL; i++) {
 		if (g_str_has_prefix(lines[i], "amdgpu ")) {
 			/* released 2019! */
-			return fu_common_check_kernel_version("5.2.0", error);
+			return fu_kernel_check_version("5.2.0", error);
 		}
 	}
 #endif
@@ -1418,7 +1407,7 @@ fu_plugin_add_firmware_gtype(FuPlugin *self, const gchar *id, GType gtype)
 		g_autoptr(GString) str = g_string_new(g_type_name(gtype));
 		if (g_str_has_prefix(str->str, "Fu"))
 			g_string_erase(str, 0, 2);
-		fu_common_string_replace(str, "Firmware", "");
+		fu_string_replace(str, "Firmware", "");
 		id_safe = fu_common_string_uncamelcase(str->str);
 	}
 	fu_context_add_firmware_gtype(priv->ctx, id_safe, gtype);
@@ -1767,7 +1756,7 @@ fu_plugin_runner_verify(FuPlugin *self,
 
 	/* run vfunc */
 	g_debug("verify(%s)", fu_plugin_get_name(self));
-	if (!vfuncs->verify(self, device, flags, &error_local)) {
+	if (!vfuncs->verify(self, device, progress, flags, &error_local)) {
 		g_autoptr(GError) error_attach = NULL;
 		if (error_local == NULL) {
 			g_critical("unset plugin error in verify(%s)", fu_plugin_get_name(self));

@@ -82,10 +82,10 @@ fu_wav_device_flash_descriptor_is_wp(const FuWacFlashDescriptor *fd)
 static void
 fu_wac_device_flash_descriptor_to_string(FuWacFlashDescriptor *fd, guint idt, GString *str)
 {
-	fu_common_string_append_kx(str, idt, "StartAddr", fd->start_addr);
-	fu_common_string_append_kx(str, idt, "BlockSize", fd->block_sz);
-	fu_common_string_append_kx(str, idt, "WriteSize", fd->write_sz & ~0x8000);
-	fu_common_string_append_kb(str, idt, "Protected", fu_wav_device_flash_descriptor_is_wp(fd));
+	fu_string_append_kx(str, idt, "StartAddr", fd->start_addr);
+	fu_string_append_kx(str, idt, "BlockSize", fd->block_sz);
+	fu_string_append_kx(str, idt, "WriteSize", fd->write_sz & ~0x8000);
+	fu_string_append_kb(str, idt, "Protected", fu_wav_device_flash_descriptor_is_wp(fd));
 }
 
 static void
@@ -96,42 +96,42 @@ fu_wac_device_to_string(FuDevice *device, guint idt, GString *str)
 
 	if (self->firmware_index != 0xffff) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", self->firmware_index);
-		fu_common_string_append_kv(str, idt, "FwIndex", tmp);
+		fu_string_append(str, idt, "FwIndex", tmp);
 	}
 	if (self->loader_ver > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->loader_ver);
-		fu_common_string_append_kv(str, idt, "LoaderVer", tmp);
+		fu_string_append(str, idt, "LoaderVer", tmp);
 	}
 	if (self->read_data_sz > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->read_data_sz);
-		fu_common_string_append_kv(str, idt, "ReadDataSize", tmp);
+		fu_string_append(str, idt, "ReadDataSize", tmp);
 	}
 	if (self->write_word_sz > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->write_word_sz);
-		fu_common_string_append_kv(str, idt, "WriteWordSize", tmp);
+		fu_string_append(str, idt, "WriteWordSize", tmp);
 	}
 	if (self->write_block_sz > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->write_block_sz);
-		fu_common_string_append_kv(str, idt, "WriteBlockSize", tmp);
+		fu_string_append(str, idt, "WriteBlockSize", tmp);
 	}
 	if (self->nr_flash_blocks > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->nr_flash_blocks);
-		fu_common_string_append_kv(str, idt, "NrFlashBlocks", tmp);
+		fu_string_append(str, idt, "NrFlashBlocks", tmp);
 	}
 	if (self->configuration != 0xffff) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->configuration);
-		fu_common_string_append_kv(str, idt, "Configuration", tmp);
+		fu_string_append(str, idt, "Configuration", tmp);
 	}
 	if (g_getenv("FWUPD_WACOM_USB_VERBOSE") != NULL) {
 		for (guint i = 0; i < self->flash_descriptors->len; i++) {
 			FuWacFlashDescriptor *fd = g_ptr_array_index(self->flash_descriptors, i);
 			g_autofree gchar *title = g_strdup_printf("FlashDescriptor%02u", i);
-			fu_common_string_append_kv(str, idt, title, NULL);
+			fu_string_append(str, idt, title, NULL);
 			fu_wac_device_flash_descriptor_to_string(fd, idt + 1, str);
 		}
 	}
 	status_str = fu_wac_device_status_to_string(self->status_word);
-	fu_common_string_append_kv(str, idt, "Status", status_str->str);
+	fu_string_append(str, idt, "Status", status_str->str);
 }
 
 gboolean
@@ -206,26 +206,26 @@ fu_wac_device_ensure_flash_descriptors(FuWacDevice *self, GError **error)
 	for (guint i = 0; i < self->nr_flash_blocks; i++) {
 		g_autofree FuWacFlashDescriptor *fd = g_new0(FuWacFlashDescriptor, 1);
 		const guint blksz = 0x0A;
-		if (!fu_common_read_uint32_safe(buf,
-						sz,
-						(i * blksz) + 1,
-						&fd->start_addr,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    sz,
+					    (i * blksz) + 1,
+					    &fd->start_addr,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
-		if (!fu_common_read_uint32_safe(buf,
-						sz,
-						(i * blksz) + 5,
-						&fd->block_sz,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint32_safe(buf,
+					    sz,
+					    (i * blksz) + 5,
+					    &fd->block_sz,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
-		if (!fu_common_read_uint16_safe(buf,
-						sz,
-						(i * blksz) + 9,
-						&fd->write_sz,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(buf,
+					    sz,
+					    (i * blksz) + 9,
+					    &fd->write_sz,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		g_ptr_array_add(self->flash_descriptors, g_steal_pointer(&fd));
 	}
@@ -258,7 +258,7 @@ fu_wac_device_ensure_status(FuWacDevice *self, GError **error)
 		return FALSE;
 
 	/* parse */
-	self->status_word = fu_common_read_uint32(buf + 1, G_LITTLE_ENDIAN);
+	self->status_word = fu_memread_uint32(buf + 1, G_LITTLE_ENDIAN);
 	str = fu_wac_device_status_to_string(self->status_word);
 	g_debug("status now: %s", str->str);
 	return TRUE;
@@ -278,13 +278,13 @@ fu_wac_device_ensure_checksums(FuWacDevice *self, GError **error)
 		return FALSE;
 
 	/* parse */
-	updater_version = fu_common_read_uint32(buf + 1, G_LITTLE_ENDIAN);
+	updater_version = fu_memread_uint32(buf + 1, G_LITTLE_ENDIAN);
 	g_debug("updater-version: %" G_GUINT32_FORMAT, updater_version);
 
 	/* get block checksums */
 	g_array_set_size(self->checksums, 0);
 	for (guint i = 0; i < self->nr_flash_blocks; i++) {
-		guint32 csum = fu_common_read_uint32(buf + 5 + (i * 4), G_LITTLE_ENDIAN);
+		guint32 csum = fu_memread_uint32(buf + 5 + (i * 4), G_LITTLE_ENDIAN);
 		if (g_getenv("FWUPD_WACOM_USB_VERBOSE") != NULL)
 			g_debug("checksum block %02u: 0x%08x", i, (guint)csum);
 		g_array_append_val(self->checksums, csum);
@@ -308,7 +308,7 @@ fu_wac_device_ensure_firmware_index(FuWacDevice *self, GError **error)
 		return FALSE;
 
 	/* parse */
-	self->firmware_index = fu_common_read_uint16(buf + 1, G_LITTLE_ENDIAN);
+	self->firmware_index = fu_memread_uint16(buf + 1, G_LITTLE_ENDIAN);
 	return TRUE;
 }
 
@@ -326,12 +326,12 @@ fu_wac_device_ensure_parameters(FuWacDevice *self, GError **error)
 		return FALSE;
 
 	/* parse */
-	self->loader_ver = fu_common_read_uint16(buf + 1, G_LITTLE_ENDIAN);
-	self->read_data_sz = fu_common_read_uint16(buf + 3, G_LITTLE_ENDIAN);
-	self->write_word_sz = fu_common_read_uint16(buf + 5, G_LITTLE_ENDIAN);
-	self->write_block_sz = fu_common_read_uint16(buf + 7, G_LITTLE_ENDIAN);
-	self->nr_flash_blocks = fu_common_read_uint16(buf + 9, G_LITTLE_ENDIAN);
-	self->configuration = fu_common_read_uint16(buf + 11, G_LITTLE_ENDIAN);
+	self->loader_ver = fu_memread_uint16(buf + 1, G_LITTLE_ENDIAN);
+	self->read_data_sz = fu_memread_uint16(buf + 3, G_LITTLE_ENDIAN);
+	self->write_word_sz = fu_memread_uint16(buf + 5, G_LITTLE_ENDIAN);
+	self->write_block_sz = fu_memread_uint16(buf + 7, G_LITTLE_ENDIAN);
+	self->nr_flash_blocks = fu_memread_uint16(buf + 9, G_LITTLE_ENDIAN);
+	self->configuration = fu_memread_uint16(buf + 11, G_LITTLE_ENDIAN);
 	return TRUE;
 }
 
@@ -358,7 +358,7 @@ fu_wac_device_write_block(FuWacDevice *self, guint32 addr, GBytes *blob, GError 
 	buf = g_malloc(bufsz);
 	memset(buf, 0xff, bufsz);
 	buf[0] = FU_WAC_REPORT_ID_WRITE_BLOCK;
-	fu_common_write_uint32(buf + 1, addr, G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf + 1, addr, G_LITTLE_ENDIAN);
 	if (sz > 0) {
 		if (!fu_memcpy_safe(buf,
 				    bufsz,
@@ -381,7 +381,7 @@ fu_wac_device_erase_block(FuWacDevice *self, guint32 addr, GError **error)
 	guint8 buf[] = {[0] = FU_WAC_REPORT_ID_ERASE_BLOCK, [1 ... 4] = 0xff};
 
 	/* build packet */
-	fu_common_write_uint32(buf + 1, addr, G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf + 1, addr, G_LITTLE_ENDIAN);
 
 	/* hit hardware */
 	return fu_wac_device_set_feature_report(self,
@@ -413,8 +413,8 @@ fu_wac_device_set_checksum_of_block(FuWacDevice *self,
 	guint8 buf[] = {[0] = FU_WAC_REPORT_ID_SET_CHECKSUM_FOR_BLOCK, [1 ... 6] = 0xff};
 
 	/* build packet */
-	fu_common_write_uint16(buf + 1, block_nr, G_LITTLE_ENDIAN);
-	fu_common_write_uint32(buf + 3, checksum, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(buf + 1, block_nr, G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(buf + 3, checksum, G_LITTLE_ENDIAN);
 
 	/* hit hardware */
 	return fu_wac_device_set_feature_report(self,
@@ -430,7 +430,7 @@ fu_wac_device_calculate_checksum_of_block(FuWacDevice *self, guint16 block_nr, G
 	guint8 buf[] = {[0] = FU_WAC_REPORT_ID_CALCULATE_CHECKSUM_FOR_BLOCK, [1 ... 2] = 0xff};
 
 	/* build packet */
-	fu_common_write_uint16(buf + 1, block_nr, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(buf + 1, block_nr, G_LITTLE_ENDIAN);
 
 	/* hit hardware */
 	return fu_wac_device_set_feature_report(self,
@@ -482,11 +482,11 @@ fu_wac_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 95);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 2);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 95, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 2, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
 
 	/* get current selected device */
 	if (!fu_wac_device_ensure_firmware_index(self, error))
@@ -540,7 +540,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 		blob_tmp = fu_firmware_write_chunk(img, fd->start_addr, fd->block_sz, NULL);
 		if (blob_tmp == NULL)
 			break;
-		blob_block = fu_common_bytes_pad(blob_tmp, fd->block_sz);
+		blob_block = fu_bytes_pad(blob_tmp, fd->block_sz);
 		g_hash_table_insert(fd_blobs, fd, blob_block);
 	}
 
@@ -564,7 +564,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 			break;
 
 		/* ignore empty blocks */
-		if (fu_common_bytes_is_empty(blob_block)) {
+		if (fu_bytes_is_empty(blob_block)) {
 			g_debug("empty block, ignoring");
 			fu_progress_set_percentage_full(fu_progress_get_child(progress),
 							blocks_done++,
@@ -592,7 +592,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 		}
 
 		/* calculate expected checksum and save to device RAM */
-		csum_local[i] = GUINT32_TO_LE(fu_common_sum32w_bytes(blob_block, G_LITTLE_ENDIAN));
+		csum_local[i] = GUINT32_TO_LE(fu_sum32w_bytes(blob_block, G_LITTLE_ENDIAN));
 		if (g_getenv("FWUPD_WACOM_USB_VERBOSE") != NULL)
 			g_debug("block checksum %02u: 0x%08x", i, csum_local[i]);
 		if (!fu_wac_device_set_checksum_of_block(self, i, csum_local[i], error))
@@ -636,7 +636,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 		blob_block = g_hash_table_lookup(fd_blobs, fd);
 		if (blob_block == NULL)
 			continue;
-		if (fu_common_bytes_is_empty(blob_block))
+		if (fu_bytes_is_empty(blob_block))
 			continue;
 
 		/* check checksum matches */
@@ -689,18 +689,13 @@ fu_wac_device_add_modules_bluetooth(FuWacDevice *self, GError **error)
 			g_prefix_error(error, "Failed to get GetFirmwareVersionBluetooth: ");
 			return FALSE;
 		}
-		if (!fu_common_read_uint16_safe(buf,
-						sizeof(buf),
-						1,
-						&fw_ver,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(buf, sizeof(buf), 1, &fw_ver, G_LITTLE_ENDIAN, error))
 			return FALSE;
 		if (fw_ver != 0)
 			break;
 		g_usleep(G_USEC_PER_SEC);
 	}
-	version = fu_common_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_BCD);
+	version = fu_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_BCD);
 
 	/* Success! But legacy bluetooth can't tell us which module the device needs.
 	 * Initialize both and rely on the firmware update containing the appropriate
@@ -772,9 +767,9 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 	}
 
 	/* bootloader version */
-	if (!fu_common_read_uint16_safe(buf, sizeof(buf), 1, &boot_ver, G_BIG_ENDIAN, error))
+	if (!fu_memread_uint16_safe(buf, sizeof(buf), 1, &boot_ver, G_BIG_ENDIAN, error))
 		return FALSE;
-	version_bootloader = fu_common_version_from_uint16(boot_ver, FWUPD_VERSION_FORMAT_BCD);
+	version_bootloader = fu_version_from_uint16(boot_ver, FWUPD_VERSION_FORMAT_BCD);
 	fu_device_set_version_bootloader(FU_DEVICE(self), version_bootloader);
 	fu_device_set_version_bootloader_raw(FU_DEVICE(self), boot_ver);
 
@@ -786,14 +781,14 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 		g_autoptr(FuWacModule) module = NULL;
 		guint16 ver;
 
-		if (!fu_common_read_uint16_safe(buf,
-						sizeof(buf),
-						(i * 4) + 5,
-						&ver,
-						G_BIG_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(buf,
+					    sizeof(buf),
+					    (i * 4) + 5,
+					    &ver,
+					    G_BIG_ENDIAN,
+					    error))
 			return FALSE;
-		version = fu_common_version_from_uint16(ver, FWUPD_VERSION_FORMAT_BCD);
+		version = fu_version_from_uint16(ver, FWUPD_VERSION_FORMAT_BCD);
 
 		switch (fw_type) {
 		case FU_WAC_MODULE_FW_TYPE_TOUCH:
@@ -904,10 +899,10 @@ static void
 fu_wac_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

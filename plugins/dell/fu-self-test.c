@@ -102,7 +102,7 @@ fu_plugin_dell_tpm_func(gconstpointer user_data)
 				       "device-register",
 				       G_CALLBACK(fu_engine_plugin_device_register_cb),
 				       self->plugin_uefi_capsule);
-	ret = fu_plugin_runner_coldplug(self->plugin_dell, &error);
+	ret = fu_plugin_runner_coldplug(self->plugin_dell, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -276,8 +276,7 @@ fu_plugin_dell_dock_func(gconstpointer user_data)
 	gulong added_id;
 	gulong register_id;
 
-	fake_usb_device =
-	    fu_usb_device_new_with_context(fu_plugin_get_context(self->plugin_dell), NULL);
+	fake_usb_device = fu_usb_device_new(fu_plugin_get_context(self->plugin_dell), NULL);
 	devices = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	added_id = g_signal_connect(FU_PLUGIN(self->plugin_uefi_capsule),
 				    "device-added",
@@ -507,6 +506,7 @@ fu_test_self_init(FuTest *self)
 {
 	gboolean ret;
 	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 	g_autofree gchar *pluginfn_uefi = NULL;
 	g_autofree gchar *pluginfn_dell = NULL;
@@ -525,7 +525,7 @@ fu_test_self_init(FuTest *self)
 	ret = fu_plugin_open(self->plugin_uefi_capsule, pluginfn_uefi, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	ret = fu_plugin_runner_startup(self->plugin_uefi_capsule, &error);
+	ret = fu_plugin_runner_startup(self->plugin_uefi_capsule, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -535,7 +535,7 @@ fu_test_self_init(FuTest *self)
 	ret = fu_plugin_open(self->plugin_dell, pluginfn_dell, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	ret = fu_plugin_runner_startup(self->plugin_dell, &error);
+	ret = fu_plugin_runner_startup(self->plugin_dell, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 }
@@ -569,7 +569,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 
 	/* change behavior */
-	sysfsdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW);
+	sysfsdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 	(void)g_setenv("FWUPD_UEFI_ESP_PATH", sysfsdir, TRUE);
 	(void)g_setenv("FWUPD_UEFI_TEST", "1", TRUE);
 	(void)g_setenv("FWUPD_DELL_FAKE_SMBIOS", "1", FALSE);

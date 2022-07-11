@@ -162,7 +162,7 @@ fu_thunderbolt_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUdevDevice->to_string */
 	FU_DEVICE_CLASS(fu_thunderbolt_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kv(str, idt, "AuthMethod", priv->auth_method);
+	fu_string_append(str, idt, "AuthMethod", priv->auth_method);
 }
 
 void
@@ -274,7 +274,7 @@ fu_thunderbolt_device_write_data(FuThunderboltDevice *self,
 	do {
 		g_autoptr(GBytes) fw_data = NULL;
 
-		fw_data = fu_common_bytes_new_offset(blob_fw, nwritten, fw_size - nwritten, error);
+		fw_data = fu_bytes_new_offset(blob_fw, nwritten, fw_size - nwritten, error);
 		if (fw_data == NULL)
 			return FALSE;
 
@@ -449,10 +449,6 @@ fu_thunderbolt_device_probe(FuDevice *device, GError **error)
 {
 	g_autoptr(FuUdevDevice) udev_parent = NULL;
 
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_thunderbolt_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	/* if the PCI ID is Intel then it's signed, no idea otherwise */
 	udev_parent = fu_udev_device_get_parent_with_subsystem(FU_UDEV_DEVICE(device), "pci");
 	if (udev_parent != NULL) {
@@ -470,10 +466,10 @@ static void
 fu_thunderbolt_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

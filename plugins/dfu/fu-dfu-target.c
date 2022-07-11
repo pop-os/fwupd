@@ -19,7 +19,8 @@
 
 #include "config.h"
 
-#include <fwupd.h>
+#include <fwupdplugin.h>
+
 #include <math.h>
 #include <string.h>
 
@@ -63,13 +64,13 @@ fu_dfu_target_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuDfuTarget *self = FU_DFU_TARGET(device);
 	FuDfuTargetPrivate *priv = GET_PRIVATE(self);
-	fu_common_string_append_kx(str, idt, "AltSetting", priv->alt_setting);
-	fu_common_string_append_kx(str, idt, "AltIdx", priv->alt_idx);
+	fu_string_append_kx(str, idt, "AltSetting", priv->alt_setting);
+	fu_string_append_kx(str, idt, "AltIdx", priv->alt_idx);
 	for (guint i = 0; i < priv->sectors->len; i++) {
 		FuDfuSector *sector = g_ptr_array_index(priv->sectors, i);
 		g_autofree gchar *tmp1 = g_strdup_printf("Idx%02x", i);
 		g_autofree gchar *tmp2 = fu_dfu_sector_to_string(sector);
-		fu_common_string_append_kv(str, idt + 1, tmp1, tmp2);
+		fu_string_append(str, idt + 1, tmp1, tmp2);
 	}
 }
 
@@ -693,7 +694,7 @@ fu_dfu_target_download_chunk(FuDfuTarget *self,
 
 	/* low level packet debugging */
 	if (g_getenv("FWUPD_DFU_VERBOSE") != NULL)
-		fu_common_dump_bytes(G_LOG_DOMAIN, "Message", bytes);
+		fu_dump_bytes(G_LOG_DOMAIN, "Message", bytes);
 
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
@@ -785,7 +786,7 @@ fu_dfu_target_upload_chunk(FuDfuTarget *self,
 
 	/* low level packet debugging */
 	if (g_getenv("FWUPD_DFU_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "Message", buf, actual_length);
+		fu_dump_raw(G_LOG_DOMAIN, "Message", buf, actual_length);
 
 	return g_bytes_new_take(buf, actual_length);
 }
@@ -1087,7 +1088,7 @@ fu_dfu_target_download_element_dfu(FuDfuTarget *self,
 			length = g_bytes_get_size(bytes) - offset;
 			if (length > transfer_size)
 				length = transfer_size;
-			bytes_tmp = fu_common_bytes_new_offset(bytes, offset, length, error);
+			bytes_tmp = fu_bytes_new_offset(bytes, offset, length, error);
 			if (bytes_tmp == NULL)
 				return FALSE;
 		} else {
@@ -1121,8 +1122,8 @@ fu_dfu_target_download_element(FuDfuTarget *self,
 	if (flags & DFU_TARGET_TRANSFER_FLAG_VERIFY &&
 	    fu_device_has_private_flag(device, FU_DFU_DEVICE_FLAG_CAN_UPLOAD)) {
 		fu_progress_set_id(progress, G_STRLOC);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 96);
-		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 4);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 96, NULL);
+		fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 4, NULL);
 	} else {
 		fu_progress_set_id(progress, G_STRLOC);
 		fu_progress_set_steps(progress, 1);

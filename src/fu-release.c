@@ -10,6 +10,7 @@
 
 #include "fu-device-private.h"
 #include "fu-keyring-utils.h"
+#include "fu-release-common.h"
 #include "fu-release.h"
 
 /**
@@ -226,22 +227,24 @@ fu_release_get_release_version(FuRelease *self, const gchar *version, GError **e
 {
 	FwupdVersionFormat fmt = fu_device_get_version_format(self->device);
 	guint64 ver_uint32;
+	g_autoptr(GError) error_local = NULL;
 
 	/* already dotted notation */
 	if (g_strstr_len(version, -1, ".") != NULL)
 		return g_strdup(version);
 
 	/* don't touch my version! */
-	if (fmt == FWUPD_VERSION_FORMAT_PLAIN)
+	if (fmt == FWUPD_VERSION_FORMAT_PLAIN || fmt == FWUPD_VERSION_FORMAT_UNKNOWN)
 		return g_strdup(version);
 
 	/* parse as integer */
-	ver_uint32 = fu_common_strtoull(version);
-	if (fmt == FWUPD_VERSION_FORMAT_UNKNOWN || ver_uint32 == 0 || ver_uint32 > G_MAXUINT32)
+	if (!fu_strtoull(version, &ver_uint32, 1, G_MAXUINT32, &error_local)) {
+		g_warning("invalid release version %s: %s", version, error_local->message);
 		return g_strdup(version);
+	}
 
 	/* convert to dotted decimal */
-	return fu_common_version_from_uint32((guint32)ver_uint32, fmt);
+	return fu_version_from_uint32((guint32)ver_uint32, fmt);
 }
 
 static gboolean
@@ -265,7 +268,7 @@ fu_release_load_artifact(FuRelease *self, XbNode *artifact, GError **error)
 			g_autofree gchar *scheme = NULL;
 
 			/* check the scheme is allowed */
-			scheme = fu_common_uri_get_scheme(xb_node_get_text(n));
+			scheme = fu_release_uri_get_scheme(xb_node_get_text(n));
 			if (scheme != NULL) {
 				guint prio = fu_config_get_uri_scheme_prio(self->config, scheme);
 				if (prio == G_MAXUINT)
@@ -311,8 +314,8 @@ fu_release_scheme_compare_cb(gconstpointer a, gconstpointer b, gpointer user_dat
 	FuRelease *self = FU_RELEASE(user_data);
 	const gchar *location1 = *((const gchar **)a);
 	const gchar *location2 = *((const gchar **)b);
-	g_autofree gchar *scheme1 = fu_common_uri_get_scheme(location1);
-	g_autofree gchar *scheme2 = fu_common_uri_get_scheme(location2);
+	g_autofree gchar *scheme1 = fu_release_uri_get_scheme(location1);
+	g_autofree gchar *scheme2 = fu_release_uri_get_scheme(location2);
 	guint prio1 = fu_config_get_uri_scheme_prio(self->config, scheme1);
 	guint prio2 = fu_config_get_uri_scheme_prio(self->config, scheme2);
 	if (prio1 < prio2)
@@ -458,7 +461,7 @@ fu_release_check_requirements(FuRelease *self,
 	    !fu_device_has_protocol(self->device, protocol) &&
 	    (install_flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
 		g_autofree gchar *str = NULL;
-		str = fu_common_strjoin_array("|", fu_device_get_protocols(self->device));
+		str = fu_strjoin("|", fu_device_get_protocols(self->device));
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -552,9 +555,9 @@ fu_release_check_requirements(FuRelease *self,
 	/* compare to the lowest supported version, if it exists */
 	version_lowest = fu_device_get_version_lowest(self->device);
 	if (version_lowest != NULL &&
-	    fu_common_vercmp_full(version_lowest,
-				  fu_release_get_version(self),
-				  fu_device_get_version_format(self->device)) > 0 &&
+	    fu_version_compare(version_lowest,
+			       fu_release_get_version(self),
+			       fu_device_get_version_format(self->device)) > 0 &&
 	    (install_flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -567,9 +570,9 @@ fu_release_check_requirements(FuRelease *self,
 	}
 
 	/* is this a downgrade or re-install */
-	vercmp = fu_common_vercmp_full(version,
-				       fu_release_get_version(self),
-				       fu_device_get_version_format(self->device));
+	vercmp = fu_version_compare(version,
+				    fu_release_get_version(self),
+				    fu_device_get_version_format(self->device));
 	if (fu_device_has_flag(self->device, FWUPD_DEVICE_FLAG_ONLY_VERSION_UPGRADE) &&
 	    vercmp >= 0) {
 		g_set_error(error,

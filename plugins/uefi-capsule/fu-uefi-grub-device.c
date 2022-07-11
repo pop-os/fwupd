@@ -29,7 +29,7 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 	g_autofree gchar *grub_mkconfig = NULL;
 	g_autofree gchar *grub_reboot = NULL;
 	g_autofree gchar *grub_target = NULL;
-	g_autofree gchar *localstatedir = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	g_autofree gchar *localstatedir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 	g_autofree gchar *output = NULL;
 	g_autoptr(GString) str = g_string_new(NULL);
 
@@ -45,9 +45,9 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 	}
 
 	/* find grub-mkconfig */
-	grub_mkconfig = fu_common_find_program_in_path("grub-mkconfig", NULL);
+	grub_mkconfig = fu_path_find_program("grub-mkconfig", NULL);
 	if (grub_mkconfig == NULL)
-		grub_mkconfig = fu_common_find_program_in_path("grub2-mkconfig", NULL);
+		grub_mkconfig = fu_path_find_program("grub2-mkconfig", NULL);
 	if (grub_mkconfig == NULL) {
 		g_set_error_literal(error,
 				    G_IO_ERROR,
@@ -57,9 +57,9 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 	}
 
 	/* find grub-reboot */
-	grub_reboot = fu_common_find_program_in_path("grub-reboot", NULL);
+	grub_reboot = fu_path_find_program("grub-reboot", NULL);
 	if (grub_reboot == NULL)
-		grub_reboot = fu_common_find_program_in_path("grub2-reboot", NULL);
+		grub_reboot = fu_path_find_program("grub2-reboot", NULL);
 	if (grub_reboot == NULL) {
 		g_set_error_literal(error,
 				    G_IO_ERROR,
@@ -70,7 +70,7 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 
 	/* replace ESP info in conf with what we detected */
 	g_string_append_printf(str, "EFI_PATH=%s\n", target_app);
-	fu_common_string_replace(str, esp_path, "");
+	fu_string_replace(str, esp_path, "");
 	g_string_append_printf(str, "ESP=%s\n", esp_path);
 	grub_target = g_build_filename(localstatedir, "uefi_capsule.conf", NULL);
 	if (!g_file_set_contents(grub_target, str->str, -1, error))
@@ -143,12 +143,12 @@ fu_uefi_grub_device_write_firmware(FuDevice *device,
 	directory = fu_uefi_get_esp_path_for_os(device, esp_path);
 	basename = g_strdup_printf("fwupd-%s.cap", fw_class);
 	fn = g_build_filename(directory, "fw", basename, NULL);
-	if (!fu_common_mkdir_parent(fn, error))
+	if (!fu_path_mkdir_parent(fn, error))
 		return FALSE;
 	fixed_fw = fu_uefi_device_fixup_firmware(self, fw, error);
 	if (fixed_fw == NULL)
 		return FALSE;
-	if (!fu_common_set_contents_bytes(fn, fixed_fw, error))
+	if (!fu_bytes_set_contents(fn, fixed_fw, error))
 		return FALSE;
 
 	/* skip for self tests */

@@ -367,8 +367,7 @@ fu_thunderbolt_firmware_set_digital(FuThunderboltFirmware *self, guint32 offset)
 static gboolean
 fu_thunderbolt_firmware_parse(FuFirmware *firmware,
 			      GBytes *fw,
-			      guint64 addr_start,
-			      guint64 addr_end,
+			      gsize offset,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
@@ -406,7 +405,7 @@ fu_thunderbolt_firmware_parse(FuFirmware *firmware,
 
 	/* subclassed */
 	if (klass_firmware->parse != NULL) {
-		if (!klass_firmware->parse(firmware, fw, addr_start, addr_end, flags, error))
+		if (!klass_firmware->parse(firmware, fw, offset, flags, error))
 			return FALSE;
 	}
 
@@ -516,7 +515,7 @@ fu_thunderbolt_firmware_parse(FuFirmware *firmware,
 			g_prefix_error(error, "failed to read version: ");
 			return FALSE;
 		}
-		version_str = fu_common_version_from_uint16(version, FWUPD_VERSION_FORMAT_BCD);
+		version_str = fu_version_from_uint16(version, FWUPD_VERSION_FORMAT_BCD);
 		fu_firmware_set_version(FU_FIRMWARE(self), version_str);
 		break;
 	default:

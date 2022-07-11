@@ -39,8 +39,7 @@ fu_acpi_phat_health_record_export(FuFirmware *firmware,
 static gboolean
 fu_acpi_phat_health_record_parse(FuFirmware *firmware,
 				 GBytes *fw,
-				 guint64 addr_start,
-				 guint64 addr_end,
+				 gsize offset,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
@@ -52,7 +51,7 @@ fu_acpi_phat_health_record_parse(FuFirmware *firmware,
 	fwupd_guid_t guid = {0x0};
 
 	/* record length */
-	if (!fu_common_read_uint16_safe(buf, bufsz, 2, &rcdlen, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint16_safe(buf, bufsz, 2, &rcdlen, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (rcdlen != bufsz) {
 		g_set_error(error,
@@ -64,7 +63,7 @@ fu_acpi_phat_health_record_parse(FuFirmware *firmware,
 	}
 
 	/* am healthy */
-	if (!fu_common_read_uint8_safe(buf, bufsz, 7, &self->am_healthy, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, 7, &self->am_healthy, error))
 		return FALSE;
 
 	/* device signature */
@@ -80,7 +79,7 @@ fu_acpi_phat_health_record_parse(FuFirmware *firmware,
 	self->guid = fwupd_guid_to_string(&guid, FWUPD_GUID_FLAG_MIXED_ENDIAN);
 
 	/* read the data offset to work out the size of the middle part */
-	if (!fu_common_read_uint32_safe(buf, bufsz, 24, &dataoff, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, 24, &dataoff, G_LITTLE_ENDIAN, error))
 		return FALSE;
 
 	/* device path */

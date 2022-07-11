@@ -17,6 +17,7 @@
 #endif
 
 #include "fu-i2c-device.h"
+#include "fu-string.h"
 
 /**
  * FuI2cDevice
@@ -41,7 +42,7 @@ fu_i2c_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuI2cDevice *self = FU_I2C_DEVICE(device);
 	FuI2cDevicePrivate *priv = GET_PRIVATE(self);
-	fu_common_string_append_kx(str, idt, "BusNumber", priv->bus_number);
+	fu_string_append_kx(str, idt, "BusNumber", priv->bus_number);
 }
 
 static void
@@ -113,13 +114,8 @@ fu_i2c_device_probe(FuDevice *device, GError **error)
 	FuI2cDevicePrivate *priv = GET_PRIVATE(self);
 	GUdevDevice *udev_device = fu_udev_device_get_dev(FU_UDEV_DEVICE(device));
 	const gchar *tmp;
-	g_autoptr(GMatchInfo) info = NULL;
-	g_autoptr(GRegex) regex = NULL;
+	g_autofree gchar *devname = NULL;
 #endif
-
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_i2c_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	/* set physical ID */
 	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "i2c", error))
@@ -133,13 +129,16 @@ fu_i2c_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* get bus number out of sysfs path */
-	regex = g_regex_new("/i2c-([0-9]+)/", 0, 0, error);
-	if (regex == NULL)
-		return FALSE;
-	tmp = g_udev_device_get_sysfs_path(udev_device);
-	if (!g_regex_match_full(regex, tmp, -1, 0, 0, &info, error))
-		return FALSE;
-	priv->bus_number = g_ascii_strtoll(g_match_info_fetch(info, 1), NULL, 10);
+	devname = g_path_get_basename(fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device)));
+	if (g_str_has_prefix(devname, "i2c-")) {
+		guint64 tmp64 = 0;
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_strtoull(devname + 4, &tmp64, 0, G_MAXUINT, &error_local)) {
+			g_debug("ignoring i2c devname bus number: %s", error_local->message);
+		} else {
+			priv->bus_number = tmp64;
+		}
+	}
 #endif
 
 	/* success */
@@ -184,42 +183,6 @@ fu_i2c_device_set_bus_number(FuI2cDevice *self, guint bus_number)
 /**
  * fu_i2c_device_write:
  * @self: a #FuI2cDevice
- * @data: value
- * @error: (nullable): optional return location for an error
- *
- * Write a single byte to the I²C device.
- *
- * Returns: %TRUE for success
- *
- * Since: 1.6.1
- **/
-gboolean
-fu_i2c_device_write(FuI2cDevice *self, guint8 data, GError **error)
-{
-	return fu_udev_device_pwrite_full(FU_UDEV_DEVICE(self), 0x0, &data, 0x01, error);
-}
-
-/**
- * fu_i2c_device_read:
- * @self: a #FuI2cDevice
- * @data: (out): value
- * @error: (nullable): optional return location for an error
- *
- * Read a single byte from the I²C device.
- *
- * Returns: %TRUE for success
- *
- * Since: 1.6.1
- **/
-gboolean
-fu_i2c_device_read(FuI2cDevice *self, guint8 *data, GError **error)
-{
-	return fu_udev_device_pread_full(FU_UDEV_DEVICE(self), 0x0, data, 0x1, error);
-}
-
-/**
- * fu_i2c_device_write_full:
- * @self: a #FuI2cDevice
  * @buf: (out): data
  * @bufsz: size of @data
  * @error: (nullable): optional return location for an error
@@ -228,16 +191,16 @@ fu_i2c_device_read(FuI2cDevice *self, guint8 *data, GError **error)
  *
  * Returns: %TRUE for success
  *
- * Since: 1.6.2
+ * Since: 1.8.2
  **/
 gboolean
-fu_i2c_device_write_full(FuI2cDevice *self, const guint8 *buf, gsize bufsz, GError **error)
+fu_i2c_device_write(FuI2cDevice *self, const guint8 *buf, gsize bufsz, GError **error)
 {
-	return fu_udev_device_pwrite_full(FU_UDEV_DEVICE(self), 0x0, buf, bufsz, error);
+	return fu_udev_device_pwrite(FU_UDEV_DEVICE(self), 0x0, buf, bufsz, error);
 }
 
 /**
- * fu_i2c_device_read_full:
+ * fu_i2c_device_read:
  * @self: a #FuI2cDevice
  * @buf: (out): data
  * @bufsz: size of @data
@@ -247,12 +210,29 @@ fu_i2c_device_write_full(FuI2cDevice *self, const guint8 *buf, gsize bufsz, GErr
  *
  * Returns: %TRUE for success
  *
- * Since: 1.6.2
+ * Since: 1.8.2
  **/
 gboolean
-fu_i2c_device_read_full(FuI2cDevice *self, guint8 *buf, gsize bufsz, GError **error)
+fu_i2c_device_read(FuI2cDevice *self, guint8 *buf, gsize bufsz, GError **error)
 {
-	return fu_udev_device_pread_full(FU_UDEV_DEVICE(self), 0x0, buf, bufsz, error);
+	return fu_udev_device_pread(FU_UDEV_DEVICE(self), 0x0, buf, bufsz, error);
+}
+
+static void
+fu_i2c_device_incorporate(FuDevice *device, FuDevice *donor)
+{
+	FuI2cDevice *self = FU_I2C_DEVICE(device);
+	FuI2cDevicePrivate *priv = GET_PRIVATE(self);
+	FuI2cDevicePrivate *priv_donor = GET_PRIVATE(FU_I2C_DEVICE(donor));
+
+	g_return_if_fail(FU_IS_I2C_DEVICE(self));
+	g_return_if_fail(FU_IS_I2C_DEVICE(donor));
+
+	/* FuUdevDevice->incorporate */
+	FU_DEVICE_CLASS(fu_i2c_device_parent_class)->incorporate(device, donor);
+
+	/* copy private instance data */
+	priv->bus_number = priv_donor->bus_number;
 }
 
 static void
@@ -272,6 +252,7 @@ fu_i2c_device_class_init(FuI2cDeviceClass *klass)
 	klass_device->open = fu_i2c_device_open;
 	klass_device->probe = fu_i2c_device_probe;
 	klass_device->to_string = fu_i2c_device_to_string;
+	klass_device->incorporate = fu_i2c_device_incorporate;
 
 	/**
 	 * FuI2cDevice:bus-number:

@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include <glib-object.h>
-
 #include "fu-firmware.h"
 
 #define FU_TYPE_SMBIOS (fu_smbios_get_type())
@@ -102,9 +100,6 @@ typedef enum {
 	/*< private >*/
 	FU_SMBIOS_CHASSIS_KIND_LAST,
 } FuSmbiosChassisKind;
-
-gchar *
-fu_smbios_to_string(FuSmbios *self);
 
 const gchar *
 fu_smbios_get_string(FuSmbios *self, guint8 type, guint8 offset, GError **error);

@@ -8,7 +8,6 @@
 
 #include <fwupdplugin.h>
 
-#include <gio/gio.h>
 #include <string.h>
 
 #include "fu-wacom-common.h"
@@ -38,15 +37,15 @@ fu_wacom_emr_device_setup(FuDevice *device, GError **error)
 		g_autofree gchar *version = NULL;
 		if (!fu_wacom_device_get_feature(FU_WACOM_DEVICE(self), data, sizeof(data), error))
 			return FALSE;
-		if (!fu_common_read_uint16_safe(data,
-						sizeof(data),
-						11,
-						&fw_ver,
-						G_LITTLE_ENDIAN,
-						error))
+		if (!fu_memread_uint16_safe(data,
+					    sizeof(data),
+					    11,
+					    &fw_ver,
+					    G_LITTLE_ENDIAN,
+					    error))
 			return FALSE;
 		fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
-		version = fu_common_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_PAIR);
+		version = fu_version_from_uint16(fw_ver, FWUPD_VERSION_FORMAT_PAIR);
 		fu_device_set_version(device, version);
 		fu_device_set_version_raw(device, fw_ver);
 	}
@@ -58,7 +57,7 @@ fu_wacom_emr_device_setup(FuDevice *device, GError **error)
 static guint8
 fu_wacom_emr_device_calc_checksum(guint8 init1, const guint8 *buf, gsize bufsz)
 {
-	return init1 + ~(fu_common_sum8(buf, bufsz)) + 1;
+	return init1 + ~(fu_sum8(buf, bufsz)) + 1;
 }
 
 static gboolean
@@ -204,8 +203,8 @@ fu_wacom_emr_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
 
 	/* erase W9013 */
 	if (fu_device_has_instance_id(device, "WacomEMR_W9013")) {

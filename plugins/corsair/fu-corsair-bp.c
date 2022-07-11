@@ -29,6 +29,9 @@
 #define CORSAIR_OFFSET_CMD_SET_MODE	  0x04
 #define CORSAIR_OFFSET_CMD_DESTINATION	  0x00
 
+#define CORSAIR_INPUT_FLUSH_TIMEOUT    10
+#define CORSAIR_INPUT_FLUSH_ITERATIONS 3
+
 typedef enum {
 	FU_CORSAIR_BP_DESTINATION_SELF = 0x08,
 	FU_CORSAIR_BP_DESTINATION_SUBDEVICE = 0x09
@@ -58,7 +61,7 @@ fu_corsair_bp_command(FuCorsairBp *self,
 
 	data[CORSAIR_OFFSET_CMD_DESTINATION] = self->destination;
 
-	fu_common_dump_raw(G_LOG_DOMAIN, "corsair: command", data, self->cmd_write_size);
+	fu_dump_raw(G_LOG_DOMAIN, "corsair: command", data, self->cmd_write_size);
 
 	ret = g_usb_device_interrupt_transfer(usb_device,
 					      self->epout,
@@ -107,18 +110,46 @@ fu_corsair_bp_command(FuCorsairBp *self,
 		return FALSE;
 	}
 
-	fu_common_dump_raw(G_LOG_DOMAIN, "corsair: response", data, self->cmd_write_size);
+	fu_dump_raw(G_LOG_DOMAIN, "corsair: response", data, self->cmd_write_size);
 
 	if (data[CORSAIR_OFFSET_CMD_STATUS] != 0) {
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_FAILED,
-			    "device replied with error: %" G_GSIZE_FORMAT,
+			    "device replied with error: 0x%02x",
 			    data[CORSAIR_OFFSET_CMD_STATUS]);
 		return FALSE;
 	}
 
 	return TRUE;
+}
+
+/**
+ * @brief Flush all input reports if there are any.
+ * @self: a #FuCorsairBp
+ *
+ * This function clears any dangling IN reports that
+ * the device may have sent after the enumeration.
+ */
+void
+fu_corsair_bp_flush_input_reports(FuCorsairBp *self)
+{
+	gsize actual_len;
+	g_autofree guint8 *buf = g_malloc0(self->cmd_read_size);
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
+
+	for (guint i = 0; i < CORSAIR_INPUT_FLUSH_ITERATIONS; i++) {
+		g_autoptr(GError) error_local = NULL;
+		if (!g_usb_device_interrupt_transfer(usb_device,
+						     self->epin,
+						     buf,
+						     self->cmd_read_size,
+						     &actual_len,
+						     CORSAIR_INPUT_FLUSH_TIMEOUT,
+						     NULL,
+						     &error_local))
+			g_debug("flushing status: %s", error_local->message);
+	}
 }
 
 static gboolean
@@ -134,12 +165,12 @@ fu_corsair_bp_write_first_chunk(FuCorsairBp *self,
 		return FALSE;
 	}
 
-	if (!fu_common_write_uint32_safe(write_cmd,
-					 sizeof(write_cmd),
-					 CORSAIR_OFFSET_CMD_FIRMWARE_SIZE,
-					 firmware_size,
-					 G_LITTLE_ENDIAN,
-					 error)) {
+	if (!fu_memwrite_uint32_safe(write_cmd,
+				     sizeof(write_cmd),
+				     CORSAIR_OFFSET_CMD_FIRMWARE_SIZE,
+				     firmware_size,
+				     G_LITTLE_ENDIAN,
+				     error)) {
 		g_prefix_error(error, "cannot serialize firmware size: ");
 		return FALSE;
 	}
@@ -211,14 +242,14 @@ fu_corsair_bp_get_property(FuCorsairBp *self,
 {
 	guint8 data[FU_CORSAIR_MAX_CMD_SIZE] = {0x08, 0x02};
 
-	fu_common_write_uint16(&data[CORSAIR_OFFSET_CMD_PROPERTY_ID],
-			       (guint16)property,
-			       G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(&data[CORSAIR_OFFSET_CMD_PROPERTY_ID],
+			   (guint16)property,
+			   G_LITTLE_ENDIAN);
 
 	if (!fu_corsair_bp_command(self, data, CORSAIR_TRANSACTION_TIMEOUT, TRUE, error))
 		return FALSE;
 
-	*value = fu_common_read_uint32(&data[CORSAIR_OFFSET_CMD_PROPERTY_VALUE], G_LITTLE_ENDIAN);
+	*value = fu_memread_uint32(&data[CORSAIR_OFFSET_CMD_PROPERTY_VALUE], G_LITTLE_ENDIAN);
 
 	return TRUE;
 }
@@ -315,10 +346,8 @@ fu_corsair_bp_write_firmware(FuDevice *device,
 	}
 
 	firstChunk = fu_chunk_new(0, 0, 0, g_bytes_get_data(blob, NULL), first_chunk_size);
-	rest_of_firmware = fu_common_bytes_new_offset(blob,
-						      first_chunk_size,
-						      firmware_size - first_chunk_size,
-						      error);
+	rest_of_firmware =
+	    fu_bytes_new_offset(blob, first_chunk_size, firmware_size - first_chunk_size, error);
 	if (rest_of_firmware == NULL) {
 		g_prefix_error(error, "cannot get firmware past first chunk: ");
 		return FALSE;
@@ -365,7 +394,7 @@ fu_corsair_bp_activate_firmware(FuCorsairBp *self, FuFirmware *firmware, GError 
 	}
 
 	crc = fu_corsair_calculate_crc(firmware_raw, firmware_size);
-	fu_common_write_uint32(&cmd[CORSAIR_OFFSET_CMD_CRC], crc, G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(&cmd[CORSAIR_OFFSET_CMD_CRC], crc, G_LITTLE_ENDIAN);
 
 	return fu_corsair_bp_command(self, cmd, CORSAIR_ACTIVATION_TIMEOUT, TRUE, error);
 }
@@ -396,8 +425,8 @@ fu_corsair_bp_to_string(FuDevice *device, guint idt, GString *str)
 
 	FU_DEVICE_CLASS(fu_corsair_bp_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kx(str, idt, "InEndpoint", self->epin);
-	fu_common_string_append_kx(str, idt, "OutEndpoint", self->epout);
+	fu_string_append_kx(str, idt, "InEndpoint", self->epin);
+	fu_string_append_kx(str, idt, "OutEndpoint", self->epout);
 }
 
 static void

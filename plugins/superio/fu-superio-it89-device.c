@@ -254,6 +254,7 @@ fu_superio_it89_device_read_addr(FuSuperioDevice *self,
 
 	/* read out data */
 	buf = g_malloc0(size);
+	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, size);
 	for (guint i = 0; i < size; i++) {
 		if (!fu_superio_device_ec_write_cmd(self, SIO_EC_PMC_PM1DI, error))
@@ -486,7 +487,7 @@ fu_superio_it89_device_check_eflash(FuSuperioDevice *self, FuProgress *progress,
 	}
 
 	/* cannot flash here without keyboard programmer */
-	if (!fu_common_bytes_is_empty(fw)) {
+	if (!fu_bytes_is_empty(fw)) {
 		gsize sz = 0;
 		const guint8 *buf = g_bytes_get_data(fw, &sz);
 		g_autoptr(GString) str = g_string_new(NULL);
@@ -518,10 +519,10 @@ fu_superio_it89_device_write_chunk(FuSuperioDevice *self,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 21);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 59);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 20);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 1, "page-erase");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 21, "check-erase");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 59, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 20, NULL);
 
 	/* erase page */
 	if (!fu_superio_it89_device_erase_addr(self, fu_chunk_get_address(chk), error)) {
@@ -544,7 +545,7 @@ fu_superio_it89_device_write_chunk(FuSuperioDevice *self,
 			       (guint)fu_chunk_get_address(chk));
 		return FALSE;
 	}
-	if (!fu_common_bytes_is_empty(fw1)) {
+	if (!fu_bytes_is_empty(fw1)) {
 		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_READ, "sector was not erased");
 		return FALSE;
 	}
@@ -552,7 +553,7 @@ fu_superio_it89_device_write_chunk(FuSuperioDevice *self,
 
 	/* skip empty page */
 	fw2 = g_bytes_new_static(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
-	if (fu_common_bytes_is_empty(fw2)) {
+	if (fu_bytes_is_empty(fw2)) {
 		fu_progress_finished(progress);
 		return TRUE;
 	}
@@ -579,7 +580,7 @@ fu_superio_it89_device_write_chunk(FuSuperioDevice *self,
 			       (guint)fu_chunk_get_address(chk));
 		return FALSE;
 	}
-	if (!fu_common_bytes_compare(fw2, fw3, error)) {
+	if (!fu_bytes_compare(fw2, fw3, error)) {
 		g_prefix_error(error,
 			       "failed to verify @0x%04x: ",
 			       (guint)fu_chunk_get_address(chk));
@@ -667,8 +668,8 @@ fu_superio_it89_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5); /* check e-flash */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 95);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "check-eflash");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 95, NULL);
 
 	/* check JEDEC ID */
 	if (!fu_superio_it89_device_get_jedec_id(self, id, error)) {

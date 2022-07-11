@@ -8,10 +8,8 @@
 
 #include "config.h"
 
-#include <gio/gio.h>
-#include <glib-object.h>
+#include <fwupdplugin.h>
 
-#include "fu-common.h"
 #include "fu-config.h"
 
 enum { SIGNAL_CHANGED, SIGNAL_LAST };
@@ -78,7 +76,7 @@ fu_config_reload(FuConfig *self, GError **error)
 		const gchar *fn = g_ptr_array_index(self->filenames, i);
 		g_debug("trying to load config values from %s", fn);
 		if (g_file_test(fn, G_FILE_TEST_EXISTS)) {
-			g_autoptr(GBytes) blob = fu_common_get_contents_bytes(fn, error);
+			g_autoptr(GBytes) blob = fu_bytes_get_contents(fn, error);
 			if (blob == NULL)
 				return FALSE;
 			fu_byte_array_append_bytes(buf, blob);
@@ -252,7 +250,11 @@ fu_config_reload(FuConfig *self, GError **error)
 					  NULL);
 	if (uids != NULL) {
 		for (guint i = 0; uids[i] != NULL; i++) {
-			guint64 val = fu_common_strtoull(uids[i]);
+			guint64 val = 0;
+			if (!fu_strtoull(uids[i], &val, 0, G_MAXUINT64, error)) {
+				g_prefix_error(error, "failed to parse UID '%s'", uids[i]);
+				return FALSE;
+			}
 			g_array_append_val(self->trusted_uids, val);
 		}
 	}
@@ -302,8 +304,8 @@ fu_config_set_key_value(FuConfig *self, const gchar *key, const gchar *value, GE
 gboolean
 fu_config_load(FuConfig *self, GError **error)
 {
-	g_autofree gchar *configdir_mut = fu_common_get_path(FU_PATH_KIND_LOCALCONFDIR_PKG);
-	g_autofree gchar *configdir = fu_common_get_path(FU_PATH_KIND_SYSCONFDIR_PKG);
+	g_autofree gchar *configdir_mut = fu_path_from_kind(FU_PATH_KIND_LOCALCONFDIR_PKG);
+	g_autofree gchar *configdir = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR_PKG);
 
 	g_return_val_if_fail(FU_IS_CONFIG(self), FALSE);
 	g_return_val_if_fail(self->filenames->len == 0, FALSE);

@@ -7,7 +7,6 @@
 #pragma once
 
 #include <gio/gio.h>
-#include <glib-object.h>
 
 #include "fwupd-device.h"
 #include "fwupd-enums.h"
@@ -375,6 +374,8 @@ const gchar *
 fwupd_client_get_daemon_version(FwupdClient *self);
 const gchar *
 fwupd_client_get_host_bkc(FwupdClient *self);
+const gchar *
+fwupd_client_get_host_vendor(FwupdClient *self);
 const gchar *
 fwupd_client_get_host_product(FwupdClient *self);
 const gchar *

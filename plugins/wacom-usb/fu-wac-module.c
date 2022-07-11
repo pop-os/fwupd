@@ -109,18 +109,9 @@ fu_wac_module_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuWacModule *self = FU_WAC_MODULE(device);
 	FuWacModulePrivate *priv = GET_PRIVATE(self);
-	fu_common_string_append_kv(str,
-				   idt,
-				   "FwType",
-				   fu_wac_module_fw_type_to_string(priv->fw_type));
-	fu_common_string_append_kv(str,
-				   idt,
-				   "Status",
-				   fu_wac_module_status_to_string(priv->status));
-	fu_common_string_append_kv(str,
-				   idt,
-				   "Command",
-				   fu_wac_module_command_to_string(priv->command));
+	fu_string_append(str, idt, "FwType", fu_wac_module_fw_type_to_string(priv->fw_type));
+	fu_string_append(str, idt, "Status", fu_wac_module_status_to_string(priv->status));
+	fu_string_append(str, idt, "Command", fu_wac_module_command_to_string(priv->command));
 }
 
 static gboolean
@@ -351,10 +342,10 @@ static void
 fu_wac_module_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

@@ -26,7 +26,7 @@ fu_plugin_powerd_create_suspend_file(GError **error)
 	g_autofree gchar *inhibitsuspend_filename = NULL;
 	g_autofree gchar *getpid_str = NULL;
 
-	lockdir = fu_common_get_path(FU_PATH_KIND_LOCKDIR);
+	lockdir = fu_path_from_kind(FU_PATH_KIND_LOCKDIR);
 	inhibitsuspend_filename = g_build_filename(lockdir, "power_override", "fwupd.lock", NULL);
 	getpid_str = g_strdup_printf("%d", getpid());
 	if (!g_file_set_contents(inhibitsuspend_filename, getpid_str, -1, error)) {
@@ -43,7 +43,7 @@ fu_plugin_powerd_delete_suspend_file(GError **error)
 	g_autofree gchar *lockdir = NULL;
 	g_autoptr(GFile) inhibitsuspend_file = NULL;
 
-	lockdir = fu_common_get_path(FU_PATH_KIND_LOCKDIR);
+	lockdir = fu_path_from_kind(FU_PATH_KIND_LOCKDIR);
 	inhibitsuspend_file =
 	    g_file_new_build_filename(lockdir, "power_override", "fwupd.lock", NULL);
 	if (!g_file_delete(inhibitsuspend_file, NULL, &local_error) &&
@@ -59,9 +59,9 @@ fu_plugin_powerd_delete_suspend_file(GError **error)
 static void
 fu_plugin_powerd_destroy(FuPlugin *plugin)
 {
-	FuPluginData *data = fu_plugin_get_data(plugin);
-	if (data->proxy != NULL)
-		g_object_unref(data->proxy);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
+	if (priv->proxy != NULL)
+		g_object_unref(priv->proxy);
 }
 
 static void
@@ -95,16 +95,16 @@ fu_plugin_powerd_proxy_changed_cb(GDBusProxy *proxy,
 }
 
 static gboolean
-fu_plugin_powerd_startup(FuPlugin *plugin, GError **error)
+fu_plugin_powerd_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
-	FuPluginData *data = fu_plugin_get_data(plugin);
+	FuPluginData *priv = fu_plugin_get_data(plugin);
 	g_autofree gchar *name_owner = NULL;
 
 	if (!fu_plugin_powerd_delete_suspend_file(error))
 		return FALSE;
 
 	/* establish proxy for method call to powerd */
-	data->proxy = g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SYSTEM,
+	priv->proxy = g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SYSTEM,
 						    G_DBUS_PROXY_FLAGS_NONE,
 						    NULL,
 						    "org.chromium.PowerManager",
@@ -113,22 +113,22 @@ fu_plugin_powerd_startup(FuPlugin *plugin, GError **error)
 						    NULL,
 						    error);
 
-	if (data->proxy == NULL) {
+	if (priv->proxy == NULL) {
 		g_prefix_error(error, "failed to connect to powerd: ");
 		return FALSE;
 	}
-	name_owner = g_dbus_proxy_get_name_owner(data->proxy);
+	name_owner = g_dbus_proxy_get_name_owner(priv->proxy);
 	if (name_owner == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "no service that owns the name for %s",
-			    g_dbus_proxy_get_name(data->proxy));
+			    g_dbus_proxy_get_name(priv->proxy));
 		return FALSE;
 	}
 
 	fu_plugin_powerd_rescan(plugin,
-				g_dbus_proxy_call_sync(data->proxy,
+				g_dbus_proxy_call_sync(priv->proxy,
 						       "GetBatteryState",
 						       NULL,
 						       G_DBUS_CALL_FLAGS_NONE,
@@ -136,7 +136,7 @@ fu_plugin_powerd_startup(FuPlugin *plugin, GError **error)
 						       NULL,
 						       G_SOURCE_REMOVE));
 
-	g_signal_connect(G_DBUS_PROXY(data->proxy),
+	g_signal_connect(G_DBUS_PROXY(priv->proxy),
 			 "g-signal",
 			 G_CALLBACK(fu_plugin_powerd_proxy_changed_cb),
 			 plugin);

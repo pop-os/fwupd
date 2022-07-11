@@ -97,7 +97,7 @@ fu_colorhug_device_msg(FuColorhugDevice *self,
 
 	/* request */
 	if (g_getenv("FWUPD_COLORHUG_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "REQ", buf, ibufsz + 1);
+		fu_dump_raw(G_LOG_DOMAIN, "REQ", buf, ibufsz + 1);
 	if (!g_usb_device_interrupt_transfer(usb_device,
 					     CH_USB_HID_EP_OUT,
 					     buf,
@@ -147,7 +147,7 @@ fu_colorhug_device_msg(FuColorhugDevice *self,
 		return FALSE;
 	}
 	if (g_getenv("FWUPD_COLORHUG_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, "RES", buf, actual_length);
+		fu_dump_raw(G_LOG_DOMAIN, "RES", buf, actual_length);
 
 	/* old bootloaders do not return the full block */
 	if (actual_length != CH_USB_HID_EP_SIZE && actual_length != 2 &&
@@ -290,8 +290,8 @@ fu_colorhug_device_erase(FuColorhugDevice *self, guint16 addr, gsize sz, GError 
 	guint8 buf[4];
 	g_autoptr(GError) error_local = NULL;
 
-	fu_common_write_uint16(buf + 0, addr, G_LITTLE_ENDIAN);
-	fu_common_write_uint16(buf + 2, sz, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(buf + 0, addr, G_LITTLE_ENDIAN);
+	fu_memwrite_uint16(buf + 2, sz, G_LITTLE_ENDIAN);
 	if (!fu_colorhug_device_msg(self,
 				    CH_CMD_ERASE_FLASH,
 				    buf,
@@ -323,19 +323,15 @@ fu_colorhug_device_get_version(FuColorhugDevice *self, GError **error)
 		return NULL;
 	}
 	return g_strdup_printf("%i.%i.%i",
-			       fu_common_read_uint16(buf + 0, G_LITTLE_ENDIAN),
-			       fu_common_read_uint16(buf + 2, G_LITTLE_ENDIAN),
-			       fu_common_read_uint16(buf + 4, G_LITTLE_ENDIAN));
+			       fu_memread_uint16(buf + 0, G_LITTLE_ENDIAN),
+			       fu_memread_uint16(buf + 2, G_LITTLE_ENDIAN),
+			       fu_memread_uint16(buf + 4, G_LITTLE_ENDIAN));
 }
 
 static gboolean
 fu_colorhug_device_probe(FuDevice *device, GError **error)
 {
 	FuColorhugDevice *self = FU_COLORHUG_DEVICE(device);
-
-	/* FuUsbDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_colorhug_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	/* compact memory layout */
 	if (fu_device_has_private_flag(device, FU_COLORHUG_DEVICE_FLAG_HALFSIZE))
@@ -372,7 +368,7 @@ fu_colorhug_device_setup(FuDevice *device, GError **error)
 		 * provided the extra data it's because the BCD type was not
 		 * suitable -- and INTEL_ME is not relevant here */
 		if (tmp != NULL) {
-			fu_device_set_version_format(device, fu_common_version_guess_format(tmp));
+			fu_device_set_version_format(device, fu_version_guess_format(tmp));
 			fu_device_set_version(device, tmp);
 		}
 	}
@@ -431,7 +427,7 @@ fu_colorhug_device_write_blocks(FuColorhugDevice *self,
 		g_autoptr(GError) error_local = NULL;
 
 		/* set address, length, checksum, data */
-		fu_common_write_uint16(buf + 0, fu_chunk_get_address(chk), G_LITTLE_ENDIAN);
+		fu_memwrite_uint16(buf + 0, fu_chunk_get_address(chk), G_LITTLE_ENDIAN);
 		buf[2] = fu_chunk_get_data_sz(chk);
 		buf[3] = ch_colorhug_device_calculate_checksum(fu_chunk_get_data(chk),
 							       fu_chunk_get_data_sz(chk));
@@ -483,7 +479,7 @@ fu_colorhug_device_verify_blocks(FuColorhugDevice *self,
 		g_autoptr(GError) error_local = NULL;
 
 		/* set address */
-		fu_common_write_uint16(buf + 0, fu_chunk_get_address(chk), G_LITTLE_ENDIAN);
+		fu_memwrite_uint16(buf + 0, fu_chunk_get_address(chk), G_LITTLE_ENDIAN);
 		buf[2] = fu_chunk_get_data_sz(chk);
 		if (!fu_colorhug_device_msg(self,
 					    CH_CMD_READ_FLASH,
@@ -534,10 +530,10 @@ fu_colorhug_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 19);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 44);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 35);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 19, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 44, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 35, NULL);
 
 	/* get default image */
 	fw = fu_firmware_get_bytes(firmware, error);
@@ -576,10 +572,10 @@ static void
 fu_colorhug_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 57);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 43);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 57, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 43, "reload");
 }
 
 static void

@@ -10,8 +10,10 @@
 
 #include <string.h>
 
+#include "fu-bytes.h"
 #include "fu-chunk-private.h"
 #include "fu-common.h"
+#include "fu-string.h"
 
 /**
  * FuChunk:
@@ -295,8 +297,7 @@ fu_chunk_export(FuChunk *self, FuFirmwareExportFlags flags, XbBuilderNode *bn)
 		g_autofree gchar *datastr = NULL;
 		g_autofree gchar *dataszstr = g_strdup_printf("0x%x", (guint)self->data_sz);
 		if (flags & FU_FIRMWARE_EXPORT_FLAG_ASCII_DATA) {
-			datastr =
-			    fu_common_strsafe((const gchar *)self->data, MIN(self->data_sz, 16));
+			datastr = fu_strsafe((const gchar *)self->data, MIN(self->data_sz, 16));
 		} else {
 			datastr = g_base64_encode(self->data, self->data_sz);
 		}
@@ -501,7 +502,7 @@ fu_chunk_array_new_from_bytes(GBytes *blob, guint32 addr_start, guint32 page_sz,
 	chunks = fu_chunk_array_new(data, (guint32)sz, addr_start, page_sz, packet_sz);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
-		chk->bytes = fu_common_bytes_new_offset(blob, chk->data - data, chk->data_sz, NULL);
+		chk->bytes = fu_bytes_new_offset(blob, chk->data - data, chk->data_sz, NULL);
 	}
 	return chunks;
 }

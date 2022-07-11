@@ -66,7 +66,7 @@ fu_uf2_device_probe_current_fw(FuDevice *device, GBytes *fw, GError **error)
 					   "FAMILY",
 					   (guint32)fu_firmware_get_idx(firmware));
 	}
-	fu_device_build_instance_id_quirk(device, NULL, "UF2", "FAMILY", NULL);
+	(void)fu_device_build_instance_id_quirk(device, NULL, "UF2", "FAMILY", NULL);
 
 	/* add device checksum */
 	fw_raw = fu_firmware_get_bytes(firmware, error);
@@ -96,7 +96,7 @@ fu_block_device_get_full_path(FuUf2Device *self, const gchar *filename, GError *
 	}
 
 	/* find volume */
-	volume = fu_common_get_volume_by_device(devfile, error);
+	volume = fu_volume_new_by_device(devfile, error);
 	if (volume == NULL)
 		return NULL;
 
@@ -172,7 +172,7 @@ fu_block_device_dump_firmware(FuDevice *device, FuProgress *progress, GError **e
 		return NULL;
 
 	/* read all in one big chunk */
-	return fu_common_get_contents_stream(istr, G_MAXUINT32, error);
+	return fu_bytes_get_contents_stream(istr, G_MAXUINT32, error);
 }
 
 static FuFirmware *
@@ -196,7 +196,7 @@ fu_uf2_device_volume_mount(FuUf2Device *self, GError **error)
 	const gchar *devfile = fu_udev_device_get_device_file(FU_UDEV_DEVICE(self));
 
 	/* mount volume if required */
-	self->volume = fu_common_get_volume_by_device(devfile, error);
+	self->volume = fu_volume_new_by_device(devfile, error);
 	if (self->volume == NULL)
 		return FALSE;
 	return fu_volume_mount(self->volume, error);
@@ -209,7 +209,7 @@ fu_uf2_device_check_volume_mounted_cb(FuDevice *self, gpointer user_data, GError
 	g_autoptr(FuVolume) volume = NULL;
 
 	/* mount volume if required */
-	volume = fu_common_get_volume_by_device(devfile, error);
+	volume = fu_volume_new_by_device(devfile, error);
 	if (volume == NULL)
 		return FALSE;
 	if (!fu_volume_is_mounted(volume)) {
@@ -285,7 +285,7 @@ fu_uf2_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	if (!g_file_get_contents(fn1, &buf, &bufsz, error))
 		return FALSE;
-	lines = fu_common_strnsplit(buf, bufsz, "\n", -1);
+	lines = fu_strsplit(buf, bufsz, "\n", -1);
 	for (guint i = 0; lines[i] != NULL; i++) {
 		if (g_str_has_prefix(lines[i], "Model: ")) {
 			fu_device_set_name(device, lines[i] + 7);
@@ -297,7 +297,7 @@ fu_uf2_device_setup(FuDevice *device, GError **error)
 
 	/* this might exist */
 	fn2 = fu_block_device_get_full_path(self, "CURRENT.UF2", error);
-	fw = fu_common_get_contents_bytes(fn2, NULL);
+	fw = fu_bytes_get_contents(fn2, NULL);
 	if (fw != NULL) {
 		if (!fu_uf2_device_probe_current_fw(device, fw, error))
 			return FALSE;
@@ -316,10 +316,6 @@ fu_uf2_device_probe(FuDevice *device, GError **error)
 	const gchar *tmp;
 	guint64 vid = 0;
 	guint64 pid = 0;
-
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_uf2_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	/* check is valid */
 	tmp = g_udev_device_get_property(udev_device, "ID_BUS");
@@ -389,10 +385,10 @@ fu_uf2_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void
@@ -401,7 +397,7 @@ fu_uf2_device_to_string(FuDevice *device, guint idt, GString *str)
 	FuUf2Device *self = FU_UF2_DEVICE(device);
 	FU_DEVICE_CLASS(fu_uf2_device_parent_class)->to_string(device, idt, str);
 	if (self->family_id > 0)
-		fu_common_string_append_kx(str, idt, "FamilyId", self->family_id);
+		fu_string_append_kx(str, idt, "FamilyId", self->family_id);
 }
 
 static void

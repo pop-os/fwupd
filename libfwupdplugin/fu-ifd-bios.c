@@ -6,9 +6,11 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
+#include "fu-bytes.h"
+#include "fu-common.h"
 #include "fu-efi-firmware-volume.h"
+#include "fu-ifd-bios.h"
+#include "fu-mem.h"
 
 /**
  * FuIfdBios:
@@ -26,13 +28,11 @@ G_DEFINE_TYPE(FuIfdBios, fu_ifd_bios, FU_TYPE_IFD_IMAGE)
 static gboolean
 fu_ifd_bios_parse(FuFirmware *firmware,
 		  GBytes *fw,
-		  guint64 addr_start,
-		  guint64 addr_end,
+		  gsize offset,
 		  FwupdInstallFlags flags,
 		  GError **error)
 {
 	gsize bufsz = 0;
-	gsize offset = 0x0;
 	guint32 sig;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
@@ -46,7 +46,7 @@ fu_ifd_bios_parse(FuFirmware *firmware,
 		g_autoptr(GBytes) fw_offset = NULL;
 
 		/* ignore _FIT_ as EOF */
-		if (!fu_common_read_uint32_safe(buf, bufsz, offset, &sig, G_LITTLE_ENDIAN, error)) {
+		if (!fu_memread_uint32_safe(buf, bufsz, offset, &sig, G_LITTLE_ENDIAN, error)) {
 			g_prefix_error(error, "failed to read start signature: ");
 			return FALSE;
 		}
@@ -56,7 +56,7 @@ fu_ifd_bios_parse(FuFirmware *firmware,
 			break;
 
 		/* FV */
-		fw_offset = fu_common_bytes_new_offset(fw, offset, bufsz - offset, error);
+		fw_offset = fu_bytes_new_offset(fw, offset, bufsz - offset, error);
 		if (fw_offset == NULL)
 			return FALSE;
 		firmware_tmp = fu_firmware_new_from_gtypes(fw_offset,

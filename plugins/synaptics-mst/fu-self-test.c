@@ -6,7 +6,8 @@
 
 #include "config.h"
 
-#include <fwupd.h>
+#include <fwupdplugin.h>
+
 #include <glib/gstdio.h>
 #include <stdlib.h>
 
@@ -68,6 +69,7 @@ fu_plugin_synaptics_mst_none_func(void)
 	const gchar *ci = g_getenv("CI_NETWORK");
 	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(FuPlugin) plugin = fu_plugin_new(ctx);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) devices =
 	    g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
@@ -88,7 +90,7 @@ fu_plugin_synaptics_mst_none_func(void)
 	ret = fu_plugin_open(plugin, pluginfn, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	ret = fu_plugin_runner_startup(plugin, &error);
+	ret = fu_plugin_runner_startup(plugin, progress, &error);
 	if (!ret && g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 		g_test_skip("Skipping tests due to unsupported configuration");
 		return;
@@ -112,6 +114,7 @@ fu_plugin_synaptics_mst_tb16_func(void)
 	gboolean ret;
 	const gchar *ci = g_getenv("CI_NETWORK");
 	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(FuPlugin) plugin = fu_plugin_new(ctx);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) devices =
@@ -133,7 +136,7 @@ fu_plugin_synaptics_mst_tb16_func(void)
 	ret = fu_plugin_open(plugin, pluginfn, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	ret = fu_plugin_runner_startup(plugin, &error);
+	ret = fu_plugin_runner_startup(plugin, progress, &error);
 	if (!ret && g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 		g_test_skip("Skipping tests due to unsupported configuration");
 		return;

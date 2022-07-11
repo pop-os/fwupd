@@ -32,7 +32,7 @@ fu_uefi_bootmgr_get_suffix(GError **error)
 #endif
 		{0, NULL}
 	};
-	g_autofree gchar *sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW);
+	g_autofree gchar *sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 	g_autofree gchar *sysfsefidir = g_build_filename(sysfsfwdir, "efi", NULL);
 	firmware_bits = fu_uefi_read_file_as_uint64(sysfsefidir, "fw_platform_size");
 	if (firmware_bits == 0) {
@@ -98,7 +98,7 @@ fu_uefi_get_built_app_path(GError **error)
 	suffix = fu_uefi_bootmgr_get_suffix(error);
 	if (suffix == NULL)
 		return NULL;
-	prefix = fu_common_get_path(FU_PATH_KIND_EFIAPPDIR);
+	prefix = fu_path_from_kind(FU_PATH_KIND_EFIAPPDIR);
 
 	source_path = g_strdup_printf("%s/fwupd%s.efi", prefix, suffix);
 	source_path_signed = g_strdup_printf("%s.signed", source_path);
@@ -106,7 +106,7 @@ fu_uefi_get_built_app_path(GError **error)
 	source_path_exists = g_file_test(source_path, G_FILE_TEST_EXISTS);
 	source_path_signed_exists = g_file_test(source_path_signed, G_FILE_TEST_EXISTS);
 
-	if (fu_efivar_secure_boot_enabled()) {
+	if (fu_efivar_secure_boot_enabled(NULL)) {
 		if (!source_path_signed_exists) {
 			g_set_error(error,
 				    G_IO_ERROR,
@@ -140,7 +140,7 @@ fu_uefi_get_framebuffer_size(guint32 *width, guint32 *height, GError **error)
 	g_autofree gchar *sysfsdriverdir = NULL;
 	g_autofree gchar *fbdir = NULL;
 
-	sysfsdriverdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_DRIVERS);
+	sysfsdriverdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_DRIVERS);
 	fbdir = g_build_filename(sysfsdriverdir, "efi-framebuffer", "efi-framebuffer.0", NULL);
 	if (!g_file_test(fbdir, G_FILE_TEST_EXISTS)) {
 		g_set_error_literal(error,
@@ -189,7 +189,7 @@ fu_uefi_get_bitmap_size(const guint8 *buf,
 	}
 
 	/* starting address */
-	if (!fu_common_read_uint32_safe(buf, bufsz, 10, &ui32, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, 10, &ui32, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (ui32 < 26) {
 		g_set_error(error,
@@ -201,7 +201,7 @@ fu_uefi_get_bitmap_size(const guint8 *buf,
 	}
 
 	/* BITMAPINFOHEADER header */
-	if (!fu_common_read_uint32_safe(buf, bufsz, 14, &ui32, G_LITTLE_ENDIAN, error))
+	if (!fu_memread_uint32_safe(buf, bufsz, 14, &ui32, G_LITTLE_ENDIAN, error))
 		return FALSE;
 	if (ui32 < 26 - 14) {
 		g_set_error(error,
@@ -214,11 +214,11 @@ fu_uefi_get_bitmap_size(const guint8 *buf,
 
 	/* dimensions */
 	if (width != NULL) {
-		if (!fu_common_read_uint32_safe(buf, bufsz, 18, width, G_LITTLE_ENDIAN, error))
+		if (!fu_memread_uint32_safe(buf, bufsz, 18, width, G_LITTLE_ENDIAN, error))
 			return FALSE;
 	}
 	if (height != NULL) {
-		if (!fu_common_read_uint32_safe(buf, bufsz, 22, height, G_LITTLE_ENDIAN, error))
+		if (!fu_memread_uint32_safe(buf, bufsz, 22, height, G_LITTLE_ENDIAN, error))
 			return FALSE;
 	}
 	return TRUE;
@@ -267,11 +267,18 @@ fu_uefi_get_esp_path_for_os(FuDevice *device, const gchar *base)
 guint64
 fu_uefi_read_file_as_uint64(const gchar *path, const gchar *attr_name)
 {
+	guint64 tmp = 0;
 	g_autofree gchar *data = NULL;
 	g_autofree gchar *fn = g_build_filename(path, attr_name, NULL);
+	g_autoptr(GError) error_local = NULL;
+
 	if (!g_file_get_contents(fn, &data, NULL, NULL))
 		return 0x0;
-	return fu_common_strtoull(data);
+	if (!fu_strtoull(data, &tmp, 0, G_MAXUINT64, &error_local)) {
+		g_warning("invalid string specified: %s", error_local->message);
+		return G_MAXUINT64;
+	}
+	return tmp;
 }
 
 gboolean

@@ -6,22 +6,27 @@
 
 #define G_LOG_DOMAIN "FuCommon"
 
-#include <config.h>
+#include "config.h"
+
 #include <gio/gio.h>
 #include <shlwapi.h>
 #include <sysinfoapi.h>
 
 #include "fu-common-private.h"
+#include "fu-path-private.h"
 
 GPtrArray *
 fu_common_get_block_devices(GError **error)
 {
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "not supported");
+	g_set_error(error,
+		    G_IO_ERROR,
+		    G_IO_ERROR_NOT_SUPPORTED,
+		    "getting block devices is not supported on Windows");
 	return NULL;
 }
 
 gboolean
-fu_common_fnmatch_impl(const gchar *pattern, const gchar *str)
+fu_path_fnmatch_impl(const gchar *pattern, const gchar *str)
 {
 	g_return_val_if_fail(pattern != NULL, FALSE);
 	g_return_val_if_fail(str != NULL, FALSE);

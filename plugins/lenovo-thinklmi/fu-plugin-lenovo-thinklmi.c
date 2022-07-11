@@ -9,13 +9,13 @@
 #include <fwupdplugin.h>
 
 static gboolean
-fu_plugin_lenovo_thinklmi_startup(FuPlugin *plugin, GError **error)
+fu_plugin_lenovo_thinklmi_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	g_autofree gchar *sysfsfwdir = NULL;
 	g_autofree gchar *thinklmidir = NULL;
 
 	/* already exists */
-	sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW_ATTRIB);
+	sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW_ATTRIB);
 	thinklmidir = g_build_filename(sysfsfwdir, "thinklmi", NULL);
 	if (!g_file_test(thinklmidir, G_FILE_TEST_EXISTS)) {
 		g_set_error_literal(error,
@@ -31,10 +31,11 @@ fu_plugin_lenovo_thinklmi_startup(FuPlugin *plugin, GError **error)
 static gboolean
 fu_plugin_lenovo_firmware_pending_change(gboolean *result, GError **error)
 {
+	guint64 val = 0;
 	g_autofree gchar *buf = NULL;
 	g_autofree gchar *sysfsfwdir = NULL;
 	g_autofree gchar *pending = NULL;
-	sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW_ATTRIB);
+	sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW_ATTRIB);
 	pending = g_build_filename(sysfsfwdir, "thinklmi", "attributes", "pending_reboot", NULL);
 
 	/* we can't check, assume not locked */
@@ -45,8 +46,9 @@ fu_plugin_lenovo_firmware_pending_change(gboolean *result, GError **error)
 		g_prefix_error(error, "failed to get %s: ", pending);
 		return FALSE;
 	}
-	*result = fu_common_strtoull(buf) > 0;
-
+	if (!fu_strtoull(buf, &val, 0, G_MAXUINT32, error))
+		return FALSE;
+	*result = val > 0;
 	return TRUE;
 }
 
@@ -57,7 +59,7 @@ fu_plugin_lenovo_firmware_locked(gboolean *locked, GError **error)
 	g_autofree gchar *sysfsfwdir = NULL;
 	g_autofree gchar *thinklmi = NULL;
 
-	sysfsfwdir = fu_common_get_path(FU_PATH_KIND_SYSFSDIR_FW_ATTRIB);
+	sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW_ATTRIB);
 	thinklmi = g_build_filename(sysfsfwdir,
 				    "thinklmi",
 				    "attributes",

@@ -24,6 +24,8 @@ G_DEFINE_TYPE_WITH_PRIVATE(FuWacomDevice, fu_wacom_device, FU_TYPE_UDEV_DEVICE)
 
 #define GET_PRIVATE(o) (fu_wacom_device_get_instance_private(o))
 
+#define FU_WACOM_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+
 static void
 fu_wacom_device_to_string(FuDevice *device, guint idt, GString *str)
 {
@@ -33,9 +35,9 @@ fu_wacom_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUdevDevice->to_string */
 	FU_DEVICE_CLASS(fu_wacom_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kx(str, idt, "FlashBlockSize", priv->flash_block_size);
-	fu_common_string_append_kx(str, idt, "FlashBaseAddr", priv->flash_base_addr);
-	fu_common_string_append_kx(str, idt, "FlashSize", priv->flash_size);
+	fu_string_append_kx(str, idt, "FlashBlockSize", priv->flash_block_size);
+	fu_string_append_kx(str, idt, "FlashBaseAddr", priv->flash_base_addr);
+	fu_string_append_kx(str, idt, "FlashSize", priv->flash_size);
 }
 
 gsize
@@ -97,10 +99,6 @@ fu_wacom_device_check_mpu(FuWacomDevice *self, GError **error)
 static gboolean
 fu_wacom_device_probe(FuDevice *device, GError **error)
 {
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_wacom_device_parent_class)->probe(device, error))
-		return FALSE;
-
 	/* set the physical ID */
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error);
 }
@@ -251,20 +249,26 @@ fu_wacom_device_write_firmware(FuDevice *device,
 gboolean
 fu_wacom_device_set_feature(FuWacomDevice *self, const guint8 *data, guint datasz, GError **error)
 {
-	fu_common_dump_raw(G_LOG_DOMAIN, "SetFeature", data, datasz);
+	fu_dump_raw(G_LOG_DOMAIN, "SetFeature", data, datasz);
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    HIDIOCSFEATURE(datasz),
 				    (guint8 *)data,
 				    NULL,
+				    FU_WACOM_DEVICE_IOCTL_TIMEOUT,
 				    error);
 }
 
 gboolean
 fu_wacom_device_get_feature(FuWacomDevice *self, guint8 *data, guint datasz, GError **error)
 {
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self), HIDIOCGFEATURE(datasz), data, NULL, error))
+	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
+				  HIDIOCGFEATURE(datasz),
+				  data,
+				  NULL,
+				  FU_WACOM_DEVICE_IOCTL_TIMEOUT,
+				  error))
 		return FALSE;
-	fu_common_dump_raw(G_LOG_DOMAIN, "GetFeature", data, datasz);
+	fu_dump_raw(G_LOG_DOMAIN, "GetFeature", data, datasz);
 	return TRUE;
 }
 
@@ -318,19 +322,19 @@ fu_wacom_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *va
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "WacomI2cFlashBlockSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXSIZE, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXSIZE, error))
 			return FALSE;
 		priv->flash_block_size = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "WacomI2cFlashBaseAddr") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		priv->flash_base_addr = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "WacomI2cFlashSize") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		priv->flash_size = tmp;
 		return TRUE;
@@ -344,10 +348,10 @@ fu_wacom_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

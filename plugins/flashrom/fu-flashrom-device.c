@@ -43,7 +43,7 @@ fu_flashrom_device_set_quirk_kv(FuDevice *device,
 {
 	if (g_strcmp0(key, "PciBcrAddr") == 0) {
 		guint64 tmp = 0;
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
 			return FALSE;
 		fu_device_set_metadata_integer(device, "PciBcrAddr", tmp);
 		return TRUE;
@@ -57,10 +57,6 @@ fu_flashrom_device_probe(FuDevice *device, GError **error)
 {
 	const gchar *dev_name = NULL;
 	const gchar *sysfs_path = NULL;
-
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_flashrom_device_parent_class)->probe(device, error))
-		return FALSE;
 
 	sysfs_path = fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device));
 	if (sysfs_path != NULL) {
@@ -166,9 +162,9 @@ fu_flashrom_device_prepare(FuDevice *device,
 
 	/* if the original firmware doesn't exist, grab it now */
 	basename = g_strdup_printf("flashrom-%s.bin", fu_device_get_id(device));
-	localstatedir = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	localstatedir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
 	firmware_orig = g_build_filename(localstatedir, "builder", basename, NULL);
-	if (!fu_common_mkdir_parent(firmware_orig, error))
+	if (!fu_path_mkdir_parent(firmware_orig, error))
 		return FALSE;
 	if (!g_file_test(firmware_orig, G_FILE_TEST_EXISTS)) {
 		g_autoptr(GBytes) buf = NULL;
@@ -177,7 +173,7 @@ fu_flashrom_device_prepare(FuDevice *device,
 			g_prefix_error(error, "failed to back up original firmware: ");
 			return FALSE;
 		}
-		if (!fu_common_set_contents_bytes(firmware_orig, buf, error))
+		if (!fu_bytes_set_contents(firmware_orig, buf, error))
 			return FALSE;
 	}
 
@@ -200,8 +196,8 @@ fu_flashrom_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 10);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 10, NULL);
 
 	/* read early */
 	blob_fw = fu_firmware_get_bytes(firmware, error);
@@ -254,10 +250,10 @@ fu_flashrom_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100); /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void

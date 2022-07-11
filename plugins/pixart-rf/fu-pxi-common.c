@@ -44,20 +44,17 @@ fu_pxi_receiver_cmd_result_to_string(guint8 result)
 void
 fu_pxi_ota_fw_state_to_string(struct ota_fw_state *fwstate, guint idt, GString *str)
 {
-	fu_common_string_append_kx(str, idt, "Status", fwstate->status);
-	fu_common_string_append_kx(str, idt, "NewFlow", fwstate->new_flow);
-	fu_common_string_append_kx(str, idt, "CurrentObjectOffset", fwstate->offset);
-	fu_common_string_append_kx(str, idt, "CurrentChecksum", fwstate->checksum);
-	fu_common_string_append_kx(str, idt, "MaxObjectSize", fwstate->max_object_size);
-	fu_common_string_append_kx(str, idt, "MtuSize", fwstate->mtu_size);
-	fu_common_string_append_kx(str,
-				   idt,
-				   "PacketReceiptNotificationThreshold",
-				   fwstate->prn_threshold);
-	fu_common_string_append_kv(str,
-				   idt,
-				   "SpecCheckResult",
-				   fu_pxi_spec_check_result_to_string(fwstate->spec_check_result));
+	fu_string_append_kx(str, idt, "Status", fwstate->status);
+	fu_string_append_kx(str, idt, "NewFlow", fwstate->new_flow);
+	fu_string_append_kx(str, idt, "CurrentObjectOffset", fwstate->offset);
+	fu_string_append_kx(str, idt, "CurrentChecksum", fwstate->checksum);
+	fu_string_append_kx(str, idt, "MaxObjectSize", fwstate->max_object_size);
+	fu_string_append_kx(str, idt, "MtuSize", fwstate->mtu_size);
+	fu_string_append_kx(str, idt, "PacketReceiptNotificationThreshold", fwstate->prn_threshold);
+	fu_string_append(str,
+			 idt,
+			 "SpecCheckResult",
+			 fu_pxi_spec_check_result_to_string(fwstate->spec_check_result));
 }
 
 gboolean
@@ -67,50 +64,46 @@ fu_pxi_ota_fw_state_parse(struct ota_fw_state *fwstate,
 			  gsize offset,
 			  GError **error)
 {
-	if (!fu_common_read_uint8_safe(buf, bufsz, offset + 0x00, &fwstate->status, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x00, &fwstate->status, error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf, bufsz, offset + 0x01, &fwstate->new_flow, error))
+	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x01, &fwstate->new_flow, error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					offset + 0x2,
-					&fwstate->offset,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    offset + 0x2,
+				    &fwstate->offset,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					offset + 0x4,
-					&fwstate->checksum,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    offset + 0x4,
+				    &fwstate->checksum,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint32_safe(buf,
-					bufsz,
-					offset + 0x06,
-					&fwstate->max_object_size,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint32_safe(buf,
+				    bufsz,
+				    offset + 0x06,
+				    &fwstate->max_object_size,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					offset + 0x0A,
-					&fwstate->mtu_size,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    offset + 0x0A,
+				    &fwstate->mtu_size,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(buf,
-					bufsz,
-					offset + 0x0C,
-					&fwstate->prn_threshold,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(buf,
+				    bufsz,
+				    offset + 0x0C,
+				    &fwstate->prn_threshold,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint8_safe(buf,
-				       bufsz,
-				       offset + 0x0E,
-				       &fwstate->spec_check_result,
-				       error))
+	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x0E, &fwstate->spec_check_result, error))
 		return FALSE;
 
 	/* success */
@@ -154,7 +147,7 @@ fu_pxi_composite_receiver_cmd(guint8 opcode,
 	g_byte_array_prepend(wireless_mod_cmd, &rf_cmd_code, 0x01); /* command code */
 
 	/* prepend checksum */
-	checksum = fu_common_sum8(wireless_mod_cmd->data, wireless_mod_cmd->len);
+	checksum = fu_sum8(wireless_mod_cmd->data, wireless_mod_cmd->len);
 	g_byte_array_prepend(wireless_mod_cmd, &checksum, 0x01);
 
 	/* prepend feature report id */

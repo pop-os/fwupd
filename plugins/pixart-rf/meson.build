@@ -1,13 +1,11 @@
 if get_option('plugin_pixart_rf').disable_auto_if(host_machine.system() != 'linux').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginPixartRf"']
 
-install_data(['pixart-rf.quirk'],
-  install_dir: join_paths(datadir, 'fwupd', 'quirks.d')
-)
+plugin_quirks += join_paths(meson.current_source_dir(), 'pixart-rf.quirk')
 
 shared_module('fu_plugin_pixart_rf',
   fu_hash,
-  sources : [
+  sources: [
     'fu-plugin-pixart-rf.c',
     'fu-pxi-common.c',
     'fu-pxi-ble-device.c',
@@ -15,18 +13,18 @@ shared_module('fu_plugin_pixart_rf',
     'fu-pxi-wireless-device.c',
     'fu-pxi-firmware.c',      # fuzzing
   ],
-  include_directories : [
+  include_directories: [
     root_incdir,
     fwupd_incdir,
     fwupdplugin_incdir,
   ],
-  install : true,
+  install: true,
   install_dir: plugin_dir,
-  c_args : cargs,
-  dependencies : [
+  c_args: cargs,
+  dependencies: [
     plugin_deps,
   ],
-  link_with : [
+  link_with: [
     fwupd,
     fwupdplugin,
   ],
@@ -41,25 +39,25 @@ if get_option('tests')
   e = executable(
     'pxi-self-test',
     fu_hash,
-    sources : [
+    sources: [
       'fu-self-test.c',
       'fu-pxi-firmware.c',
     ],
-    include_directories : [
+    include_directories: [
       root_incdir,
       fwupd_incdir,
       fwupdplugin_incdir,
     ],
-    dependencies : [
+    dependencies: [
       plugin_deps,
     ],
-    link_with : [
+    link_with: [
       fwupd,
       fwupdplugin,
     ],
-    install : true,
-    install_dir : installed_test_bindir,
+    install: true,
+    install_dir: installed_test_bindir,
   )
-  test('pxi-self-test', e, env : env)
+  test('pxi-self-test', e, env: env)
 endif
 endif

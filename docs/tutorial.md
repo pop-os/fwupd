@@ -56,7 +56,7 @@ is taken automatically from the suffix of the `.so` file.
     }
 
     static gboolean
-    fu_plugin_foo_startup(FuPlugin *plugin, GError **error)
+    fu_plugin_foo_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
     {
         FuPluginData *data = fu_plugin_get_data(plugin);
         data->proxy = create_proxy();
@@ -92,7 +92,7 @@ derive the details about the `FuDevice` from the hardware, for example reading
 data from `sysfs` or `/dev`.
 
     static gboolean
-    fu_plugin_foo_coldplug(FuPlugin *plugin, GError **error)
+    fu_plugin_foo_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
     {
         g_autoptr(FuDevice) dev = NULL;
         fu_device_set_id(dev, "dummy-1:2:3");
@@ -545,6 +545,49 @@ configuration or serial numbers. This is meant to retrieve the current
 firmware contents for verification purposes. The data read can then be
 output to a binary blob using `fu_firmware_write()`.
 
+#### set_progress
+
+Informs the daemon of the expected duration percentages for the different
+phases of update. The daemon runs the `->detach()`, `->write_firmware()`,
+`->attach()` and `->reload()` phases as part of the engine during the firmware
+update (rather than being done by plugin-specific code) and so this vfunc
+informs the daemon how to scale the progress output accordingly.
+
+For instance, if your update takes 2 seconds to detach into bootloader mode,
+10 seconds to write the firmware, 7 seconds to attach back into runtime mode
+(which includes the time required for USB enumeration) and then 1 second to
+read the new firmware version you would use:
+
+    fu_progress_set_id(progress, G_STRLOC);
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 10, "detach");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 45, "write");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 40, "attach");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "reload");
+
+If however your device does not require `->detach()` or `->attach()`, and
+`->reload()` is instantaneous, you still however need to include 4 steps:
+
+    fu_progress_set_id(progress, G_STRLOC);
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
+
+If the device has multiple phases that occur when actually in the write phase
+then it is perfectly okay to split up the `FuProgress` steps in the
+`->write_firmware()` vfunc further. For instance:
+
+    fu_progress_set_id(progress, G_STRLOC);
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, "wait-for-idle");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, "write");
+    fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, "reset");
+
+It should be noted that actions that are required to be done *before* the update
+should be added as a `->prepare()` vfunc, and those to be done after in the `->cleanup()`
+as the daemon will then recover the hardware if the update fails. For instance,
+putting the device back into a *normal runtime power saving* state should always
+be done during cleanup.
+
 ### Creating a new firmware type
 
 The same way a device type implements some methods to complete its
@@ -758,7 +801,7 @@ information.
 
 ### Inspecting raw binary data
 
-The `fu_common_dump_full` and `fu_common_dump_raw` functions implement the
+The `fu_dump_full` and `fu_dump_raw` functions implement the
 printing of a binary buffer to the console as a stream of bytes in
 hexadecimal. See `libfwupdplugin/fu-common.c` for their definitions, you
 can find many examples of how to use them in the plugins code.

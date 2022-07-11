@@ -37,9 +37,9 @@ fu_superio_device_io_read(FuSuperioDevice *self, guint8 addr, guint8 *data, GErr
 		return FALSE;
 	}
 
-	if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->port, addr, error))
+	if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->port, &addr, 1, error))
 		return FALSE;
-	if (!fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->port + 1, data, error))
+	if (!fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->port + 1, data, 1, error))
 		return FALSE;
 	return TRUE;
 }
@@ -67,9 +67,9 @@ fu_superio_device_io_write(FuSuperioDevice *self, guint8 addr, guint8 data, GErr
 		return FALSE;
 	}
 
-	if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->port, addr, error))
+	if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->port, &addr, 1, error))
 		return FALSE;
-	if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->port + 1, data, error))
+	if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->port + 1, &data, 1, error))
 		return FALSE;
 	return TRUE;
 }
@@ -111,7 +111,7 @@ fu_superio_device_regdump(FuSuperioDevice *self, guint8 ldn, GError **error)
 	if (ldnstr != NULL)
 		g_string_append_printf(str, "(%s)", ldnstr);
 	if (g_getenv("FWUPD_SUPERIO_VERBOSE") != NULL)
-		fu_common_dump_raw(G_LOG_DOMAIN, str->str, buf, sizeof(buf));
+		fu_dump_raw(G_LOG_DOMAIN, str->str, buf, sizeof(buf));
 	return TRUE;
 }
 
@@ -124,11 +124,11 @@ fu_superio_device_to_string(FuDevice *device, guint idt, GString *str)
 	/* FuUdevDevice->to_string */
 	FU_DEVICE_CLASS(fu_superio_device_parent_class)->to_string(device, idt, str);
 
-	fu_common_string_append_kv(str, idt, "Chipset", priv->chipset);
-	fu_common_string_append_kx(str, idt, "Id", priv->id);
-	fu_common_string_append_kx(str, idt, "Port", priv->port);
-	fu_common_string_append_kx(str, idt, "DataPort", priv->data_port);
-	fu_common_string_append_kx(str, idt, "ControlPort", priv->control_port);
+	fu_string_append(str, idt, "Chipset", priv->chipset);
+	fu_string_append_kx(str, idt, "Id", priv->id);
+	fu_string_append_kx(str, idt, "Port", priv->port);
+	fu_string_append_kx(str, idt, "DataPort", priv->data_port);
+	fu_string_append_kx(str, idt, "ControlPort", priv->control_port);
 }
 
 static gboolean
@@ -173,7 +173,11 @@ fu_superio_device_wait_for(FuSuperioDevice *self, guint8 mask, gboolean set, GEr
 	g_autoptr(GTimer) timer = g_timer_new();
 	do {
 		guint8 status = 0x00;
-		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->control_port, &status, error))
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self),
+					  priv->control_port,
+					  &status,
+					  1,
+					  error))
 			return FALSE;
 		if (g_timer_elapsed(timer, NULL) * 1000.0f > priv->timeout_ms)
 			break;
@@ -197,7 +201,7 @@ fu_superio_device_ec_read_data(FuSuperioDevice *self, guint8 *data, GError **err
 	FuSuperioDevicePrivate *priv = GET_PRIVATE(self);
 	if (!fu_superio_device_wait_for(self, SIO_STATUS_EC_OBF, TRUE, error))
 		return FALSE;
-	return fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->data_port, data, error);
+	return fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->data_port, data, 1, error);
 }
 
 gboolean
@@ -206,7 +210,7 @@ fu_superio_device_ec_write_data(FuSuperioDevice *self, guint8 data, GError **err
 	FuSuperioDevicePrivate *priv = GET_PRIVATE(self);
 	if (!fu_superio_device_wait_for(self, SIO_STATUS_EC_IBF, FALSE, error))
 		return FALSE;
-	return fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->data_port, data, error);
+	return fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->data_port, &data, 1, error);
 }
 
 gboolean
@@ -215,7 +219,7 @@ fu_superio_device_ec_write_cmd(FuSuperioDevice *self, guint8 cmd, GError **error
 	FuSuperioDevicePrivate *priv = GET_PRIVATE(self);
 	if (!fu_superio_device_wait_for(self, SIO_STATUS_EC_IBF, FALSE, error))
 		return FALSE;
-	return fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->control_port, cmd, error);
+	return fu_udev_device_pwrite(FU_UDEV_DEVICE(self), priv->control_port, &cmd, 1, error);
 }
 
 static gboolean
@@ -226,11 +230,15 @@ fu_superio_device_ec_flush(FuSuperioDevice *self, GError **error)
 	g_autoptr(GTimer) timer = g_timer_new();
 	do {
 		guint8 unused = 0;
-		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->control_port, &status, error))
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self),
+					  priv->control_port,
+					  &status,
+					  1,
+					  error))
 			return FALSE;
 		if ((status & SIO_STATUS_EC_OBF) == 0)
 			break;
-		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->data_port, &unused, error))
+		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self), priv->data_port, &unused, 1, error))
 			return FALSE;
 		if (g_timer_elapsed(timer, NULL) * 1000.f > priv->timeout_ms) {
 			g_set_error_literal(error,
@@ -343,7 +351,7 @@ fu_superio_device_setup(FuDevice *device, GError **error)
 				continue;
 			}
 		}
-		fu_common_dump_raw(G_LOG_DOMAIN, "EC Registers", buf, sizeof(buf));
+		fu_dump_raw(G_LOG_DOMAIN, "EC Registers", buf, sizeof(buf));
 	}
 
 	/* success */
@@ -423,31 +431,31 @@ fu_superio_device_set_quirk_kv(FuDevice *device,
 	if (g_strcmp0(key, "SuperioAutoloadAction") == 0)
 		return TRUE;
 	if (g_strcmp0(key, "SuperioId") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		priv->id = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "SuperioPort") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		priv->port = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "SuperioControlPort") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		priv->control_port = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "SuperioDataPort") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		priv->data_port = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "SuperioTimeout") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT, error))
 			return FALSE;
 		priv->timeout_ms = tmp;
 		return TRUE;
@@ -463,10 +471,10 @@ fu_superio_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2);	/* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
 static void

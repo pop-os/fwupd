@@ -6,8 +6,11 @@
 
 #include "config.h"
 
+#include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-fmap-firmware.h"
+#include "fu-mem.h"
 
 /**
  * FuFmapFirmware:
@@ -25,15 +28,13 @@ G_DEFINE_TYPE(FuFmapFirmware, fu_fmap_firmware, FU_TYPE_FIRMWARE)
 static gboolean
 fu_fmap_firmware_parse(FuFirmware *firmware,
 		       GBytes *fw,
-		       guint64 addr_start,
-		       guint64 addr_end,
+		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
 {
 	FuFmapFirmwareClass *klass_firmware = FU_FMAP_FIRMWARE_GET_CLASS(firmware);
 	gsize bufsz;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
-	gsize offset = 0;
 	FuFmap fmap;
 
 	/* corrupt */
@@ -104,10 +105,10 @@ fu_fmap_firmware_parse(FuFirmware *firmware,
 		if (area.size == 0)
 			continue;
 
-		bytes = fu_common_bytes_new_offset(fw,
-						   (gsize)GUINT32_FROM_LE(area.offset),
-						   (gsize)GUINT32_FROM_LE(area.size),
-						   error);
+		bytes = fu_bytes_new_offset(fw,
+					    (gsize)GUINT32_FROM_LE(area.offset),
+					    (gsize)GUINT32_FROM_LE(area.size),
+					    error);
 		if (bytes == NULL)
 			return FALSE;
 		area_name = g_strndup((const gchar *)area.name, FU_FMAP_FIRMWARE_STRLEN);
@@ -127,7 +128,7 @@ fu_fmap_firmware_parse(FuFirmware *firmware,
 
 	/* subclassed */
 	if (klass_firmware->parse != NULL) {
-		if (!klass_firmware->parse(firmware, fw, addr_start, addr_end, flags, error))
+		if (!klass_firmware->parse(firmware, fw, offset, flags, error))
 			return FALSE;
 	}
 
@@ -154,7 +155,7 @@ fu_fmap_firmware_write(FuFirmware *firmware, GError **error)
 
 	/* pad to offset */
 	if (fu_firmware_get_offset(firmware) > 0)
-		fu_byte_array_set_size(buf, fu_firmware_get_offset(firmware));
+		fu_byte_array_set_size(buf, fu_firmware_get_offset(firmware), 0x00);
 
 	/* add header */
 	total_sz = offset = sizeof(hdr) + (sizeof(FuFmapArea) * images->len);

@@ -133,8 +133,10 @@ fu_system76_launch_device_detach(FuDevice *device, FuProgress *progress, GError 
 		return FALSE;
 
 	/* unlikely, but already unlocked */
-	if (rc == 0)
+	if (rc == 0) {
+		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 		return TRUE;
+	}
 
 	/* generate a message if not already set */
 	if (fu_device_get_update_message(device) == NULL) {
@@ -186,10 +188,10 @@ static void
 fu_system76_launch_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 30); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 40);	 /* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5);	 /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 25);	 /* reload */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 30, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 40, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 25, "reload");
 }
 
 static void

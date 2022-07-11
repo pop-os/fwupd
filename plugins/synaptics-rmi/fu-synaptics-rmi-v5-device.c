@@ -147,7 +147,7 @@ fu_synaptics_rmi_v5_device_secure_check(FuDevice *device,
 	g_autoptr(GBytes) pubkey = NULL;
 
 	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL)
-		fu_common_dump_bytes(G_LOG_DOMAIN, "Signature", signature);
+		fu_dump_bytes(G_LOG_DOMAIN, "Signature", signature);
 
 	f34 = fu_synaptics_rmi_device_get_function(self, 0x34, error);
 	if (f34 == NULL)
@@ -212,12 +212,12 @@ fu_synaptics_rmi_v5_device_secure_check(FuDevice *device,
 		break;
 	}
 	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-		fu_common_dump_full(G_LOG_DOMAIN,
-				    "RSA public key",
-				    pubkey_buf->data,
-				    pubkey_buf->len,
-				    16,
-				    FU_DUMP_FLAGS_NONE);
+		fu_dump_full(G_LOG_DOMAIN,
+			     "RSA public key",
+			     pubkey_buf->data,
+			     pubkey_buf->len,
+			     16,
+			     FU_DUMP_FLAGS_NONE);
 	}
 
 	/* sanity check size */
@@ -259,10 +259,11 @@ fu_synaptics_rmi_v5_device_write_firmware(FuDevice *device,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "enter-iep");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 10, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "write-signature");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 10, "cfg-image");
 
 	/* we should be in bootloader mode now, but check anyway */
 	if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER)) {
@@ -395,6 +396,7 @@ fu_synaptics_rmi_v5_device_write_firmware(FuDevice *device,
 
 	/* payload signature */
 	if (signature_bin != NULL && fu_synaptics_rmi_device_get_sig_size(self) != 0) {
+		FuProgress *progress_child = fu_progress_get_child(progress);
 		g_autoptr(GPtrArray) chunks_sig = NULL;
 		chunks_sig = fu_chunk_array_new_from_bytes(signature_bin,
 							   0x00, /* start addr */
@@ -408,7 +410,8 @@ fu_synaptics_rmi_v5_device_write_firmware(FuDevice *device,
 			g_prefix_error(error, "failed to write 1st address zero: ");
 			return FALSE;
 		}
-		fu_progress_set_steps(progress, chunks_sig->len);
+		fu_progress_set_id(progress_child, G_STRLOC);
+		fu_progress_set_steps(progress_child, chunks_sig->len);
 		for (guint i = 0; i < chunks_sig->len; i++) {
 			FuChunk *chk = g_ptr_array_index(chunks_sig, i);
 			if (!fu_synaptics_rmi_v5_device_write_block(self,
@@ -422,10 +425,11 @@ fu_synaptics_rmi_v5_device_write_firmware(FuDevice *device,
 					       fu_chunk_get_idx(chk));
 				return FALSE;
 			}
-			fu_progress_step_done(progress);
+			fu_progress_step_done(progress_child);
 		}
 		g_usleep(1000 * 1000);
 	}
+	fu_progress_step_done(progress);
 
 	if (!fu_synaptics_rmi_device_enter_iep_mode(self,
 						    FU_SYNAPTICS_RMI_DEVICE_FLAG_FORCE,
@@ -494,11 +498,11 @@ fu_synaptics_rmi_v5_device_setup(FuSynapticsRmiDevice *self, GError **error)
 		g_prefix_error(error, "failed to read Flash Properties 2: ");
 		return FALSE;
 	}
-	if (!fu_common_read_uint8_safe(buf_flash_properties2->data,
-				       buf_flash_properties2->len,
-				       0x0, /* offset */
-				       &flash_properties2,
-				       error)) {
+	if (!fu_memread_uint8_safe(buf_flash_properties2->data,
+				   buf_flash_properties2->len,
+				   0x0, /* offset */
+				   &flash_properties2,
+				   error)) {
 		g_prefix_error(error, "failed to parse Flash Properties 2: ");
 		return FALSE;
 	}
@@ -511,12 +515,12 @@ fu_synaptics_rmi_v5_device_setup(FuSynapticsRmiDevice *self, GError **error)
 			g_prefix_error(error, "failed to read RSA key length: ");
 			return FALSE;
 		}
-		if (!fu_common_read_uint16_safe(buf_rsa_key->data,
-						buf_rsa_key->len,
-						0x0, /* offset */
-						&sig_size,
-						G_LITTLE_ENDIAN,
-						error)) {
+		if (!fu_memread_uint16_safe(buf_rsa_key->data,
+					    buf_rsa_key->len,
+					    0x0, /* offset */
+					    &sig_size,
+					    G_LITTLE_ENDIAN,
+					    error)) {
 			g_prefix_error(error, "failed to parse RSA key length: ");
 			return FALSE;
 		}
@@ -530,26 +534,26 @@ fu_synaptics_rmi_v5_device_setup(FuSynapticsRmiDevice *self, GError **error)
 	f34_data2 = fu_synaptics_rmi_device_read(self, f34->query_base + 0x2, 0x7, error);
 	if (f34_data2 == NULL)
 		return FALSE;
-	if (!fu_common_read_uint16_safe(f34_data2->data,
-					f34_data2->len,
-					RMI_F34_BLOCK_SIZE_OFFSET,
-					&flash->block_size,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(f34_data2->data,
+				    f34_data2->len,
+				    RMI_F34_BLOCK_SIZE_OFFSET,
+				    &flash->block_size,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(f34_data2->data,
-					f34_data2->len,
-					RMI_F34_FW_BLOCKS_OFFSET,
-					&flash->block_count_fw,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(f34_data2->data,
+				    f34_data2->len,
+				    RMI_F34_FW_BLOCKS_OFFSET,
+				    &flash->block_count_fw,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
-	if (!fu_common_read_uint16_safe(f34_data2->data,
-					f34_data2->len,
-					RMI_F34_CONFIG_BLOCKS_OFFSET,
-					&flash->block_count_cfg,
-					G_LITTLE_ENDIAN,
-					error))
+	if (!fu_memread_uint16_safe(f34_data2->data,
+				    f34_data2->len,
+				    RMI_F34_CONFIG_BLOCKS_OFFSET,
+				    &flash->block_count_cfg,
+				    G_LITTLE_ENDIAN,
+				    error))
 		return FALSE;
 	flash->status_addr = f34->data_base + RMI_F34_BLOCK_DATA_OFFSET + flash->block_size;
 	return TRUE;

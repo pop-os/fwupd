@@ -6,9 +6,9 @@
 
 #include "config.h"
 
+#include <fwupdplugin.h>
+
 #include <fcntl.h>
-#include <fwupd.h>
-#include <glib.h>
 #include <glib/gprintf.h>
 #include <glib/gstdio.h>
 #include <gudev/gudev.h>
@@ -889,7 +889,7 @@ fu_thunderbolt_gudev_uevent_cb(GUdevClient *gudev_client,
 		g_autoptr(FuUdevDevice) device = NULL;
 		g_autoptr(GError) error_local = NULL;
 
-		device = fu_udev_device_new_with_context(tt->ctx, udev_device);
+		device = fu_udev_device_new(tt->ctx, udev_device);
 		if (!fu_device_probe(FU_DEVICE(device), &error_local)) {
 			g_warning("failed to probe: %s", error_local->message);
 			return;
@@ -921,6 +921,7 @@ test_set_up(ThunderboltTest *tt, gconstpointer params)
 	g_autofree gchar *pluginfn = NULL;
 	g_autofree gchar *sysfs = NULL;
 	g_autoptr(GError) error = NULL;
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	const gchar *udev_subsystems[] = {"thunderbolt", NULL};
 
 	tt->ctx = fu_context_new();
@@ -946,7 +947,7 @@ test_set_up(ThunderboltTest *tt, gconstpointer params)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	ret = fu_plugin_runner_startup(tt->plugin, &error);
+	ret = fu_plugin_runner_startup(tt->plugin, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 

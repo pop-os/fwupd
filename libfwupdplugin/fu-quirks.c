@@ -9,17 +9,18 @@
 #include "config.h"
 
 #include <gio/gio.h>
-#include <glib-object.h>
 #include <string.h>
-#include <xmlb.h>
 
 #include "fwupd-common.h"
 #include "fwupd-error.h"
 #include "fwupd-remote-private.h"
 
+#include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-mutex.h"
+#include "fu-path.h"
 #include "fu-quirks.h"
+#include "fu-string.h"
 
 /**
  * FuQuirks:
@@ -118,24 +119,16 @@ fu_quirks_validate_flags(const gchar *value, GError **error)
 	return TRUE;
 }
 
-static GInputStream *
-fu_quirks_convert_quirk_to_xml_cb(XbBuilderSource *source,
-				  XbBuilderSourceCtx *ctx,
-				  gpointer user_data,
-				  GCancellable *cancellable,
-				  GError **error)
+static GBytes *
+fu_quirks_convert_keyfile_to_xml(FuQuirks *self, GBytes *bytes, GError **error)
 {
-	FuQuirks *self = FU_QUIRKS(user_data);
+	gsize xmlsz;
 	g_autofree gchar *xml = NULL;
 	g_auto(GStrv) groups = NULL;
-	g_autoptr(GBytes) bytes = NULL;
 	g_autoptr(GKeyFile) kf = g_key_file_new();
 	g_autoptr(XbBuilderNode) root = xb_builder_node_new("quirk");
 
 	/* parse keyfile */
-	bytes = xb_builder_source_ctx_get_bytes(ctx, cancellable, error);
-	if (bytes == NULL)
-		return NULL;
 	if (!g_key_file_load_from_data(kf,
 				       g_bytes_get_data(bytes, NULL),
 				       g_bytes_get_size(bytes),
@@ -197,11 +190,32 @@ fu_quirks_convert_quirk_to_xml_cb(XbBuilderSource *source,
 		}
 	}
 
-	/* export as XML */
+	/* export as XML blob */
 	xml = xb_builder_node_export(root, XB_NODE_EXPORT_FLAG_ADD_HEADER, error);
 	if (xml == NULL)
 		return NULL;
-	return g_memory_input_stream_new_from_data(g_steal_pointer(&xml), -1, g_free);
+	xmlsz = strlen(xml);
+	return g_bytes_new_take(g_steal_pointer(&xml), xmlsz);
+}
+
+static GInputStream *
+fu_quirks_convert_quirk_to_xml_cb(XbBuilderSource *source,
+				  XbBuilderSourceCtx *ctx,
+				  gpointer user_data,
+				  GCancellable *cancellable,
+				  GError **error)
+{
+	FuQuirks *self = FU_QUIRKS(user_data);
+	g_autoptr(GBytes) bytes = NULL;
+	g_autoptr(GBytes) bytes_xml = NULL;
+
+	bytes = xb_builder_source_ctx_get_bytes(ctx, cancellable, error);
+	if (bytes == NULL)
+		return NULL;
+	bytes_xml = fu_quirks_convert_keyfile_to_xml(self, bytes, error);
+	if (bytes_xml == NULL)
+		return NULL;
+	return g_memory_input_stream_new_from_bytes(bytes_xml);
 }
 
 static gint
@@ -286,6 +300,70 @@ fu_quirks_strcasecmp_cb(gconstpointer a, gconstpointer b)
 }
 
 static gboolean
+fu_quirks_add_quirks_for_resource(FuQuirks *self,
+				  XbBuilder *builder,
+				  const gchar *path,
+				  GError **error)
+{
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GBytes) blob_xml = NULL;
+	g_autoptr(XbBuilderSource) source = xb_builder_source_new();
+
+	/* load from keyfile */
+	blob = g_resources_lookup_data(path, G_RESOURCE_LOOKUP_FLAGS_NONE, error);
+	if (blob == NULL)
+		return FALSE;
+	blob_xml = fu_quirks_convert_keyfile_to_xml(self, blob, error);
+	if (blob_xml == NULL)
+		return FALSE;
+	if (!xb_builder_source_load_bytes(source, blob_xml, XB_BUILDER_SOURCE_FLAG_NONE, error)) {
+		g_prefix_error(error, "failed to load %s: ", path);
+		return FALSE;
+	}
+	xb_builder_import_source(builder, source);
+	return TRUE;
+}
+
+static gboolean
+fu_quirks_add_quirks_for_resources(FuQuirks *self,
+				   XbBuilder *builder,
+				   const gchar *path,
+				   GError **error)
+{
+	g_autofree gchar *hash_self = NULL;
+	g_auto(GStrv) children = NULL;
+	g_autoptr(GBytes) blob_self = NULL;
+	g_autoptr(GError) error_local = NULL;
+
+	children = g_resources_enumerate_children(path, G_RESOURCE_LOOKUP_FLAGS_NONE, &error_local);
+	if (children == NULL) {
+		if (g_error_matches(error_local, G_RESOURCE_ERROR, G_RESOURCE_ERROR_NOT_FOUND)) {
+			g_debug("ignoring: %s", error_local->message);
+			return TRUE;
+		}
+		g_propagate_error(error, g_steal_pointer(&error_local));
+		return FALSE;
+	}
+	for (guint i = 0; children[i] != NULL; i++) {
+		g_autofree gchar *fn = g_build_filename(path, children[i], NULL);
+		if (!g_str_has_suffix(children[i], ".quirk"))
+			continue;
+		if (!fu_quirks_add_quirks_for_resource(self, builder, fn, error))
+			return FALSE;
+	}
+
+	/* add the hash of the current binary to verify it has not changed */
+	blob_self = fu_bytes_get_contents("/proc/self/exe", error);
+	if (blob_self == NULL)
+		return FALSE;
+	hash_self = g_compute_checksum_for_bytes(G_CHECKSUM_SHA256, blob_self);
+	xb_builder_append_guid(builder, hash_self);
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_quirks_check_silo(FuQuirks *self, GError **error)
 {
 	XbBuilderCompileFlags compile_flags = XB_BUILDER_COMPILE_FLAG_WATCH_BLOB;
@@ -299,14 +377,18 @@ fu_quirks_check_silo(FuQuirks *self, GError **error)
 	if (self->silo != NULL && xb_silo_is_valid(self->silo))
 		return TRUE;
 
-	/* system datadir */
+	/* built-in quirks */
 	builder = xb_builder_new();
-	datadir = fu_common_get_path(FU_PATH_KIND_DATADIR_QUIRKS);
+	if (!fu_quirks_add_quirks_for_resources(self, builder, "/org/freedesktop/fwupd", error))
+		return FALSE;
+
+	/* system datadir */
+	datadir = fu_path_from_kind(FU_PATH_KIND_DATADIR_QUIRKS);
 	if (!fu_quirks_add_quirks_for_path(self, builder, datadir, error))
 		return FALSE;
 
 	/* something we can write when using Ostree */
-	localstatedir = fu_common_get_path(FU_PATH_KIND_LOCALSTATEDIR_QUIRKS);
+	localstatedir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_QUIRKS);
 	if (!fu_quirks_add_quirks_for_path(self, builder, localstatedir, error))
 		return FALSE;
 
@@ -317,7 +399,7 @@ fu_quirks_check_silo(FuQuirks *self, GError **error)
 		if (file == NULL)
 			return FALSE;
 	} else {
-		g_autofree gchar *cachedirpkg = fu_common_get_path(FU_PATH_KIND_CACHEDIR_PKG);
+		g_autofree gchar *cachedirpkg = fu_path_from_kind(FU_PATH_KIND_CACHEDIR_PKG);
 		g_autofree gchar *xmlbfn = g_build_filename(cachedirpkg, "quirks.xmlb", NULL);
 		file = g_file_new_for_path(xmlbfn);
 	}
@@ -336,7 +418,7 @@ fu_quirks_check_silo(FuQuirks *self, GError **error)
 	if (self->invalid_keys->len > 0) {
 		g_autofree gchar *str = NULL;
 		g_ptr_array_sort(self->invalid_keys, fu_quirks_strcasecmp_cb);
-		str = fu_common_strjoin_array(",", self->invalid_keys);
+		str = fu_strjoin(",", self->invalid_keys);
 		g_debug("invalid key names: %s", str);
 	}
 
@@ -588,14 +670,19 @@ fu_quirks_init(FuQuirks *self)
 	fu_quirks_add_possible_key(self, FU_QUIRKS_VENDOR_ID);
 	fu_quirks_add_possible_key(self, FU_QUIRKS_VERSION);
 	fu_quirks_add_possible_key(self, FU_QUIRKS_VERSION_FORMAT);
-	fu_quirks_add_possible_key(self, "CfiDeviceCmdBlockErase");
-	fu_quirks_add_possible_key(self, "CfiDeviceCmdReadId");
-	fu_quirks_add_possible_key(self, "CfiDeviceCmdReadIdSz");
-	fu_quirks_add_possible_key(self, "CfiDeviceCmdChipErase");
-	fu_quirks_add_possible_key(self, "CfiDeviceCmdSectorErase");
-	fu_quirks_add_possible_key(self, "CfiDeviceBlockSize");
-	fu_quirks_add_possible_key(self, "CfiDevicePageSize");
-	fu_quirks_add_possible_key(self, "CfiDeviceSectorSize");
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_READ_ID);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_READ_ID_SZ);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_CHIP_ERASE);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_BLOCK_ERASE);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_SECTOR_ERASE);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_WRITE_STATUS);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_PAGE_PROG);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_READ_DATA);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_READ_STATUS);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_CMD_WRITE_EN);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_PAGE_SIZE);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_SECTOR_SIZE);
+	fu_quirks_add_possible_key(self, FU_QUIRKS_CFI_DEVICE_BLOCK_SIZE);
 }
 
 static void

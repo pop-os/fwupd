@@ -76,7 +76,7 @@ BuildRequires: gcab
 BuildRequires: valgrind
 BuildRequires: valgrind-devel
 %endif
-BuildRequires: gtk-doc
+BuildRequires: gi-docgen
 BuildRequires: gnutls-devel
 BuildRequires: gnutls-utils
 BuildRequires: meson
@@ -236,7 +236,7 @@ fwupd wrapper for Qubes OS
 %if 0%{?enable_ci}
     --werror \
 %endif
-    -Ddocs=gtkdoc \
+    -Ddocs=enabled \
 %if 0%{?enable_tests}
     -Dtests=true \
 %else
@@ -257,7 +257,6 @@ fwupd wrapper for Qubes OS
 %else
     -Dplugin_msr=disabled \
 %endif
-    -Dplugin_thunderbolt=enabled \
 %if 0%{?have_uefi}
     -Dplugin_uefi_capsule=enabled \
     -Dplugin_uefi_pk=enabled \
@@ -271,10 +270,8 @@ fwupd wrapper for Qubes OS
 %endif
 %if 0%{?have_dell}
     -Dplugin_dell=enabled \
-    -Dplugin_synaptics_mst=enabled \
 %else
     -Dplugin_dell=disabled \
-    -Dplugin_synaptics_mst=disabled \
 %endif
 %if 0%{?have_modem_manager}
     -Dplugin_modem_manager=enabled \
@@ -287,6 +284,7 @@ fwupd wrapper for Qubes OS
     -Dman=true \
     -Dbluez=enabled \
     -Dplugin_powerd=disabled \
+    -Dgresource_quirks=disabled \
     -Dsupported_build=enabled
 
 %meson_build
@@ -365,7 +363,6 @@ done
 /usr/lib/modules-load.d/fwupd-msr.conf
 %config(noreplace)%{_sysconfdir}/fwupd/msr.conf
 %endif
-/usr/lib/modules-load.d/fwupd-redfish.conf
 %{_datadir}/dbus-1/system.d/org.freedesktop.fwupd.conf
 %{_datadir}/bash-completion/completions/fwupdmgr
 %{_datadir}/bash-completion/completions/fwupdtool
@@ -480,9 +477,7 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_scsi.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_steelseries.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_superio.so
-%if 0%{?have_dell}
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_synaptics_mst.so
-%endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_synaptics_cape.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_synaptics_cxaudio.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_synaptics_prometheus.so
@@ -504,6 +499,7 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_uefi_recovery.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_usi_dock.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_vbe.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_logind.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_logitech_bulkcontroller.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_logitech_hidpp.so
@@ -531,7 +527,8 @@ done
 %files devel
 %{_datadir}/gir-1.0/Fwupd-2.0.gir
 %{_datadir}/gir-1.0/FwupdPlugin-1.0.gir
-%{_datadir}/gtk-doc/html/fwupd
+%{_datadir}/doc/libfwupdplugin
+%{_datadir}/doc/libfwupd
 %{_datadir}/vala/vapi
 %{_includedir}/fwupd-1
 %{_libdir}/libfwupd*.so

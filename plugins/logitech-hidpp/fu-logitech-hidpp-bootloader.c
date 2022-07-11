@@ -34,9 +34,9 @@ fu_logitech_hidpp_bootloader_to_string(FuDevice *device, guint idt, GString *str
 {
 	FuLogitechHidPpBootloader *self = FU_UNIFYING_BOOTLOADER(device);
 	FuLogitechHidPpBootloaderPrivate *priv = GET_PRIVATE(self);
-	fu_common_string_append_kx(str, idt, "FlashAddrHigh", priv->flash_addr_hi);
-	fu_common_string_append_kx(str, idt, "FlashAddrLow", priv->flash_addr_lo);
-	fu_common_string_append_kx(str, idt, "FlashBlockSize", priv->flash_blocksize);
+	fu_string_append_kx(str, idt, "FlashAddrHigh", priv->flash_addr_hi);
+	fu_string_append_kx(str, idt, "FlashAddrLow", priv->flash_addr_lo);
+	fu_string_append_kx(str, idt, "FlashBlockSize", priv->flash_blocksize);
 }
 
 FuLogitechHidPpBootloaderRequest *
@@ -292,9 +292,9 @@ fu_logitech_hidpp_bootloader_setup(FuDevice *device, GError **error)
 	}
 
 	/* parse values */
-	priv->flash_addr_lo = fu_common_read_uint16(req->data + 0, G_BIG_ENDIAN);
-	priv->flash_addr_hi = fu_common_read_uint16(req->data + 2, G_BIG_ENDIAN);
-	priv->flash_blocksize = fu_common_read_uint16(req->data + 4, G_BIG_ENDIAN);
+	priv->flash_addr_lo = fu_memread_uint16(req->data + 0, G_BIG_ENDIAN);
+	priv->flash_addr_hi = fu_memread_uint16(req->data + 2, G_BIG_ENDIAN);
+	priv->flash_blocksize = fu_memread_uint16(req->data + 4, G_BIG_ENDIAN);
 
 	/* get bootloader version */
 	return fu_logitech_hidpp_bootloader_set_bl_version(self, error);
@@ -328,7 +328,7 @@ fu_logitech_hidpp_bootloader_request(FuLogitechHidPpBootloader *self,
 
 	/* send request */
 	if (g_getenv("FWUPD_LOGITECH_HIDPP_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "host->device", buf_request, sizeof(buf_request));
+		fu_dump_raw(G_LOG_DOMAIN, "host->device", buf_request, sizeof(buf_request));
 	}
 	if (usb_device != NULL) {
 		if (!fu_hid_device_set_report(FU_HID_DEVICE(self),
@@ -357,10 +357,10 @@ fu_logitech_hidpp_bootloader_request(FuLogitechHidPpBootloader *self,
 			g_debug("ignoring: %s", error_ignore->message);
 		} else {
 			if (g_getenv("FWUPD_LOGITECH_HIDPP_VERBOSE") != NULL) {
-				fu_common_dump_raw(G_LOG_DOMAIN,
-						   "device->host",
-						   buf_response,
-						   actual_length);
+				fu_dump_raw(G_LOG_DOMAIN,
+					    "device->host",
+					    buf_response,
+					    actual_length);
 			}
 		}
 		return TRUE;
@@ -395,7 +395,7 @@ fu_logitech_hidpp_bootloader_request(FuLogitechHidPpBootloader *self,
 		actual_length = sizeof(buf_response);
 	}
 	if (g_getenv("FWUPD_LOGITECH_HIDPP_VERBOSE") != NULL) {
-		fu_common_dump_raw(G_LOG_DOMAIN, "device->host", buf_response, actual_length);
+		fu_dump_raw(G_LOG_DOMAIN, "device->host", buf_response, actual_length);
 	}
 
 	/* parse response */

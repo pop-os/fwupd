@@ -306,17 +306,19 @@ static void
 fu_ccgx_dmc_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE(device);
-	fu_common_string_append_kv(str,
-				   idt,
-				   "UpdateModel",
-				   fu_ccgx_dmc_update_model_type_to_string(self->update_model));
-	fu_common_string_append_kv(str,
-				   idt,
-				   "FwImageType",
-				   fu_ccgx_fw_image_type_to_string(self->fw_image_type));
-	fu_common_string_append_kx(str, idt, "EpBulkOut", self->ep_bulk_out);
-	fu_common_string_append_kx(str, idt, "EpIntrIn", self->ep_intr_in);
-	fu_common_string_append_kx(str, idt, "TriggerCode", self->trigger_code);
+	fu_string_append(str,
+			 idt,
+			 "UpdateModel",
+			 fu_ccgx_dmc_update_model_type_to_string(self->update_model));
+	if (self->fw_image_type != FW_IMAGE_TYPE_UNKNOWN) {
+		fu_string_append(str,
+				 idt,
+				 "FwImageType",
+				 fu_ccgx_fw_image_type_to_string(self->fw_image_type));
+	}
+	fu_string_append_kx(str, idt, "EpBulkOut", self->ep_bulk_out);
+	fu_string_append_kx(str, idt, "EpIntrIn", self->ep_intr_in);
+	fu_string_append_kx(str, idt, "TriggerCode", self->trigger_code);
 }
 
 static gboolean
@@ -364,8 +366,8 @@ fu_ccgx_dmc_write_firmware_record(FuCcgxDmcDevice *self,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99, NULL);
 
 	/* write start row and number of rows to a device */
 	if (!fu_ccgx_dmc_device_send_write_command(self,
@@ -463,9 +465,9 @@ fu_ccgx_dmc_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 1, "fwct");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "img");
 
 	/* get fwct record */
 	fwct_blob = fu_ccgx_dmc_firmware_get_fwct_record(FU_CCGX_DMC_FIRMWARE(firmware));
@@ -683,7 +685,7 @@ fu_ccgx_dmc_device_setup(FuDevice *device, GError **error)
 
 	/* set composite version */
 	version_raw = dock_status.composite_version;
-	version = fu_common_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_QUAD);
+	version = fu_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_QUAD);
 	fu_device_set_version(FU_DEVICE(self), version);
 	fu_device_set_version_raw(FU_DEVICE(self), version_raw);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
@@ -706,7 +708,7 @@ fu_ccgx_dmc_device_set_quirk_kv(FuDevice *device,
 	guint64 tmp;
 
 	if (g_strcmp0(key, "CcgxDmcTriggerCode") == 0) {
-		if (!fu_common_strtoull_full(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
 			return FALSE;
 		self->trigger_code = tmp;
 		return TRUE;
@@ -729,11 +731,11 @@ static void
 fu_ccgx_dmc_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);	/* actually 0, 20, 0, 80! */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* detach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 75);	/* write */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0); /* attach */
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 25);	/* reload */
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE); /* actually 0, 20, 0, 80! */
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 75, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 25, "reload");
 }
 
 static void

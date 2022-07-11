@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: LGPL-2.1+
  */
 
+#include "config.h"
+
 #include "fu-corsair-common.h"
 
 FuCorsairDeviceKind
@@ -54,7 +56,7 @@ fu_corsair_calculate_crc(const guint8 *data, guint32 data_len)
  * fu_corsair_version_from_uint32:
  * @val: version in corsair device format
  *
- * fu_common_version_from_uint32(... %FWUPD_VERSION_FORMAT_TRIPLET)
+ * fu_version_from_uint32(... %FWUPD_VERSION_FORMAT_TRIPLET)
  * cannot be used because bytes in the version are in non-standard
  * order: 0xCCDD.BB.AA.
  *
