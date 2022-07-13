@@ -1,6 +1,11 @@
 fwupd (1.8.2-1) unstable; urgency=medium
 
+  [ Mario Limonciello ]
   * New upstream version (1.8.2)
+
+  [ Lukas MÃ¤rdian ]
+  * d/rules: enable plugin_logitech_bulkcontroller on Ubuntu, as the protobuf-c
+    MIR has been resolved (LP: 1956617)
 
  -- Mario Limonciello <superm1@gmail.com>  Mon, 11 Jul 2022 13:36:31 -0500
 
