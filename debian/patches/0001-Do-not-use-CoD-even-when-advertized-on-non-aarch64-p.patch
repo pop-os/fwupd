@@ -1,0 +1,85 @@
+From 77880751cddab056ebc653b1e991ff88f60603eb Mon Sep 17 00:00:00 2001
+From: Richard Hughes <richard@hughsie.com>
+Date: Wed, 13 Jul 2022 15:23:49 +0100
+Subject: [PATCH] Do not use CoD even when advertized on non-aarch64 platforms
+
+Fixes https://github.com/fwupd/fwupd/issues/4823
+---
+ plugins/uefi-capsule/README.md                | 11 +++++++---
+ plugins/uefi-capsule/fu-plugin-uefi-capsule.c | 20 +++++++++++++++++--
+ 2 files changed, 26 insertions(+), 5 deletions(-)
+
+diff --git a/plugins/uefi-capsule/README.md b/plugins/uefi-capsule/README.md
+index 974794b00..d43c4debd 100644
+--- a/plugins/uefi-capsule/README.md
++++ b/plugins/uefi-capsule/README.md
+@@ -46,9 +46,14 @@ This plugin supports the following protocol ID:
+ Described in  [UEFI specification](https://www.uefi.org/sites/default/files/resources/UEFI%20Spec%202_6.pdf)
+ § 8.5.5 - Delivery of Capsules via file on Mass Storage device.
+ 
+-If the firmware supports this, it will be the preferred method of updating. You
+-can explicitly disable it by by modifying *DisableCapsuleUpdateOnDisk* in
+-`/etc/fwupd/uefi_capsule.conf`.
++If the firmware supports this, it will be the preferred method of updating on
++aarch64 platforms. You can explicitly disable it by by modifying
++*DisableCapsuleUpdateOnDisk* in `/etc/fwupd/uefi_capsule.conf`.
++
++Several models with Insyde firmware have been released where `OsIndications`
++advertises support for CoD, but it simply *does not work*. For this reasons
++the CoD support is only available by opt-in for x86_64 devices, and can be
++specified using the `uefi-allow-cod` plugin flag for the appropriate HwID.
+ 
+ The spec expects runtime *SetVariable* to be available in order to enable this
+ feature, we need to set `EFI_OS_INDICATIONS_FILE_CAPSULE_DELIVERY_SUPPORTED`
+diff --git a/plugins/uefi-capsule/fu-plugin-uefi-capsule.c b/plugins/uefi-capsule/fu-plugin-uefi-capsule.c
+index fc9856f5e..eaf8a6faa 100644
+--- a/plugins/uefi-capsule/fu-plugin-uefi-capsule.c
++++ b/plugins/uefi-capsule/fu-plugin-uefi-capsule.c
+@@ -780,11 +780,14 @@ fu_plugin_uefi_update_state_notify_cb(GObject *object, GParamSpec *pspec, FuPlug
+ }
+ 
+ static gboolean
+-fu_plugin_uefi_capsule_check_cod_support(GError **error)
++fu_plugin_uefi_capsule_check_cod_support(FuPlugin *plugin, GError **error)
+ {
+ 	gsize bufsz = 0;
+ 	guint64 value = 0;
+ 	g_autofree guint8 *buf = NULL;
++#ifndef __aarch64__
++	FuContext *ctx = fu_plugin_get_context(plugin);
++#endif
+ 
+ 	if (!fu_efivar_get_data(FU_EFIVAR_GUID_EFI_GLOBAL,
+ 				"OsIndicationsSupported",
+@@ -805,6 +808,19 @@ fu_plugin_uefi_capsule_check_cod_support(GError **error)
+ 		return FALSE;
+ 	}
+ 
++#ifndef __aarch64__
++	/* several models with Insyde firmware have been released where OsIndications advertises
++	 * support for CoD, but it simply does not work */
++	if (!fu_context_has_hwid_flag(ctx, "uefi-allow-cod")) {
++		g_set_error_literal(error,
++				    G_IO_ERROR,
++				    G_IO_ERROR_NOT_SUPPORTED,
++				    "Capsule-on-Disk is supported, but non-aarch64 platforms "
++				    "require the 'uefi-allow-cod' quirk for it to be used");
++		return FALSE;
++	}
++#endif
++
+ 	/* success */
+ 	return TRUE;
+ }
+@@ -843,7 +859,7 @@ fu_plugin_uefi_capsule_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
+ 	/* firmware may lie */
+ 	if (!fu_plugin_get_config_value_boolean(plugin, "DisableCapsuleUpdateOnDisk")) {
+ 		g_autoptr(GError) error_cod = NULL;
+-		if (!fu_plugin_uefi_capsule_check_cod_support(&error_cod)) {
++		if (!fu_plugin_uefi_capsule_check_cod_support(plugin, &error_cod)) {
+ 			g_debug("not using CapsuleOnDisk support: %s", error_cod->message);
+ 		} else {
+ 			fu_uefi_backend_set_device_gtype(FU_UEFI_BACKEND(priv->backend),
+-- 
+2.34.1
+

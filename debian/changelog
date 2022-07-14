@@ -2,6 +2,8 @@ fwupd (1.8.2-1) unstable; urgency=medium
 
   [ Mario Limonciello ]
   * New upstream version (1.8.2)
+  * Backport a patch from upstream to disable capsule on disk by default outside
+    aarch64.  This fixes flashing on HP Dev One and several Insyde boxes.
 
   [ Lukas MÃ¤rdian ]
   * d/rules: enable plugin_logitech_bulkcontroller on Ubuntu, as the protobuf-c
