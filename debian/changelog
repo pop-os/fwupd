@@ -1,7 +1,8 @@
-fwupd (1.8.3-1) UNRELEASED; urgency=medium
+fwupd (1.8.3-1) unstable; urgency=medium
 
   * New upstream version (1.8.3)
   * Drop COD patch
+  * Fixes HWIDs for some systems (LP: #1982103)
 
  -- Mario Limonciello <superm1@gmail.com>  Fri, 22 Jul 2022 07:04:23 -0500
 
