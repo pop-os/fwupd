@@ -59,6 +59,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.8.0@LIBFWUPD_1.8.0 1.8.0
  LIBFWUPD_1.8.1@LIBFWUPD_1.8.1 1.8.1
  LIBFWUPD_1.8.2@LIBFWUPD_1.8.2 1.8.2
+ LIBFWUPD_1.8.3@LIBFWUPD_1.8.3 1.8.3
  fwupd_build_history_report_json@LIBFWUPD_1.0.4 1.0.4
  fwupd_build_machine_id@LIBFWUPD_1.0.4 1.0.4
  fwupd_build_user_agent@LIBFWUPD_1.0.3 1.0.3
@@ -221,6 +222,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_compare@LIBFWUPD_1.1.1 1.1.1
  fwupd_device_flag_from_string@LIBFWUPD_0.7.0 1.0.0
  fwupd_device_flag_to_string@LIBFWUPD_0.7.0 1.0.0
+ fwupd_device_from_json@LIBFWUPD_1.8.3 1.8.3
  fwupd_device_from_variant@LIBFWUPD_1.0.0 1.0.0
  fwupd_device_get_battery_level@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_get_battery_threshold@LIBFWUPD_1.8.1 1.8.1
@@ -533,6 +535,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_security_attr_has_guid@LIBFWUPD_1.7.0 1.7.0
  fwupd_security_attr_has_obsolete@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_new@LIBFWUPD_1.5.0 1.5.0
+ fwupd_security_attr_remove_flag@LIBFWUPD_1.8.3 1.8.3
  fwupd_security_attr_result_from_string@LIBFWUPD_1.7.1 1.7.1
  fwupd_security_attr_result_to_string@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_set_appstream_id@LIBFWUPD_1.5.0 1.5.0

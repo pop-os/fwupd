@@ -56,6 +56,7 @@ libfwupdplugin.so.7 libfwupdplugin7 #MINVER#
  LIBFWUPDPLUGIN_1.8.0@LIBFWUPDPLUGIN_1.8.0 1.8.0
  LIBFWUPDPLUGIN_1.8.1@LIBFWUPDPLUGIN_1.8.1 1.8.1
  LIBFWUPDPLUGIN_1.8.2@LIBFWUPDPLUGIN_1.8.2 1.8.2
+ LIBFWUPDPLUGIN_1.8.3@LIBFWUPDPLUGIN_1.8.3 1.8.3
  fu_archive_add_entry@LIBFWUPDPLUGIN_1.8.1 1.8.1
  fu_archive_compression_from_string@LIBFWUPDPLUGIN_1.8.1 1.8.1
  fu_archive_compression_to_string@LIBFWUPDPLUGIN_1.8.1 1.8.1
@@ -266,6 +267,7 @@ libfwupdplugin.so.7 libfwupdplugin7 #MINVER#
  fu_device_dump_firmware@LIBFWUPDPLUGIN_1.5.0 1.5.0
  fu_device_emit_request@LIBFWUPDPLUGIN_1.6.2 1.6.2
  fu_device_ensure_id@LIBFWUPDPLUGIN_1.1.2 1.1.2
+ fu_device_get_acquiesce_delay@LIBFWUPDPLUGIN_1.8.3 1.8.3
  fu_device_get_alternate@LIBFWUPDPLUGIN_0.7.2 0.7.2
  fu_device_get_alternate_id@LIBFWUPDPLUGIN_1.1.0 1.1.0
  fu_device_get_backend_id@LIBFWUPDPLUGIN_1.5.8 1.5.8
@@ -342,6 +344,7 @@ libfwupdplugin.so.7 libfwupdplugin7 #MINVER#
  fu_device_retry_add_recovery@LIBFWUPDPLUGIN_1.4.0 1.4.0
  fu_device_retry_full@LIBFWUPDPLUGIN_1.5.5 1.5.5
  fu_device_retry_set_delay@LIBFWUPDPLUGIN_1.4.0 1.4.0
+ fu_device_set_acquiesce_delay@LIBFWUPDPLUGIN_1.8.3 1.8.3
  fu_device_set_alternate@LIBFWUPDPLUGIN_0.7.2 0.7.2
  fu_device_set_alternate_id@LIBFWUPDPLUGIN_1.1.0 1.1.0
  fu_device_set_backend_id@LIBFWUPDPLUGIN_1.5.8 1.5.8
@@ -588,6 +591,7 @@ libfwupdplugin.so.7 libfwupdplugin7 #MINVER#
  fu_memread_uint16@LIBFWUPDPLUGIN_1.8.2 1.8.2
  fu_memread_uint16_safe@LIBFWUPDPLUGIN_1.8.2 1.8.2
  fu_memread_uint24@LIBFWUPDPLUGIN_1.8.2 1.8.2
+ fu_memread_uint24_safe@LIBFWUPDPLUGIN_1.8.3 1.8.3
  fu_memread_uint32@LIBFWUPDPLUGIN_1.8.2 1.8.2
  fu_memread_uint32_safe@LIBFWUPDPLUGIN_1.8.2 1.8.2
  fu_memread_uint64@LIBFWUPDPLUGIN_1.8.2 1.8.2
