@@ -179,6 +179,7 @@ fu_plugin_uefi_capsule_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *att
 			return;
 		}
 		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONFIG_FW);
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
 		return;
 	}
@@ -780,11 +781,14 @@ fu_plugin_uefi_update_state_notify_cb(GObject *object, GParamSpec *pspec, FuPlug
 }
 
 static gboolean
-fu_plugin_uefi_capsule_check_cod_support(GError **error)
+fu_plugin_uefi_capsule_check_cod_support(FuPlugin *plugin, GError **error)
 {
 	gsize bufsz = 0;
 	guint64 value = 0;
 	g_autofree guint8 *buf = NULL;
+#ifndef __aarch64__
+	FuContext *ctx = fu_plugin_get_context(plugin);
+#endif
 
 	if (!fu_efivar_get_data(FU_EFIVAR_GUID_EFI_GLOBAL,
 				"OsIndicationsSupported",
@@ -804,6 +808,19 @@ fu_plugin_uefi_capsule_check_cod_support(GError **error)
 				    "Capsule-on-Disk is not supported");
 		return FALSE;
 	}
+
+#ifndef __aarch64__
+	/* several models with Insyde firmware have been released where OsIndications advertises
+	 * support for CoD, but it simply does not work */
+	if (!fu_context_has_hwid_flag(ctx, "uefi-allow-cod")) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "Capsule-on-Disk is supported, but non-aarch64 platforms "
+				    "require the 'uefi-allow-cod' quirk for it to be used");
+		return FALSE;
+	}
+#endif
 
 	/* success */
 	return TRUE;
@@ -843,7 +860,7 @@ fu_plugin_uefi_capsule_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 	/* firmware may lie */
 	if (!fu_plugin_get_config_value_boolean(plugin, "DisableCapsuleUpdateOnDisk")) {
 		g_autoptr(GError) error_cod = NULL;
-		if (!fu_plugin_uefi_capsule_check_cod_support(&error_cod)) {
+		if (!fu_plugin_uefi_capsule_check_cod_support(plugin, &error_cod)) {
 			g_debug("not using CapsuleOnDisk support: %s", error_cod->message);
 		} else {
 			fu_uefi_backend_set_device_gtype(FU_UEFI_BACKEND(priv->backend),

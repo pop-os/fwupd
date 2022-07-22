@@ -1568,6 +1568,7 @@ fu_engine_get_details_added_func(gconstpointer user_data)
 	FuDevice *device_tmp;
 	FwupdRelease *release;
 	gboolean ret;
+	g_autofree gchar *checksum_sha256 = NULL;
 	g_autofree gchar *filename = NULL;
 	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
 	g_autoptr(FuEngine) engine = fu_engine_new();
@@ -1610,6 +1611,7 @@ fu_engine_get_details_added_func(gconstpointer user_data)
 	blob_cab = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_cab);
+	checksum_sha256 = g_compute_checksum_for_bytes(G_CHECKSUM_SHA256, blob_cab);
 	devices = fu_engine_get_details_for_bytes(engine, request, blob_cab, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(devices);
@@ -1619,6 +1621,7 @@ fu_engine_get_details_added_func(gconstpointer user_data)
 	release = fu_device_get_release_default(device_tmp);
 	g_assert_nonnull(release);
 	g_assert_cmpstr(fwupd_release_get_version(release), ==, "1.2.3");
+	g_assert_true(fwupd_release_has_checksum(release, checksum_sha256));
 }
 
 static void
@@ -2066,7 +2069,8 @@ fu_engine_history_func(gconstpointer user_data)
 			    "  [Release]\n"
 			    "  Version:              1.2.3\n"
 			    "  Checksum:             SHA1(%s)\n"
-			    "  Flags:                none\n",
+			    "  Flags:                none\n"
+			    "  AcquiesceDelay:       50\n",
 			    checksum);
 	ret = fu_test_compare_lines(device_str, device_str_expected, &error);
 	g_assert_no_error(error);
@@ -2554,7 +2558,8 @@ fu_engine_history_error_func(gconstpointer user_data)
 			    "  [Release]\n"
 			    "  Version:              1.2.3\n"
 			    "  Checksum:             SHA1(%s)\n"
-			    "  Flags:                none\n",
+			    "  Flags:                none\n"
+			    "  AcquiesceDelay:       50\n",
 			    checksum);
 	ret = fu_test_compare_lines(device_str, device_str_expected, &error);
 	g_assert_no_error(error);
@@ -3277,7 +3282,7 @@ fu_plugin_module_func(gconstpointer user_data)
 				     device,
 				     blob_cab,
 				     progress,
-				     FWUPD_INSTALL_FLAG_NONE,
+				     FWUPD_INSTALL_FLAG_NO_SEARCH,
 				     FWUPD_FEATURE_FLAG_NONE,
 				     &error);
 	g_assert_no_error(error);
@@ -4145,7 +4150,7 @@ fu_common_store_cab_artifact_func(void)
 	    "  <releases>\n"
 	    "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
 	    "      <artifacts>\n"
-	    "        <artifact type=\"binary\">\n"
+	    "        <artifact type=\"source\">\n"
 	    "          <filename>firmware.dfu</filename>\n"
 	    "          <checksum "
 	    "type=\"sha256\">486EA46224D1BB4FB680F34F7C9AD96A8F24EC88BE73EA8E5A6C65260E9CB8A7</"
@@ -4173,7 +4178,7 @@ fu_common_store_cab_artifact_func(void)
 			   "  <releases>\n"
 			   "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
 			   "      <artifacts>\n"
-			   "        <artifact type=\"binary\">\n"
+			   "        <artifact type=\"source\">\n"
 			   "          <filename>firmware.dfu</filename>\n"
 			   "          <checksum "
 			   "type=\"sha1\">7c211433f02071597741e6ff5a8ea34789abbF43</"
@@ -4202,7 +4207,7 @@ fu_common_store_cab_artifact_func(void)
 		       "  <releases>\n"
 		       "    <release version=\"1.2.3\" date=\"2017-09-06\">\n"
 		       "      <artifacts>\n"
-		       "        <artifact type=\"binary\">\n"
+		       "        <artifact type=\"source\">\n"
 		       "          <filename>firmware.dfu</filename>\n"
 		       "          <checksum "
 		       "type=\"sha512\">"

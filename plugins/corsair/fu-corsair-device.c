@@ -106,11 +106,11 @@ fu_corsair_device_probe(FuDevice *device, GError **error)
 static gboolean
 fu_corsair_poll_subdevice(FuDevice *device, gboolean *subdevice_added, GError **error)
 {
+	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
+	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	guint32 subdevices;
 	g_autoptr(FuCorsairDevice) child = NULL;
-	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
 	g_autoptr(FuCorsairBp) child_bp = NULL;
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 
 	if (!fu_corsair_bp_get_property(self->bp,
 					FU_CORSAIR_BP_PROPERTY_SUBDEVICES,
@@ -130,7 +130,6 @@ fu_corsair_poll_subdevice(FuDevice *device, gboolean *subdevice_added, GError **
 
 	child = fu_corsair_device_new(self, child_bp);
 	fu_device_add_instance_id(FU_DEVICE(child), self->subdevice_id);
-	fu_device_set_physical_id(FU_DEVICE(child), fu_device_get_physical_id(device));
 	fu_device_set_logical_id(FU_DEVICE(child), "subdevice");
 	fu_device_add_internal_flag(FU_DEVICE(child), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
 
@@ -383,7 +382,7 @@ fu_corsair_device_write_firmware(FuDevice *device,
 	g_autoptr(GBytes) firmware_bytes = fu_firmware_get_bytes(firmware, error);
 
 	if (firmware_bytes == NULL) {
-		g_prefix_error(error, "cannot get firmware data");
+		g_prefix_error(error, "cannot get firmware data: ");
 		return FALSE;
 	}
 
@@ -396,7 +395,7 @@ fu_corsair_device_write_firmware(FuDevice *device,
 				      fu_progress_get_child(progress),
 				      flags,
 				      error)) {
-		g_prefix_error(error, "cannot write firmware");
+		g_prefix_error(error, "cannot write firmware: ");
 		return FALSE;
 	}
 

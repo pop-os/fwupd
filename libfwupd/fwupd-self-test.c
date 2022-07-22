@@ -162,7 +162,7 @@ fwupd_enums_func(void)
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_device_flag_from_string(tmp), ==, i);
 	}
-	for (guint64 i = 1; i <= FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED; i *= 2) {
+	for (guint64 i = 1; i <= FWUPD_DEVICE_PROBLEM_IS_EMULATED; i *= 2) {
 		const gchar *tmp = fwupd_device_problem_to_string(i);
 		if (tmp == NULL)
 			g_warning("missing device problem 0x%x", (guint)i);
@@ -783,6 +783,7 @@ fwupd_device_func(void)
 	g_autofree gchar *data = NULL;
 	g_autofree gchar *str = NULL;
 	g_autoptr(FwupdDevice) dev = NULL;
+	g_autoptr(FwupdDevice) dev2 = fwupd_device_new();
 	g_autoptr(FwupdDevice) dev_new = fwupd_device_new();
 	g_autoptr(FwupdRelease) rel = NULL;
 	g_autoptr(GError) error = NULL;
@@ -790,6 +791,7 @@ fwupd_device_func(void)
 	g_autoptr(JsonBuilder) builder = NULL;
 	g_autoptr(JsonGenerator) json_generator = NULL;
 	g_autoptr(JsonNode) json_root = NULL;
+	g_autoptr(JsonParser) parser = json_parser_new();
 
 	/* create dummy object */
 	dev = fwupd_device_new();
@@ -941,6 +943,22 @@ fwupd_device_func(void)
 	g_assert_true(fwupd_device_has_vendor_id(dev_new, "USB:0x1234"));
 	g_assert_true(fwupd_device_has_vendor_id(dev_new, "PCI:0x5678"));
 	g_assert_true(fwupd_device_has_instance_id(dev_new, "USB\\VID_1234&PID_0001"));
+
+	/* from JSON */
+	ret = json_parser_load_from_data(parser, data, -1, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fwupd_device_from_json(dev2, json_parser_get_root(parser), &error);
+	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+		g_test_skip(error->message);
+		return;
+	}
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_true(fwupd_device_has_vendor_id(dev2, "USB:0x1234"));
+	g_assert_true(fwupd_device_has_instance_id(dev2, "USB\\VID_1234&PID_0001"));
+	g_assert_true(fwupd_device_has_flag(dev2, FWUPD_DEVICE_FLAG_UPDATABLE));
+	g_assert_false(fwupd_device_has_flag(dev2, FWUPD_DEVICE_FLAG_LOCKED));
 }
 
 static void
@@ -1243,7 +1261,10 @@ fwupd_security_attr_func(void)
 			FWUPD_SECURITY_ATTR_RESULT_ENABLED);
 
 	fwupd_security_attr_add_flag(attr1, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
+	fwupd_security_attr_add_flag(attr1, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA);
+	fwupd_security_attr_remove_flag(attr1, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA);
 	g_assert_true(fwupd_security_attr_has_flag(attr1, FWUPD_SECURITY_ATTR_FLAG_SUCCESS));
+	g_assert_false(fwupd_security_attr_has_flag(attr1, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA));
 	g_assert_false(fwupd_security_attr_has_flag(attr1, FWUPD_SECURITY_ATTR_FLAG_OBSOLETED));
 
 	fwupd_security_attr_set_name(attr1, "DCI");

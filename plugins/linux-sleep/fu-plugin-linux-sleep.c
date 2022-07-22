@@ -20,7 +20,6 @@ fu_plugin_linux_sleep_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attr
 	/* create attr */
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_SUSPEND_TO_RAM);
 	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL);
 	fu_security_attrs_append(attrs, attr);
 
 	/* load file */
@@ -32,6 +31,8 @@ fu_plugin_linux_sleep_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attr
 	}
 	if (g_strstr_len(buf, bufsz, "[deep]") != NULL) {
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_ENABLED);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONFIG_FW);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONFIG_OS);
 		return;
 	}
 

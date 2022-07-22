@@ -60,7 +60,6 @@ fu_plugin_add_security_attrs_tsme(const gchar *path, FuSecurityAttrs *attrs)
 
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM);
 	fwupd_security_attr_set_plugin(attr, "pci_psp");
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_SYSTEM_PROTECTION);
 	fu_security_attrs_append(attrs, attr);
 
 	if (!fu_plugin_pci_psp_get_attr(attr, path, "tsme_status", &val, &error_local)) {
@@ -70,6 +69,7 @@ fu_plugin_add_security_attrs_tsme(const gchar *path, FuSecurityAttrs *attrs)
 
 	if (!val) {
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENCRYPTED);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONFIG_FW);
 		return;
 	}
 
@@ -87,7 +87,6 @@ fu_plugin_add_security_attrs_fused_part(const gchar *path, FuSecurityAttrs *attr
 
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED);
 	fwupd_security_attr_set_plugin(attr, "pci_psp");
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_CRITICAL);
 	fu_security_attrs_append(attrs, attr);
 
 	if (!fu_plugin_pci_psp_get_attr(attr, path, "fused_part", &val, &error_local)) {
@@ -98,6 +97,7 @@ fu_plugin_add_security_attrs_fused_part(const gchar *path, FuSecurityAttrs *attr
 	if (!val) {
 		g_debug("part is not fused");
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_LOCKED);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONTACT_OEM);
 		return;
 	}
 
@@ -115,7 +115,6 @@ fu_plugin_add_security_attrs_debug_locked_part(const gchar *path, FuSecurityAttr
 
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED);
 	fwupd_security_attr_set_plugin(attr, "pci_psp");
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
 	fu_security_attrs_append(attrs, attr);
 
 	if (!fu_plugin_pci_psp_get_attr(attr, path, "debug_lock_on", &val, &error_local)) {
@@ -126,6 +125,7 @@ fu_plugin_add_security_attrs_debug_locked_part(const gchar *path, FuSecurityAttr
 	if (!val) {
 		g_debug("debug lock disabled");
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_LOCKED);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONTACT_OEM);
 		return;
 	}
 
@@ -143,7 +143,6 @@ fu_plugin_add_security_attrs_rollback_protection(const gchar *path, FuSecurityAt
 
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION);
 	fwupd_security_attr_set_plugin(attr, "pci_psp");
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_CRITICAL);
 	fu_security_attrs_append(attrs, attr);
 
 	if (!fu_plugin_pci_psp_get_attr(attr, path, "anti_rollback_status", &val, &error_local)) {
@@ -154,6 +153,7 @@ fu_plugin_add_security_attrs_rollback_protection(const gchar *path, FuSecurityAt
 	if (!val) {
 		g_debug("rollback protection not enforced");
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONTACT_OEM);
 		return;
 	}
 
@@ -171,7 +171,6 @@ fu_plugin_add_security_attrs_rom_armor(const gchar *path, FuSecurityAttrs *attrs
 	/* create attr */
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_AMD_SPI_WRITE_PROTECTION);
 	fwupd_security_attr_set_plugin(attr, "pci_psp");
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
 	fu_security_attrs_append(attrs, attr);
 
 	if (!fu_plugin_pci_psp_get_attr(attr, path, "rom_armor_enforced", &val, &error_local)) {
@@ -182,6 +181,7 @@ fu_plugin_add_security_attrs_rom_armor(const gchar *path, FuSecurityAttrs *attrs
 	if (!val) {
 		g_debug("ROM armor not enforced");
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONTACT_OEM);
 		return;
 	}
 
@@ -200,7 +200,6 @@ fu_plugin_add_security_attrs_rpmc(const gchar *path, FuSecurityAttrs *attrs)
 	/* create attr */
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION);
 	fwupd_security_attr_set_plugin(attr, "pci_psp");
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL);
 	fu_security_attrs_append(attrs, attr);
 
 	if (!fu_plugin_pci_psp_get_attr(attr, path, "rpmc_spirom_available", &val, &error_local)) {
@@ -241,9 +240,9 @@ fu_plugin_pci_psp_set_missing_data(FuSecurityAttrs *attrs)
 
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU);
 	fwupd_security_attr_set_plugin(attr, "pci_psp");
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_CRITICAL);
 	fwupd_security_attr_add_obsolete(attr, "cpu");
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA);
+	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONTACT_OEM);
 	fu_security_attrs_append(attrs, attr);
 }
 

@@ -42,11 +42,14 @@ fu_plugin_iommu_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 
 	/* create attr */
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_IOMMU);
-	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
 	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
 	fu_security_attrs_append(attrs, attr);
 
-	if (priv == NULL || !priv->has_iommu) {
+	if (priv == NULL) {
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA);
+		return;
+	}
+	if (!priv->has_iommu) {
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_FOUND);
 		return;
 	}

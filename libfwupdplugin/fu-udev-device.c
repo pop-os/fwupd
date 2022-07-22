@@ -2119,6 +2119,7 @@ fu_udev_device_init(FuUdevDevice *self)
 {
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
 	priv->flags = FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE;
+	fu_device_set_acquiesce_delay(FU_DEVICE(self), 2500);
 }
 
 static void

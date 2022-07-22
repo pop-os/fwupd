@@ -123,14 +123,13 @@ fu_efi_firmware_section_parse(FuFirmware *firmware,
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autoptr(GBytes) blob = NULL;
 
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz, /* uint24_t! */
+	if (!fu_memread_uint24_safe(buf,
+				    bufsz,
 				    FU_EFI_FIRMWARE_SECTION_OFFSET_SIZE,
 				    &size,
 				    G_LITTLE_ENDIAN,
 				    error))
 		return FALSE;
-	size &= 0xFFFFFF;
 	if (size < FU_EFI_FIRMWARE_SECTION_SIZE) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -196,7 +195,7 @@ fu_efi_firmware_section_parse(FuFirmware *firmware,
 	/* nested volume */
 	if (priv->type == FU_EFI_FIRMWARE_SECTION_TYPE_VOLUME_IMAGE) {
 		g_autoptr(FuFirmware) img = fu_efi_firmware_volume_new();
-		if (!fu_firmware_parse(img, blob, flags, error))
+		if (!fu_firmware_parse(img, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error))
 			return FALSE;
 		fu_firmware_add_image(firmware, img);
 

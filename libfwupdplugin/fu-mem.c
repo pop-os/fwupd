@@ -342,7 +342,7 @@ fu_memcpy_safe(guint8 *dst,
 			    (guint)src_sz);
 		return FALSE;
 	}
-	if (n + src_offset > src_sz) {
+	if (src_offset > src_sz || n + src_offset > src_sz) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
@@ -361,7 +361,7 @@ fu_memcpy_safe(guint8 *dst,
 			    (guint)dst_sz);
 		return FALSE;
 	}
-	if (n + dst_offset > dst_sz) {
+	if (dst_offset > dst_sz || n + dst_offset > dst_sz) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_WRITE,
@@ -575,6 +575,52 @@ fu_memread_uint16_safe(const guint8 *buf,
 		return FALSE;
 	if (value != NULL)
 		*value = fu_memread_uint16(dst, endian);
+	return TRUE;
+}
+
+/**
+ * fu_memread_uint24_safe:
+ * @buf: source buffer
+ * @bufsz: maximum size of @buf, typically `sizeof(buf)`
+ * @offset: offset in bytes into @buf to copy from
+ * @value: (out) (nullable): the parsed value
+ * @endian: an endian type, e.g. %G_LITTLE_ENDIAN
+ * @error: (nullable): optional return location for an error
+ *
+ * Read a value from a buffer using a specified endian in a safe way.
+ *
+ * You don't need to use this function in "obviously correct" cases, nor should
+ * you use it when performance is a concern. Only us it when you're not sure if
+ * malicious data from a device or firmware could cause memory corruption.
+ *
+ * Returns: %TRUE if @value was set, %FALSE otherwise
+ *
+ * Since: 1.8.3
+ **/
+gboolean
+fu_memread_uint24_safe(const guint8 *buf,
+		       gsize bufsz,
+		       gsize offset,
+		       guint32 *value,
+		       FuEndianType endian,
+		       GError **error)
+{
+	guint8 dst[3] = {0x0};
+
+	g_return_val_if_fail(buf != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	if (!fu_memcpy_safe(dst,
+			    sizeof(dst),
+			    0x0, /* dst */
+			    buf,
+			    bufsz,
+			    offset, /* src */
+			    sizeof(dst),
+			    error))
+		return FALSE;
+	if (value != NULL)
+		*value = fu_memread_uint24(dst, endian);
 	return TRUE;
 }
 
