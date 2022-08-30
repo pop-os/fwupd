@@ -60,6 +60,39 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.8.1@LIBFWUPD_1.8.1 1.8.1
  LIBFWUPD_1.8.2@LIBFWUPD_1.8.2 1.8.2
  LIBFWUPD_1.8.3@LIBFWUPD_1.8.3 1.8.3
+ LIBFWUPD_1.8.4@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_add_possible_value@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_array_from_variant@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_from_json@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_from_variant@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_current_value@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_description@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_id@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_kind@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_lower_bound@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_name@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_path@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_possible_values@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_read_only@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_scalar_increment@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_type@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_get_upper_bound@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_has_possible_value@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_map_possible_value@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_new@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_current_value@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_description@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_id@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_kind@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_lower_bound@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_name@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_path@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_read_only@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_scalar_increment@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_set_upper_bound@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_to_json@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_to_string@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_to_variant@LIBFWUPD_1.8.4 1.8.4
  fwupd_build_history_report_json@LIBFWUPD_1.0.4 1.0.4
  fwupd_build_machine_id@LIBFWUPD_1.0.4 1.0.4
  fwupd_build_user_agent@LIBFWUPD_1.0.3 1.0.3
@@ -88,6 +121,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_get_approved_firmware_finish@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_battery_level@LIBFWUPD_1.8.1 1.8.1
  fwupd_client_get_battery_threshold@LIBFWUPD_1.8.1 1.8.1
+ fwupd_client_get_bios_settings@LIBFWUPD_1.8.4 1.8.4
+ fwupd_client_get_bios_settings_async@LIBFWUPD_1.8.4 1.8.4
+ fwupd_client_get_bios_settings_finish@LIBFWUPD_1.8.4 1.8.4
  fwupd_client_get_blocked_firmware@LIBFWUPD_1.4.6 1.4.6
  fwupd_client_get_blocked_firmware_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_blocked_firmware_finish@LIBFWUPD_1.5.0 1.5.0
@@ -162,6 +198,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_install_release@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_install_release_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_install_release_finish@LIBFWUPD_1.5.0 1.5.0
+ fwupd_client_modify_bios_setting@LIBFWUPD_1.8.4 1.8.4
+ fwupd_client_modify_bios_setting_async@LIBFWUPD_1.8.4 1.8.4
+ fwupd_client_modify_bios_setting_finish@LIBFWUPD_1.8.4 1.8.4
  fwupd_client_modify_config@LIBFWUPD_1.2.8 1.2.8
  fwupd_client_modify_config_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_modify_config_finish@LIBFWUPD_1.5.0 1.5.0
@@ -517,6 +556,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_security_attr_from_json@LIBFWUPD_1.7.1 1.7.1
  fwupd_security_attr_from_variant@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_get_appstream_id@LIBFWUPD_1.5.0 1.5.0
+ fwupd_security_attr_get_bios_setting_current_value@LIBFWUPD_1.8.4 1.8.4
+ fwupd_security_attr_get_bios_setting_id@LIBFWUPD_1.8.4 1.8.4
+ fwupd_security_attr_get_bios_setting_target_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_security_attr_get_created@LIBFWUPD_1.7.1 1.7.1
  fwupd_security_attr_get_description@LIBFWUPD_1.8.2 1.8.2
  fwupd_security_attr_get_flags@LIBFWUPD_1.5.0 1.5.0
@@ -539,6 +581,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_security_attr_result_from_string@LIBFWUPD_1.7.1 1.7.1
  fwupd_security_attr_result_to_string@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_set_appstream_id@LIBFWUPD_1.5.0 1.5.0
+ fwupd_security_attr_set_bios_setting_current_value@LIBFWUPD_1.8.4 1.8.4
+ fwupd_security_attr_set_bios_setting_id@LIBFWUPD_1.8.4 1.8.4
+ fwupd_security_attr_set_bios_setting_target_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_security_attr_set_created@LIBFWUPD_1.7.1 1.7.1
  fwupd_security_attr_set_description@LIBFWUPD_1.8.2 1.8.2
  fwupd_security_attr_set_flags@LIBFWUPD_1.5.0 1.5.0

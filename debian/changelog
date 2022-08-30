@@ -1,10 +1,17 @@
+fwupd (1.8.4-1) unstable; urgency=medium
+
+  * New upstream version (1.8.4)
+  * debian/control: refresh with upstream dependencies
+
+ -- Mario Limonciello <superm1@gmail.com>  Tue, 30 Aug 2022 11:15:39 -0500
+
 fwupd (1.8.3-1) unstable; urgency=medium
 
   * New upstream version (1.8.3)
   * Drop COD patch
   * Fixes HWIDs for some systems (LP: #1982103)
 
- -- Mario Limonciello <superm1@gmail.com>  Fri, 22 Jul 2022 07:04:23 -0500
+ -- Mario Limonciello <superm1@gmail.com>  Tue, 30 Aug 2022 06:46:52 -0500
 
 fwupd (1.8.2-1) unstable; urgency=medium
 
