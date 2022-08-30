@@ -79,7 +79,7 @@ Build-Depends:
 	udev,
 	umockdev,
 	valac,
-	valgrind,
+	valgrind [!ia64 !riscv64 !x32 !mips !sparc64 !sh4 !ppc64 !powerpcspe !hppa !alpha !mips64el !armhf !armel !mipsel !m68k],
 Build-Depends-Indep: gi-docgen <!nodoc>,
                      libglib2.0-doc <!nodoc>,
 Rules-Requires-Root: no

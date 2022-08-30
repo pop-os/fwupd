@@ -3,6 +3,7 @@ fwupd (1.8.4-2) UNRELEASED; urgency=medium
   * debian/control:
     - Attempt to fix FTBFS related to documentation only building in certain
       architectures.
+    - Fix valgrind architecture specific dependency.
 
  -- Mario Limonciello <superm1@gmail.com>  Tue, 30 Aug 2022 12:49:09 -0500
 
