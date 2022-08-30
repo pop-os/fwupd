@@ -12,8 +12,10 @@
 #include <libgcab.h>
 #include <string.h>
 
+#include "fwupd-bios-setting-private.h"
 #include "fwupd-security-attr-private.h"
 
+#include "fu-bios-settings-private.h"
 #include "fu-cabinet.h"
 #include "fu-common-private.h"
 #include "fu-context-private.h"
@@ -2909,6 +2911,186 @@ fu_device_retry_hardware_func(void)
 }
 
 static void
+fu_bios_settings_load_func(void)
+{
+	gboolean ret;
+	gint integer;
+	const gchar *tmp;
+	GPtrArray *values;
+	FwupdBiosSetting *setting;
+	FwupdBiosSettingKind kind;
+	g_autofree gchar *test_dir = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(GError) error = NULL;
+	g_autoptr(FuBiosSettings) p620_settings = NULL;
+	g_autoptr(FuBiosSettings) p14s_settings = NULL;
+	g_autoptr(FuBiosSettings) xp29310_settings = NULL;
+	g_autoptr(GPtrArray) p14s_items = NULL;
+	g_autoptr(GPtrArray) p620_items = NULL;
+	g_autoptr(GPtrArray) xps9310_items = NULL;
+
+	/* load BIOS settings from a Lenovo P620 (with thinklmi driver problems) */
+	test_dir = g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", "lenovo-p620", NULL);
+	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", test_dir, TRUE);
+
+	g_test_expect_message("FuBiosSettings", G_LOG_LEVEL_WARNING, "*BUG*");
+	ret = fu_context_reload_bios_settings(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_test_assert_expected_messages();
+
+	p620_settings = fu_context_get_bios_settings(ctx);
+	p620_items = fu_bios_settings_get_all(p620_settings);
+	g_assert_cmpint(p620_items->len, ==, 128);
+
+	/* make sure nothing pending */
+	ret = fu_context_get_bios_setting_pending_reboot(ctx);
+	g_assert_false(ret);
+
+	/* check a BIOS setting reads from kernel as expected by fwupd today */
+	setting = fu_context_get_bios_setting(ctx, "com.thinklmi.AMDMemoryGuard");
+	g_assert_nonnull(setting);
+	tmp = fwupd_bios_setting_get_name(setting);
+	g_assert_cmpstr(tmp, ==, "AMDMemoryGuard");
+	tmp = fwupd_bios_setting_get_description(setting);
+	g_assert_cmpstr(tmp, ==, "AMDMemoryGuard");
+	tmp = fwupd_bios_setting_get_current_value(setting);
+	g_assert_cmpstr(tmp, ==, "Disable");
+	values = fwupd_bios_setting_get_possible_values(setting);
+	for (guint i = 0; i < values->len; i++) {
+		const gchar *possible = g_ptr_array_index(values, i);
+		if (i == 0)
+			g_assert_cmpstr(possible, ==, "Disable");
+		if (i == 1)
+			g_assert_cmpstr(possible, ==, "Enable");
+	}
+
+	/* try to read an BIOS setting known to have ][Status] to make sure we worked
+	 * around the thinklmi bug sufficiently
+	 */
+	setting = fu_context_get_bios_setting(ctx, "com.thinklmi.StartupSequence");
+	g_assert_nonnull(setting);
+	tmp = fwupd_bios_setting_get_current_value(setting);
+	g_assert_cmpstr(tmp, ==, "Primary");
+	values = fwupd_bios_setting_get_possible_values(setting);
+	for (guint i = 0; i < values->len; i++) {
+		const gchar *possible = g_ptr_array_index(values, i);
+		if (i == 0)
+			g_assert_cmpstr(possible, ==, "Primary");
+		if (i == 1)
+			g_assert_cmpstr(possible, ==, "Automatic");
+	}
+
+	/* check no BIOS settings have [Status in them */
+	for (guint i = 0; i < p620_items->len; i++) {
+		setting = g_ptr_array_index(p620_items, i);
+		tmp = fwupd_bios_setting_get_current_value(setting);
+		g_debug("%s", tmp);
+		g_assert_null(g_strrstr(tmp, "[Status"));
+	}
+
+	g_free(test_dir);
+
+	/* load BIOS settings from a Lenovo P14s Gen1 */
+	test_dir =
+	    g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", "lenovo-p14s-gen1", NULL);
+	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", test_dir, TRUE);
+	ret = fu_context_reload_bios_settings(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	p14s_settings = fu_context_get_bios_settings(ctx);
+	p14s_items = fu_bios_settings_get_all(p14s_settings);
+	g_assert_cmpint(p14s_items->len, ==, 75);
+
+	/* reboot should be pending on this one */
+	ret = fu_context_get_bios_setting_pending_reboot(ctx);
+	g_assert_true(ret);
+
+	/* look for an enumeration BIOS setting with a space */
+	setting = fu_context_get_bios_setting(ctx, "com.thinklmi.SleepState");
+	g_assert_nonnull(setting);
+	tmp = fwupd_bios_setting_get_name(setting);
+	g_assert_cmpstr(tmp, ==, "SleepState");
+	tmp = fwupd_bios_setting_get_description(setting);
+	g_assert_cmpstr(tmp, ==, "SleepState");
+	values = fwupd_bios_setting_get_possible_values(setting);
+	for (guint i = 0; i < values->len; i++) {
+		const gchar *possible = g_ptr_array_index(values, i);
+		if (i == 0)
+			g_assert_cmpstr(possible, ==, "Linux");
+		if (i == 1)
+			g_assert_cmpstr(possible, ==, "Windows 10");
+	}
+
+	/* make sure we defaulted UEFI Secure boot to read only if enabled */
+	setting = fu_context_get_bios_setting(ctx, "com.thinklmi.SecureBoot");
+	g_assert_nonnull(setting);
+	ret = fwupd_bios_setting_get_read_only(setting);
+	g_assert_true(ret);
+
+	g_free(test_dir);
+
+	/* load BIOS settings from a Dell XPS 9310 */
+	test_dir =
+	    g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", "dell-xps13-9310", NULL);
+	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", test_dir, TRUE);
+	ret = fu_context_reload_bios_settings(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	xp29310_settings = fu_context_get_bios_settings(ctx);
+	xps9310_items = fu_bios_settings_get_all(xp29310_settings);
+	g_assert_cmpint(xps9310_items->len, ==, 109);
+
+	/* make sure that we DIDN'T parse reset_bios setting */
+	setting = fu_context_get_bios_setting(ctx, FWUPD_BIOS_SETTING_RESET_BIOS);
+	g_assert_null(setting);
+
+	/* look at a integer BIOS setting */
+	setting = fu_context_get_bios_setting(ctx, "com.dell-wmi-sysman.CustomChargeStop");
+	g_assert_nonnull(setting);
+	kind = fwupd_bios_setting_get_kind(setting);
+	g_assert_cmpint(kind, ==, FWUPD_BIOS_SETTING_KIND_INTEGER);
+	integer = fwupd_bios_setting_get_lower_bound(setting);
+	g_assert_cmpint(integer, ==, 55);
+	integer = fwupd_bios_setting_get_upper_bound(setting);
+	g_assert_cmpint(integer, ==, 100);
+	integer = fwupd_bios_setting_get_scalar_increment(setting);
+	g_assert_cmpint(integer, ==, 1);
+
+	/* look at a string BIOS setting */
+	setting = fu_context_get_bios_setting(ctx, "com.dell-wmi-sysman.Asset");
+	g_assert_nonnull(setting);
+	integer = fwupd_bios_setting_get_lower_bound(setting);
+	g_assert_cmpint(integer, ==, 1);
+	integer = fwupd_bios_setting_get_upper_bound(setting);
+	g_assert_cmpint(integer, ==, 64);
+	tmp = fwupd_bios_setting_get_description(setting);
+	g_assert_cmpstr(tmp, ==, "Asset Tag");
+
+	/* look at a enumeration BIOS setting */
+	setting = fu_context_get_bios_setting(ctx, "com.dell-wmi-sysman.BiosRcvrFrmHdd");
+	g_assert_nonnull(setting);
+	kind = fwupd_bios_setting_get_kind(setting);
+	g_assert_cmpint(kind, ==, FWUPD_BIOS_SETTING_KIND_ENUMERATION);
+	values = fwupd_bios_setting_get_possible_values(setting);
+	for (guint i = 0; i < values->len; i++) {
+		const gchar *possible = g_ptr_array_index(values, i);
+		if (i == 0)
+			g_assert_cmpstr(possible, ==, "Disabled");
+		if (i == 1)
+			g_assert_cmpstr(possible, ==, "Enabled");
+	}
+
+	/* make sure we defaulted UEFI Secure boot to read only if enabled */
+	setting = fu_context_get_bios_setting(ctx, "com.dell-wmi-sysman.SecureBoot");
+	g_assert_nonnull(setting);
+	ret = fwupd_bios_setting_get_read_only(setting);
+	g_assert_true(ret);
+}
+
+static void
 fu_security_attrs_hsi_func(void)
 {
 	g_autofree gchar *hsi1 = NULL;
@@ -3391,6 +3573,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_DATADIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_PLUGINDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_OFFLINE_TRIGGER", "/tmp/fwupd-self-test/system-update", TRUE);
 	(void)g_setenv("FWUPD_LOCALSTATEDIR", "/tmp/fwupd-self-test/var", TRUE);
 	(void)g_setenv("FWUPD_PROFILE", "1", TRUE);
@@ -3403,6 +3586,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/progress{parent-1-step}", fu_progress_parent_one_step_proxy_func);
 	g_test_add_func("/fwupd/progress{no-equal}", fu_progress_non_equal_steps_func);
 	g_test_add_func("/fwupd/progress{finish}", fu_progress_finish_func);
+	g_test_add_func("/fwupd/bios-attrs{load}", fu_bios_settings_load_func);
 	g_test_add_func("/fwupd/security-attrs{hsi}", fu_security_attrs_hsi_func);
 	g_test_add_func("/fwupd/plugin{devices}", fu_plugin_devices_func);
 	g_test_add_func("/fwupd/plugin{device-inhibit-children}",

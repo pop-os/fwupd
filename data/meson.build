@@ -1,4 +1,4 @@
-subdir('builder')
+subdir('bios-settings.d')
 subdir('pki')
 subdir('remotes.d')
 

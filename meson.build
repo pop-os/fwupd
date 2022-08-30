@@ -1,7 +1,7 @@
 project('fwupd', 'c',
-  version: '1.8.3',
+  version: '1.8.4',
   license: 'LGPL-2.1+',
-  meson_version: '>=0.60.0',
+  meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c99'],
 )
 
@@ -215,7 +215,9 @@ bluez = get_option('bluez').disable_auto_if(host_machine.system() != 'linux')
 if bluez.allowed()
   conf.set('HAVE_BLUEZ', '1')
 endif
-if get_option('hsi')
+host_cpu = host_machine.cpu_family()
+hsi = get_option('hsi').disable_auto_if(host_machine.system() != 'linux').disable_auto_if(host_cpu != 'x86' and host_cpu != 'x86_64').allowed()
+if hsi
   conf.set('HAVE_HSI', '1')
 endif
 libxmlb = dependency('xmlb', version: '>= 0.1.13', fallback: ['libxmlb', 'libxmlb_dep'])
@@ -313,8 +315,6 @@ offline = get_option('offline').require(libsystemd.found(),
 if offline.allowed()
   conf.set('HAVE_FWUPDOFFLINE', '1')
 endif
-
-host_cpu = host_machine.cpu_family()
 
 if cc.has_header('sys/utsname.h')
   conf.set('HAVE_UTSNAME_H', '1')
@@ -553,7 +553,7 @@ gidocgen_app = find_program('gi-docgen', required: get_option('docs'))
 
 # using "meson configure -Db_sanitize=address,undefined" is super useful in finding corruption,
 # but it does not work with our GMainContext-abuse tests...
-if get_option('b_sanitize').contains('address')
+if get_option('b_sanitize') in ['address,undefined', 'address', 'undefined', 'leak']
   run_sanitize_unsafe_tests = false
 else
   run_sanitize_unsafe_tests = true
@@ -581,5 +581,8 @@ endif
 subdir('docs')
 
 if build_daemon and libsystemd.found()
-  meson.add_install_script('meson_post_install.sh', systemdunitdir)
+  install_symlink('fwupd-offline-update.service',
+    install_dir: join_paths(systemdunitdir, 'system-update.target.wants'),
+    pointing_to: join_paths('..', 'fwupd-offline-update.service')
+  )
 endif

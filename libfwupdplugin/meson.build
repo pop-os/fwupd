@@ -41,6 +41,7 @@ fwupdplugin_src = [
   'fu-cfu-payload.c',       # fuzzing
   'fu-volume.c',            # fuzzing
   'fu-firmware.c',          # fuzzing
+  'fu-bios-settings.c',        # fuzzing
   'fu-firmware-common.c',   # fuzzing
   'fu-dfuse-firmware.c',    # fuzzing
   'fu-fmap-firmware.c',     # fuzzing
@@ -50,6 +51,7 @@ fwupdplugin_src = [
   'fu-plugin.c',
   'fu-quirks.c',            # fuzzing
   'fu-progress.c',          # fuzzing
+  'fu-security-attr.c',     # fuzzing
   'fu-security-attrs.c',
   'fu-smbios.c',            # fuzzing
   'fu-srec-firmware.c',     # fuzzing
@@ -143,6 +145,7 @@ fwupdplugin_headers = [
   'fu-linear-firmware.h',
   'fu-volume.h',
   'fu-firmware.h',
+  'fu-bios-settings.h',
   'fu-firmware-common.h',
   'fu-fmap-firmware.h',
   'fu-dfuse-firmware.h',
@@ -151,6 +154,7 @@ fwupdplugin_headers = [
   'fu-io-channel.h',
   'fu-plugin.h',
   'fu-quirks.h',
+  'fu-security-attr.h',
   'fu-security-attrs.h',
   'fu-progress.h',
   'fu-smbios.h',
@@ -189,6 +193,7 @@ fwupdplugin_headers_private = [
   'fu-device-private.h',
   'fu-kenv.h',
   'fu-plugin-private.h',
+  'fu-bios-settings-private.h',
   'fu-security-attrs-private.h',
   'fu-smbios-private.h',
   'fu-udev-device-private.h',

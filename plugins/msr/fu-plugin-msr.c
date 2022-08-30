@@ -77,6 +77,52 @@ fu_plugin_msr_init(FuPlugin *plugin)
 	fu_plugin_add_udev_subsystem(plugin, "msr");
 }
 
+static void
+fu_plugin_msr_to_string(FuPlugin *plugin, guint idt, GString *str)
+{
+	FuPluginData *priv = fu_plugin_get_data(plugin);
+	if (priv->ia32_debug_supported) {
+		fu_string_append_kb(str,
+				    idt,
+				    "Ia32DebugInterfaceEnabled",
+				    priv->ia32_debug.fields.enabled);
+		fu_string_append_kb(str,
+				    idt,
+				    "Ia32DebugInterfaceLocked",
+				    priv->ia32_debug.fields.locked);
+		fu_string_append_kb(str,
+				    idt,
+				    "Ia32DebugInterfaceDebugOccurred",
+				    priv->ia32_debug.fields.debug_occurred);
+	}
+	if (priv->ia32_tme_supported) {
+		fu_string_append_kb(str,
+				    idt,
+				    "Ia32TmeActivateLockRo",
+				    priv->ia32_tme_activation.fields.lock_ro);
+		fu_string_append_kb(str,
+				    idt,
+				    "Ia32TmeActivateEnable",
+				    priv->ia32_tme_activation.fields.enable);
+		fu_string_append_kb(str,
+				    idt,
+				    "Ia32TmeActivateBypassEnable",
+				    priv->ia32_tme_activation.fields.bypass_enable);
+	}
+	if (priv->amd64_syscfg_supported) {
+		fu_string_append_kb(str,
+				    idt,
+				    "Amd64SyscfgSmeIsEnabled",
+				    priv->amd64_syscfg.fields.sme_is_enabled);
+	}
+	if (priv->amd64_sev_supported) {
+		fu_string_append_kb(str,
+				    idt,
+				    "Amd64SevIsEnabled",
+				    priv->amd64_sev.fields.sev_is_enabled);
+	}
+}
+
 static gboolean
 fu_plugin_msr_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
@@ -158,10 +204,6 @@ fu_plugin_msr_backend_device_added(FuPlugin *plugin, FuDevice *device, GError **
 					    G_LITTLE_ENDIAN,
 					    error))
 			return FALSE;
-		g_debug("IA32_DEBUG_INTERFACE: enabled=%i, locked=%i, debug_occurred=%i",
-			priv->ia32_debug.fields.enabled,
-			priv->ia32_debug.fields.locked,
-			priv->ia32_debug.fields.debug_occurred);
 	}
 	if (priv->ia32_tme_supported) {
 		if (!fu_udev_device_pread(FU_UDEV_DEVICE(device),
@@ -179,10 +221,6 @@ fu_plugin_msr_backend_device_added(FuPlugin *plugin, FuDevice *device, GError **
 					    G_LITTLE_ENDIAN,
 					    error))
 			return FALSE;
-		g_debug("IA32_TME_ACTIVATE: lock_ro=%i enable=%i, bypass_enable=%i",
-			priv->ia32_tme_activation.fields.lock_ro,
-			priv->ia32_tme_activation.fields.enable,
-			priv->ia32_tme_activation.fields.bypass_enable);
 	}
 
 	/* grab AMD MSRs */
@@ -202,9 +240,6 @@ fu_plugin_msr_backend_device_added(FuPlugin *plugin, FuDevice *device, GError **
 					    G_LITTLE_ENDIAN,
 					    error))
 			return FALSE;
-		g_debug("PCI_MSR_AMD64_SYSCFG: 0%x, sme_is_enabled=%i",
-			priv->amd64_syscfg.data,
-			priv->amd64_syscfg.fields.sme_is_enabled);
 	}
 	if (priv->amd64_sev_supported) {
 		if (!fu_udev_device_pread(FU_UDEV_DEVICE(device),
@@ -222,9 +257,6 @@ fu_plugin_msr_backend_device_added(FuPlugin *plugin, FuDevice *device, GError **
 					    G_LITTLE_ENDIAN,
 					    error))
 			return FALSE;
-		g_debug("PCI_MSR_AMD64_SEV: 0%x, sev_is_enabled=%i",
-			priv->amd64_sev.data,
-			priv->amd64_sev.fields.sev_is_enabled);
 	}
 
 	/* get microcode version */
@@ -281,8 +313,7 @@ fu_plugin_add_security_attr_dci_enabled(FuPlugin *plugin, FuSecurityAttrs *attrs
 		return;
 
 	/* create attr */
-	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_ENABLED);
-	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
+	attr = fu_plugin_security_attr_new(plugin, FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_ENABLED);
 	if (device != NULL)
 		fwupd_security_attr_add_guids(attr, fu_device_get_guids(device));
 	fu_security_attrs_append(attrs, attr);
@@ -323,8 +354,7 @@ fu_plugin_add_security_attr_intel_tme_enabled(FuPlugin *plugin, FuSecurityAttrs 
 	/* create attr (which should already have been created in the cpu plugin) */
 	attr = fu_security_attrs_get_by_appstream_id(attrs, FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM);
 	if (attr == NULL) {
-		attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM);
-		fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
+		attr = fu_plugin_security_attr_new(plugin, FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM);
 		fu_security_attrs_append(attrs, attr);
 	}
 
@@ -371,8 +401,7 @@ fu_plugin_add_security_attr_dci_locked(FuPlugin *plugin, FuSecurityAttrs *attrs)
 		return;
 
 	/* create attr */
-	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED);
-	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
+	attr = fu_plugin_security_attr_new(plugin, FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED);
 	if (device != NULL)
 		fwupd_security_attr_add_guids(attr, fu_device_get_guids(device));
 	fu_security_attrs_append(attrs, attr);
@@ -447,8 +476,7 @@ fu_plugin_add_security_attr_amd_sme_enabled(FuPlugin *plugin, FuSecurityAttrs *a
 		return;
 
 	/* create attr */
-	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM);
-	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
+	attr = fu_plugin_security_attr_new(plugin, FWUPD_SECURITY_ATTR_ID_ENCRYPTED_RAM);
 	if (device != NULL)
 		fwupd_security_attr_add_guids(attr, fu_device_get_guids(device));
 	fu_security_attrs_append(attrs, attr);
@@ -505,6 +533,7 @@ fu_plugin_init_vfuncs(FuPluginVfuncs *vfuncs)
 {
 	vfuncs->build_hash = FU_BUILD_HASH;
 	vfuncs->init = fu_plugin_msr_init;
+	vfuncs->to_string = fu_plugin_msr_to_string;
 	vfuncs->startup = fu_plugin_msr_startup;
 	vfuncs->backend_device_added = fu_plugin_msr_backend_device_added;
 	vfuncs->add_security_attrs = fu_plugin_msr_add_security_attrs;

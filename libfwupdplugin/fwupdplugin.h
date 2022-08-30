@@ -12,6 +12,7 @@
 #include <libfwupdplugin/fu-archive-firmware.h>
 #include <libfwupdplugin/fu-archive.h>
 #include <libfwupdplugin/fu-backend.h>
+#include <libfwupdplugin/fu-bios-settings.h>
 #include <libfwupdplugin/fu-bluez-device.h>
 #include <libfwupdplugin/fu-byte-array.h>
 #include <libfwupdplugin/fu-bytes.h>
@@ -61,6 +62,7 @@
 #include <libfwupdplugin/fu-plugin-vfuncs.h>
 #include <libfwupdplugin/fu-plugin.h>
 #include <libfwupdplugin/fu-progress.h>
+#include <libfwupdplugin/fu-security-attr.h>
 #include <libfwupdplugin/fu-security-attrs.h>
 #include <libfwupdplugin/fu-srec-firmware.h>
 #include <libfwupdplugin/fu-string.h>

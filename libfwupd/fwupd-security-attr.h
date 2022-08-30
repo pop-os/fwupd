@@ -127,6 +127,19 @@ gchar *
 fwupd_security_attr_to_string(FwupdSecurityAttr *self);
 
 const gchar *
+fwupd_security_attr_get_bios_setting_id(FwupdSecurityAttr *self);
+void
+fwupd_security_attr_set_bios_setting_id(FwupdSecurityAttr *self, const gchar *id);
+const gchar *
+fwupd_security_attr_get_bios_setting_target_value(FwupdSecurityAttr *self);
+void
+fwupd_security_attr_set_bios_setting_target_value(FwupdSecurityAttr *self, const gchar *value);
+const gchar *
+fwupd_security_attr_get_bios_setting_current_value(FwupdSecurityAttr *self);
+void
+fwupd_security_attr_set_bios_setting_current_value(FwupdSecurityAttr *self, const gchar *value);
+
+const gchar *
 fwupd_security_attr_get_appstream_id(FwupdSecurityAttr *self);
 void
 fwupd_security_attr_set_appstream_id(FwupdSecurityAttr *self, const gchar *appstream_id);
@@ -138,6 +151,10 @@ FwupdSecurityAttrResult
 fwupd_security_attr_get_result(FwupdSecurityAttr *self);
 void
 fwupd_security_attr_set_result(FwupdSecurityAttr *self, FwupdSecurityAttrResult result);
+FwupdSecurityAttrResult
+fwupd_security_attr_get_result_fallback(FwupdSecurityAttr *self);
+void
+fwupd_security_attr_set_result_fallback(FwupdSecurityAttr *self, FwupdSecurityAttrResult result);
 const gchar *
 fwupd_security_attr_get_name(FwupdSecurityAttr *self);
 void

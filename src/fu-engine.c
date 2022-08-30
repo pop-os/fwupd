@@ -8,6 +8,8 @@
 
 #include "config.h"
 
+#include <fcntl.h>
+
 #ifdef HAVE_GIO_UNIX
 #include <gio/gunixinputstream.h>
 #endif
@@ -26,6 +28,7 @@
 
 #include <fwupdplugin.h>
 
+#include "fwupd-bios-setting-private.h"
 #include "fwupd-common-private.h"
 #include "fwupd-device-private.h"
 #include "fwupd-enums-private.h"
@@ -34,6 +37,7 @@
 #include "fwupd-resources.h"
 #include "fwupd-security-attr-private.h"
 
+#include "fu-bios-settings-private.h"
 #include "fu-cabinet.h"
 #include "fu-context-private.h"
 #include "fu-coswid-firmware.h"
@@ -43,7 +47,6 @@
 #include "fu-engine-helper.h"
 #include "fu-engine-request.h"
 #include "fu-engine.h"
-#include "fu-firmware-builder.h"
 #include "fu-hash.h"
 #include "fu-history.h"
 #include "fu-idle.h"
@@ -54,7 +57,7 @@
 #include "fu-plugin-private.h"
 #include "fu-release.h"
 #include "fu-remote-list.h"
-#include "fu-security-attr.h"
+#include "fu-security-attr-common.h"
 #include "fu-security-attrs-private.h"
 #include "fu-udev-device-private.h"
 #include "fu-version.h"
@@ -722,6 +725,231 @@ fu_engine_modify_remote(FuEngine *self,
 		return FALSE;
 	}
 	return fu_remote_list_set_key_value(self->remote_list, remote_id, key, value, error);
+}
+
+static gboolean
+fu_engine_update_bios_setting(FwupdBiosSetting *attr,
+			      const gchar *value,
+			      gboolean force_ro,
+			      GError **error)
+{
+	int fd;
+	g_autofree gchar *fn =
+	    g_build_filename(fwupd_bios_setting_get_path(attr), "current_value", NULL);
+	g_autoptr(FuIOChannel) io = NULL;
+
+	if (force_ro)
+		fwupd_bios_setting_set_read_only(attr, TRUE);
+
+	if (g_strcmp0(fwupd_bios_setting_get_current_value(attr), value) == 0) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOTHING_TO_DO,
+			    "%s is already set to %s",
+			    fwupd_bios_setting_get_id(attr),
+			    value);
+		return FALSE;
+	}
+
+	fd = open(fn, O_WRONLY);
+	if (fd < 0) {
+		g_set_error(error,
+			    G_IO_ERROR,
+#ifdef HAVE_ERRNO_H
+			    g_io_error_from_errno(errno),
+#else
+			    G_IO_ERROR_FAILED,
+#endif
+			    "could not open %s: %s",
+			    fn,
+			    g_strerror(errno));
+		return FALSE;
+	}
+	io = fu_io_channel_unix_new(fd);
+	if (!fu_io_channel_write_raw(io,
+				     (const guint8 *)value,
+				     strlen(value),
+				     1000,
+				     FU_IO_CHANNEL_FLAG_NONE,
+				     error))
+		return FALSE;
+	fwupd_bios_setting_set_current_value(attr, value);
+
+	g_debug("set %s to %s", fwupd_bios_setting_get_id(attr), value);
+
+	return TRUE;
+}
+
+/*
+ * This is also done by the kernel or firmware, doing it here too allows for cleaner
+ * error messages
+ */
+static gboolean
+fu_engine_validate_bios_setting_input(FwupdBiosSetting *attr, const gchar **value, GError **error)
+{
+	guint64 tmp = 0;
+
+	g_return_val_if_fail(*value != NULL, FALSE);
+	g_return_val_if_fail(value != NULL, FALSE);
+
+	if (attr == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "attribute not found");
+		return FALSE;
+	}
+	if (fwupd_bios_setting_get_read_only(attr)) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "%s is read only",
+			    fwupd_bios_setting_get_name(attr));
+		return FALSE;
+	} else if (fwupd_bios_setting_get_kind(attr) == FWUPD_BIOS_SETTING_KIND_INTEGER) {
+		if (!fu_strtoull(*value, &tmp, 0, G_MAXUINT64, error))
+			return FALSE;
+		if (tmp < fwupd_bios_setting_get_lower_bound(attr)) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "%s is too small (%" G_GUINT64_FORMAT
+				    "); expected at least %" G_GUINT64_FORMAT,
+				    *value,
+				    tmp,
+				    fwupd_bios_setting_get_lower_bound(attr));
+			return FALSE;
+		}
+		if (tmp > fwupd_bios_setting_get_upper_bound(attr)) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "%s is too big (%" G_GUINT64_FORMAT
+				    "); expected no more than %" G_GUINT64_FORMAT,
+				    *value,
+				    tmp,
+				    fwupd_bios_setting_get_upper_bound(attr));
+			return FALSE;
+		}
+	} else if (fwupd_bios_setting_get_kind(attr) == FWUPD_BIOS_SETTING_KIND_STRING) {
+		tmp = strlen(*value);
+		if (tmp < fwupd_bios_setting_get_lower_bound(attr)) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "%s is too short (%" G_GUINT64_FORMAT
+				    "); expected at least %" G_GUINT64_FORMAT,
+				    *value,
+				    tmp,
+				    fwupd_bios_setting_get_lower_bound(attr));
+			return FALSE;
+		}
+		if (tmp > fwupd_bios_setting_get_upper_bound(attr)) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "%s is too long (%" G_GUINT64_FORMAT
+				    "); expected no more than %" G_GUINT64_FORMAT,
+				    *value,
+				    tmp,
+				    fwupd_bios_setting_get_upper_bound(attr));
+			return FALSE;
+		}
+	} else if (fwupd_bios_setting_get_kind(attr) == FWUPD_BIOS_SETTING_KIND_ENUMERATION) {
+		const gchar *result = fwupd_bios_setting_map_possible_value(attr, *value, error);
+		if (result == NULL)
+			return FALSE;
+		*value = result;
+	} else {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "unknown attribute type");
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static gboolean
+fu_engine_modify_single_bios_setting(FuEngine *self,
+				     const gchar *key,
+				     const gchar *value,
+				     gboolean force_ro,
+				     GError **error)
+{
+	FwupdBiosSetting *attr = fu_context_get_bios_setting(self->ctx, key);
+	const gchar *tmp = value;
+
+	if (!fu_engine_validate_bios_setting_input(attr, &tmp, error))
+		return FALSE;
+
+	return fu_engine_update_bios_setting(attr, tmp, force_ro, error);
+}
+
+/**
+ * fu_engine_modify_bios_settings:
+ * @self: a #FuEngine
+ * @settings: Hashtable of settings/values to configure
+ * @force_ro: a #gboolean indicating if BIOS settings should also be made read-only
+ * @error: (nullable): optional return location for an error
+ *
+ * Use the kernel API to set one or more BIOS settings.
+ *
+ * Returns: %TRUE for success
+ **/
+gboolean
+fu_engine_modify_bios_settings(FuEngine *self,
+			       GHashTable *settings,
+			       gboolean force_ro,
+			       GError **error)
+{
+	g_autoptr(FuBiosSettings) bios_settings = fu_context_get_bios_settings(self->ctx);
+	gboolean changed = FALSE;
+	GHashTableIter iter;
+	gpointer key, value;
+
+	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
+	g_return_val_if_fail(settings != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	g_hash_table_iter_init(&iter, settings);
+	while (g_hash_table_iter_next(&iter, &key, &value)) {
+		g_autoptr(GError) error_local = NULL;
+		if (value == NULL) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "attribute %s missing value",
+				    (const gchar *)key);
+			return FALSE;
+		}
+		if (!fu_engine_modify_single_bios_setting(self,
+							  key,
+							  value,
+							  force_ro,
+							  &error_local)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO)) {
+				g_debug("%s", error_local->message);
+				continue;
+			}
+			g_propagate_error(error, g_steal_pointer(&error_local));
+			return FALSE;
+		}
+		changed = TRUE;
+	}
+
+	if (!changed) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    "no BIOS settings needed to be changed");
+		return FALSE;
+	}
+
+	if (!fu_bios_settings_get_pending_reboot(bios_settings, &changed, error))
+		return FALSE;
+	g_debug("pending_reboot is now %d", changed);
+	return TRUE;
 }
 
 /**
@@ -2437,7 +2665,6 @@ fu_engine_install_release(FuEngine *self,
 	g_autofree gchar *version_orig = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDevice) device_tmp = NULL;
-	g_autoptr(GBytes) blob_fw2 = NULL;
 	g_autoptr(GError) error_local = NULL;
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
@@ -2505,19 +2732,6 @@ fu_engine_install_release(FuEngine *self,
 		return FALSE;
 	}
 
-	/* use a bubblewrap helper script to build the firmware */
-	tmp = fu_release_get_builder_script(release);
-	if (tmp != NULL) {
-		blob_fw2 = fu_firmware_builder_process(blob_fw,
-						       tmp,
-						       fu_release_get_builder_output(release),
-						       error);
-		if (blob_fw2 == NULL)
-			return FALSE;
-	} else {
-		blob_fw2 = g_bytes_ref(blob_fw);
-	}
-
 	/* get the plugin */
 	plugin =
 	    fu_plugin_list_find_by_name(self->plugin_list, fu_device_get_plugin(device), error);
@@ -2536,7 +2750,7 @@ fu_engine_install_release(FuEngine *self,
 	version_orig = g_strdup(fu_device_get_version(device));
 	if (!fu_engine_install_blob(self,
 				    device,
-				    blob_fw2,
+				    blob_fw,
 				    progress,
 				    flags,
 				    feature_flags,
@@ -6193,6 +6407,13 @@ fu_engine_attrs_calculate_hsi_for_chassis(FuEngine *self)
 	guint val =
 	    fu_context_get_smbios_integer(self->ctx, FU_SMBIOS_STRUCTURE_TYPE_CHASSIS, 0x05);
 
+	/* if emulating, force the chassis type to be valid */
+	if (self->host_emulation &&
+	    (val == FU_SMBIOS_CHASSIS_KIND_OTHER || val == FU_SMBIOS_CHASSIS_KIND_UNKNOWN)) {
+		g_debug("forcing chassis kind [0x%x] to be valid", val);
+		val = FU_SMBIOS_CHASSIS_KIND_DESKTOP;
+	}
+
 	switch (val) {
 	case FU_SMBIOS_CHASSIS_KIND_DESKTOP:
 	case FU_SMBIOS_CHASSIS_KIND_LOW_PROFILE_DESKTOP:
@@ -6218,7 +6439,7 @@ fu_engine_attrs_calculate_hsi_for_chassis(FuEngine *self)
 		break;
 	}
 
-	return g_strdup_printf("HSI-INVALID:chassis[0x%02x]", val);
+	return g_strdup_printf("HSI:INVALID:chassis[0x%02x]", val);
 }
 
 static gboolean
@@ -6280,6 +6501,12 @@ fu_engine_security_attrs_depsolve(FuEngine *self)
 				continue;
 			}
 			fwupd_security_attr_set_name(attr, name_tmp);
+		}
+		if (fwupd_security_attr_get_title(attr) == NULL)
+			fwupd_security_attr_set_title(attr, fu_security_attr_get_title(attr));
+		if (fwupd_security_attr_get_description(attr) == NULL) {
+			fwupd_security_attr_set_description(attr,
+							    fu_security_attr_get_description(attr));
 		}
 	}
 
@@ -6357,6 +6584,7 @@ fu_engine_load_host_emulation(FuEngine *self, const gchar *fn, GError **error)
 	g_autoptr(GInputStream) istream_json = NULL;
 	g_autoptr(GInputStream) istream_raw = NULL;
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
+	g_autoptr(FuBiosSettings) bios_settings = fu_context_get_bios_settings(self->ctx);
 
 	/* add an attr so we know this is emulated and do not offer to upload results */
 	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_HOST_EMULATION);
@@ -6381,6 +6609,8 @@ fu_engine_load_host_emulation(FuEngine *self, const gchar *fn, GError **error)
 	if (!fu_engine_devices_from_json(self, json_parser_get_root(parser), error))
 		return FALSE;
 	if (!fu_engine_security_attrs_from_json(self, json_parser_get_root(parser), error))
+		return FALSE;
+	if (!fu_bios_settings_from_json(bios_settings, json_parser_get_root(parser), error))
 		return FALSE;
 
 #ifdef HAVE_HSI
@@ -6465,6 +6695,15 @@ fu_engine_get_host_security_events(FuEngine *self, guint limit, GError **error)
 		g_autoptr(GPtrArray) diffs = fu_security_attrs_compare(attrs_old, attrs_new);
 		for (guint j = 0; j < diffs->len; j++) {
 			FwupdSecurityAttr *attr = g_ptr_array_index(diffs, j);
+			if (fwupd_security_attr_get_title(attr) == NULL) {
+				fwupd_security_attr_set_title(attr,
+							      fu_security_attr_get_title(attr));
+			}
+			if (fwupd_security_attr_get_description(attr) == NULL) {
+				fwupd_security_attr_set_description(
+				    attr,
+				    fu_security_attr_get_description(attr));
+			}
 			fu_security_attrs_append_internal(events, attr);
 		}
 	}
@@ -6657,10 +6896,69 @@ fu_engine_cleanup_state(GError **error)
 	return TRUE;
 }
 
+static gboolean
+fu_engine_apply_default_bios_settings_policy(FuEngine *self, GError **error)
+{
+	const gchar *tmp;
+	g_autofree gchar *base = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR_PKG);
+	g_autofree gchar *dirname = g_build_filename(base, "bios-settings.d", NULL);
+	g_autoptr(FuBiosSettings) new_bios_settings = fu_bios_settings_new();
+	g_autoptr(GHashTable) hashtable = NULL;
+	g_autoptr(GDir) dir = NULL;
+
+	if (!g_file_test(dirname, G_FILE_TEST_EXISTS))
+		return TRUE;
+
+	dir = g_dir_open(dirname, 0, error);
+	if (dir == NULL)
+		return FALSE;
+	while ((tmp = g_dir_read_name(dir)) != NULL) {
+		g_autofree gchar *fn = NULL;
+		if (!g_str_has_suffix(tmp, ".json"))
+			continue;
+		fn = g_build_filename(dirname, tmp, NULL);
+		g_debug("Loading default BIOS settings policy from %s", fn);
+		if (!fu_bios_settings_from_json_file(new_bios_settings, fn, error))
+			return FALSE;
+	}
+	hashtable = fu_bios_settings_to_hash_kv(new_bios_settings);
+	return fu_engine_modify_bios_settings(self, hashtable, TRUE, error);
+}
+
+static void
+fu_engine_check_firmware_attributes(FuEngine *self, FuDevice *device)
+{
+	const gchar *subsystem;
+
+	if (!FU_IS_UDEV_DEVICE(device))
+		return;
+	if (self->host_emulation)
+		return;
+	subsystem = fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device));
+	if (g_strcmp0(subsystem, "firmware-attributes") == 0) {
+		g_autoptr(GError) error = NULL;
+		if (!fu_context_reload_bios_settings(self->ctx, &error)) {
+			g_debug("%s", error->message);
+			return;
+		}
+		if (!fu_engine_apply_default_bios_settings_policy(self, &error)) {
+			if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO))
+				g_debug("%s", error->message);
+			else
+				g_warning("Failed to apply BIOS settings policy: %s",
+					  error->message);
+			return;
+		}
+	}
+}
+
 static void
 fu_engine_backend_device_removed_cb(FuBackend *backend, FuDevice *device, FuEngine *self)
 {
 	g_autoptr(GPtrArray) devices = NULL;
+
+	/* if this is for firmware attributes, reload that part of the daemon */
+	fu_engine_check_firmware_attributes(self, device);
 
 	/* debug */
 	if (g_getenv("FWUPD_PROBE_VERBOSE") != NULL) {
@@ -6801,6 +7099,9 @@ fu_engine_backend_device_added(FuEngine *self, FuDevice *device, FuProgress *pro
 		g_autofree gchar *str = fu_device_to_string(FU_DEVICE(device));
 		g_debug("%s added %s", fu_device_get_backend_id(device), str);
 	}
+
+	/* if this is for firmware attributes, reload that part of the daemon */
+	fu_engine_check_firmware_attributes(self, device);
 
 	/* can be specified using a quirk */
 	fu_engine_backend_device_added_run_plugins(self, device, fu_progress_get_child(progress));
@@ -7546,6 +7847,25 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	if (flags & FU_ENGINE_LOAD_FLAG_COLDPLUG)
 		fu_engine_backends_coldplug(self, fu_progress_get_child(progress));
 	fu_progress_step_done(progress);
+
+	/* dump plugin information to the console */
+	if (g_getenv("FWUPD_BACKEND_VERBOSE") != NULL) {
+		GPtrArray *plugins = fu_plugin_list_get_all(self->plugin_list);
+		g_autoptr(GString) str = g_string_new(NULL);
+		for (guint i = 0; i < self->backends->len; i++) {
+			FuBackend *backend = g_ptr_array_index(self->backends, i);
+			fu_backend_add_string(backend, 0, str);
+		}
+		if (str->len > 0)
+			g_string_append_c(str, '\n');
+		for (guint i = 0; i < plugins->len; i++) {
+			FuPlugin *plugin = g_ptr_array_index(plugins, i);
+			if (fu_plugin_has_flag(plugin, FWUPD_PLUGIN_FLAG_DISABLED))
+				continue;
+			fu_plugin_add_string(plugin, 0, str);
+		}
+		g_debug("\n%s", str->str);
+	}
 
 	/* update the db for devices that were updated during the reboot */
 	if (!fu_engine_update_history_database(self, error))

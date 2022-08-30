@@ -30,43 +30,11 @@ struct _FuRelease {
 	GBytes *blob_fw;
 	FwupdReleaseFlags trust_flags;
 	gboolean is_downgrade;
-	gchar *builder_script;
-	gchar *builder_output;
 	GPtrArray *soft_reqs; /* nullable, element-type XbNode */
 	GPtrArray *hard_reqs; /* nullable, element-type XbNode */
 };
 
 G_DEFINE_TYPE(FuRelease, fu_release, FWUPD_TYPE_RELEASE)
-
-/**
- * fu_release_get_builder_script:
- * @self: a #FuRelease
- *
- * Gets the builder script to use when installing this release.
- *
- * Returns: (transfer none) (nullable): filename, e.g. `build.sh`
- **/
-const gchar *
-fu_release_get_builder_script(FuRelease *self)
-{
-	g_return_val_if_fail(FU_IS_RELEASE(self), NULL);
-	return self->builder_script;
-}
-
-/**
- * fu_release_get_builder_output:
- * @self: a #FuRelease
- *
- * Gets the output filename to use when installing this release.
- *
- * Returns: (transfer none) (nullable): filename, e.g. `filename.bin`
- **/
-const gchar *
-fu_release_get_builder_output(FuRelease *self)
-{
-	g_return_val_if_fail(FU_IS_RELEASE(self), NULL);
-	return self->builder_output;
-}
 
 /**
  * fu_release_set_request:
@@ -865,7 +833,7 @@ fu_release_load(FuRelease *self,
 			fwupd_release_add_tag(FWUPD_RELEASE(self), xb_node_get_text(tag));
 		}
 	}
-	issues = xb_node_query(component, "issues/issue", 0, NULL);
+	issues = xb_node_query(rel, "issues/issue", 0, NULL);
 	if (issues != NULL) {
 		for (guint i = 0; i < issues->len; i++) {
 			XbNode *n = g_ptr_array_index(issues, i);
@@ -932,11 +900,11 @@ fu_release_load(FuRelease *self,
 	/* to build the firmware */
 	tmp = g_object_get_data(G_OBJECT(component), "fwupd::BuilderScript");
 	if (tmp != NULL) {
-		self->builder_script = g_strdup(tmp);
-		tmp = g_object_get_data(G_OBJECT(component), "fwupd::BuilderOutput");
-		if (tmp == NULL)
-			tmp = "firmware.bin";
-		self->builder_output = g_strdup(tmp);
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "fwupd::BuilderScript is no longer supported");
+		return FALSE;
 	}
 
 	/* sort the locations by scheme */
@@ -1041,8 +1009,6 @@ fu_release_finalize(GObject *obj)
 {
 	FuRelease *self = FU_RELEASE(obj);
 
-	g_free(self->builder_script);
-	g_free(self->builder_output);
 	if (self->request != NULL)
 		g_object_unref(self->request);
 	if (self->device != NULL)

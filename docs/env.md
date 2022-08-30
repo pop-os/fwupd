@@ -14,10 +14,12 @@ with a non-standard filesystem layout.
 * `FWUPD_DEVICE_TESTS_BASE_URI` sets the base URI when downloading firmware for the device-tests
 * `FWUPD_SUPPORTED` overrides the `-Dsupported_build` meson option at runtime
 * `FWUPD_VERBOSE` is set when running `--verbose`
+* `FWUPD_BACKEND_VERBOSE` can be used to show detailed plugin and backend debugging
 * `FWUPD_XMLB_VERBOSE` can be set to show Xmlb silo regeneration and quirk matches
 * `FWUPD_DBUS_SOCKET` is used to set the socket filename if running without a dbus-daemon
 * `FWUPD_DOWNLOAD_VERBOSE` can be used to show wget or curl output
 * `FWUPD_PROFILE` can be used to set the profile traceback threshold value in ms
+* `FWUPD_FUZZER_RUNNING` if the firmware format is being fuzzed
 * standard glibc variables like `LANG` are also honored for CLI tools that are translated
 * libcurl respects the session proxy, e.g. `http_proxy`, `all_proxy`, `sftp_proxy` and `no_proxy`
 
@@ -39,6 +41,7 @@ with a non-standard filesystem layout.
 * `FU_USB_DEVICE_DEBUG` shows more information about USB devices
 * `FWUPD_DEVICE_LIST_VERBOSE` display devices being added and removed from the list
 * `FWUPD_PROBE_VERBOSE` dump the detected devices to the console, even if not supported by fwupd
+* `FWUPD_BIOS_SETTING_VERBOSE` be verbose while parsing BIOS settings
 
 ## Plugins
 

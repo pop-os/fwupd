@@ -26,7 +26,7 @@
 #endif
 
 #include "fu-device-private.h"
-#include "fu-security-attr.h"
+#include "fu-security-attr-common.h"
 #include "fu-util-common.h"
 
 #ifdef HAVE_SYSTEMD
@@ -827,7 +827,7 @@ static GPtrArray *
 fu_util_strsplit_words(const gchar *text, guint line_len)
 {
 	g_auto(GStrv) tokens = NULL;
-	g_autoptr(GPtrArray) lines = g_ptr_array_new();
+	g_autoptr(GPtrArray) lines = g_ptr_array_new_with_free_func(g_free);
 	g_autoptr(GString) curline = g_string_new(NULL);
 
 	/* sanity check */
@@ -2377,6 +2377,12 @@ fu_util_security_events_to_string(GPtrArray *events, FuSecurityAttrToStringFlags
 		g_autofree gchar *check = NULL;
 		g_autofree gchar *eventstr = NULL;
 
+		/* skip events that have either been added or removed with no prior value */
+		if (fwupd_security_attr_get_result(attr) == FWUPD_SECURITY_ATTR_RESULT_UNKNOWN ||
+		    fwupd_security_attr_get_result_fallback(attr) ==
+			FWUPD_SECURITY_ATTR_RESULT_UNKNOWN)
+			continue;
+
 		date = g_date_time_new_from_unix_utc((gint64)fwupd_security_attr_get_created(attr));
 		dtstr = g_date_time_format(date, "%F %T");
 		eventstr = fu_util_security_event_to_string(attr);
@@ -2506,7 +2512,7 @@ fu_util_security_attrs_to_string(GPtrArray *attrs, FuSecurityAttrToStringFlags s
 		    "\n%s\n » %s\n",
 		    /* TRANSLATORS: this is instructions on how to improve the HSI security level */
 		    _("This system has a low HSI security level."),
-		    "https://github.com/fwupd/fwupd/wiki/Low-host-security-level");
+		    "https://fwupd.github.io/hsi.html#low-security-level");
 	}
 	if (runtime_help) {
 		g_string_append_printf(
@@ -2514,7 +2520,7 @@ fu_util_security_attrs_to_string(GPtrArray *attrs, FuSecurityAttrToStringFlags s
 		    "\n%s\n » %s\n",
 		    /* TRANSLATORS: this is instructions on how to improve the HSI suffix */
 		    _("This system has HSI runtime issues."),
-		    "https://github.com/fwupd/fwupd/wiki/Host-security-ID-runtime-issues");
+		    "https://fwupd.github.io/hsi.html#hsi-runtime-suffix");
 	}
 
 	if (pcr0_help) {
@@ -2523,7 +2529,7 @@ fu_util_security_attrs_to_string(GPtrArray *attrs, FuSecurityAttrToStringFlags s
 		    "\n%s\n » %s\n",
 		    /* TRANSLATORS: this is more background on a security measurement problem */
 		    _("The TPM PCR0 differs from reconstruction."),
-		    "https://github.com/fwupd/fwupd/wiki/TPM-PCR0-differs-from-reconstruction");
+		    "https://fwupd.github.io/hsi.html#pcr0-tpm-event-log-reconstruction");
 	}
 
 	return g_string_free(str, FALSE);

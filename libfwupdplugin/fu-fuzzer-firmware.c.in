@@ -15,7 +15,8 @@ LLVMFuzzerTestOneInput(const guint8 *data, gsize size)
 	g_autoptr(GBytes) fw = g_bytes_new(data, size);
 	gboolean ret;
 
-	(void)g_setenv("G_DEBUG", "fatal-criticals", FALSE);
+	(void)g_setenv("G_DEBUG", "fatal-criticals", TRUE);
+	(void)g_setenv("FWUPD_FUZZER_RUNNING", "1", TRUE);
 	ret = fu_firmware_parse(firmware, fw, FWUPD_INSTALL_FLAG_NONE, NULL);
 	if (!ret && fu_firmware_has_flag(firmware, FU_FIRMWARE_FLAG_HAS_CHECKSUM)) {
 		g_clear_object(&firmware);
@@ -28,11 +29,7 @@ LLVMFuzzerTestOneInput(const guint8 *data, gsize size)
 					NULL);
 	}
 	if (ret) {
-		g_autofree gchar *str = fu_firmware_to_string(firmware);
 		g_autoptr(GBytes) fw2 = fu_firmware_write(firmware, NULL);
-		g_print("%s", str);
-		if (fw2 != NULL)
-			g_print("[%" G_GSIZE_FORMAT " bytes]\n", g_bytes_get_size(fw2));
 	}
 	return 0;
 }

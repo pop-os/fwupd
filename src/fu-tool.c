@@ -21,23 +21,25 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "fwupd-bios-setting-private.h"
 #include "fwupd-common-private.h"
 #include "fwupd-device-private.h"
 #include "fwupd-plugin-private.h"
 
+#include "fu-bios-settings-private.h"
 #include "fu-cabinet.h"
 #include "fu-context-private.h"
 #include "fu-debug.h"
 #include "fu-device-private.h"
 #include "fu-engine.h"
-#include "fu-firmware-builder.h"
 #include "fu-history.h"
 #include "fu-hwids.h"
 #include "fu-plugin-private.h"
 #include "fu-progressbar.h"
-#include "fu-security-attr.h"
+#include "fu-security-attr-common.h"
 #include "fu-security-attrs-private.h"
 #include "fu-smbios-private.h"
+#include "fu-util-bios-setting.h"
 #include "fu-util-common.h"
 
 #ifdef HAVE_SYSTEMD
@@ -1256,7 +1258,13 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 			if (!fu_util_prompt_warning_fde(FWUPD_DEVICE(device), error))
 				return FALSE;
 		}
-		devices_possible = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+		devices_possible =
+		    fu_engine_get_devices_by_composite_id(priv->engine,
+							  fu_device_get_composite_id(device),
+							  error);
+		if (devices_possible == NULL)
+			return FALSE;
+
 		g_ptr_array_add(devices_possible, device);
 	} else {
 		g_set_error_literal(error,
@@ -2007,33 +2015,6 @@ fu_util_hwids(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	return TRUE;
-}
-
-static gboolean
-fu_util_firmware_builder(FuUtilPrivate *priv, gchar **values, GError **error)
-{
-	const gchar *script_fn = "startup.sh";
-	const gchar *output_fn = "firmware.bin";
-	g_autoptr(GBytes) archive_blob = NULL;
-	g_autoptr(GBytes) firmware_blob = NULL;
-	if (g_strv_length(values) < 2) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_ARGS,
-				    "Invalid arguments");
-		return FALSE;
-	}
-	archive_blob = fu_bytes_get_contents(values[0], error);
-	if (archive_blob == NULL)
-		return FALSE;
-	if (g_strv_length(values) > 2)
-		script_fn = values[2];
-	if (g_strv_length(values) > 3)
-		output_fn = values[3];
-	firmware_blob = fu_firmware_builder_process(archive_blob, script_fn, output_fn, error);
-	if (firmware_blob == NULL)
-		return FALSE;
-	return fu_bytes_set_contents(values[1], firmware_blob, error);
 }
 
 static gboolean
@@ -2946,16 +2927,20 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	items = fu_security_attrs_get_all(attrs);
 	for (guint j = 0; j < items->len; j++) {
 		FwupdSecurityAttr *attr = g_ptr_array_index(items, j);
+		g_autofree gchar *err_str = NULL;
 
 		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA))
 			continue;
 		if (priv->flags & FWUPD_INSTALL_FLAG_FORCE)
 			continue;
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "Not enough data was provided to make an HSI calculation. "
-				    "To ignore this warning, use --force.");
+		err_str = g_strdup_printf(
+		    "\n%s\n » %s\n%s",
+		    /* TRANSLATORS: error message to tell someone they can't use this feature */
+		    _("Not enough data was provided to make an HSI calculation."),
+		    "https://fwupd.github.io/hsi.html#not-enough-info",
+		    /* TRANSLATORS: message to tell someone how to ignore error */
+		    _("To ignore this warning, use --force"));
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, err_str);
 		return FALSE;
 	}
 
@@ -3243,6 +3228,98 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
+fu_util_set_bios_setting(FuUtilPrivate *priv, gchar **input, GError **error)
+{
+	g_autoptr(GHashTable) settings = fu_util_bios_settings_parse_argv(input, error);
+
+	if (settings == NULL)
+		return FALSE;
+
+	if (!fu_util_start_engine(priv,
+				  FU_ENGINE_LOAD_FLAG_HWINFO | FU_ENGINE_LOAD_FLAG_COLDPLUG,
+				  priv->progress,
+				  error))
+		return FALSE;
+
+	if (!fu_engine_modify_bios_settings(priv->engine, settings, FALSE, error)) {
+		if (!g_error_matches(*error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO))
+			g_prefix_error(error, "failed to set BIOS setting: ");
+		return FALSE;
+	}
+
+	if (!priv->as_json) {
+		gpointer key, value;
+		GHashTableIter iter;
+
+		g_hash_table_iter_init(&iter, settings);
+		while (g_hash_table_iter_next(&iter, &key, &value)) {
+			g_autofree gchar *msg =
+			    /* TRANSLATORS: Configured a BIOS setting to a value */
+			    g_strdup_printf(_("Set BIOS setting '%s' using '%s'."),
+					    (const gchar *)key,
+					    (const gchar *)value);
+			g_print("\n%s\n", msg);
+		}
+	}
+	priv->completion_flags |= FWUPD_DEVICE_FLAG_NEEDS_REBOOT;
+
+	if (priv->no_reboot_check) {
+		g_debug("skipping reboot check");
+		return TRUE;
+	}
+
+	return fu_util_prompt_complete(priv->completion_flags, TRUE, error);
+}
+
+static gboolean
+fu_util_get_bios_setting(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	g_autoptr(FuBiosSettings) attrs = NULL;
+	g_autoptr(GPtrArray) items = NULL;
+	FuContext *ctx = fu_engine_get_context(priv->engine);
+	gboolean found = FALSE;
+
+	/* load engine */
+	if (!fu_util_start_engine(priv,
+				  FU_ENGINE_LOAD_FLAG_HWINFO | FU_ENGINE_LOAD_FLAG_COLDPLUG,
+				  priv->progress,
+				  error))
+		return FALSE;
+
+	attrs = fu_context_get_bios_settings(ctx);
+	items = fu_bios_settings_get_all(attrs);
+	if (priv->as_json)
+		return fu_util_get_bios_setting_as_json(values, items, error);
+
+	for (guint i = 0; i < items->len; i++) {
+		FwupdBiosSetting *attr = g_ptr_array_index(items, i);
+		if (fu_util_bios_setting_matches_args(attr, values)) {
+			g_autofree gchar *tmp = fu_util_bios_setting_to_string(attr, 0);
+			g_print("%s\n", tmp);
+			found = TRUE;
+		}
+	}
+	if (items->len == 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    /* TRANSLATORS: error message */
+				    _("This system doesn't support firmware settings"));
+		return FALSE;
+	}
+	if (!found) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_ARGS,
+			    /* TRANSLATORS: error message */
+			    "Unable to find attribute '%s'",
+			    values[0]);
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static gboolean
 fu_util_version(FuUtilPrivate *priv, GError **error)
 {
 	g_autoptr(GHashTable) metadata = NULL;
@@ -3501,13 +3578,6 @@ main(int argc, char *argv[])
 
 	/* add commands */
 	fu_util_cmd_array_add(cmd_array,
-			      "build-firmware",
-			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
-			      _("FILE-IN FILE-OUT [SCRIPT] [OUTPUT]"),
-			      /* TRANSLATORS: command description */
-			      _("Build firmware using a sandbox"),
-			      fu_util_firmware_builder);
-	fu_util_cmd_array_add(cmd_array,
 			      "smbios-dump",
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
 			      _("FILE"),
@@ -3570,7 +3640,8 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
 			      _("FILE [DEVICE-ID|GUID]"),
 			      /* TRANSLATORS: command description */
-			      _("Install a firmware file on this hardware"),
+			      _("Install a specific firmware on a device, all possible devices"
+				" will also be installed once the CAB matches"),
 			      fu_util_install);
 	fu_util_cmd_array_add(cmd_array,
 			      "reinstall",
@@ -3775,6 +3846,21 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command description */
 			      _("Erase all firmware update history"),
 			      fu_util_clear_history);
+	fu_util_cmd_array_add(
+	    cmd_array,
+	    "get-bios-settings,get-bios-setting",
+	    /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+	    _("[SETTING1] [ SETTING2]..."),
+	    /* TRANSLATORS: command description */
+	    _("Retrieve BIOS settings.  If no arguments are passed all settings are returned"),
+	    fu_util_get_bios_setting);
+	fu_util_cmd_array_add(cmd_array,
+			      "set-bios-setting",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("SETTING VALUE"),
+			      /* TRANSLATORS: command description */
+			      _("Set a BIOS setting"),
+			      fu_util_set_bios_setting);
 
 	/* do stuff on ctrl+c */
 	priv->cancellable = g_cancellable_new();

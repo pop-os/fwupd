@@ -382,8 +382,17 @@ typedef struct {
 	 * Since: 1.8.1
 	 **/
 	void (*load)(FuContext *ctx);
+	/**
+	 * to_string:
+	 * @self: A #FuPlugin
+	 *
+	 * Prints plugin private data to the console.
+	 *
+	 * Since: 1.8.4
+	 **/
+	void (*to_string)(FuPlugin *self, guint idt, GString *str);
 	/*< private >*/
-	gpointer padding[8];
+	gpointer padding[7];
 } FuPluginVfuncs;
 
 /**
@@ -460,3 +469,5 @@ gboolean
 fu_plugin_get_config_value_boolean(FuPlugin *self, const gchar *key);
 gboolean
 fu_plugin_set_config_value(FuPlugin *self, const gchar *key, const gchar *value, GError **error);
+FwupdSecurityAttr *
+fu_plugin_security_attr_new(FuPlugin *self, const gchar *appstream_id);

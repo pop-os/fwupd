@@ -30,6 +30,7 @@
 #include "fu-plugin-private.h"
 #include "fu-polkit-agent.h"
 #include "fu-progressbar.h"
+#include "fu-util-bios-setting.h"
 #include "fu-util-common.h"
 
 #ifdef HAVE_SYSTEMD
@@ -3386,6 +3387,59 @@ fu_util_sync_bkc(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
+fu_util_security_modify_bios_setting(FuUtilPrivate *priv, FwupdSecurityAttr *attr, GError **error)
+{
+	g_autoptr(GString) body = g_string_new(NULL);
+	g_autoptr(GString) title = g_string_new(NULL);
+	g_autoptr(GHashTable) bios_settings =
+	    g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+
+	g_string_append_printf(title,
+			       "%s: %s",
+			       /* TRANSLATORS: title prefix for the BIOS settings dialog */
+			       _("Configuration Change Suggested"),
+			       fwupd_security_attr_get_title(attr));
+
+	g_string_append(body, fwupd_security_attr_get_description(attr));
+	g_string_append(body, "\n\n");
+	g_string_append_printf(body,
+			       /* TRANSLATORS: the %1 is a BIOS setting name.  %2 and %3 are the
+				  values, e.g. "True" or "Windows10" */
+			       _("This tool can change the BIOS setting '%s' from '%s' to '%s' "
+				 "automatically, but it will only be active after restarting the "
+				 "computer."),
+			       fwupd_security_attr_get_bios_setting_id(attr),
+			       fwupd_security_attr_get_bios_setting_current_value(attr),
+			       fwupd_security_attr_get_bios_setting_target_value(attr));
+	g_string_append(body, "\n\n");
+	g_string_append_printf(body,
+			       /* TRANSLATORS: the user has to manually recover; we can't do it */
+			       _("You should ensure you are comfortable restoring the setting from "
+				 "the system firmware setup, as this change may cause the system "
+				 "to not boot into Linux or cause other system instability."));
+	fu_util_warning_box(title->str, body->str, 80);
+
+	/* ask for confirmation */
+	g_print("\n%s [y|N]: ",
+		/* TRANSLATORS: prompt to apply the update */
+		_("Perform operation?"));
+	if (!fu_util_prompt_for_boolean(FALSE))
+		return TRUE;
+	g_hash_table_insert(bios_settings,
+			    g_strdup(fwupd_security_attr_get_bios_setting_id(attr)),
+			    g_strdup(fwupd_security_attr_get_bios_setting_target_value(attr)));
+	if (!fwupd_client_modify_bios_setting(priv->client,
+					      bios_settings,
+					      priv->cancellable,
+					      error))
+		return FALSE;
+
+	/* do not offer to upload the report */
+	priv->completion_flags |= FWUPD_DEVICE_FLAG_NEEDS_REBOOT;
+	return TRUE;
+}
+
+static gboolean
 fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	FuSecurityAttrToStringFlags flags = FU_SECURITY_ATTR_TO_STRING_FLAG_NONE;
@@ -3402,16 +3456,20 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	for (guint j = 0; j < attrs->len; j++) {
 		FwupdSecurityAttr *attr = g_ptr_array_index(attrs, j);
+		g_autofree gchar *err_str = NULL;
 
 		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA))
 			continue;
 		if (priv->flags & FWUPD_INSTALL_FLAG_FORCE)
 			continue;
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "Not enough data was provided to make an HSI calculation. "
-				    "To ignore this warning, use --force");
+		err_str = g_strdup_printf(
+		    "\n%s\n » %s\n%s",
+		    /* TRANSLATORS: error message to tell someone they can't use this feature */
+		    _("Not enough data was provided to make an HSI calculation."),
+		    "https://fwupd.github.io/hsi.html#not-enough-info",
+		    /* TRANSLATORS: message to tell someone how to ignore error */
+		    _("To ignore this warning, use --force"));
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, err_str);
 		return FALSE;
 	}
 
@@ -3479,12 +3537,33 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 		}
 	}
 
-	/* opted-out */
-	if (priv->no_unreported_check)
-		return TRUE;
+	/* any things we can fix? */
+	for (guint j = 0; j < attrs->len; j++) {
+		FwupdSecurityAttr *attr = g_ptr_array_index(attrs, j);
+		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS) &&
+		    fwupd_security_attr_get_bios_setting_id(attr) != NULL &&
+		    fwupd_security_attr_get_bios_setting_current_value(attr) != NULL &&
+		    fwupd_security_attr_get_bios_setting_target_value(attr) != NULL) {
+			if (!fu_util_security_modify_bios_setting(priv, attr, error))
+				return FALSE;
+		}
+	}
 
 	/* upload, with confirmation */
-	return fu_util_upload_security(priv, attrs, error);
+	if (!priv->no_unreported_check) {
+		if (!fu_util_upload_security(priv, attrs, error))
+			return FALSE;
+	}
+
+	/* reboot is required? */
+	if (!priv->no_reboot_check &&
+	    (priv->completion_flags & FWUPD_DEVICE_FLAG_NEEDS_REBOOT) > 0) {
+		if (!fu_util_prompt_complete(priv->completion_flags, TRUE, error))
+			return FALSE;
+	}
+
+	/* success */
+	return TRUE;
 }
 
 static void
@@ -3794,6 +3873,83 @@ fu_util_show_plugin_warnings(FuUtilPrivate *priv)
 }
 
 static gboolean
+fu_util_set_bios_setting(FuUtilPrivate *priv, gchar **input, GError **error)
+{
+	g_autoptr(GHashTable) settings = fu_util_bios_settings_parse_argv(input, error);
+
+	if (settings == NULL)
+		return FALSE;
+
+	if (!fwupd_client_modify_bios_setting(priv->client, settings, priv->cancellable, error)) {
+		if (!g_error_matches(*error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO))
+			g_prefix_error(error, "failed to set BIOS setting: ");
+		return FALSE;
+	}
+
+	if (!priv->as_json) {
+		gpointer key, value;
+		GHashTableIter iter;
+
+		g_hash_table_iter_init(&iter, settings);
+		while (g_hash_table_iter_next(&iter, &key, &value)) {
+			g_autofree gchar *msg =
+			    /* TRANSLATORS: Configured a BIOS setting to a value */
+			    g_strdup_printf(_("Set BIOS setting '%s' using '%s'."),
+					    (const gchar *)key,
+					    (const gchar *)value);
+			g_print("\n%s\n", msg);
+		}
+	}
+	priv->completion_flags |= FWUPD_DEVICE_FLAG_NEEDS_REBOOT;
+
+	if (priv->no_reboot_check) {
+		g_debug("skipping reboot check");
+		return TRUE;
+	}
+
+	return fu_util_prompt_complete(priv->completion_flags, TRUE, error);
+}
+
+static gboolean
+fu_util_get_bios_setting(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	g_autoptr(GPtrArray) attrs = NULL;
+	gboolean found = FALSE;
+
+	attrs = fwupd_client_get_bios_settings(priv->client, priv->cancellable, error);
+	if (attrs == NULL)
+		return FALSE;
+	if (priv->as_json)
+		return fu_util_get_bios_setting_as_json(values, attrs, error);
+
+	for (guint i = 0; i < attrs->len; i++) {
+		FwupdBiosSetting *attr = g_ptr_array_index(attrs, i);
+		if (fu_util_bios_setting_matches_args(attr, values)) {
+			g_autofree gchar *tmp = fu_util_bios_setting_to_string(attr, 0);
+			g_print("\n%s\n", tmp);
+			found = TRUE;
+		}
+	}
+	if (attrs->len == 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    /* TRANSLATORS: error message */
+				    _("This system doesn't support firmware settings"));
+		return FALSE;
+	}
+	if (!found) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_ARGS,
+			    /* TRANSLATORS: error message */
+			    _("Unable to find attribute"));
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static gboolean
 fu_util_version(FuUtilPrivate *priv, GError **error)
 {
 	g_autoptr(GHashTable) metadata = NULL;
@@ -3832,6 +3988,7 @@ main(int argc, char *argv[])
 	gboolean enable_ipfs = FALSE;
 	gboolean is_interactive = FALSE;
 	gboolean no_history = FALSE;
+	gboolean no_authenticate = FALSE;
 	gboolean offline = FALSE;
 	gboolean ret;
 	gboolean verbose = FALSE;
@@ -3843,184 +4000,193 @@ main(int argc, char *argv[])
 	g_autoptr(GPtrArray) cmd_array = fu_util_cmd_array_new();
 	g_autofree gchar *cmd_descriptions = NULL;
 	g_autofree gchar *filter = NULL;
-	const GOptionEntry options[] = {{"verbose",
-					 'v',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &verbose,
-					 /* TRANSLATORS: command line option */
-					 N_("Show extra debugging information"),
-					 NULL},
-					{"version",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &version,
-					 /* TRANSLATORS: command line option */
-					 N_("Show client and daemon versions"),
-					 NULL},
-					{"offline",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &offline,
-					 /* TRANSLATORS: command line option */
-					 N_("Schedule installation for next reboot when possible"),
-					 NULL},
-					{"allow-reinstall",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &allow_reinstall,
-					 /* TRANSLATORS: command line option */
-					 N_("Allow reinstalling existing firmware versions"),
-					 NULL},
-					{"allow-older",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &allow_older,
-					 /* TRANSLATORS: command line option */
-					 N_("Allow downgrading firmware versions"),
-					 NULL},
-					{"allow-branch-switch",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &allow_branch_switch,
-					 /* TRANSLATORS: command line option */
-					 N_("Allow switching firmware branch"),
-					 NULL},
-					{"force",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &force,
-					 /* TRANSLATORS: command line option */
-					 N_("Force the action by relaxing some runtime checks"),
-					 NULL},
-					{"assume-yes",
-					 'y',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->assume_yes,
-					 /* TRANSLATORS: command line option */
-					 N_("Answer yes to all questions"),
-					 NULL},
-					{"sign",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->sign,
-					 /* TRANSLATORS: command line option */
-					 N_("Sign the uploaded data with the client certificate"),
-					 NULL},
-					{"no-unreported-check",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->no_unreported_check,
-					 /* TRANSLATORS: command line option */
-					 N_("Do not check for unreported history"),
-					 NULL},
-					{"no-metadata-check",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->no_metadata_check,
-					 /* TRANSLATORS: command line option */
-					 N_("Do not check for old metadata"),
-					 NULL},
-					{"no-remote-check",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->no_remote_check,
-					 /* TRANSLATORS: command line option */
-					 N_("Do not check if download remotes should be enabled"),
-					 NULL},
-					{"no-reboot-check",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->no_reboot_check,
-					 /* TRANSLATORS: command line option */
-					 N_("Do not check or prompt for reboot after update"),
-					 NULL},
-					{"no-safety-check",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->no_safety_check,
-					 /* TRANSLATORS: command line option */
-					 N_("Do not perform device safety checks"),
-					 NULL},
-					{"no-device-prompt",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->no_device_prompt,
-					 /* TRANSLATORS: command line option */
-					 N_("Do not prompt for devices"),
-					 NULL},
-					{"no-history",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &no_history,
-					 /* TRANSLATORS: command line option */
-					 N_("Do not write to the history database"),
-					 NULL},
-					{"show-all",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->show_all,
-					 /* TRANSLATORS: command line option */
-					 N_("Show all results"),
-					 NULL},
-					{"show-all-devices",
-					 '\0',
-					 G_OPTION_FLAG_HIDDEN,
-					 G_OPTION_ARG_NONE,
-					 &priv->show_all,
-					 /* TRANSLATORS: command line option */
-					 N_("Show devices that are not updatable"),
-					 NULL},
-					{"disable-ssl-strict",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->disable_ssl_strict,
-					 /* TRANSLATORS: command line option */
-					 N_("Ignore SSL strict checks when downloading files"),
-					 NULL},
-					{"ipfs",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &enable_ipfs,
-					 /* TRANSLATORS: command line option */
-					 N_("Only use IPFS when downloading files"),
-					 NULL},
-					{"filter",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_STRING,
-					 &filter,
-					 /* TRANSLATORS: command line option */
-					 N_("Filter with a set of device flags using a ~ prefix to "
-					    "exclude, e.g. 'internal,~needs-reboot'"),
-					 NULL},
-					{"json",
-					 '\0',
-					 0,
-					 G_OPTION_ARG_NONE,
-					 &priv->as_json,
-					 /* TRANSLATORS: command line option */
-					 N_("Output in JSON format"),
-					 NULL},
-					{NULL}};
+	const GOptionEntry options[] = {
+	    {"verbose",
+	     'v',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &verbose,
+	     /* TRANSLATORS: command line option */
+	     N_("Show extra debugging information"),
+	     NULL},
+	    {"version",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &version,
+	     /* TRANSLATORS: command line option */
+	     N_("Show client and daemon versions"),
+	     NULL},
+	    {"offline",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &offline,
+	     /* TRANSLATORS: command line option */
+	     N_("Schedule installation for next reboot when possible"),
+	     NULL},
+	    {"allow-reinstall",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &allow_reinstall,
+	     /* TRANSLATORS: command line option */
+	     N_("Allow reinstalling existing firmware versions"),
+	     NULL},
+	    {"allow-older",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &allow_older,
+	     /* TRANSLATORS: command line option */
+	     N_("Allow downgrading firmware versions"),
+	     NULL},
+	    {"allow-branch-switch",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &allow_branch_switch,
+	     /* TRANSLATORS: command line option */
+	     N_("Allow switching firmware branch"),
+	     NULL},
+	    {"force",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &force,
+	     /* TRANSLATORS: command line option */
+	     N_("Force the action by relaxing some runtime checks"),
+	     NULL},
+	    {"assume-yes",
+	     'y',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->assume_yes,
+	     /* TRANSLATORS: command line option */
+	     N_("Answer yes to all questions"),
+	     NULL},
+	    {"sign",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->sign,
+	     /* TRANSLATORS: command line option */
+	     N_("Sign the uploaded data with the client certificate"),
+	     NULL},
+	    {"no-unreported-check",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_unreported_check,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not check for unreported history"),
+	     NULL},
+	    {"no-metadata-check",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_metadata_check,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not check for old metadata"),
+	     NULL},
+	    {"no-remote-check",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_remote_check,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not check if download remotes should be enabled"),
+	     NULL},
+	    {"no-reboot-check",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_reboot_check,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not check or prompt for reboot after update"),
+	     NULL},
+	    {"no-safety-check",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_safety_check,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not perform device safety checks"),
+	     NULL},
+	    {"no-device-prompt",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_device_prompt,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not prompt for devices"),
+	     NULL},
+	    {"no-history",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &no_history,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not write to the history database"),
+	     NULL},
+	    {"show-all",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->show_all,
+	     /* TRANSLATORS: command line option */
+	     N_("Show all results"),
+	     NULL},
+	    {"show-all-devices",
+	     '\0',
+	     G_OPTION_FLAG_HIDDEN,
+	     G_OPTION_ARG_NONE,
+	     &priv->show_all,
+	     /* TRANSLATORS: command line option */
+	     N_("Show devices that are not updatable"),
+	     NULL},
+	    {"disable-ssl-strict",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->disable_ssl_strict,
+	     /* TRANSLATORS: command line option */
+	     N_("Ignore SSL strict checks when downloading files"),
+	     NULL},
+	    {"ipfs",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &enable_ipfs,
+	     /* TRANSLATORS: command line option */
+	     N_("Only use IPFS when downloading files"),
+	     NULL},
+	    {"filter",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_STRING,
+	     &filter,
+	     /* TRANSLATORS: command line option */
+	     N_("Filter with a set of device flags using a ~ prefix to "
+		"exclude, e.g. 'internal,~needs-reboot'"),
+	     NULL},
+	    {"json",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->as_json,
+	     /* TRANSLATORS: command line option */
+	     N_("Output in JSON format"),
+	     NULL},
+	    {"no-authenticate",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &no_authenticate,
+	     /* TRANSLATORS: command line option */
+	     N_("Don't prompt for authentication (less details may be shown)"),
+	     NULL},
+	    {NULL}};
 
 #ifdef _WIN32
 	/* workaround Windows setting the codepage to 1252 */
@@ -4073,7 +4239,8 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
 			      _("[DEVICE-ID|GUID] [VERSION]"),
 			      /* TRANSLATORS: command description */
-			      _("Install a specific firmware version on a device"),
+			      _("Install a specific firmware on a device, all possible devices"
+				" will also be installed once the CAB matches"),
 			      fu_util_install);
 	fu_util_cmd_array_add(cmd_array,
 			      "local-install",
@@ -4280,6 +4447,21 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command description */
 			      _("Test a device using a JSON manifest"),
 			      fu_util_device_test);
+	fu_util_cmd_array_add(
+	    cmd_array,
+	    "get-bios-settings,get-bios-setting",
+	    /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+	    _("[SETTING1] [SETTING2] [--no-authenticate]"),
+	    /* TRANSLATORS: command description */
+	    _("Retrieve BIOS settings.  If no arguments are passed all settings are returned"),
+	    fu_util_get_bios_setting);
+	fu_util_cmd_array_add(cmd_array,
+			      "set-bios-setting",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("SETTING1 VALUE1 [SETTING2] [VALUE2]"),
+			      /* TRANSLATORS: command description */
+			      _("Sets one or more BIOS settings"),
+			      fu_util_set_bios_setting);
 
 	/* do stuff on ctrl+c */
 	priv->cancellable = g_cancellable_new();
@@ -4479,14 +4661,17 @@ main(int argc, char *argv[])
 
 	/* send our implemented feature set */
 	if (is_interactive) {
-		if (!fwupd_client_set_feature_flags(
-			priv->client,
-			FWUPD_FEATURE_FLAG_CAN_REPORT | FWUPD_FEATURE_FLAG_SWITCH_BRANCH |
-			    FWUPD_FEATURE_FLAG_REQUESTS | FWUPD_FEATURE_FLAG_UPDATE_ACTION |
-			    FWUPD_FEATURE_FLAG_FDE_WARNING | FWUPD_FEATURE_FLAG_DETACH_ACTION |
-			    FWUPD_FEATURE_FLAG_COMMUNITY_TEXT | FWUPD_FEATURE_FLAG_SHOW_PROBLEMS,
-			priv->cancellable,
-			&error)) {
+		FwupdFeatureFlags flags =
+		    FWUPD_FEATURE_FLAG_CAN_REPORT | FWUPD_FEATURE_FLAG_SWITCH_BRANCH |
+		    FWUPD_FEATURE_FLAG_REQUESTS | FWUPD_FEATURE_FLAG_UPDATE_ACTION |
+		    FWUPD_FEATURE_FLAG_FDE_WARNING | FWUPD_FEATURE_FLAG_DETACH_ACTION |
+		    FWUPD_FEATURE_FLAG_COMMUNITY_TEXT | FWUPD_FEATURE_FLAG_SHOW_PROBLEMS;
+		if (!no_authenticate)
+			flags |= FWUPD_FEATURE_FLAG_ALLOW_AUTHENTICATION;
+		if (!fwupd_client_set_feature_flags(priv->client,
+						    flags,
+						    priv->cancellable,
+						    &error)) {
 			g_printerr("Failed to set front-end features: %s\n", error->message);
 			return EXIT_FAILURE;
 		}
@@ -4502,14 +4687,15 @@ main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 #endif
-		g_printerr("%s\n", error->message);
+		if (priv->as_json)
+			g_debug("%s\n", error->message);
+		else
+			g_printerr("%s\n", error->message);
 		if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_ARGS)) {
 			/* TRANSLATORS: error message explaining command on how to get help */
 			g_printerr("\n%s\n", _("Use fwupdmgr --help for help"));
-		} else if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO)) {
-			g_debug("%s\n", error->message);
+		} else if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO))
 			return EXIT_NOTHING_TO_DO;
-		}
 		return EXIT_FAILURE;
 	}
 

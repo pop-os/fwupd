@@ -70,6 +70,7 @@ BuildRequires: libcurl-devel >= %{libcurl_version}
 BuildRequires: libjcat-devel >= %{libjcat_version}
 BuildRequires: polkit-devel >= 0.103
 BuildRequires: protobuf-c-devel
+BuildRequires: python3-packaging
 BuildRequires: sqlite-devel
 BuildRequires: systemd >= %{systemd_version}
 BuildRequires: systemd-devel
@@ -122,7 +123,6 @@ Requires(postun): systemd
 Requires: glib2%{?_isa} >= %{glib2_version}
 Requires: libxmlb%{?_isa} >= %{libxmlb_version}
 Requires: libgusb%{?_isa} >= %{libgusb_version}
-Requires: bubblewrap
 Requires: shared-mime-info
 
 %if 0%{?rhel} > 7 || 0%{?fedora} > 28
@@ -358,6 +358,8 @@ done
 %{_bindir}/fwupdtool
 %{_bindir}/fwupdagent
 %dir %{_sysconfdir}/fwupd
+%dir %{_sysconfdir}/fwupd/bios-settings.d
+%config%(noreplace)%{_sysconfdir}/fwupd/bios-settings.d/README.md
 %dir %{_sysconfdir}/fwupd/remotes.d
 %if 0%{?have_dell}
 %config(noreplace)%{_sysconfdir}/fwupd/remotes.d/dell-esrt.conf
@@ -412,7 +414,6 @@ done
 %dir %{_localstatedir}/cache/fwupd
 %dir %{_datadir}/fwupd/quirks.d
 %{_datadir}/fwupd/quirks.d/*.quirk
-%{_datadir}/doc/fwupd/builder/README.md
 %{_datadir}/doc/fwupd/*.html
 %{_datadir}/fwupd/host-emulate.d/*.json.gz
 %if 0%{?have_uefi}
@@ -425,7 +426,9 @@ done
 /usr/lib/udev/rules.d/*.rules
 /usr/lib/systemd/system-shutdown/fwupd.shutdown
 %dir %{_libdir}/fwupd-plugins-%{fwupdplugin_version}
+%ifarch i686 x86_64
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_facp.so
+%endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_phat.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_amt.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_analogix.so
@@ -457,13 +460,17 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_gpio.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_hailuck.so
+%ifarch i686 x86_64
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_iommu.so
+%endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_jabra.so
 %if 0%{?have_uefi}
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_lenovo_thinklmi.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_linux_lockdown.so
+%ifarch i686 x86_64
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_linux_sleep.so
+%endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_linux_swap.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_linux_tainted.so
 %if 0%{?have_msr}
@@ -540,6 +547,8 @@ done
 %files devel
 %{_datadir}/gir-1.0/Fwupd-2.0.gir
 %{_datadir}/gir-1.0/FwupdPlugin-1.0.gir
+%{_datadir}/doc/fwupd/libfwupdplugin
+%{_datadir}/doc/fwupd/libfwupd
 %{_datadir}/doc/libfwupdplugin
 %{_datadir}/doc/libfwupd
 %{_datadir}/vala/vapi

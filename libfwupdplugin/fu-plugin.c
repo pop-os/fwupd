@@ -22,6 +22,7 @@
 #include "fu-mutex.h"
 #include "fu-path.h"
 #include "fu-plugin-private.h"
+#include "fu-security-attr.h"
 #include "fu-string.h"
 
 /**
@@ -361,6 +362,80 @@ fu_plugin_open(FuPlugin *self, const gchar *filename, GError **error)
 	}
 
 	return TRUE;
+}
+
+static gchar *
+fu_plugin_flags_to_string(FwupdPluginFlags flags)
+{
+	g_autoptr(GString) str = g_string_new(NULL);
+	for (guint i = 0; i < 64; i++) {
+		FwupdPluginFlags flag = (guint64)1 << i;
+		if ((flags & flag) == 0)
+			continue;
+		if (str->len > 0)
+			g_string_append_c(str, ',');
+		g_string_append(str, fwupd_plugin_flag_to_string(flag));
+	}
+	if (str->len == 0)
+		return NULL;
+	return g_string_free(g_steal_pointer(&str), FALSE);
+}
+
+/**
+ * fu_plugin_add_string:
+ * @self: a #FuPlugin
+ * @idt: indent level
+ * @str: a string to append to
+ *
+ * Add daemon-specific device metadata to an existing string.
+ *
+ * Since: 1.8.4
+ **/
+void
+fu_plugin_add_string(FuPlugin *self, guint idt, GString *str)
+{
+	FuPluginPrivate *priv = GET_PRIVATE(self);
+	FuPluginVfuncs *vfuncs = fu_plugin_get_vfuncs(self);
+	const gchar *name = fwupd_plugin_get_name(FWUPD_PLUGIN(self));
+	g_autofree gchar *flags = NULL;
+
+	g_return_if_fail(FU_IS_PLUGIN(self));
+	g_return_if_fail(str != NULL);
+
+	/* attributes */
+	fu_string_append(str, idt, G_OBJECT_TYPE_NAME(self), "");
+	if (name != NULL)
+		fu_string_append(str, idt + 1, "Name", name);
+	flags = fu_plugin_flags_to_string(fwupd_plugin_get_flags(FWUPD_PLUGIN(self)));
+	if (flags != NULL)
+		fu_string_append(str, idt + 1, "Flags", flags);
+	if (priv->order != 0)
+		fu_string_append_ku(str, idt + 1, "Order", priv->order);
+	if (priv->priority != 0)
+		fu_string_append_ku(str, idt + 1, "Priority", priv->priority);
+
+	/* optional */
+	if (vfuncs->to_string != NULL)
+		vfuncs->to_string(self, idt + 1, str);
+}
+
+/**
+ * fu_plugin_to_string:
+ * @self: a #FuPlugin
+ *
+ * This allows us to easily print the plugin metadata.
+ *
+ * Returns: a string value, or %NULL for invalid.
+ *
+ * Since: 1.8.4
+ **/
+gchar *
+fu_plugin_to_string(FuPlugin *self)
+{
+	g_autoptr(GString) str = g_string_new(NULL);
+	g_return_val_if_fail(FU_IS_PLUGIN(self), NULL);
+	fu_plugin_add_string(self, 0, str);
+	return g_string_free(g_steal_pointer(&str), FALSE);
 }
 
 /* order of usefulness to the user */
@@ -2277,6 +2352,31 @@ fu_plugin_get_config_value(FuPlugin *self, const gchar *key)
 	if (!g_key_file_load_from_file(keyfile, conf_path, G_KEY_FILE_NONE, NULL))
 		return NULL;
 	return g_key_file_get_string(keyfile, fu_plugin_get_name(self), key, NULL);
+}
+
+/**
+ * fu_plugin_security_attr_new:
+ * @self: a #FuPlugin
+ * @appstream_id: (nullable): the AppStream component ID, e.g. `com.intel.BiosGuard`
+ *
+ * Creates a new #FwupdSecurityAttr for this specific plugin.
+ *
+ * Returns: (transfer full): a #FwupdSecurityAttr
+ *
+ * Since: 1.8.4
+ **/
+FwupdSecurityAttr *
+fu_plugin_security_attr_new(FuPlugin *self, const gchar *appstream_id)
+{
+	FuPluginPrivate *priv = fu_plugin_get_instance_private(self);
+	g_autoptr(FwupdSecurityAttr) attr = NULL;
+
+	g_return_val_if_fail(FU_IS_PLUGIN(self), NULL);
+	g_return_val_if_fail(appstream_id != NULL, NULL);
+
+	attr = fu_security_attr_new(priv->ctx, appstream_id);
+	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(self));
+	return g_steal_pointer(&attr);
 }
 
 /**

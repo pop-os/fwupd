@@ -27,6 +27,19 @@ struct FuPluginData {
 	GFileMonitor *fwupd_efi_monitor;
 };
 
+static void
+fu_plugin_uefi_capsule_to_string(FuPlugin *plugin, guint idt, GString *str)
+{
+	FuPluginData *priv = fu_plugin_get_data(plugin);
+	fu_backend_add_string(priv->backend, idt, str);
+	if (priv->bgrt != NULL) {
+		fu_string_append_kb(str,
+				    idt,
+				    "BgrtSupported",
+				    fu_uefi_bgrt_get_supported(priv->bgrt));
+	}
+}
+
 static gboolean
 fu_plugin_uefi_capsule_fwupd_efi_parse(FuPlugin *plugin, GError **error)
 {
@@ -168,8 +181,7 @@ fu_plugin_uefi_capsule_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *att
 	g_autoptr(GError) error = NULL;
 
 	/* create attr */
-	attr = fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_UEFI_SECUREBOOT);
-	fwupd_security_attr_set_plugin(attr, fu_plugin_get_name(plugin));
+	attr = fu_plugin_security_attr_new(plugin, FWUPD_SECURITY_ATTR_ID_UEFI_SECUREBOOT);
 	fu_security_attrs_append(attrs, attr);
 
 	/* SB not available or disabled */
@@ -178,6 +190,7 @@ fu_plugin_uefi_capsule_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *att
 			fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_FOUND);
 			return;
 		}
+		fu_security_attr_add_bios_target_value(attr, "SecureBoot", "enable");
 		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONFIG_FW);
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
@@ -934,6 +947,7 @@ fu_plugin_init_vfuncs(FuPluginVfuncs *vfuncs)
 	vfuncs->build_hash = FU_BUILD_HASH;
 	vfuncs->init = fu_plugin_uefi_capsule_init;
 	vfuncs->destroy = fu_plugin_uefi_capsule_destroy;
+	vfuncs->to_string = fu_plugin_uefi_capsule_to_string;
 	vfuncs->clear_results = fu_plugin_uefi_capsule_clear_results;
 	vfuncs->add_security_attrs = fu_plugin_uefi_capsule_add_security_attrs;
 	vfuncs->device_registered = fu_plugin_uefi_capsule_device_registered;

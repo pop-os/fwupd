@@ -46,8 +46,7 @@ daemon_src = [
   'fu-keyring-utils.c',
   'fu-plugin-list.c',
   'fu-remote-list.c',
-  'fu-security-attr.c',
-  'fu-firmware-builder.c',
+  'fu-security-attr-common.c',
 ] + systemd_src
 
 if gudev.found()
@@ -85,7 +84,8 @@ fwupdmgr = executable(
     'fu-util.c',
     'fu-history.c',
     'fu-progressbar.c',
-    'fu-security-attr.c',
+    'fu-security-attr-common.c',
+    'fu-util-bios-setting.c',
     'fu-util-common.c',
     client_src,
     systemd_src
@@ -110,11 +110,10 @@ fwupdmgr = executable(
 
 # for compatibility
 if get_option('compat_cli')
-meson.add_install_script(
-  'sh', '-c',
-  'ln -fs fwupdmgr @0@@1@'.format(
-      '${DESTDIR}',
-      join_paths(get_option('prefix'), get_option('bindir'), 'fwupdagent')))
+  install_symlink('fwupdagent',
+    install_dir: join_paths(get_option('prefix'), get_option('bindir')),
+    pointing_to: 'fwupdmgr',
+  )
 endif
 endif
 
@@ -126,7 +125,7 @@ fwupdoffline = executable(
     'fu-history.c',
     'fu-offline.c',
     'fu-spawn.c',
-    'fu-security-attr.c',
+    'fu-security-attr-common.c',
     'fu-util-common.c',
     systemd_src
   ],
@@ -154,7 +153,7 @@ if get_option('gresource_quirks').require(meson.version().version_compare('>=0.6
     error_message: 'meson >= 0.63.0 is needed for -Dgresource_quirks=enabled').allowed()
   fwupd_gresource_xml = custom_target('fwupd-resources-xml',
     input : [
-      'org.freedesktop.fwupd.xml',
+      join_paths(meson.current_source_dir(), 'org.freedesktop.fwupd.xml'),
     ] + plugin_quirks,
     output : 'fwupd.gresource.xml',
     command : [
@@ -188,6 +187,7 @@ fwupdtool = executable(
     'fu-tool.c',
     'fu-progressbar.c',
     'fu-util-common.c',
+    'fu-util-bios-setting.c',
     daemon_src,
   ],
   include_directories: [
@@ -285,7 +285,6 @@ if get_option('tests')
   test_deps += hwid_test_firmware
   test_deps += multiple_rels_test_firmware
   test_deps += noreqs_test_firmware
-  test_deps += builder_test_firmware
   env = environment()
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())

@@ -8,6 +8,7 @@ _fwupdmgr_cmd_list=(
 	'download'
 	'enable-remote'
 	'get-approved-firmware'
+	'get-bios-setting'
 	'get-blocked-firmware'
 	'get-details'
 	'get-devices'
@@ -28,6 +29,7 @@ _fwupdmgr_cmd_list=(
 	'report-history'
 	'security'
 	'set-approved-firmware'
+	'set-bios-setting'
 	'switch-branch'
 	'sync-bkc'
 	'unlock'
@@ -61,6 +63,35 @@ _fwupdmgr_opts=(
 	'--json'
 )
 
+bios_get_opts=(
+	'--no-authenticate'
+	'--json'
+	'--verbose'
+)
+
+bios_set_opts=(
+	'--no-reboot-check'
+	'--json'
+	'--verbose'
+)
+
+_show_file_in_dir()
+{
+	local files
+	files="$(ls 2>/dev/null)"
+	COMPREPLY+=( $(compgen -W "${files}" -- "$cur") )
+}
+
+_show_bios_get_modifiers()
+{
+	COMPREPLY+=( $(compgen -W '${bios_get_opts[@]}' -- "$cur") )
+}
+
+_show_bios_set_modifiers()
+{
+	COMPREPLY+=( $(compgen -W '${bios_set_opts[@]}' -- "$cur") )
+}
+
 _show_filters()
 {
 	local flags
@@ -71,6 +102,26 @@ _show_filters()
 _show_modifiers()
 {
 	COMPREPLY+=( $(compgen -W '${_fwupdmgr_opts[@]}' -- "$cur") )
+}
+
+_show_bios_settings()
+{
+	if ! command -v jq &> /dev/null; then
+		return 0
+	fi
+	local attr
+	attr="$(command fwupdmgr get-bios-setting --json --no-authenticate 2>/dev/null | jq '.BiosSettings | .[] | .Name')"
+	COMPREPLY+=( $(compgen -W "${attr}" -- "$cur") )
+}
+
+_show_bios_settings_possible()
+{
+	if ! command -v jq &> /dev/null; then
+		return 0
+	fi
+	local attr
+	attr="$(command fwupdmgr get-bios-setting "$1" --json --no-authenticate 2>/dev/null | jq '.BiosSettings | .[] | .BiosSettingPossibleValues | .[]')"
+	COMPREPLY+=( $(compgen -W "${attr}" -- "$cur") )
 }
 
 _show_device_ids()
@@ -121,6 +172,30 @@ _fwupdmgr()
 		if [[ "$args" = "2" ]]; then
 			_show_device_ids
 		fi
+		;;
+	get-bios-settings|get-bios-setting)
+		#bios settings (no limit)
+		_show_bios_settings
+		_show_bios_get_modifiers
+		return 0
+		;;
+	set-bios-setting)
+		if [[ "$prev" = "--json" ]]; then
+			_show_file_in_dir "$prev"
+			return 0
+		fi
+		count=$(($((args)) % 2))
+		#allow setting a single bios setting at a time
+		if [[ $count == 0 ]]; then
+			_show_bios_settings
+		fi
+		#possible values (only works for enumeration though)
+		if [[ $count == 1 ]]; then
+			_show_bios_settings_possible "$prev"
+			return 0
+		fi
+		_show_bios_set_modifiers
+		return 0
 		;;
 	get-details)
 		#find files

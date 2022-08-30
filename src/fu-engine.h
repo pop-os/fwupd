@@ -243,3 +243,8 @@ fu_engine_schedule_update(FuEngine *self,
 			  GError **error);
 GError *
 fu_engine_error_array_get_best(GPtrArray *errors);
+gboolean
+fu_engine_modify_bios_settings(FuEngine *self,
+			       GHashTable *settings,
+			       gboolean force_ro,
+			       GError **error);
