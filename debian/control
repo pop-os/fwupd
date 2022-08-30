@@ -18,7 +18,6 @@ Build-Depends:
 	fonts-noto,
 	gcab,
 	gettext (>= 0.19.8.1),
-	gi-docgen,
 	gir1.2-pango-1.0,
 	git,
 	gnome-desktop-testing,
@@ -81,7 +80,8 @@ Build-Depends:
 	umockdev,
 	valac,
 	valgrind,
-Build-Depends-Indep: libglib2.0-doc <!nodoc>
+Build-Depends-Indep: gi-docgen <!nodoc>,
+                     libglib2.0-doc <!nodoc>,
 Rules-Requires-Root: no
 Standards-Version: 4.6.0.1
 Section: admin
@@ -183,6 +183,7 @@ Section: doc
 Architecture: all
 Multi-Arch: foreign
 Depends: ${misc:Depends},
+Build-Profiles: <!nodoc>
 Description: Firmware update daemon documentation (HTML format)
  fwupd is a daemon to allow session software to update device firmware.
  You can either use a GUI software manager like GNOME Software to view and
