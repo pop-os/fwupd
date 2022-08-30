@@ -7,35 +7,45 @@ Uploaders: Steve McIntyre <93sam@debian.org>,
 Build-Depends:
 	fwupd-unsigned-dev [amd64 arm64 armhf i386],
 	bash-completion,
-	bubblewrap,
+	ca-certificates,
+	clang-format,
+	dbus-x11,
 	debhelper (>= 12),
+	devscripts,
 	dh-strip-nondeterminism,
+	fakeroot,
 	fontconfig,
 	fonts-noto,
 	gcab,
 	gettext (>= 0.19.8.1),
+	gi-docgen,
 	gir1.2-pango-1.0,
+	git,
+	gnome-desktop-testing,
 	gnu-efi [amd64 arm64 armhf i386],
 	gnutls-bin,
 	gnutls-dev,
 	gobject-introspection,
-	gtk-doc-tools,
 	libarchive-dev,
 	libcairo-dev,
 	libcairo-gobject2,
+	libcbor-dev,
 	libcurl4-gnutls-dev,
 	libefiboot-dev [amd64 arm64 armhf i386],
 	libefivar-dev [amd64 arm64 armhf i386],
 	libelf-dev,
 	libflashrom-dev [!ia64],
 	libfreetype6-dev,
+	libftdi1-dev,
 	libgcab-dev,
 	libgirepository1.0-dev,
 	libglib2.0-dev (>= 2.45.8),
+	libglib2.0-doc,
 	libgudev-1.0-dev,
 	libgusb-dev (>= 0.3.5),
 	libjcat-dev,
 	libjson-glib-dev (>= 1.1.1),
+	liblzma-dev,
 	libmbim-glib-dev,
 	libmm-glib-dev,
 	libpci-dev,
@@ -48,7 +58,9 @@ Build-Depends:
 	libsystemd-dev,
 	libtool-bin,
 	libtss2-dev,
+	libumockdev-dev,
 	libxmlb-dev (>= 0.1.13),
+	lintian,
 	locales,
 	meson,
 	mingw-w64-tools [amd64 arm64 armhf i386],
@@ -57,15 +69,18 @@ Build-Depends:
 	protobuf-c-compiler,
 	python3-gi-cairo,
 	python3-jinja2,
+	python3-packaging,
 	python3-requests,
 	python3-toml,
 	python3-typogrify,
+	python3-venv,
 	shared-mime-info,
 	systemd (>= 231),
+	texlive-fonts-recommended,
 	udev,
 	umockdev,
 	valac,
-	valgrind [!ia64 !riscv64 !x32 !mips !sparc64 !sh4 !ppc64 !powerpcspe !hppa !alpha !mips64el !armhf !armel !mipsel !m68k],
+	valgrind,
 Build-Depends-Indep: libglib2.0-doc <!nodoc>
 Rules-Requires-Root: no
 Standards-Version: 4.6.0.1
@@ -77,8 +92,7 @@ Vcs-Browser: https://salsa.debian.org/efi-team/fwupd
 Package: libfwupdplugin7
 Section: libs
 Architecture: linux-any
-Depends: libfwupd2 (= ${binary:Version}),
-         ${misc:Depends},
+Depends: ${misc:Depends},
          ${shlibs:Depends}
 Multi-Arch: same
 Description: Firmware update daemon plugin library
@@ -107,9 +121,7 @@ Description: Firmware update daemon library
 
 Package: fwupd
 Architecture: linux-any
-Depends: libfwupd2 (= ${binary:Version}),
-         libfwupdplugin7 (= ${binary:Version}),
-         ${misc:Depends},
+Depends: ${misc:Depends},
          ${shlibs:Depends},
          shared-mime-info
 Recommends: python3,
@@ -117,7 +129,8 @@ Recommends: python3,
 	    dbus,
 	    secureboot-db,
 	    udisks2,
-	    fwupd-signed
+	    fwupd-signed,
+	    jq
 Suggests: gir1.2-fwupd-2.0
 Provides: fwupdate
 Conflicts: fwupdate-amd64-signed,
@@ -220,6 +233,7 @@ Multi-Arch: same
 Depends: libfwupdplugin7 (= ${binary:Version}),
          gir1.2-fwupdplugin-1.0 (= ${binary:Version}),
          libarchive-dev,
+         libcbor-dev,
          libcurl4-gnutls-dev,
          libfwupd-dev (= ${binary:Version}),
          libgcab-dev,

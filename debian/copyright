@@ -3,15 +3,17 @@ Upstream-Name: fwupd
 Source: https://github.com/fwupd/fwupd
 
 Files: *
-Copyright:
+Copyright: 
 	    Norbert Kaminski  <norbert.kaminski@3mdeb.com>
 	    Norbert Kamiński  <norbert.kaminski@3mdeb.com>
 	    Rafal Wojtczuk  <rafal@invisiblethingslab.com>
 	   3mdeb Embedded Systems Consulting
 	   9elements Agency GmbH <patrick.rudolph@9elements.com>
+	   Advanced Micro Devices Inc.
 	   Aleix Pol <aleixpol@kde.org>
 	   Aleksander Morgado <aleksander@aleksander.es>
 	   Andrew Duggan
+	   Andrii Dushko <andrii.dushko@developex.net>
 	   Apollo Ling <apollo.ling@synaptics.com>
 	   Benson Leung <bleung@chromium.org>
 	   Christian J. Kellner <christian@kellner.me>
@@ -21,20 +23,21 @@ Copyright:
 	   Dell, Inc.
 	   Denis Pynkin <denis.pynkin@collabora.com>
 	   Evan Lojewski
-	   Free Software Foundation, Inc. <https://fsf.org/>
 	   Fresco Logic
+	   Gaël PORTAY <gael.portay@collabora.com>
 	   George Popoola <gpopoola@google.com>
+	   Google LLC
 	   Google, Inc.
 	   H.J. Lu <hjl.tools@gmail.com>
+	   Intel
 	   Intel Corporation.
 	   Intel, Inc.
+	   Ivan Mikhanchuk <ivan.mikhanchuk@quectel.com>
 	   Jarvis Jiang <jarvis.w.jiang@gmail.com>
 	   Jason Gerecke <killertofu@gmail.com>
-	   Javier Martinez Canillas <javierm@redhat.com>
 	   Jeremy Soller <jeremy@system76.com>
 	   Jimmy Yu <Jimmy_yu@pixart.com>
 	   Kalev Lember <klember@redhat.com>
-	   Lars Gustaebel <lars@gustaebel.de>
 	   Lennart Poettering <lennart@poettering.net>
 	   Mario Limonciello
 	   Mario Limonciello <mario.limonciello@amd.com>
@@ -50,11 +53,9 @@ Copyright:
 	   Peter Marheine <pmarheine@chromium.org>
 	   Philip Withnall <philip@tecnocode.co.uk>
 	   Philip Withnall <pwithnall@endlessos.org>
-	   Python Software Foundation.
 	   Quectel Wireless Solutions Co., Ltd.
 	   Realtek Corporation
 	   Realtek Semiconductor Corporation
-	   Red Hat, Inc.
 	   Ricardo Cañuelo <ricardo.canuelo@collabora.com>
 	   Richard Hughes <richard@hughsie.com>
 	   Ricky Wu <ricky_wu@realtek.com> <spring1527@gmail.com>
@@ -67,10 +68,9 @@ Copyright:
 	   Synaptics Incorporated
 	   Synaptics Incorporated <simon.ho@synaptics.com>
 	   TUXEDO Computers GmbH
-	   The Python Software Foundation.
 	   Twain Byrnes <binarynewts@google.com>
 	   VIA Corporation
-	   Vinay Sajip.
+	   Victor Cheng <victor_cheng@usiglobal.com>
 	   Xiaotian Cui <xtcui@analogixsemi.com>
 	   boger wang <boger@goodix.com>
 License: LGPL-2.1+
@@ -78,10 +78,6 @@ License: LGPL-2.1+
 Files:  *.metainfo.xml
 Copyright: Richard Hughes <richard@hughsie.com>
 License: CC0-1.0
-
-Files: plugins/dell-dock/*
-Copyright: 2018 Dell Inc.
-License: LGPL-2.1+ OR MIT
 
 Files: debian/*
 Copyright: 2015 Daniel Jared Dominguez <Jared_Dominguez@Dell.com>
@@ -104,26 +100,6 @@ License: LGPL-2.1+
  .
  On Debian systems, the complete text of the GNU Lesser General
  Public License version 2.1 can be found in "/usr/share/common-licenses/LGPL-2.1".
-
-License: MIT
- Permission is hereby granted, free of charge, to any person obtaining a copy of
- this software and associated documentation files (the "Software"), to deal in
- the Software without restriction, including without limitation the rights to
- use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
- of the Software, and to permit persons to whom the Software is furnished to do
- so, subject to the following conditions:
- .
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- SOFTWARE.
-
-
 
 
 License: CC0-1.0
