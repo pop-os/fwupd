@@ -1,3 +1,9 @@
+fwupd (1.8.5-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.8.5)
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 22 Sep 2022 10:12:00 -0500
+
 fwupd (1.8.4-2) unstable; urgency=medium
 
   * debian/control:
