@@ -81,6 +81,7 @@ typedef struct {
 	gchar *custom_flags;
 	gulong notify_flags_handler_id;
 	GHashTable *instance_hash;
+	GPtrArray *backend_tags; /* of utf-8 */
 } FuDevicePrivate;
 
 typedef struct {
@@ -103,6 +104,7 @@ enum {
 	PROP_CONTEXT,
 	PROP_PROXY,
 	PROP_PARENT,
+	PROP_BACKEND_TAGS,
 	PROP_LAST
 };
 
@@ -136,6 +138,9 @@ fu_device_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec
 		break;
 	case PROP_PARENT:
 		g_value_set_object(value, fu_device_get_parent(self));
+		break;
+	case PROP_BACKEND_TAGS:
+		g_value_set_boxed(value, priv->backend_tags);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -1245,6 +1250,73 @@ fu_device_get_children(FuDevice *self)
 }
 
 /**
+ * fu_device_get_backend_tags:
+ * @self: a #FuDevice
+ *
+ * Gets any backend tags.
+ *
+ * Returns: (transfer none) (element-type utf8): string tags
+ *
+ * Since: 1.8.5
+ **/
+GPtrArray *
+fu_device_get_backend_tags(FuDevice *self)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
+	return priv->backend_tags;
+}
+
+/**
+ * fu_device_add_backend_tag:
+ * @self: a #FuDevice
+ * @backend_tag: a tag, for example `bootloader` or `runtime-reload`
+ *
+ * Adds a backend tag, which allows the backend to identify the specific device for a specific
+ * phase. For instance, there might be a pre-update runtime, a bootloader and a post-update runtime
+ * and allowing tags to be saved to the backend object allows us to identify each version of
+ * the same physical device.
+ *
+ * Since: 1.8.5
+ **/
+void
+fu_device_add_backend_tag(FuDevice *self, const gchar *backend_tag)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FU_IS_DEVICE(self));
+	g_return_if_fail(backend_tag != NULL);
+	if (fu_device_has_backend_tag(self, backend_tag))
+		return;
+	g_ptr_array_add(priv->backend_tags, g_strdup(backend_tag));
+	g_object_notify(G_OBJECT(self), "backend-tags");
+}
+
+/**
+ * fu_device_has_backend_tag:
+ * @self: a #FuDevice
+ * @backend_tag: a tag, for example `bootloader` or `runtime-reload`
+ *
+ * Finds if the backend tag already exists.
+ *
+ * Returns: %TRUE if the backend tag exists
+ *
+ * Since: 1.8.5
+ **/
+gboolean
+fu_device_has_backend_tag(FuDevice *self, const gchar *backend_tag)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
+	g_return_val_if_fail(backend_tag != NULL, FALSE);
+	for (guint i = 0; i < priv->backend_tags->len; i++) {
+		const gchar *backend_tag_tmp = g_ptr_array_index(priv->backend_tags, i);
+		if (g_strcmp0(backend_tag_tmp, backend_tag) == 0)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+/**
  * fu_device_add_child:
  * @self: a #FuDevice
  * @child: Another #FuDevice
@@ -1619,12 +1691,30 @@ fu_device_set_quirk_inhibit_section(FuDevice *self, const gchar *value, GError *
 	return TRUE;
 }
 
-static gboolean
+/**
+ * fu_device_set_quirk_kv:
+ * @self: a #FuDevice
+ * @key: a string key
+ * @value: a string value
+ * @error: (nullable): optional return location for an error
+ *
+ * Sets a specific quirk on the device.
+ *
+ * Returns: %TRUE on success
+ *
+ * Since: 1.8.5
+ **/
+gboolean
 fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GError **error)
 {
 	FuDevicePrivate *priv = GET_PRIVATE(self);
 	FuDeviceClass *klass = FU_DEVICE_GET_CLASS(self);
 	guint64 tmp;
+
+	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
+	g_return_val_if_fail(key != NULL, FALSE);
+	g_return_val_if_fail(value != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	if (g_strcmp0(key, FU_QUIRKS_PLUGIN) == 0) {
 		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
@@ -3814,12 +3904,6 @@ fu_device_set_context(FuDevice *self, FuContext *ctx)
 			   fu_device_get_id(self));
 		return;
 	}
-	if (priv->ctx != NULL && priv->ctx == ctx) {
-		g_critical("re-setting device context for %s [%s]",
-			   fu_device_get_name(self),
-			   fu_device_get_id(self));
-		return;
-	}
 #endif
 
 	if (g_set_object(&priv->ctx, ctx))
@@ -4577,7 +4661,6 @@ fu_device_set_progress(FuDevice *self, FuProgress *progress)
 	FuDeviceClass *klass = FU_DEVICE_GET_CLASS(self);
 
 	g_return_if_fail(FU_IS_DEVICE(self));
-	g_return_if_fail(FU_IS_PROGRESS(progress));
 	g_return_if_fail(FU_IS_PROGRESS(progress));
 
 	/* subclassed */
@@ -5573,6 +5656,20 @@ fu_device_class_init(FuDeviceClass *klass)
 				    FU_TYPE_DEVICE,
 				    G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_NAME);
 	g_object_class_install_property(object_class, PROP_PARENT, pspec);
+
+	/**
+	 * FuDevice:backend-tags:
+	 *
+	 * The device tags used for backend identification.
+	 *
+	 * Since: 1.5.8
+	 */
+	pspec = g_param_spec_boxed("backend-tags",
+				   NULL,
+				   NULL,
+				   G_TYPE_PTR_ARRAY,
+				   G_PARAM_READABLE | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_BACKEND_TAGS, pspec);
 }
 
 static void
@@ -5584,6 +5681,7 @@ fu_device_init(FuDevice *self)
 	priv->possible_plugins = g_ptr_array_new_with_free_func(g_free);
 	priv->retry_recs = g_ptr_array_new_with_free_func(g_free);
 	priv->instance_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+	priv->backend_tags = g_ptr_array_new_with_free_func(g_free);
 	priv->acquiesce_delay = 50; /* ms */
 	g_rw_lock_init(&priv->parent_guids_mutex);
 	g_rw_lock_init(&priv->metadata_mutex);
@@ -5621,6 +5719,7 @@ fu_device_finalize(GObject *object)
 	g_ptr_array_unref(priv->parent_guids);
 	g_ptr_array_unref(priv->possible_plugins);
 	g_ptr_array_unref(priv->retry_recs);
+	g_ptr_array_unref(priv->backend_tags);
 	g_free(priv->alternate_id);
 	g_free(priv->equivalent_id);
 	g_free(priv->physical_id);

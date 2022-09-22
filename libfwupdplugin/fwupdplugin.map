@@ -1095,3 +1095,37 @@ LIBFWUPDPLUGIN_1.8.4 {
     fu_security_attr_new;
   local: *;
 } LIBFWUPDPLUGIN_1.8.3;
+
+LIBFWUPDPLUGIN_1.8.5 {
+  global:
+    fu_backend_load;
+    fu_backend_save;
+    fu_context_add_esp_volume;
+    fu_context_add_flag;
+    fu_context_get_esp_volumes;
+    fu_context_has_flag;
+    fu_device_add_backend_tag;
+    fu_device_get_backend_tags;
+    fu_device_has_backend_tag;
+    fu_device_set_quirk_kv;
+    fu_intel_thunderbolt_firmware_get_type;
+    fu_intel_thunderbolt_firmware_new;
+    fu_intel_thunderbolt_nvm_get_device_id;
+    fu_intel_thunderbolt_nvm_get_flash_size;
+    fu_intel_thunderbolt_nvm_get_model_id;
+    fu_intel_thunderbolt_nvm_get_type;
+    fu_intel_thunderbolt_nvm_get_vendor_id;
+    fu_intel_thunderbolt_nvm_has_pd;
+    fu_intel_thunderbolt_nvm_is_host;
+    fu_intel_thunderbolt_nvm_is_native;
+    fu_intel_thunderbolt_nvm_new;
+    fu_kernel_get_cmdline;
+    fu_usb_device_ds20_apply_to_device;
+    fu_usb_device_ds20_get_type;
+    fu_usb_device_ds20_set_version_lowest;
+    fu_usb_device_fw_ds20_get_type;
+    fu_usb_device_fw_ds20_new;
+    fu_usb_device_ms_ds20_get_type;
+    fu_usb_device_ms_ds20_new;
+  local: *;
+} LIBFWUPDPLUGIN_1.8.4;

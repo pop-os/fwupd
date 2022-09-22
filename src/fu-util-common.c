@@ -217,7 +217,7 @@ fu_util_traverse_tree(GNode *n, gpointer data)
 		}
 
 		/* ancestors */
-		for (GNode *c = n->parent; c->parent != NULL; c = c->parent) {
+		for (GNode *c = n->parent; c != NULL && c->parent != NULL; c = c->parent) {
 			if (g_node_next_sibling(c) != NULL || idx == 0) {
 				g_string_prepend(str, "│ ");
 				continue;
@@ -263,6 +263,8 @@ fu_util_is_interesting_device(FwupdDevice *dev)
 	if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE))
 		return TRUE;
 	if (fwupd_device_get_update_error(dev) != NULL)
+		return TRUE;
+	if (fwupd_device_get_version(dev) != NULL)
 		return TRUE;
 	/* device not plugged in, get-details */
 	if (fwupd_device_get_flags(dev) == 0)
@@ -1349,7 +1351,7 @@ fu_util_device_problem_to_string(FwupdClient *client, FwupdDevice *dev, FwupdDev
 		if (fwupd_device_get_battery_level(dev) == FWUPD_BATTERY_LEVEL_INVALID ||
 		    fwupd_device_get_battery_threshold(dev) == FWUPD_BATTERY_LEVEL_INVALID) {
 			/* TRANSLATORS: for example the batteries *inside* the Bluetooth mouse */
-			return g_strdup_printf(_("Device battery power is too low"));
+			return g_strdup(_("Device battery power is too low"));
 		}
 		/* TRANSLATORS: for example the batteries *inside* the Bluetooth mouse */
 		return g_strdup_printf(_("Device battery power is too low (%u%%, requires %u%%)"),
@@ -1688,6 +1690,10 @@ fu_util_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		/* TRANSLATORS: user needs to run a command */
 		return _("Authentication details are required");
 	}
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_SECURE_CONFIG) {
+		/* TRANSLATORS: no peeking */
+		return _("Configuration is only readable by the system administrator");
+	}
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_EFIVAR_NOT_MOUNTED) {
 		/* TRANSLATORS: the user is using Gentoo/Arch and has screwed something up */
 		return _("Required efivarfs filesystem was not found");
@@ -1729,6 +1735,7 @@ fu_util_plugin_flag_to_cli_text(FwupdPluginFlags plugin_flag)
 	case FWUPD_PLUGIN_FLAG_CAPSULES_UNSUPPORTED:
 	case FWUPD_PLUGIN_FLAG_UNLOCK_REQUIRED:
 	case FWUPD_PLUGIN_FLAG_AUTH_REQUIRED:
+	case FWUPD_PLUGIN_FLAG_SECURE_CONFIG:
 	case FWUPD_PLUGIN_FLAG_EFIVAR_NOT_MOUNTED:
 	case FWUPD_PLUGIN_FLAG_ESP_NOT_FOUND:
 	case FWUPD_PLUGIN_FLAG_KERNEL_TOO_OLD:
@@ -1862,9 +1869,9 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 	const gchar *tmp2;
 	GPtrArray *issues = fwupd_release_get_issues(rel);
 	GPtrArray *tags = fwupd_release_get_tags(rel);
-	GString *str = g_string_new(NULL);
 	guint64 flags = fwupd_release_get_flags(rel);
 	g_autofree gchar *desc_fb = NULL;
+	g_autoptr(GString) str = g_string_new(NULL);
 
 	g_return_val_if_fail(FWUPD_IS_RELEASE(rel), NULL);
 
@@ -2022,17 +2029,17 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 				 tag_strs);
 	}
 
-	return g_string_free(str, FALSE);
+	return g_string_free(g_steal_pointer(&str), FALSE);
 }
 
 gchar *
 fu_util_remote_to_string(FwupdRemote *remote, guint idt)
 {
-	GString *str = g_string_new(NULL);
 	FwupdRemoteKind kind = fwupd_remote_get_kind(remote);
 	FwupdKeyringKind keyring_kind = fwupd_remote_get_keyring_kind(remote);
 	const gchar *tmp;
 	gint priority;
+	g_autoptr(GString) str = g_string_new(NULL);
 
 	g_return_val_if_fail(FWUPD_IS_REMOTE(remote), NULL);
 
@@ -2149,7 +2156,7 @@ fu_util_remote_to_string(FwupdRemote *remote, guint idt)
 				 fwupd_remote_get_automatic_reports(remote) ? "true" : "false");
 	}
 
-	return g_string_free(str, FALSE);
+	return g_string_free(g_steal_pointer(&str), FALSE);
 }
 
 static void

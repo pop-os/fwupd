@@ -36,6 +36,36 @@ typedef void (*FuContextLookupIter)(FuContext *self,
 				    const gchar *value,
 				    gpointer user_data);
 
+/**
+ * FU_CONTEXT_FLAG_NONE:
+ *
+ * No flags set.
+ *
+ * Since: 1.8.5
+ **/
+#define FU_CONTEXT_FLAG_NONE (0u)
+
+/**
+ * FU_CONTEXT_FLAG_SAVE_EVENTS:
+ *
+ * Save events so that they can be replayed to emulate devices.
+ *
+ * Since: 1.8.5
+ **/
+#define FU_CONTEXT_FLAG_SAVE_EVENTS (1u << 0)
+
+/**
+ * FuContextFlags:
+ *
+ * The context flags.
+ **/
+typedef guint64 FuContextFlags;
+
+void
+fu_context_add_flag(FuContext *context, FuContextFlags flag);
+gboolean
+fu_context_has_flag(FuContext *context, FuContextFlags flag);
+
 const gchar *
 fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offset);
 guint
@@ -93,3 +123,6 @@ gboolean
 fu_context_get_bios_setting_pending_reboot(FuContext *self);
 FwupdBiosSetting *
 fu_context_get_bios_setting(FuContext *self, const gchar *name);
+
+GPtrArray *
+fu_context_get_esp_volumes(FuContext *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;

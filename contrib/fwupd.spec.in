@@ -42,9 +42,9 @@
 %global have_dell 1
 %endif
 
-# AMD PSP is only available on x86
-%ifarch x86_64
-%global have_pci_psp 1
+# Until we actually have seen it outside x86
+%ifarch i686 x86_64
+%global have_thunderbolt 1
 %endif
 
 # only available recently
@@ -340,7 +340,9 @@ done
 %config(noreplace)%{_sysconfdir}/fwupd/uefi_capsule.conf
 %endif
 %config(noreplace)%{_sysconfdir}/fwupd/redfish.conf
+%if 0%{?have_thunderbolt}
 %config(noreplace)%{_sysconfdir}/fwupd/thunderbolt.conf
+%endif
 %dir %{_libexecdir}/fwupd
 %{_libexecdir}/fwupd/fwupd
 %ifarch i686 x86_64
@@ -432,6 +434,7 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_phat.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_amt.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_analogix.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_android_boot.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_ata.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_bcm57xx.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_cfu.so
@@ -460,6 +463,7 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_gpio.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_hailuck.so
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_intel_usb4.so
 %ifarch i686 x86_64
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_iommu.so
 %endif
@@ -478,7 +482,8 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_acpi_ivrs.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_msr.so
 %endif
-%if 0%{?have_pci_psp}
+%ifarch x86_64
+%{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_amd_pmc.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_pci_psp.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_mtd.so
@@ -509,7 +514,9 @@ done
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_invalid.so
 %endif
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_thelio_io.so
+%if 0%{?have_thunderbolt}
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_thunderbolt.so
+%endif
 %if 0%{?have_uefi}
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_tpm.so
 %{_libdir}/fwupd-plugins-%{fwupdplugin_version}/libfu_plugin_bios.so

@@ -12,6 +12,8 @@
 #include "fu-dump.h"
 #include "fu-mem.h"
 #include "fu-string.h"
+#include "fu-usb-device-fw-ds20.h"
+#include "fu-usb-device-ms-ds20.h"
 #include "fu-usb-device-private.h"
 
 /**
@@ -84,6 +86,19 @@ fu_usb_device_finalize(GObject *object)
 	G_OBJECT_CLASS(fu_usb_device_parent_class)->finalize(object);
 }
 
+#if G_USB_CHECK_VERSION(0, 4, 1)
+static void
+fu_usb_device_backend_tags_notify_cb(GObject *object, GParamSpec *pspec, FuUsbDevice *device)
+{
+	FuUsbDevicePrivate *priv = GET_PRIVATE(device);
+	GPtrArray *backend_tags = fu_device_get_backend_tags(FU_DEVICE(device));
+	for (guint i = 0; i < backend_tags->len; i++) {
+		const gchar *backend_tag = g_ptr_array_index(backend_tags, i);
+		g_usb_device_add_tag(priv->usb_device, backend_tag);
+	}
+}
+#endif
+
 static void
 fu_usb_device_init(FuUsbDevice *device)
 {
@@ -99,6 +114,14 @@ fu_usb_device_init(FuUsbDevice *device)
 				     G_USB_DEVICE_ERROR,
 				     G_USB_DEVICE_ERROR_PERMISSION_DENIED,
 				     NULL);
+#endif
+
+#if G_USB_CHECK_VERSION(0, 4, 1)
+	/* copy this to the GUsbDevice */
+	g_signal_connect(FU_DEVICE(device),
+			 "notify::backend-tags",
+			 G_CALLBACK(fu_usb_device_backend_tags_notify_cb),
+			 device);
 #endif
 }
 
@@ -274,6 +297,9 @@ fu_usb_device_setup(FuDevice *device, GError **error)
 	FuUsbDevice *self = FU_USB_DEVICE(device);
 	FuUsbDevicePrivate *priv = GET_PRIVATE(self);
 	guint idx;
+#if G_USB_CHECK_VERSION(0, 4, 0)
+	g_autoptr(GPtrArray) bos_descriptors = NULL;
+#endif
 
 	g_return_val_if_fail(FU_IS_USB_DEVICE(self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
@@ -340,6 +366,41 @@ fu_usb_device_setup(FuDevice *device, GError **error)
 		if (!fu_usb_device_query_hub(self, error))
 			return FALSE;
 	}
+
+#if G_USB_CHECK_VERSION(0, 4, 0)
+	/* get the platform capability BOS descriptors */
+	bos_descriptors = g_usb_device_get_bos_descriptors(priv->usb_device, NULL);
+	for (guint i = 0; bos_descriptors != NULL && i < bos_descriptors->len; i++) {
+		GUsbBosDescriptor *bos = g_ptr_array_index(bos_descriptors, i);
+		GBytes *extra = g_usb_bos_descriptor_get_extra(bos);
+		if (g_usb_bos_descriptor_get_capability(bos) == 0x5 &&
+		    g_bytes_get_size(extra) > 0) {
+			g_autoptr(FuFirmware) ds20 = NULL;
+			g_autoptr(GError) error_ds20 = NULL;
+			g_autofree gchar *str = NULL;
+
+			ds20 = fu_firmware_new_from_gtypes(extra,
+							   FWUPD_INSTALL_FLAG_NONE,
+							   &error_ds20,
+							   FU_TYPE_USB_DEVICE_FW_DS20,
+							   FU_TYPE_USB_DEVICE_MS_DS20,
+							   G_TYPE_INVALID);
+			if (ds20 == NULL) {
+				g_warning("failed to parse platform capability BOS descriptor: %s",
+					  error_ds20->message);
+				continue;
+			}
+			if (!fu_usb_device_ds20_apply_to_device(FU_USB_DEVICE_DS20(ds20),
+								self,
+								&error_ds20)) {
+				g_warning("failed to get DS20 data: %s", error_ds20->message);
+				continue;
+			}
+			str = fu_firmware_to_string(ds20);
+			g_debug("DS20: %s", str);
+		}
+	}
+#endif
 #endif
 
 	/* success */

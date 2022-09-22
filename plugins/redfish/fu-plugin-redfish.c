@@ -63,7 +63,7 @@ fu_plugin_redfish_change_expired(FuPlugin *plugin, GError **error)
 	uri = fu_plugin_get_config_value(plugin, "UserUri");
 	if (uri == NULL) {
 		uri = g_strdup("/redfish/v1/AccountService/Accounts/2");
-		if (!fu_plugin_set_secure_config_value(plugin, "UserUri", uri, error))
+		if (!fu_plugin_set_config_value(plugin, "UserUri", uri, error))
 			return FALSE;
 	}
 
@@ -83,7 +83,7 @@ fu_plugin_redfish_change_expired(FuPlugin *plugin, GError **error)
 	fu_redfish_backend_set_password(priv->backend, password_new);
 
 	/* success */
-	return fu_plugin_set_secure_config_value(plugin, "Password", password_new, error);
+	return fu_plugin_set_config_value(plugin, "Password", password_new, error);
 }
 
 static gboolean
@@ -352,11 +352,11 @@ fu_redfish_plugin_ipmi_create_user(FuPlugin *plugin, GError **error)
 	fu_redfish_backend_set_password(priv->backend, password_new);
 
 	/* success */
-	if (!fu_plugin_set_secure_config_value(plugin, "UserUri", uri, error))
+	if (!fu_plugin_set_config_value(plugin, "UserUri", uri, error))
 		return FALSE;
-	if (!fu_plugin_set_secure_config_value(plugin, "Username", username_fwupd, error))
+	if (!fu_plugin_set_config_value(plugin, "Username", username_fwupd, error))
 		return FALSE;
-	if (!fu_plugin_set_secure_config_value(plugin, "Password", password_new, error))
+	if (!fu_plugin_set_config_value(plugin, "Password", password_new, error))
 		return FALSE;
 
 	return TRUE;
@@ -436,6 +436,14 @@ fu_plugin_redfish_startup(FuPlugin *plugin, FuProgress *progress, GError **error
 #ifdef HAVE_LINUX_IPMI_H
 	/* we got neither a type 42 entry or config value, lets try IPMI */
 	if (fu_redfish_backend_get_username(priv->backend) == NULL) {
+		if (!fu_context_has_hwid_flag(fu_plugin_get_context(plugin), "ipmi-create-user")) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
+					    "no username and password specified, "
+					    "and no vendor quirk for 'ipmi-create-user'");
+			return FALSE;
+		}
 		if (!fu_plugin_get_config_value_boolean(plugin, "IpmiDisableCreateUser")) {
 			g_debug("attempting to create user using IPMI");
 			if (!fu_redfish_plugin_ipmi_create_user(plugin, error))
@@ -586,6 +594,7 @@ fu_plugin_redfish_init(FuPlugin *plugin)
 	FuPluginData *priv = fu_plugin_alloc_data(plugin, sizeof(FuPluginData));
 	priv->backend = fu_redfish_backend_new(ctx);
 	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_REDFISH_SMBIOS);
+	fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_SECURE_CONFIG);
 }
 
 static void

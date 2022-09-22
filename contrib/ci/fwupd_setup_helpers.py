@@ -14,7 +14,7 @@ WARNING = "\033[93m"
 ENDC = "\033[0m"
 
 # Minimum version of markdown required
-MINIMUM_MARKDOWN = (3, 3, 3)
+MINIMUM_MARKDOWN = (3, 2, 0)
 
 # Minimum meson required
 MINIMUM_MESON = "0.61.0"
@@ -77,7 +77,7 @@ def test_meson(debug):
         pip_install_package(debug, "meson")
 
 
-def parse_dependencies(OS, variant, requested_type):
+def parse_dependencies(OS, variant, add_control):
     import xml.etree.ElementTree as etree
 
     deps = []
@@ -86,15 +86,31 @@ def parse_dependencies(OS, variant, requested_type):
     tree = etree.parse(os.path.join(directory, "dependencies.xml"))
     root = tree.getroot()
     for child in root:
-        if "type" not in child.attrib or "id" not in child.attrib:
+        if "id" not in child.attrib:
             continue
         for distro in child:
             if "id" not in distro.attrib:
                 continue
             if distro.attrib["id"] != OS:
                 continue
-            packages = distro.findall("package")
-            for package in packages:
+            control = ""
+            if add_control:
+                inclusive = []
+                exclusive = []
+                if not distro.findall("control"):
+                    continue
+                for control_parent in distro.findall("control"):
+                    for obj in control_parent.findall("inclusive"):
+                        inclusive.append(obj.text)
+                    for obj in control_parent.findall("exclusive"):
+                        exclusive.append(obj.text)
+                if inclusive or exclusive:
+                    inclusive = " ".join(inclusive).strip()
+                    exclusive = " !".join(exclusive).strip()
+                    if exclusive:
+                        exclusive = "!%s" % exclusive
+                    control = " [%s%s]" % (inclusive, exclusive)
+            for package in distro.findall("package"):
                 if variant:
                     if "variant" not in package.attrib:
                         continue
@@ -104,7 +120,8 @@ def parse_dependencies(OS, variant, requested_type):
                     dep = package.text
                 else:
                     dep = child.attrib["id"]
-                if child.attrib["type"] == requested_type and dep:
+                dep += control
+                if dep:
                     deps.append(dep)
     return deps
 
@@ -130,7 +147,7 @@ def _validate_deps(os, deps):
 
 
 def get_build_dependencies(os, variant):
-    parsed = parse_dependencies(os, variant, "build")
+    parsed = parse_dependencies(os, variant, False)
     return _validate_deps(os, parsed)
 
 

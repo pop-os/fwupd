@@ -170,7 +170,7 @@ fwupd_enums_func(void)
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_device_problem_from_string(tmp), ==, i);
 	}
-	for (guint64 i = 1; i <= FWUPD_PLUGIN_FLAG_AUTH_REQUIRED; i *= 2) {
+	for (guint64 i = 1; i <= FWUPD_PLUGIN_FLAG_SECURE_CONFIG; i *= 2) {
 		const gchar *tmp = fwupd_plugin_flag_to_string(i);
 		if (tmp == NULL)
 			g_warning("missing plugin flag 0x%x", (guint)i);
@@ -1487,17 +1487,20 @@ fwupd_bios_settings_func(void)
 	g_assert_nonnull(json2);
 	ret = fu_test_compare_lines(json2,
 				    "{\n"
-				    "  \"BiosSettingReadOnly\" : \"false\",\n"
-				    "  \"BiosSettingType\" : 1,\n"
 				    "  \"Name\" : \"UEFISecureBoot\",\n"
 				    "  \"Description\" : \"Controls Secure boot\",\n"
 				    "  \"Filename\" : \"/path/to/bar\",\n"
+				    "  \"BiosSettingCurrentValue\" : \"Disabled\",\n"
+				    "  \"BiosSettingReadOnly\" : \"false\",\n"
+				    "  \"BiosSettingType\" : 1,\n"
 				    "  \"BiosSettingPossibleValues\" : [\n"
 				    "    \"Disabled\",\n"
 				    "    \"Enabled\"\n"
 				    "  ]\n"
 				    "}",
 				    &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 }
 
 int

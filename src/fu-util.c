@@ -3412,11 +3412,11 @@ fu_util_security_modify_bios_setting(FuUtilPrivate *priv, FwupdSecurityAttr *att
 			       fwupd_security_attr_get_bios_setting_current_value(attr),
 			       fwupd_security_attr_get_bios_setting_target_value(attr));
 	g_string_append(body, "\n\n");
-	g_string_append_printf(body,
-			       /* TRANSLATORS: the user has to manually recover; we can't do it */
-			       _("You should ensure you are comfortable restoring the setting from "
-				 "the system firmware setup, as this change may cause the system "
-				 "to not boot into Linux or cause other system instability."));
+	g_string_append(body,
+			/* TRANSLATORS: the user has to manually recover; we can't do it */
+			_("You should ensure you are comfortable restoring the setting from "
+			  "the system firmware setup, as this change may cause the system "
+			  "to not boot into Linux or cause other system instability."));
 	fu_util_warning_box(title->str, body->str, 80);
 
 	/* ask for confirmation */
@@ -3448,6 +3448,15 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(GPtrArray) events = NULL;
 	g_autoptr(GError) error_local = NULL;
 	g_autofree gchar *str = NULL;
+
+#ifndef HAVE_HSI
+	g_set_error(error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
+		    /* TRANSLATORS: error message for unsupported feature */
+		    _("Host Security ID (HSI) is not supported"));
+	return FALSE;
+#endif /* HAVE_HSI */
 
 	/* the "why" */
 	attrs = fwupd_client_get_host_security_attrs(priv->client, priv->cancellable, error);
@@ -3939,11 +3948,11 @@ fu_util_get_bios_setting(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 	}
 	if (!found) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_ARGS,
-			    /* TRANSLATORS: error message */
-			    _("Unable to find attribute"));
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_ARGS,
+				    /* TRANSLATORS: error message */
+				    _("Unable to find attribute"));
 		return FALSE;
 	}
 	return TRUE;
@@ -4200,7 +4209,7 @@ main(int argc, char *argv[])
 	textdomain(GETTEXT_PACKAGE);
 
 	/* ensure D-Bus errors are registered */
-	fwupd_error_quark();
+	(void)fwupd_error_quark();
 
 	/* this is an old command which is possibly a symlink */
 	if (g_str_has_suffix(argv[0], "fwupdagent")) {
@@ -4604,7 +4613,13 @@ main(int argc, char *argv[])
 
 	/* show a warning if the daemon is tainted */
 	if (!fwupd_client_connect(priv->client, priv->cancellable, &error)) {
+#ifdef _WIN32
+		/* TRANSLATORS: error message for Windows */
+		g_printerr(_("Failed to connect to Windows service, please ensure it's running."));
+		g_debug("%s", error->message);
+#else
 		g_printerr("Failed to connect to daemon: %s\n", error->message);
+#endif
 		return EXIT_FAILURE;
 	}
 	if (fwupd_client_get_tainted(priv->client)) {

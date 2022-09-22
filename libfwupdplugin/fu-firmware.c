@@ -519,7 +519,6 @@ fu_firmware_set_bytes(FuFirmware *self, GBytes *bytes)
 	FuFirmwarePrivate *priv = GET_PRIVATE(self);
 	g_return_if_fail(FU_IS_FIRMWARE(self));
 	g_return_if_fail(bytes != NULL);
-	g_return_if_fail(priv->bytes == NULL);
 	if (priv->bytes != NULL)
 		g_bytes_unref(priv->bytes);
 	priv->bytes = g_bytes_ref(bytes);
@@ -907,6 +906,11 @@ fu_firmware_parse_full(FuFirmware *self,
 	}
 	if (!fu_firmware_check_magic_for_offset(self, fw, &offset, flags, error))
 		return FALSE;
+
+	/* always set by default */
+	fu_firmware_set_bytes(self, fw);
+
+	/* handled by the subclass */
 	if (klass->parse != NULL)
 		return klass->parse(self, fw, offset, flags, error);
 
@@ -923,9 +927,7 @@ fu_firmware_parse_full(FuFirmware *self,
 		return FALSE;
 	}
 
-	/* just add entire blob */
-	fu_firmware_set_bytes(self, fw);
-	fu_firmware_set_size(self, g_bytes_get_size(fw));
+	/* success */
 	return TRUE;
 }
 
@@ -1032,6 +1034,9 @@ fu_firmware_build(FuFirmware *self, XbNode *n, GError **error)
 	tmpval = xb_node_query_text_as_uint(n, "offset", NULL);
 	if (tmpval != G_MAXUINT64)
 		fu_firmware_set_offset(self, tmpval);
+	tmpval = xb_node_query_text_as_uint(n, "size", NULL);
+	if (tmpval != G_MAXUINT64)
+		fu_firmware_set_size(self, tmpval);
 	tmpval = xb_node_query_text_as_uint(n, "alignment", NULL);
 	if (tmpval != G_MAXUINT64) {
 		if (tmpval > FU_FIRMWARE_ALIGNMENT_2G) {
@@ -1996,7 +2001,7 @@ fu_firmware_new_from_gtypes(GBytes *fw, FwupdInstallFlags flags, GError **error,
 
 	/* create array of GTypes */
 	va_start(args, error);
-	for (guint i = 0;; i++) {
+	while (TRUE) {
 		GType gtype = va_arg(args, GType);
 		if (gtype == G_TYPE_INVALID)
 			break;

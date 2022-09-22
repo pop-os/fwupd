@@ -37,6 +37,7 @@
 #include "fwupd-resources.h"
 #include "fwupd-security-attr-private.h"
 
+#include "fu-backend-private.h"
 #include "fu-bios-settings-private.h"
 #include "fu-cabinet.h"
 #include "fu-context-private.h"
@@ -60,6 +61,8 @@
 #include "fu-security-attr-common.h"
 #include "fu-security-attrs-private.h"
 #include "fu-udev-device-private.h"
+#include "fu-usb-device-fw-ds20.h"
+#include "fu-usb-device-ms-ds20.h"
 #include "fu-version.h"
 
 #ifdef HAVE_GUDEV
@@ -1584,7 +1587,7 @@ fu_engine_check_requirement_firmware(FuEngine *self,
 	if (depth != G_MAXUINT64) {
 		for (guint64 i = 0; i < depth; i++) {
 			FuDevice *device_tmp = fu_device_get_parent(device_actual);
-			if (device_actual == NULL) {
+			if (device_tmp == NULL) {
 				g_set_error(error,
 					    FWUPD_ERROR,
 					    FWUPD_ERROR_NOT_SUPPORTED,
@@ -2018,8 +2021,10 @@ fu_engine_get_report_metadata_os_release(GHashTable *hash, GError **error)
 static gchar *
 fu_engine_get_proc_cmdline(GError **error)
 {
-	gsize bufsz = 0;
-	g_autofree gchar *buf = NULL;
+	GHashTableIter iter;
+	gpointer key;
+	gpointer value;
+	g_autoptr(GHashTable) hash = NULL;
 	g_autoptr(GString) cmdline_safe = g_string_new(NULL);
 	const gchar *ignore[] = {
 	    "",
@@ -2085,22 +2090,18 @@ fu_engine_get_proc_cmdline(GError **error)
 	};
 
 	/* get a PII-safe kernel command line */
-	if (!g_file_get_contents("/proc/cmdline", &buf, &bufsz, error))
+	hash = fu_kernel_get_cmdline(error);
+	if (hash == NULL)
 		return NULL;
-	if (bufsz > 0) {
-		g_auto(GStrv) tokens = fu_strsplit(buf, bufsz - 1, " ", -1);
-		for (guint i = 0; tokens[i] != NULL; i++) {
-			g_auto(GStrv) kv = NULL;
-			if (strlen(tokens[i]) == 0)
-				continue;
-			kv = g_strsplit(tokens[i], "=", 2);
-			if (g_strv_contains(ignore, kv[0]))
-				continue;
-			if (cmdline_safe->len > 0)
-				g_string_append(cmdline_safe, " ");
-			g_string_append(cmdline_safe, tokens[i]);
-		}
+	for (guint i = 0; ignore[i] != NULL; i++)
+		g_hash_table_remove(hash, ignore[i]);
+	g_hash_table_iter_init(&iter, hash);
+	while (g_hash_table_iter_next(&iter, &key, &value)) {
+		if (cmdline_safe->len > 0)
+			g_string_append(cmdline_safe, " ");
+		g_string_append_printf(cmdline_safe, "%s=%s", (gchar *)key, (gchar *)value);
 	}
+
 	return g_string_free(g_steal_pointer(&cmdline_safe), FALSE);
 }
 #endif
@@ -4113,6 +4114,18 @@ static void
 fu_engine_config_changed_cb(FuConfig *config, FuEngine *self)
 {
 	fu_idle_set_timeout(self->idle, fu_config_get_idle_timeout(config));
+
+	/* allow changing the hardcoded ESP location */
+	if (fu_config_get_esp_location(config) != NULL) {
+		g_autoptr(GError) error = NULL;
+		g_autoptr(FuVolume) vol = NULL;
+		vol = fu_volume_new_esp_for_path(fu_config_get_esp_location(config), &error);
+		if (vol == NULL) {
+			g_warning("not adding changed EspLocation: %s", error->message);
+		} else {
+			fu_context_add_esp_volume(self->ctx, vol);
+		}
+	}
 }
 
 static void
@@ -6926,7 +6939,7 @@ fu_engine_apply_default_bios_settings_policy(FuEngine *self, GError **error)
 }
 
 static void
-fu_engine_check_firmware_attributes(FuEngine *self, FuDevice *device)
+fu_engine_check_firmware_attributes(FuEngine *self, FuDevice *device, gboolean added)
 {
 	const gchar *subsystem;
 
@@ -6937,6 +6950,16 @@ fu_engine_check_firmware_attributes(FuEngine *self, FuDevice *device)
 	subsystem = fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device));
 	if (g_strcmp0(subsystem, "firmware-attributes") == 0) {
 		g_autoptr(GError) error = NULL;
+		if (added) {
+			g_autoptr(FuBiosSettings) settings =
+			    fu_context_get_bios_settings(self->ctx);
+			g_autoptr(GPtrArray) items = fu_bios_settings_get_all(settings);
+
+			if (items->len > 0) {
+				g_debug("ignoring add event for already loaded settings");
+				return;
+			}
+		}
 		if (!fu_context_reload_bios_settings(self->ctx, &error)) {
 			g_debug("%s", error->message);
 			return;
@@ -6958,7 +6981,7 @@ fu_engine_backend_device_removed_cb(FuBackend *backend, FuDevice *device, FuEngi
 	g_autoptr(GPtrArray) devices = NULL;
 
 	/* if this is for firmware attributes, reload that part of the daemon */
-	fu_engine_check_firmware_attributes(self, device);
+	fu_engine_check_firmware_attributes(self, device, FALSE);
 
 	/* debug */
 	if (g_getenv("FWUPD_PROBE_VERBOSE") != NULL) {
@@ -7101,7 +7124,7 @@ fu_engine_backend_device_added(FuEngine *self, FuDevice *device, FuProgress *pro
 	}
 
 	/* if this is for firmware attributes, reload that part of the daemon */
-	fu_engine_check_firmware_attributes(self, device);
+	fu_engine_check_firmware_attributes(self, device, TRUE);
 
 	/* can be specified using a quirk */
 	fu_engine_backend_device_added_run_plugins(self, device, fu_progress_get_child(progress));
@@ -7554,6 +7577,7 @@ fu_engine_backends_coldplug(FuEngine *self, FuProgress *progress)
 gboolean
 fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GError **error)
 {
+	FuPlugin *plugin_uefi;
 	FuQuirksLoadFlags quirks_flags = FU_QUIRKS_LOAD_FLAG_NONE;
 	GPtrArray *guids;
 	const gchar *host_emulate = g_getenv("FWUPD_HOST_EMULATE");
@@ -7633,6 +7657,15 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	}
 	fu_progress_step_done(progress);
 
+	/* set the hardcoded ESP */
+	if (fu_config_get_esp_location(self->config) != NULL) {
+		g_autoptr(FuVolume) vol = NULL;
+		vol = fu_volume_new_esp_for_path(fu_config_get_esp_location(self->config), error);
+		if (vol == NULL)
+			return FALSE;
+		fu_context_add_esp_volume(self->ctx, vol);
+	}
+
 	/* read remotes */
 	if (flags & FU_ENGINE_LOAD_FLAG_REMOTES) {
 		FuRemoteListLoadFlags remote_list_flags = FU_REMOTE_LIST_LOAD_FLAG_NONE;
@@ -7686,6 +7719,17 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 		return FALSE;
 	}
 	fu_progress_step_done(progress);
+
+	/* migrate per-plugin settings into daemon.conf */
+	plugin_uefi = fu_plugin_list_find_by_name(self->plugin_list, "uefi_capsule", NULL);
+	if (plugin_uefi != NULL) {
+		const gchar *tmp = fu_plugin_get_config_value(plugin_uefi, "OverrideESPMountPoint");
+		if (tmp != NULL && g_strcmp0(tmp, fu_config_get_esp_location(self->config)) != 0) {
+			g_info("migrating OverrideESPMountPoint=%s to EspLocation", tmp);
+			if (!fu_config_set_key_value(self->config, "EspLocation", tmp, error))
+				return FALSE;
+		}
+	}
 
 	/* set up idle exit */
 	if ((flags & FU_ENGINE_LOAD_FLAG_NO_IDLE_SOURCES) == 0)
@@ -7746,6 +7790,14 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "cfu-payload", FU_TYPE_CFU_PAYLOAD);
 	fu_context_add_firmware_gtype(self->ctx, "uswid", FU_TYPE_USWID_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "coswid", FU_TYPE_COSWID_FIRMWARE);
+	fu_context_add_firmware_gtype(self->ctx,
+				      "intel-thunderbolt",
+				      FU_TYPE_INTEL_THUNDERBOLT_FIRMWARE);
+	fu_context_add_firmware_gtype(self->ctx,
+				      "intel-thunderbolt-nvm",
+				      FU_TYPE_INTEL_THUNDERBOLT_NVM);
+	fu_context_add_firmware_gtype(self->ctx, "usb-device-fw-ds20", FU_TYPE_USB_DEVICE_FW_DS20);
+	fu_context_add_firmware_gtype(self->ctx, "usb-device-ms-ds20", FU_TYPE_USB_DEVICE_MS_DS20);
 
 	/* we are emulating a different host */
 	if (host_emulate != NULL) {
@@ -8019,6 +8071,22 @@ fu_engine_idle_status_notify_cb(FuIdle *idle, GParamSpec *pspec, FuEngine *self)
 		fu_engine_set_status(self, status);
 }
 
+gboolean
+fu_engine_backends_save(FuEngine *self, JsonBuilder *json_builder, GError **error)
+{
+	json_builder_begin_object(json_builder);
+	json_builder_set_member_name(json_builder, "Backends");
+	json_builder_begin_array(json_builder);
+	for (guint i = 0; i < self->backends->len; i++) {
+		FuBackend *backend = g_ptr_array_index(self->backends, i);
+		if (!fu_backend_save(backend, json_builder, NULL, FU_BACKEND_SAVE_FLAG_NONE, error))
+			return FALSE;
+	}
+	json_builder_end_array(json_builder);
+	json_builder_end_object(json_builder);
+	return TRUE;
+}
+
 static void
 fu_engine_init(FuEngine *self)
 {
@@ -8085,14 +8153,13 @@ fu_engine_init(FuEngine *self)
 
 	/* backends */
 #ifdef HAVE_GUSB
-	g_ptr_array_add(self->backends, fu_usb_backend_new());
+	g_ptr_array_add(self->backends, fu_usb_backend_new(self->ctx));
 #endif
 #ifdef HAVE_GUDEV
-	g_ptr_array_add(self->backends,
-			fu_udev_backend_new(fu_context_get_udev_subsystems(self->ctx)));
+	g_ptr_array_add(self->backends, fu_udev_backend_new(self->ctx));
 #endif
 #ifdef HAVE_BLUEZ
-	g_ptr_array_add(self->backends, fu_bluez_backend_new());
+	g_ptr_array_add(self->backends, fu_bluez_backend_new(self->ctx));
 #endif
 
 	/* setup Jcat context */

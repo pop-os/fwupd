@@ -647,7 +647,9 @@ fu_volume_new_by_devnum(guint32 devnum, GError **error)
  * fu_volume_new_esp_default:
  * @error: (nullable): optional return location for an error
  *
- * Gets the platform default ESP
+ * Gets the platform default ESP.
+ *
+ * NOTE: This has been deprecated, please use fu_context_get_esp_volumes() instead.
  *
  * Returns: (transfer full): a volume, or %NULL if the ESP was not found
  *
@@ -755,8 +757,11 @@ fu_volume_new_esp_for_path(const gchar *esp_path, GError **error)
 	basename = g_path_get_basename(esp_path);
 	for (guint i = 0; i < volumes->len; i++) {
 		FuVolume *vol = g_ptr_array_index(volumes, i);
-		g_autofree gchar *vol_basename =
-		    g_path_get_basename(fu_volume_get_mount_point(vol));
+		const gchar *mount_point = fu_volume_get_mount_point(vol);
+		g_autofree gchar *vol_basename = NULL;
+		if (mount_point == NULL)
+			continue;
+		vol_basename = g_path_get_basename(mount_point);
 		if (g_strcmp0(basename, vol_basename) == 0)
 			return g_object_ref(vol);
 	}

@@ -36,6 +36,8 @@ fwupdplugin_src = [
   'fu-ifwi-cpd-firmware.c', # fuzzing
   'fu-ifwi-fpt-firmware.c', # fuzzing
   'fu-oprom-firmware.c',    # fuzzing
+  'fu-intel-thunderbolt-nvm.c',         # fuzzing
+  'fu-intel-thunderbolt-firmware.c', # fuzzing
   'fu-cfu-common.c',        # fuzzing
   'fu-cfu-offer.c',         # fuzzing
   'fu-cfu-payload.c',       # fuzzing
@@ -76,6 +78,9 @@ fwupdplugin_src = [
   'fu-i2c-device.c',
   'fu-mei-device.c',
   'fu-usb-device.c',
+  'fu-usb-device-ds20.c',         # fuzzing
+  'fu-usb-device-fw-ds20.c',      # fuzzing
+  'fu-usb-device-ms-ds20.c',      # fuzzing
   'fu-cfi-device.c',
   'fu-hid-device.c',
   'fu-linear-firmware.c',
@@ -128,6 +133,8 @@ fwupdplugin_headers = [
   'fu-ifwi-cpd-firmware.h',
   'fu-ifwi-fpt-firmware.h',
   'fu-oprom-firmware.h',
+  'fu-intel-thunderbolt-firmware.h',
+  'fu-intel-thunderbolt-nvm.h',
   'fu-cfu-common.h',
   'fu-cfu-offer.h',
   'fu-cfu-payload.h',
@@ -189,6 +196,7 @@ fu_hash = custom_target(
 
 fwupdplugin_headers_private = [
   fu_hash,
+  'fu-backend-private.h',
   'fu-context-private.h',
   'fu-device-private.h',
   'fu-kenv.h',
@@ -197,6 +205,9 @@ fwupdplugin_headers_private = [
   'fu-security-attrs-private.h',
   'fu-smbios-private.h',
   'fu-udev-device-private.h',
+  'fu-usb-device-ds20.h',
+  'fu-usb-device-fw-ds20.h',
+  'fu-usb-device-ms-ds20.h',
   'fu-usb-device-private.h',
   fwupdplugin_version_h,
 ]

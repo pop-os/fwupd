@@ -118,12 +118,7 @@ fu_emmc_device_get_sysattr_guint64(GUdevDevice *device,
 
 	sysfs = g_udev_device_get_sysfs_attr(device, name);
 	if (sysfs == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "failed get %s for %s",
-			    name,
-			    sysfs);
+		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "failed get %s", name);
 		return FALSE;
 	}
 
@@ -248,13 +243,14 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 static gboolean
 fu_emmc_read_extcsd(FuEmmcDevice *self, guint8 *ext_csd, gsize ext_csd_sz, GError **error)
 {
-	struct mmc_ioc_cmd idata = {0x0};
-	idata.write_flag = 0;
-	idata.opcode = MMC_SEND_EXT_CSD;
-	idata.arg = 0;
-	idata.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
-	idata.blksz = 512;
-	idata.blocks = 1;
+	struct mmc_ioc_cmd idata = {
+	    .write_flag = 0,
+	    .opcode = MMC_SEND_EXT_CSD,
+	    .arg = 0,
+	    .flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC,
+	    .blksz = 512,
+	    .blocks = 1,
+	};
 	mmc_ioc_cmd_set_data(idata, ext_csd);
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    MMC_IOC_CMD,

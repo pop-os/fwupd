@@ -675,6 +675,63 @@ _plugin_device_added_cb(FuPlugin *plugin, FuDevice *device, gpointer user_data)
 }
 
 static void
+fu_plugin_config_func(void)
+{
+	GStatBuf statbuf = {0};
+	gboolean ret;
+	gint rc;
+	g_autofree gchar *conf_dir = NULL;
+	g_autofree gchar *conf_file = NULL;
+	g_autofree gchar *fn = NULL;
+	g_autofree gchar *testdatadir = NULL;
+	g_autofree gchar *value = NULL;
+	g_autoptr(FuPlugin) plugin = fu_plugin_new(NULL);
+	g_autoptr(GError) error = NULL;
+
+	/* this is a build file */
+	testdatadir = g_test_build_filename(G_TEST_BUILT, "tests", NULL);
+	(void)g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
+	conf_dir = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR_PKG);
+
+	/* remove existing file */
+	fu_plugin_set_name(plugin, "test");
+	conf_file = g_strdup_printf("%s.conf", fu_plugin_get_name(plugin));
+	fn = g_build_filename(conf_dir, conf_file, NULL);
+	ret = fu_path_mkdir_parent(fn, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_remove(fn);
+	ret = g_file_set_contents(fn, "", -1, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* set a value */
+	ret = fu_plugin_set_config_value(plugin, "Key", "True", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_true(g_file_test(fn, G_FILE_TEST_EXISTS));
+
+	/* check it is world readable */
+	rc = g_stat(fn, &statbuf);
+	g_assert_cmpint(rc, ==, 0);
+	g_assert_cmpint(statbuf.st_mode & 0777, ==, 0644);
+
+	/* read back the value */
+	value = fu_plugin_get_config_value(plugin, "Key");
+	g_assert_cmpstr(value, ==, "True");
+	g_assert_true(fu_plugin_get_config_value_boolean(plugin, "Key"));
+
+	/* write it private, i.e. only readable by the user/group */
+	fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_SECURE_CONFIG);
+	ret = fu_plugin_set_config_value(plugin, "Key", "False", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	rc = g_stat(fn, &statbuf);
+	g_assert_cmpint(rc, ==, 0);
+	g_assert_cmpint(statbuf.st_mode & 0777, ==, 0640);
+}
+
+static void
 fu_plugin_devices_func(void)
 {
 	g_autoptr(FuDevice) device = fu_device_new(NULL);
@@ -1103,6 +1160,13 @@ fu_device_func(void)
 	fu_device_add_possible_plugin(device, "test");
 	possible_plugins = fu_device_get_possible_plugins(device);
 	g_assert_cmpint(possible_plugins->len, ==, 1);
+
+	g_assert_cmpint(fu_device_get_backend_tags(device)->len, ==, 0);
+	fu_device_add_backend_tag(device, "foo");
+	fu_device_add_backend_tag(device, "bar");
+	g_assert_cmpint(fu_device_get_backend_tags(device)->len, ==, 2);
+	g_assert_true(fu_device_has_backend_tag(device, "foo"));
+	g_assert_false(fu_device_has_backend_tag(device, "bazbazbazbazbaz"));
 }
 
 static void
@@ -3249,6 +3313,9 @@ fu_firmware_builder_round_trip_func(void)
 	    {FU_TYPE_OPROM_FIRMWARE,
 	     "oprom.builder.xml",
 	     "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"},
+	    {FU_TYPE_INTEL_THUNDERBOLT_NVM,
+	     "intel-thunderbolt.builder.xml",
+	     "e858000646fecb5223b41df57647c005b495749b"},
 #ifdef HAVE_CBOR
 	    {FU_TYPE_USWID_FIRMWARE,
 	     "uswid.builder.xml",
@@ -3588,6 +3655,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/progress{finish}", fu_progress_finish_func);
 	g_test_add_func("/fwupd/bios-attrs{load}", fu_bios_settings_load_func);
 	g_test_add_func("/fwupd/security-attrs{hsi}", fu_security_attrs_hsi_func);
+	g_test_add_func("/fwupd/plugin{config}", fu_plugin_config_func);
 	g_test_add_func("/fwupd/plugin{devices}", fu_plugin_devices_func);
 	g_test_add_func("/fwupd/plugin{device-inhibit-children}",
 			fu_plugin_device_inhibit_children_func);

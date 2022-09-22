@@ -2910,6 +2910,15 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(GPtrArray) events_array = NULL;
 	g_autofree gchar *str = NULL;
 
+#ifndef HAVE_HSI
+	g_set_error(error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
+		    /* TRANSLATORS: error message for unsupported feature */
+		    _("Host Security ID (HSI) is not supported"));
+	return FALSE;
+#endif /* HAVE_HSI */
+
 	if (!fu_util_start_engine(priv,
 				  FU_ENGINE_LOAD_FLAG_COLDPLUG | FU_ENGINE_LOAD_FLAG_HWINFO |
 				      FU_ENGINE_LOAD_FLAG_REMOTES,
@@ -2987,39 +2996,19 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static FuVolume *
-fu_util_prompt_for_volume(GError **error)
+fu_util_prompt_for_volume(FuUtilPrivate *priv, GError **error)
 {
+	FuContext *ctx = fu_engine_get_context(priv->engine);
 	FuVolume *volume;
 	guint idx;
-	gboolean is_fallback = FALSE;
 	g_autoptr(GPtrArray) volumes = NULL;
-	g_autoptr(GPtrArray) volumes_vfat = g_ptr_array_new();
-	g_autoptr(GError) error_local = NULL;
 
 	/* exactly one */
-	volumes = fu_volume_new_by_kind(FU_VOLUME_KIND_ESP, &error_local);
-	if (volumes == NULL) {
-		is_fallback = TRUE;
-		g_debug("%s, falling back to %s", error_local->message, FU_VOLUME_KIND_BDP);
-		volumes = fu_volume_new_by_kind(FU_VOLUME_KIND_BDP, error);
-		if (volumes == NULL) {
-			g_prefix_error(error, "%s: ", error_local->message);
-			return NULL;
-		}
-	}
-	/* on fallback: only add internal vfat partitions */
-	for (guint i = 0; i < volumes->len; i++) {
-		FuVolume *vol = g_ptr_array_index(volumes, i);
-		g_autofree gchar *type = fu_volume_get_id_type(vol);
-		if (type == NULL)
-			continue;
-		if (is_fallback && !fu_volume_is_internal(vol))
-			continue;
-		if (g_strcmp0(type, "vfat") == 0)
-			g_ptr_array_add(volumes_vfat, vol);
-	}
-	if (volumes_vfat->len == 1) {
-		volume = g_ptr_array_index(volumes_vfat, 0);
+	volumes = fu_context_get_esp_volumes(ctx, error);
+	if (volumes == NULL)
+		return NULL;
+	if (volumes->len == 1) {
+		volume = g_ptr_array_index(volumes, 0);
 		/* TRANSLATORS: Volume has been chosen by the user */
 		g_print("%s: %s\n", _("Selected volume"), fu_volume_get_id(volume));
 		return g_object_ref(volume);
@@ -3029,11 +3018,11 @@ fu_util_prompt_for_volume(GError **error)
 	g_print("%s\n", _("Choose a volume:"));
 	/* TRANSLATORS: this is to abort the interactive prompt */
 	g_print("0.\t%s\n", _("Cancel"));
-	for (guint i = 0; i < volumes_vfat->len; i++) {
-		volume = g_ptr_array_index(volumes_vfat, i);
+	for (guint i = 0; i < volumes->len; i++) {
+		volume = g_ptr_array_index(volumes, i);
 		g_print("%u.\t%s\n", i + 1, fu_volume_get_id(volume));
 	}
-	idx = fu_util_prompt_for_number(volumes_vfat->len);
+	idx = fu_util_prompt_for_number(volumes->len);
 	if (idx == 0) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -3041,7 +3030,7 @@ fu_util_prompt_for_volume(GError **error)
 				    "Request canceled");
 		return NULL;
 	}
-	volume = g_ptr_array_index(volumes_vfat, idx - 1);
+	volume = g_ptr_array_index(volumes, idx - 1);
 	return g_object_ref(volume);
 }
 
@@ -3049,7 +3038,7 @@ static gboolean
 fu_util_esp_mount(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FuVolume) volume = NULL;
-	volume = fu_util_prompt_for_volume(error);
+	volume = fu_util_prompt_for_volume(priv, error);
 	if (volume == NULL)
 		return FALSE;
 	return fu_volume_mount(volume, error);
@@ -3059,7 +3048,7 @@ static gboolean
 fu_util_esp_unmount(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FuVolume) volume = NULL;
-	volume = fu_util_prompt_for_volume(error);
+	volume = fu_util_prompt_for_volume(priv, error);
 	if (volume == NULL)
 		return FALSE;
 	return fu_volume_unmount(volume, error);
@@ -3073,7 +3062,7 @@ fu_util_esp_list(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FuVolume) volume = NULL;
 	g_autoptr(GPtrArray) files = NULL;
 
-	volume = fu_util_prompt_for_volume(error);
+	volume = fu_util_prompt_for_volume(priv, error);
 	if (volume == NULL)
 		return FALSE;
 	locker = fu_volume_locker(volume, error);
@@ -3359,6 +3348,34 @@ fu_util_setup_interactive(FuUtilPrivate *priv, GError **error)
 	return fu_util_setup_interactive_console(error);
 }
 
+static gboolean
+fu_util_backends_save(FuUtilPrivate *priv, const gchar *fn, GError **error)
+{
+	g_autofree gchar *data = NULL;
+	g_autoptr(JsonBuilder) json_builder = json_builder_new();
+	g_autoptr(JsonGenerator) json_generator = NULL;
+	g_autoptr(JsonNode) json_root = NULL;
+
+	/* export as a string */
+	if (!fu_engine_backends_save(priv->engine, json_builder, error))
+		return FALSE;
+	json_root = json_builder_get_root(json_builder);
+	json_generator = json_generator_new();
+	json_generator_set_pretty(json_generator, TRUE);
+	json_generator_set_root(json_generator, json_root);
+	data = json_generator_to_data(json_generator, NULL);
+	if (data == NULL) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_INVALID_DATA,
+				    "Failed to convert to JSON string");
+		return FALSE;
+	}
+
+	/* save to file */
+	return g_file_set_contents(fn, data, -1, error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -3377,6 +3394,7 @@ main(int argc, char *argv[])
 	g_autoptr(GPtrArray) cmd_array = fu_util_cmd_array_new();
 	g_autofree gchar *cmd_descriptions = NULL;
 	g_autofree gchar *filter = NULL;
+	g_autofree gchar *save_backends_fn = NULL;
 	const GOptionEntry options[] = {
 	    {"version",
 	     '\0',
@@ -3523,6 +3541,15 @@ main(int argc, char *argv[])
 	     N_("Filter with a set of device flags using a ~ prefix to "
 		"exclude, e.g. 'internal,~needs-reboot'"),
 	     NULL},
+	    {"save-backends",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_STRING,
+	     &save_backends_fn,
+	     /* TRANSLATORS: command line option */
+	     N_("Specify a filename to use to save backend events"),
+	     /* TRANSLATORS: filename argument with path */
+	     N_("FILENAME")},
 	    {"json",
 	     '\0',
 	     0,
@@ -3959,6 +3986,10 @@ main(int argc, char *argv[])
 
 	/* load engine */
 	priv->engine = fu_engine_new();
+	if (save_backends_fn != NULL) {
+		fu_context_add_flag(fu_engine_get_context(priv->engine),
+				    FU_CONTEXT_FLAG_SAVE_EVENTS);
+	}
 	g_signal_connect(FU_ENGINE(priv->engine),
 			 "device-request",
 			 G_CALLBACK(fu_util_update_device_request_cb),
@@ -4014,6 +4045,12 @@ main(int argc, char *argv[])
 			g_printerr("%s\n", _("NOTE: This program may only work correctly as root"));
 		}
 #endif
+		return EXIT_FAILURE;
+	}
+
+	/* dump devices */
+	if (save_backends_fn != NULL && !fu_util_backends_save(priv, save_backends_fn, &error)) {
+		g_printerr("%s\n", error->message);
 		return EXIT_FAILURE;
 	}
 

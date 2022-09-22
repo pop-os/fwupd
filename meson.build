@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.8.4',
+  version: '1.8.5',
   license: 'LGPL-2.1+',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c99'],
@@ -273,11 +273,7 @@ if libgcab.type_name() == 'pkgconfig' and cc.has_function('gcab_file_set_bytes',
 endif
 
 bashcomp = dependency('bash-completion', required: false)
-if host_machine.system() != 'freebsd'
-  python3 = find_program('python3')
-else
-  python3 = find_program('python3.8', 'python3', 'python3.9')
-endif
+python3 = import('python').find_installation('python3')
 
 gnutls = dependency('gnutls', version: '>= 3.6.0', required: get_option('gnutls'))
 if gnutls.found()
@@ -540,16 +536,21 @@ protoc = find_program('protoc', 'protoc-c', required: get_option('plugin_logitec
 root_incdir = include_directories('.')
 
 fwupd_gir = []
-introspection = get_option('introspection').disable_auto_if(host_machine.system() != 'linux')
-r = run_command([python3, 'docs/test-deps.py'])
-docs_python_deps = get_option('docs').require(r.returncode() == 0, error_message: r.stdout())
+gir_dep = dependency('gobject-introspection-1.0', required: get_option('introspection'))
+introspection = get_option('introspection').disable_auto_if(host_machine.system() != 'linux').disable_auto_if(not gir_dep.found())
+
+markdown_version = run_command(
+  python3, '-c', 'import markdown; print(markdown.__version__)'
+).stdout().strip()
+docs_python_deps = get_option('docs').require(markdown_version.version_compare('>=3.2'),
+						error_message: 'docs=enabled requires at least markdown >= 3.2')
 gidocgen_dep = dependency('gi-docgen',
   version: '>= 2021.1',
   native: true,
   fallback: ['gi-docgen', 'dummy_dep'],
   required: docs_python_deps,
 )
-gidocgen_app = find_program('gi-docgen', required: get_option('docs'))
+gidocgen_app = find_program('gi-docgen', required: docs_python_deps)
 
 # using "meson configure -Db_sanitize=address,undefined" is super useful in finding corruption,
 # but it does not work with our GMainContext-abuse tests...

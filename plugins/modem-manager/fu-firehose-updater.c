@@ -598,9 +598,7 @@ fu_firehose_updater_actions_validate(GPtrArray *action_nodes,
 			g_set_error(error,
 				    G_IO_ERROR,
 				    G_IO_ERROR_FAILED,
-				    "Failed to validate program file '%s' command: "
-				    "failed to get %s",
-				    program_filename,
+				    "Failed to validate program file: failed to get %s",
 				    name);
 			return FALSE;
 		}
@@ -610,9 +608,7 @@ fu_firehose_updater_actions_validate(GPtrArray *action_nodes,
 			g_set_error(error,
 				    G_IO_ERROR,
 				    G_IO_ERROR_FAILED,
-				    "Failed to validate program file '%s' command: "
-				    "failed to get %s",
-				    program_filename,
+				    "Failed to validate program file: failed to get %s",
 				    name);
 			return FALSE;
 		}
@@ -695,9 +691,9 @@ fu_firehose_updater_run_action_program(FuFirehoseUpdater *self,
 	while ((payload_size + (guint)program_sector_size) <= max_payload_size)
 		payload_size += (guint)program_sector_size;
 
-	g_debug("sending program file '%s' (%zu bytes)",
+	g_debug("sending program file '%s' (0x%x bytes)",
 		program_filename,
-		g_bytes_get_size(program_file));
+		(guint)g_bytes_get_size(program_file));
 	if (!fu_firehose_updater_send_program_file(self,
 						   program_filename,
 						   program_file,

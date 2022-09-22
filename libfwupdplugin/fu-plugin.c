@@ -9,6 +9,7 @@
 #include "config.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <fwupd.h>
 #include <glib/gstdio.h>
 #include <gmodule.h>
@@ -82,6 +83,9 @@ typedef gboolean (*FuPluginFlaggedDeviceFunc)(FuPlugin *self,
 					      FwupdInstallFlags flags,
 					      GError **error);
 typedef gboolean (*FuPluginDeviceArrayFunc)(FuPlugin *self, GPtrArray *devices, GError **error);
+
+#define FU_PLUGIN_FILE_MODE_NONSECURE 0644
+#define FU_PLUGIN_FILE_MODE_SECURE    0640
 
 /**
  * fu_plugin_is_open:
@@ -298,6 +302,14 @@ fu_plugin_guess_name_from_fn(const gchar *filename)
 	return name;
 }
 
+static gchar *
+fu_plugin_get_config_filename(FuPlugin *self)
+{
+	g_autofree gchar *conf_dir = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR_PKG);
+	g_autofree gchar *conf_file = g_strdup_printf("%s.conf", fu_plugin_get_name(self));
+	return g_build_filename(conf_dir, conf_file, NULL);
+}
+
 /**
  * fu_plugin_open:
  * @self: a #FuPlugin
@@ -352,6 +364,23 @@ fu_plugin_open(FuPlugin *self, const gchar *filename, GError **error)
 	if (fu_plugin_get_name(self) == NULL) {
 		g_autofree gchar *str = fu_plugin_guess_name_from_fn(filename);
 		fu_plugin_set_name(self, str);
+	}
+
+	/* ensure the configure file is set to the correct permission */
+	if (fu_plugin_has_flag(self, FWUPD_PLUGIN_FLAG_SECURE_CONFIG)) {
+		g_autofree gchar *conf_path = fu_plugin_get_config_filename(self);
+		if (g_file_test(conf_path, G_FILE_TEST_EXISTS)) {
+			gint rc = g_chmod(conf_path, FU_PLUGIN_FILE_MODE_SECURE);
+			if (rc != 0) {
+				g_set_error(error,
+					    G_IO_ERROR,
+					    G_IO_ERROR_FAILED,
+					    "failed to change permission of %s",
+					    filename);
+				fu_plugin_add_flag(self, FWUPD_PLUGIN_FLAG_FAILED_OPEN);
+				return FALSE;
+			}
+		}
 	}
 
 	/* optional */
@@ -499,14 +528,6 @@ fu_plugin_config_monitor_changed_cb(GFileMonitor *monitor,
 	g_autofree gchar *fn = g_file_get_path(file);
 	g_debug("%s changed, sending signal", fn);
 	g_signal_emit(self, signals[SIGNAL_CONFIG_CHANGED], 0);
-}
-
-static gchar *
-fu_plugin_get_config_filename(FuPlugin *self)
-{
-	g_autofree gchar *conf_dir = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR_PKG);
-	g_autofree gchar *conf_file = g_strdup_printf("%s.conf", fu_plugin_get_name(self));
-	return g_build_filename(conf_dir, conf_file, NULL);
 }
 
 /**
@@ -1226,6 +1247,7 @@ fu_plugin_runner_prepare(FuPlugin *self,
 			 GError **error)
 {
 	FuPluginVfuncs *vfuncs = fu_plugin_get_vfuncs(self);
+	fu_device_add_backend_tag(device, "prepare");
 	return fu_plugin_runner_flagged_device_generic(self,
 						       device,
 						       progress,
@@ -1257,6 +1279,7 @@ fu_plugin_runner_cleanup(FuPlugin *self,
 			 GError **error)
 {
 	FuPluginVfuncs *vfuncs = fu_plugin_get_vfuncs(self);
+	fu_device_add_backend_tag(device, "cleanup");
 	return fu_plugin_runner_flagged_device_generic(self,
 						       device,
 						       progress,
@@ -1283,6 +1306,7 @@ gboolean
 fu_plugin_runner_attach(FuPlugin *self, FuDevice *device, FuProgress *progress, GError **error)
 {
 	FuPluginVfuncs *vfuncs = fu_plugin_get_vfuncs(self);
+	fu_device_add_backend_tag(device, "attach");
 	return fu_plugin_runner_device_generic_progress(
 	    self,
 	    device,
@@ -1309,6 +1333,7 @@ gboolean
 fu_plugin_runner_detach(FuPlugin *self, FuDevice *device, FuProgress *progress, GError **error)
 {
 	FuPluginVfuncs *vfuncs = fu_plugin_get_vfuncs(self);
+	fu_device_add_backend_tag(device, "detach");
 	return fu_plugin_runner_device_generic_progress(
 	    self,
 	    device,
@@ -1344,6 +1369,7 @@ fu_plugin_runner_reload(FuPlugin *self, FuDevice *device, GError **error)
 	locker = fu_device_locker_new(proxy, error);
 	if (locker == NULL)
 		return FALSE;
+	fu_device_add_backend_tag(device, "reload");
 	return fu_device_reload(device, error);
 }
 
@@ -1917,6 +1943,7 @@ fu_plugin_runner_activate(FuPlugin *self, FuDevice *device, FuProgress *progress
 	}
 
 	/* run vfunc */
+	fu_device_add_backend_tag(device, "activate");
 	if (!fu_plugin_runner_device_generic_progress(
 		self,
 		device,
@@ -1966,6 +1993,7 @@ fu_plugin_runner_unlock(FuPlugin *self, FuDevice *device, GError **error)
 	}
 
 	/* run vfunc */
+	fu_device_add_backend_tag(device, "unlock");
 	if (!fu_plugin_runner_device_generic(self,
 					     device,
 					     "fu_plugin_unlock",
@@ -2015,6 +2043,7 @@ fu_plugin_runner_write_firmware(FuPlugin *self,
 		g_debug("plugin not enabled, skipping");
 		return TRUE;
 	}
+	fu_device_add_backend_tag(device, "write-firmware");
 
 	/* optional */
 	if (vfuncs->write_firmware == NULL) {
@@ -2379,6 +2408,108 @@ fu_plugin_security_attr_new(FuPlugin *self, const gchar *appstream_id)
 	return g_steal_pointer(&attr);
 }
 
+#if !GLIB_CHECK_VERSION(2, 66, 0)
+
+#define G_FILE_SET_CONTENTS_CONSISTENT 0
+typedef guint GFileSetContentsFlags;
+static gboolean
+g_file_set_contents_full(const gchar *filename,
+			 const gchar *contents,
+			 gssize length,
+			 GFileSetContentsFlags flags,
+			 int mode,
+			 GError **error)
+{
+	gint fd;
+	gssize wrote;
+
+	if (length < 0)
+		length = strlen(contents);
+	fd = g_open(filename, O_CREAT, mode);
+	if (fd <= 0) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_FAILED,
+			    "could not open %s file",
+			    filename);
+		return FALSE;
+	}
+	wrote = write(fd, contents, length);
+	if (wrote != length) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_FAILED,
+			    "did not write %s file",
+			    filename);
+		g_close(fd, NULL);
+		return FALSE;
+	}
+	return g_close(fd, error);
+}
+#endif
+
+static gboolean
+fu_plugin_set_config_value_internal(FuPlugin *self,
+				    const gchar *key,
+				    const gchar *value,
+				    guint32 mode,
+				    GError **error)
+{
+	g_autofree gchar *conf_path = fu_plugin_get_config_filename(self);
+	g_autofree gchar *data = NULL;
+	g_autoptr(GKeyFile) keyfile = g_key_file_new();
+
+	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	if (!g_file_test(conf_path, G_FILE_TEST_EXISTS)) {
+		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "%s is missing", conf_path);
+		return FALSE;
+	}
+	if (!g_key_file_load_from_file(keyfile, conf_path, G_KEY_FILE_KEEP_COMMENTS, error))
+		return FALSE;
+	g_key_file_set_string(keyfile, fu_plugin_get_name(self), key, value);
+	data = g_key_file_to_data(keyfile, NULL, error);
+	if (data == NULL)
+		return FALSE;
+	return g_file_set_contents_full(conf_path,
+					data,
+					-1,
+					G_FILE_SET_CONTENTS_CONSISTENT,
+					mode,
+					error);
+}
+
+/**
+ * fu_plugin_set_secure_config_value:
+ * @self: a #FuPlugin
+ * @key: a settings key
+ * @value: (nullable): a settings value
+ * @error: (nullable): optional return location for an error
+ *
+ * Sets a plugin config file value and updates file so that non-privileged users
+ * cannot read it.
+ *
+ * This function is deprecated, and you should use `FWUPD_PLUGIN_FLAG_SECURE_CONFIG` and
+ * fu_plugin_set_config_value() instead.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.7.4
+ **/
+gboolean
+fu_plugin_set_secure_config_value(FuPlugin *self,
+				  const gchar *key,
+				  const gchar *value,
+				  GError **error)
+{
+	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
+	g_return_val_if_fail(key != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+	fu_plugin_add_flag(self, FWUPD_PLUGIN_FLAG_SECURE_CONFIG);
+	return fu_plugin_set_config_value(self, key, value, error);
+}
+
 /**
  * fu_plugin_set_config_value:
  * @self: a #FuPlugin
@@ -2395,61 +2526,23 @@ fu_plugin_security_attr_new(FuPlugin *self, const gchar *appstream_id)
 gboolean
 fu_plugin_set_config_value(FuPlugin *self, const gchar *key, const gchar *value, GError **error)
 {
-	g_autofree gchar *conf_path = fu_plugin_get_config_filename(self);
-	g_autoptr(GKeyFile) keyfile = NULL;
-
 	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
 	g_return_val_if_fail(key != NULL, FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
-	keyfile = g_key_file_new();
-	if (!g_key_file_load_from_file(keyfile, conf_path, G_KEY_FILE_KEEP_COMMENTS, error))
-		return FALSE;
-	g_key_file_set_string(keyfile, fu_plugin_get_name(self), key, value);
-	return g_key_file_save_to_file(keyfile, conf_path, error);
-}
-
-/**
- * fu_plugin_set_secure_config_value:
- * @self: a #FuPlugin
- * @key: a settings key
- * @value: (nullable): a settings value
- * @error: (nullable): optional return location for an error
- *
- * Sets a plugin config file value and updates file so that non-privileged users
- * cannot read it.
- *
- * Returns: %TRUE for success
- *
- * Since: 1.7.4
- **/
-gboolean
-fu_plugin_set_secure_config_value(FuPlugin *self,
-				  const gchar *key,
-				  const gchar *value,
-				  GError **error)
-{
-	g_autofree gchar *conf_path = fu_plugin_get_config_filename(self);
-	gint ret;
-
-	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
-	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
-
-	if (!g_file_test(conf_path, G_FILE_TEST_EXISTS)) {
-		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "%s is missing", conf_path);
-		return FALSE;
+	/* when removing fu_plugin_set_secure_config_value() just remove this instead */
+	if (fu_plugin_has_flag(self, FWUPD_PLUGIN_FLAG_SECURE_CONFIG)) {
+		return fu_plugin_set_config_value_internal(self,
+							   key,
+							   value,
+							   FU_PLUGIN_FILE_MODE_SECURE,
+							   error);
 	}
-	ret = g_chmod(conf_path, 0660);
-	if (ret == -1) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "failed to set permissions on %s",
-			    conf_path);
-		return FALSE;
-	}
-
-	return fu_plugin_set_config_value(self, key, value, error);
+	return fu_plugin_set_config_value_internal(self,
+						   key,
+						   value,
+						   FU_PLUGIN_FILE_MODE_NONSECURE,
+						   error);
 }
 
 /**
