@@ -61,6 +61,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.8.2@LIBFWUPD_1.8.2 1.8.2
  LIBFWUPD_1.8.3@LIBFWUPD_1.8.3 1.8.3
  LIBFWUPD_1.8.4@LIBFWUPD_1.8.4 1.8.4
+ LIBFWUPD_1.8.6@LIBFWUPD_1.8.6 1.8.6
  fwupd_bios_setting_add_possible_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_array_from_variant@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_from_json@LIBFWUPD_1.8.4 1.8.4
@@ -524,19 +525,26 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_remote_setup@LIBFWUPD_1.6.1 1.6.1
  fwupd_remote_to_json@LIBFWUPD_1.6.2 1.6.2
  fwupd_remote_to_variant@LIBFWUPD_1.0.0 1.0.0
+ fwupd_request_add_flag@LIBFWUPD_1.8.6 1.8.6
+ fwupd_request_flag_from_string@LIBFWUPD_1.8.6 1.8.6
+ fwupd_request_flag_to_string@LIBFWUPD_1.8.6 1.8.6
  fwupd_request_from_variant@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_get_created@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_get_device_id@LIBFWUPD_1.6.2 1.6.2
+ fwupd_request_get_flags@LIBFWUPD_1.8.6 1.8.6
  fwupd_request_get_id@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_get_image@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_get_kind@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_get_message@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_get_type@LIBFWUPD_1.6.2 1.6.2
+ fwupd_request_has_flag@LIBFWUPD_1.8.6 1.8.6
  fwupd_request_kind_from_string@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_kind_to_string@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_new@LIBFWUPD_1.6.2 1.6.2
+ fwupd_request_remove_flag@LIBFWUPD_1.8.6 1.8.6
  fwupd_request_set_created@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_set_device_id@LIBFWUPD_1.6.2 1.6.2
+ fwupd_request_set_flags@LIBFWUPD_1.8.6 1.8.6
  fwupd_request_set_id@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_set_image@LIBFWUPD_1.6.2 1.6.2
  fwupd_request_set_kind@LIBFWUPD_1.6.2 1.6.2
