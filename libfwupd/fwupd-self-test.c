@@ -170,7 +170,7 @@ fwupd_enums_func(void)
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_device_problem_from_string(tmp), ==, i);
 	}
-	for (guint64 i = 1; i <= FWUPD_PLUGIN_FLAG_SECURE_CONFIG; i *= 2) {
+	for (guint64 i = 1; i <= FWUPD_PLUGIN_FLAG_MODULAR; i *= 2) {
 		const gchar *tmp = fwupd_plugin_flag_to_string(i);
 		if (tmp == NULL)
 			g_warning("missing plugin flag 0x%x", (guint)i);
@@ -197,6 +197,13 @@ fwupd_enums_func(void)
 			g_warning("missing release flag 0x%x", (guint)i);
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_release_flag_from_string(tmp), ==, i);
+	}
+	for (guint64 i = 1; i <= FWUPD_REQUEST_FLAG_NONE; i *= 2) {
+		const gchar *tmp = fwupd_request_flag_to_string(i);
+		if (tmp == NULL)
+			g_warning("missing request flag 0x%x", (guint)i);
+		g_assert_cmpstr(tmp, !=, NULL);
+		g_assert_cmpint(fwupd_request_flag_from_string(tmp), ==, i);
 	}
 	for (guint i = 1; i < FWUPD_KEYRING_KIND_LAST; i++) {
 		const gchar *tmp = fwupd_keyring_kind_to_string(i);
@@ -762,11 +769,20 @@ fwupd_request_func(void)
 	/* create dummy */
 	fwupd_request_set_kind(request, FWUPD_REQUEST_KIND_IMMEDIATE);
 	fwupd_request_set_id(request, FWUPD_REQUEST_ID_REMOVE_REPLUG);
+	fwupd_request_add_flag(request, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
 	fwupd_request_set_message(request, "foo");
 	fwupd_request_set_image(request, "bar");
 	fwupd_request_set_device_id(request, "950da62d4c753a26e64f7f7d687104ce38e32ca5");
 	str = fwupd_request_to_string(request);
 	g_debug("%s", str);
+
+	g_assert_true(fwupd_request_has_flag(request, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE));
+	g_assert_cmpint(fwupd_request_get_flags(request),
+			==,
+			FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
+	fwupd_request_remove_flag(request, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
+	g_assert_false(fwupd_request_has_flag(request, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE));
+	g_assert_cmpint(fwupd_request_get_flags(request), ==, FWUPD_REQUEST_FLAG_NONE);
 
 	/* set in init */
 	g_assert_cmpint(fwupd_request_get_created(request), >, 0);
@@ -983,6 +999,7 @@ fwupd_client_devices_func(void)
 	/* only run if running fwupd is new enough */
 	ret = fwupd_client_connect(client, NULL, &error);
 	if (ret == FALSE && (g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_TIMED_OUT) ||
+			     g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_NAME_HAS_NO_OWNER) ||
 			     g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN))) {
 		g_debug("%s", error->message);
 		g_test_skip("timeout connecting to daemon");
@@ -1038,6 +1055,7 @@ fwupd_client_remotes_func(void)
 	/* only run if running fwupd is new enough */
 	ret = fwupd_client_connect(client, NULL, &error);
 	if (ret == FALSE && (g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_TIMED_OUT) ||
+			     g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_NAME_HAS_NO_OWNER) ||
 			     g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN))) {
 		g_debug("%s", error->message);
 		g_test_skip("timeout connecting to daemon");
@@ -1176,8 +1194,8 @@ fwupd_common_guid_func(void)
 				     &buf,
 				     FWUPD_GUID_FLAG_NONE,
 				     &error);
-	g_assert_true(ret);
 	g_assert_no_error(error);
+	g_assert_true(ret);
 	g_assert_cmpint(memcmp(buf,
 			       "\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff",
 			       sizeof(buf)),
@@ -1191,8 +1209,8 @@ fwupd_common_guid_func(void)
 				     &buf,
 				     FWUPD_GUID_FLAG_MIXED_ENDIAN,
 				     &error);
-	g_assert_true(ret);
 	g_assert_no_error(error);
+	g_assert_true(ret);
 	g_assert_cmpint(memcmp(buf,
 			       "\x33\x22\x11\x00\x55\x44\x77\x66\x88\x99\xaa\xbb\xcc\xdd\xee\xff",
 			       sizeof(buf)),

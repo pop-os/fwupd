@@ -1374,6 +1374,10 @@ fu_util_device_problem_to_string(FwupdClient *client, FwupdDevice *dev, FwupdDev
 		/* TRANSLATORS: emulated means we are pretending to be a different model */
 		return g_strdup(_("Device is emulated"));
 	}
+	if (problem == FWUPD_DEVICE_PROBLEM_MISSING_LICENSE) {
+		/* TRANSLATORS: The device cannot be updated due to missing vendor's license." */
+		return g_strdup(_("Device requires a software license to update"));
+	}
 	return NULL;
 }
 
@@ -1694,6 +1698,10 @@ fu_util_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		/* TRANSLATORS: no peeking */
 		return _("Configuration is only readable by the system administrator");
 	}
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_MODULAR) {
+		/* TRANSLATORS: the plugin was created from a .so object, and was not built-in */
+		return _("Loaded from an external module");
+	}
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_EFIVAR_NOT_MOUNTED) {
 		/* TRANSLATORS: the user is using Gentoo/Arch and has screwed something up */
 		return _("Required efivarfs filesystem was not found");
@@ -1725,6 +1733,7 @@ fu_util_plugin_flag_to_cli_text(FwupdPluginFlags plugin_flag)
 		return NULL;
 	case FWUPD_PLUGIN_FLAG_NONE:
 	case FWUPD_PLUGIN_FLAG_REQUIRE_HWID:
+	case FWUPD_PLUGIN_FLAG_MODULAR:
 		return fu_util_term_format(fu_util_plugin_flag_to_string(plugin_flag),
 					   FU_UTIL_TERM_COLOR_GREEN);
 	case FWUPD_PLUGIN_FLAG_DISABLED:
@@ -2157,6 +2166,33 @@ fu_util_remote_to_string(FwupdRemote *remote, guint idt)
 	}
 
 	return g_string_free(g_steal_pointer(&str), FALSE);
+}
+
+const gchar *
+fu_util_request_get_message(FwupdRequest *req)
+{
+	if (fwupd_request_has_flag(req, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE)) {
+		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_REMOVE_REPLUG) == 0) {
+			/* TRANSLATORS: warning message shown after update has been scheduled */
+			return _("The update will continue when the device USB cable has been "
+				 "unplugged and then re-inserted.");
+		}
+		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_REMOVE_USB_CABLE) == 0) {
+			/* TRANSLATORS: warning message shown after update has been scheduled */
+			return _("The update will continue when the device USB cable has been "
+				 "unplugged.");
+		}
+		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_PRESS_UNLOCK) == 0) {
+			/* TRANSLATORS: warning message */
+			return _("Press unlock on the device to continue the update process.");
+		}
+		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_DO_NOT_POWER_OFF) == 0) {
+			/* TRANSLATORS: warning message shown after update has been scheduled */
+			return _("Do not turn off your computer or remove the AC adaptor "
+				 "while the update is in progress.");
+		}
+	}
+	return fwupd_request_get_message(req);
 }
 
 static void

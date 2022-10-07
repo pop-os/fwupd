@@ -12,6 +12,10 @@
 
 FuPlugin *
 fu_plugin_new(FuContext *ctx);
+FuPlugin *
+fu_plugin_new_from_gtype(GType gtype, FuContext *ctx);
+void
+fu_plugin_set_context(FuPlugin *self, FuContext *ctx);
 gboolean
 fu_plugin_is_open(FuPlugin *self);
 guint
@@ -22,14 +26,10 @@ guint
 fu_plugin_get_priority(FuPlugin *self);
 void
 fu_plugin_set_priority(FuPlugin *self, guint priority);
-void
-fu_plugin_set_name(FuPlugin *self, const gchar *name);
 gchar *
 fu_plugin_to_string(FuPlugin *self);
 void
 fu_plugin_add_string(FuPlugin *self, guint idt, GString *str);
-const gchar *
-fu_plugin_get_build_hash(FuPlugin *self);
 GPtrArray *
 fu_plugin_get_rules(FuPlugin *self, FuPluginRule rule);
 gboolean
@@ -79,6 +79,7 @@ fu_plugin_runner_reload(FuPlugin *self, FuDevice *device, GError **error) G_GNUC
 gboolean
 fu_plugin_runner_backend_device_added(FuPlugin *self,
 				      FuDevice *device,
+				      FuProgress *progress,
 				      GError **error) G_GNUC_WARN_UNUSED_RESULT;
 gboolean
 fu_plugin_runner_backend_device_changed(FuPlugin *self,

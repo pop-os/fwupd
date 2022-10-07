@@ -16,19 +16,14 @@
 #include "fu-plugin-private.h"
 #include "fu-redfish-common.h"
 #include "fu-redfish-network.h"
+#include "fu-redfish-plugin.h"
+#include "fu-redfish-smc-device.h"
 
 typedef struct {
 	FuPlugin *plugin;
+	FuPlugin *smc_plugin;
+	FuPlugin *unlicensed_plugin;
 } FuTest;
-
-static gboolean
-fu_test_is_installed_test(void)
-{
-	const gchar *builddir = g_getenv("G_TEST_BUILDDIR");
-	if (builddir == NULL)
-		return FALSE;
-	return g_str_has_prefix(builddir, FWUPD_PREFIX);
-}
 
 static void
 fu_test_self_init(FuTest *self)
@@ -37,7 +32,6 @@ fu_test_self_init(FuTest *self)
 	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
-	g_autofree gchar *pluginfn = NULL;
 
 	ret = fu_context_load_quirks(ctx,
 				     FU_QUIRKS_LOAD_FLAG_NO_CACHE | FU_QUIRKS_LOAD_FLAG_NO_VERIFY,
@@ -45,31 +39,50 @@ fu_test_self_init(FuTest *self)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	self->plugin = fu_plugin_new(ctx);
-
-	/* running as an installed test */
-	if (fu_test_is_installed_test()) {
-		g_autofree gchar *plugindir = fu_path_from_kind(FU_PATH_KIND_PLUGINDIR_PKG);
-		pluginfn =
-		    g_build_filename(plugindir, "libfu_plugin_redfish." G_MODULE_SUFFIX, NULL);
-	} else {
-		pluginfn = g_test_build_filename(G_TEST_BUILT,
-						 "libfu_plugin_redfish." G_MODULE_SUFFIX,
-						 NULL);
-	}
-	ret = fu_plugin_open(self->plugin, pluginfn, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
+	/* generic BMC */
+	self->plugin = fu_plugin_new_from_gtype(fu_redfish_plugin_get_type(), ctx);
 	ret = fu_plugin_runner_startup(self->plugin, progress, &error);
 	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE)) {
 		g_test_skip("no redfish.py running");
-		return;
+		g_clear_error(&error);
+	} else {
+		g_assert_no_error(error);
+		g_assert_true(ret);
+		ret = fu_plugin_runner_coldplug(self->plugin, progress, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
 	}
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = fu_plugin_runner_coldplug(self->plugin, progress, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
+
+	/* supermicro BMC */
+	self->smc_plugin = fu_plugin_new_from_gtype(fu_redfish_plugin_get_type(), ctx);
+	ret = fu_plugin_runner_startup(self->smc_plugin, progress, &error);
+	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE)) {
+		g_test_skip("no redfish.py running");
+		g_clear_error(&error);
+	} else {
+		g_assert_no_error(error);
+		g_assert_true(ret);
+		fu_redfish_plugin_set_credentials(self->smc_plugin, "smc_username", "password2");
+		ret = fu_plugin_runner_coldplug(self->smc_plugin, progress, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
+	}
+
+	/* unlicensed supermicro BMC */
+	self->unlicensed_plugin = fu_plugin_new_from_gtype(fu_redfish_plugin_get_type(), ctx);
+	ret = fu_plugin_runner_startup(self->unlicensed_plugin, progress, &error);
+	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE)) {
+		g_test_skip("no redfish.py running");
+	} else {
+		g_assert_no_error(error);
+		g_assert_true(ret);
+		fu_redfish_plugin_set_credentials(self->unlicensed_plugin,
+						  "unlicensed_username",
+						  "password2");
+		ret = fu_plugin_runner_coldplug(self->unlicensed_plugin, progress, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
+	}
 }
 
 static void
@@ -312,6 +325,56 @@ fu_test_redfish_devices_func(gconstpointer user_data)
 }
 
 static void
+fu_test_redfish_unlicensed_devices_func(gconstpointer user_data)
+{
+	FuDevice *dev;
+	FuTest *self = (FuTest *)user_data;
+	GPtrArray *devices;
+
+	devices = fu_plugin_get_devices(self->unlicensed_plugin);
+	g_assert_nonnull(devices);
+	if (devices->len == 0) {
+		g_test_skip("no redfish support");
+		return;
+	}
+	g_assert_cmpint(devices->len, ==, 2);
+
+	dev = g_ptr_array_index(devices, 0);
+	g_assert_true(FU_IS_REDFISH_SMC_DEVICE(dev));
+	g_assert_true(fu_device_has_inhibit(
+	    dev,
+	    fwupd_device_problem_to_string(FWUPD_DEVICE_PROBLEM_MISSING_LICENSE)));
+
+	dev = g_ptr_array_index(devices, 1);
+	g_assert_true(FU_IS_REDFISH_SMC_DEVICE(dev));
+	g_assert_true(fu_device_has_inhibit(
+	    dev,
+	    fwupd_device_problem_to_string(FWUPD_DEVICE_PROBLEM_MISSING_LICENSE)));
+}
+
+static void
+fu_test_redfish_smc_devices_func(gconstpointer user_data)
+{
+	FuDevice *dev;
+	FuTest *self = (FuTest *)user_data;
+	GPtrArray *devices;
+
+	devices = fu_plugin_get_devices(self->smc_plugin);
+	g_assert_nonnull(devices);
+	if (devices->len == 0) {
+		g_test_skip("no redfish support");
+		return;
+	}
+	g_assert_cmpint(devices->len, ==, 2);
+
+	dev = g_ptr_array_index(devices, 0);
+	g_assert_true(FU_IS_REDFISH_SMC_DEVICE(dev));
+
+	dev = g_ptr_array_index(devices, 1);
+	g_assert_true(FU_IS_REDFISH_SMC_DEVICE(dev));
+}
+
+static void
 fu_test_redfish_update_func(gconstpointer user_data)
 {
 	FuDevice *dev;
@@ -355,6 +418,51 @@ fu_test_redfish_update_func(gconstpointer user_data)
 }
 
 static void
+fu_test_redfish_smc_update_func(gconstpointer user_data)
+{
+	FuDevice *dev;
+	FuTest *self = (FuTest *)user_data;
+	GPtrArray *devices;
+	gboolean ret;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GBytes) blob_fw = NULL;
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+
+	devices = fu_plugin_get_devices(self->smc_plugin);
+	g_assert_nonnull(devices);
+	if (devices->len == 0) {
+		g_test_skip("no redfish support");
+		return;
+	}
+	g_assert_cmpint(devices->len, ==, 2);
+
+	/* BMC */
+	dev = g_ptr_array_index(devices, 1);
+	blob_fw = g_bytes_new_static("hello", 5);
+	ret = fu_plugin_runner_write_firmware(self->plugin,
+					      dev,
+					      blob_fw,
+					      progress,
+					      FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* stuck update */
+	blob_fw = g_bytes_new_static("stuck", 5);
+	ret = fu_plugin_runner_write_firmware(self->plugin,
+					      dev,
+					      blob_fw,
+					      progress,
+					      FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      &error);
+	g_assert_false(ret);
+	g_assert_true(fu_device_has_inhibit(
+	    dev,
+	    fwupd_device_problem_to_string(FWUPD_DEVICE_PROBLEM_UPDATE_PENDING)));
+}
+
+static void
 fu_test_self_free(FuTest *self)
 {
 	if (self->plugin != NULL)
@@ -393,6 +501,13 @@ main(int argc, char **argv)
 	g_test_add_func("/redfish/common{lenovo}", fu_test_redfish_common_lenovo_func);
 	g_test_add_func("/redfish/network{mac_addr}", fu_test_redfish_network_mac_addr_func);
 	g_test_add_func("/redfish/network{vid_pid}", fu_test_redfish_network_vid_pid_func);
+	g_test_add_data_func("/redfish/unlicensed_plugin{devices}",
+			     self,
+			     fu_test_redfish_unlicensed_devices_func);
+	g_test_add_data_func("/redfish/smc_plugin{devices}",
+			     self,
+			     fu_test_redfish_smc_devices_func);
+	g_test_add_data_func("/redfish/smc_plugin{update}", self, fu_test_redfish_smc_update_func);
 	g_test_add_data_func("/redfish/plugin{devices}", self, fu_test_redfish_devices_func);
 	g_test_add_data_func("/redfish/plugin{update}", self, fu_test_redfish_update_func);
 	return g_test_run();

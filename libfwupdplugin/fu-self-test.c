@@ -130,18 +130,18 @@ fu_archive_cab_func(void)
 }
 
 static void
-fu_common_gpt_type_func(void)
+fu_volume_gpt_type_func(void)
 {
-	g_assert_cmpstr(fu_common_convert_to_gpt_type("0xef"),
+	g_assert_cmpstr(fu_volume_kind_convert_to_gpt("0xef"),
 			==,
 			"c12a7328-f81f-11d2-ba4b-00a0c93ec93b");
-	g_assert_cmpstr(fu_common_convert_to_gpt_type("0x0b"),
+	g_assert_cmpstr(fu_volume_kind_convert_to_gpt("0x0b"),
 			==,
 			"ebd0a0a2-b9e5-4433-87c0-68b6b72699c7");
-	g_assert_cmpstr(fu_common_convert_to_gpt_type("fat32lba"),
+	g_assert_cmpstr(fu_volume_kind_convert_to_gpt("fat32lba"),
 			==,
 			"ebd0a0a2-b9e5-4433-87c0-68b6b72699c7");
-	g_assert_cmpstr(fu_common_convert_to_gpt_type("0x00"), ==, "0x00");
+	g_assert_cmpstr(fu_volume_kind_convert_to_gpt("0x00"), ==, "0x00");
 }
 
 static void
@@ -3319,7 +3319,7 @@ fu_firmware_builder_round_trip_func(void)
 #ifdef HAVE_CBOR
 	    {FU_TYPE_USWID_FIRMWARE,
 	     "uswid.builder.xml",
-	     "cae8660d5acd5bb614d0410bc53dedaa1899aee1"},
+	     "b4631ebb64931da604500b9a7263225708195f54"},
 #endif
 	    {G_TYPE_INVALID, NULL, NULL}};
 	g_type_ensure(FU_TYPE_COSWID_FIRMWARE);
@@ -3638,7 +3638,7 @@ main(int argc, char **argv)
 
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
 	(void)g_setenv("FWUPD_DATADIR", testdatadir, TRUE);
-	(void)g_setenv("FWUPD_PLUGINDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_LIBDIR_PKG", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_OFFLINE_TRIGGER", "/tmp/fwupd-self-test/system-update", TRUE);
@@ -3666,7 +3666,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/backend", fu_backend_func);
 	g_test_add_func("/fwupd/chunk", fu_chunk_func);
 	g_test_add_func("/fwupd/common{align-up}", fu_common_align_up_func);
-	g_test_add_func("/fwupd/common{gpt-type}", fu_common_gpt_type_func);
+	g_test_add_func("/fwupd/volume{gpt-type}", fu_volume_gpt_type_func);
 	g_test_add_func("/fwupd/common{byte-array}", fu_common_byte_array_func);
 	g_test_add_func("/fwupd/common{crc}", fu_common_crc_func);
 	g_test_add_func("/fwupd/common{string-append-kv}", fu_string_append_func);

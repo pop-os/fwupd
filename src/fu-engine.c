@@ -48,12 +48,12 @@
 #include "fu-engine-helper.h"
 #include "fu-engine-request.h"
 #include "fu-engine.h"
-#include "fu-hash.h"
 #include "fu-history.h"
 #include "fu-idle.h"
 #include "fu-kenv.h"
 #include "fu-keyring-utils.h"
 #include "fu-mutex.h"
+#include "fu-plugin-builtin.h"
 #include "fu-plugin-list.h"
 #include "fu-plugin-private.h"
 #include "fu-release.h"
@@ -95,7 +95,6 @@ struct _FuEngine {
 	FuConfig *config;
 	FuRemoteList *remote_list;
 	FuDeviceList *device_list;
-	gboolean tainted;
 	gboolean only_trusted;
 	gboolean write_history;
 	gboolean host_emulation;
@@ -2173,8 +2172,7 @@ fu_engine_get_report_metadata(FuEngine *self, GError **error)
 	if (!fu_engine_get_report_metadata_kernel_cmdline(hash, error))
 		return NULL;
 
-	/* these affect the report credibility */
-	fu_engine_add_report_metadata_bool(hash, "FwupdTainted", self->tainted);
+		/* these affect the report credibility */
 #ifdef SUPPORTED_BUILD
 	fu_engine_add_report_metadata_bool(hash, "FwupdSupported", TRUE);
 #else
@@ -5131,6 +5129,7 @@ fu_engine_add_releases_for_device_component(FuEngine *self,
 		const gchar *remote_id;
 		const gchar *update_message;
 		const gchar *update_image;
+		const gchar *update_request_id;
 		gint vercmp;
 		GPtrArray *checksums;
 		GPtrArray *locations;
@@ -5217,6 +5216,10 @@ fu_engine_add_releases_for_device_component(FuEngine *self,
 		    update_image != NULL) {
 			fwupd_device_set_update_image(FWUPD_DEVICE(device), update_image);
 		}
+		update_request_id = fu_release_get_update_request_id(release);
+		if (fu_device_get_update_request_id(device) == NULL && update_request_id != NULL)
+			fu_device_set_update_request_id(device, update_request_id);
+
 		/* success */
 		g_ptr_array_add(releases, g_steal_pointer(&release));
 	}
@@ -6242,21 +6245,6 @@ fu_engine_plugin_device_removed_cb(FuPlugin *plugin, FuDevice *device, gpointer 
 void
 fu_engine_add_plugin(FuEngine *self, FuPlugin *plugin)
 {
-	if (fu_plugin_is_open(plugin)) {
-		/* plugin does not match built version */
-		if (fu_plugin_get_build_hash(plugin) == NULL) {
-			const gchar *name = fu_plugin_get_name(plugin);
-			g_warning("%s should call fu_plugin_set_build_hash()", name);
-			self->tainted = TRUE;
-		} else if (g_strcmp0(fu_plugin_get_build_hash(plugin), FU_BUILD_HASH) != 0) {
-			const gchar *name = fu_plugin_get_name(plugin);
-			g_warning("%s has incorrect built version %s",
-				  name,
-				  fu_plugin_get_build_hash(plugin));
-			self->tainted = TRUE;
-		}
-	}
-
 	fu_plugin_list_add(self->plugin_list, plugin);
 }
 
@@ -6329,12 +6317,6 @@ fu_engine_plugin_check_supported_cb(FuPlugin *plugin, const gchar *guid, FuEngin
 	return n != NULL;
 }
 
-gboolean
-fu_engine_get_tainted(FuEngine *self)
-{
-	return self->tainted;
-}
-
 FuConfig *
 fu_engine_get_config(FuEngine *self)
 {
@@ -6390,15 +6372,10 @@ fu_engine_ensure_security_attrs_tainted(FuEngine *self)
 	fu_security_attrs_append(self->host_security_attrs, attr);
 	for (guint i = 0; i < disabled->len; i++) {
 		const gchar *name_tmp = g_ptr_array_index(disabled, i);
-		if (!g_str_has_prefix(name_tmp, "test") && g_strcmp0(name_tmp, "invalid") != 0) {
+		if (!g_str_has_prefix(name_tmp, "test")) {
 			disabled_plugins = TRUE;
 			break;
 		}
-	}
-	if (self->tainted) {
-		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_TAINTED);
-		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONFIG_OS);
-		return;
 	}
 	if (self->plugin_filter->len > 0 || disabled_plugins) {
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
@@ -6771,8 +6748,31 @@ fu_engine_load_plugins_filenames(FuEngine *self, GPtrArray *filenames, FuProgres
 	}
 }
 
+static void
+fu_engine_load_plugins_builtins(FuEngine *self, FuProgress *progress)
+{
+	guint steps = 0;
+
+	/* count possible steps */
+	for (guint i = 0; fu_plugin_externals[i] != NULL; i++)
+		steps++;
+
+	/* progress */
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_set_steps(progress, steps);
+	for (guint i = 0; fu_plugin_externals[i] != NULL; i++) {
+		GType plugin_gtype = fu_plugin_externals[i]();
+		g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(plugin_gtype, self->ctx);
+		fu_engine_add_plugin(self, plugin);
+		fu_progress_step_done(progress);
+	}
+}
+
 static gboolean
-fu_engine_load_plugins(FuEngine *self, FuProgress *progress, GError **error)
+fu_engine_load_plugins(FuEngine *self,
+		       FuEngineLoadFlags flags,
+		       FuProgress *progress,
+		       GError **error)
 {
 	const gchar *fn;
 	g_autoptr(GDir) dir = NULL;
@@ -6785,9 +6785,10 @@ fu_engine_load_plugins(FuEngine *self, FuProgress *progress, GError **error)
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
 	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 13, "search");
 	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 87, "load");
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 5, "load-builtins");
 
 	/* search */
-	plugin_path = fu_path_from_kind(FU_PATH_KIND_PLUGINDIR_PKG);
+	plugin_path = fu_path_from_kind(FU_PATH_KIND_LIBDIR_PKG);
 	dir = g_dir_open(plugin_path, 0, error);
 	if (dir == NULL)
 		return FALSE;
@@ -6801,6 +6802,11 @@ fu_engine_load_plugins(FuEngine *self, FuProgress *progress, GError **error)
 
 	/* load */
 	fu_engine_load_plugins_filenames(self, filenames, fu_progress_get_child(progress));
+	fu_progress_step_done(progress);
+
+	/* load builtins */
+	if (flags & FU_ENGINE_LOAD_FLAG_BUILTIN_PLUGINS)
+		fu_engine_load_plugins_builtins(self, fu_progress_get_child(progress));
 	fu_progress_step_done(progress);
 
 	/* success */
@@ -7028,7 +7034,7 @@ fu_engine_backend_device_added_run_plugin(FuEngine *self,
 		return FALSE;
 
 	/* run the ->probe() then ->setup() vfuncs */
-	if (!fu_plugin_runner_backend_device_added(plugin, device, error)) {
+	if (!fu_plugin_runner_backend_device_added(plugin, device, progress, error)) {
 #ifdef SUPPORTED_BUILD
 		/* sanity check */
 		if (*error == NULL) {
@@ -7714,8 +7720,8 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_progress_step_done(progress);
 
 	/* load plugins early, as we have to call ->load() *before* building quirk silo */
-	if (!fu_engine_load_plugins(self, fu_progress_get_child(progress), error)) {
-		g_prefix_error(error, "Failed to load plugins: ");
+	if (!fu_engine_load_plugins(self, flags, fu_progress_get_child(progress), error)) {
+		g_prefix_error(error, "failed to load plugins: ");
 		return FALSE;
 	}
 	fu_progress_step_done(progress);

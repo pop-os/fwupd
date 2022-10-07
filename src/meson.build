@@ -22,6 +22,9 @@ daemon_dep = [
 client_dep = [
   gudev,
   gusb,
+  libcurl,
+  libjsonglib,
+  libxmlb,
   sqlite,
 ]
 if libsystemd.found()
@@ -31,7 +34,7 @@ if polkit.found()
   client_src += 'fu-polkit-agent.c'
 endif
 
-daemon_src = [
+fwupd_engine_src = [
   'fu-cabinet-common.c',
   'fu-config.c',
   'fu-debug.c',
@@ -50,13 +53,13 @@ daemon_src = [
 ] + systemd_src
 
 if gudev.found()
-  daemon_src += 'fu-udev-backend.c'
+  fwupd_engine_src += 'fu-udev-backend.c'
 endif
 if gusb.found()
-  daemon_src += 'fu-usb-backend.c'
+  fwupd_engine_src += 'fu-usb-backend.c'
 endif
 if bluez.allowed()
-  daemon_src += 'fu-bluez-backend.c'
+  fwupd_engine_src += 'fu-bluez-backend.c'
 endif
 
 # include event message file
@@ -70,8 +73,33 @@ if host_machine.system() == 'windows'
     ],
   )
   windows = import('windows')
-  daemon_src += windows.compile_resources(fwupd_rc)
+  fwupd_engine_src += windows.compile_resources(fwupd_rc)
 endif
+
+fwupdutil = library(
+  'fwupdutil',
+  sources: [
+    'fu-progressbar.c',
+    'fu-security-attr-common.c',
+    'fu-util-bios-setting.c',
+    'fu-util-common.c',
+    systemd_src,
+  ],
+  install: true,
+  install_dir: libdir_pkg,
+  include_directories: [
+    root_incdir,
+    fwupd_incdir,
+    fwupdplugin_incdir,
+  ],
+  dependencies: [
+    client_dep,
+  ],
+  link_with: [
+    fwupd,
+    fwupdplugin,
+  ],
+)
 
 if build_daemon
 install_data(['org.freedesktop.fwupd.xml'],
@@ -79,16 +107,9 @@ install_data(['org.freedesktop.fwupd.xml'],
 )
 fwupdmgr = executable(
   'fwupdmgr',
-  fu_hash,
   sources: [
     'fu-util.c',
-    'fu-history.c',
-    'fu-progressbar.c',
-    'fu-security-attr-common.c',
-    'fu-util-bios-setting.c',
-    'fu-util-common.c',
     client_src,
-    systemd_src
   ],
   include_directories: [
     root_incdir,
@@ -97,14 +118,15 @@ fwupdmgr = executable(
   ],
   dependencies: [
     libfwupd_deps,
-    libxmlb,
     client_dep,
   ],
   link_with: [
     fwupd,
     fwupdplugin,
+    fwupdutil,
   ],
   install: true,
+  install_rpath: libdir_pkg,
   install_dir: bindir
 )
 
@@ -120,13 +142,10 @@ endif
 if offline.allowed()
 fwupdoffline = executable(
   'fwupdoffline',
-  fu_hash,
   sources: [
     'fu-history.c',
     'fu-offline.c',
     'fu-spawn.c',
-    'fu-security-attr-common.c',
-    'fu-util-common.c',
     systemd_src
   ],
   include_directories: [
@@ -137,58 +156,68 @@ fwupdoffline = executable(
   dependencies: [
     libfwupd_deps,
     client_dep,
-    libxmlb,
+  ],
+  link_with: [
+    fwupd,
+    fwupdplugin,
+    fwupdutil,
+  ],
+  install: true,
+  install_rpath: libdir_pkg,
+  install_dir: join_paths(libexecdir, 'fwupd')
+)
+endif
+
+resources_src = gnome.compile_resources(
+  'fwupd-resources',
+  'fwupd.gresource.xml',
+  source_dir: '.',
+  c_name: 'fu'
+)
+
+# generate a header file that allows us to instantiate the plugins without copy-pasting or
+# duplicating the meson build logic in the engine
+plugin_names = []
+foreach lib : plugin_builtins
+  plugin_names += lib.full_path()
+endforeach
+plugins_hdr = custom_target('fwupd-generate-plugins-header',
+  output : 'fu-plugin-builtin.h',
+  command : [
+    join_paths(meson.project_source_root(), 'contrib', 'generate-plugins-header.py'),
+    '@OUTPUT@',
+    meson.project_source_root(),
+    ','.join(plugin_names),
+  ],
+)
+
+# build all the plugins and engine into one installed library
+fwupdengine = library(
+  'fwupdengine',
+  resources_src,
+  sources: fwupd_engine_src,
+  install: true,
+  install_dir: libdir_pkg,
+  include_directories: plugin_incdirs,
+  dependencies: [
+    daemon_dep,
+  ],
+  link_whole: [
+    plugin_builtins,
   ],
   link_with: [
     fwupd,
     fwupdplugin,
   ],
-  install: true,
-  install_dir: join_paths(libexecdir, 'fwupd')
 )
-endif
-
-# this requires a new enough meson version
-if get_option('gresource_quirks').require(meson.version().version_compare('>=0.63.0'),
-    error_message: 'meson >= 0.63.0 is needed for -Dgresource_quirks=enabled').allowed()
-  fwupd_gresource_xml = custom_target('fwupd-resources-xml',
-    input : [
-      join_paths(meson.current_source_dir(), 'org.freedesktop.fwupd.xml'),
-    ] + plugin_quirks,
-    output : 'fwupd.gresource.xml',
-    command : [
-      join_paths(meson.project_source_root(), 'contrib', 'generate-gresource-xml.py'), '@OUTPUT@', '@INPUT@',
-    ],
-  )
-  resources_src = gnome.compile_resources(
-    'fwupd-resources',
-    fwupd_gresource_xml,
-    source_dir: '.',
-    c_name: 'fu'
-  )
-else
-  install_data(plugin_quirks,
-    install_dir: join_paths(datadir, 'fwupd', 'quirks.d')
-  )
-  resources_src = gnome.compile_resources(
-    'fwupd-resources',
-    'fwupd.gresource.xml',
-    source_dir: '.',
-    c_name: 'fu'
-  )
-endif
 
 fwupdtool = executable(
   'fwupdtool',
   resources_src,
-  fu_hash,
+  plugins_hdr,
   export_dynamic: true,
   sources: [
     'fu-tool.c',
-    'fu-progressbar.c',
-    'fu-util-common.c',
-    'fu-util-bios-setting.c',
-    daemon_src,
   ],
   include_directories: [
     root_incdir,
@@ -197,17 +226,18 @@ fwupdtool = executable(
   ],
   dependencies: [
     libfwupd_deps,
-    libxmlb,
     libgcab,
     libarchive,
     client_dep,
     valgrind,
   ],
   link_with: [
-    fwupd,
-    fwupdplugin
+    fwupdengine,
+    fwupdutil,
+    plugin_libs,
   ],
   install: true,
+  install_rpath: libdir_pkg,
   install_dir: bindir
 )
 
@@ -251,11 +281,10 @@ endif
 executable(
   'fwupd',
   resources_src,
-  fu_hash,
+  plugins_hdr,
   sources: [
     daemon_loader_src,
     'fu-daemon.c',
-    daemon_src,
   ],
   include_directories: [
     root_incdir,
@@ -268,23 +297,20 @@ executable(
     daemon_dep,
   ],
   link_with: [
-    fwupd,
-    fwupdplugin,
+    fwupdengine,
+    plugin_libs,
   ],
   c_args: [
     '-DFU_OFFLINE_DESTDIR=""',
   ],
   install: true,
+  install_rpath: libdir_pkg,
   install_dir: daemon_dir
 )
 
 endif
 
 if get_option('tests')
-  test_deps += colorhug_test_firmware
-  test_deps += hwid_test_firmware
-  test_deps += multiple_rels_test_firmware
-  test_deps += noreqs_test_firmware
   env = environment()
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
@@ -292,13 +318,14 @@ if get_option('tests')
   e = executable(
     'fu-self-test',
     resources_src,
-    test_deps,
-    fu_hash,
+    colorhug_test_firmware,
+    hwid_test_firmware,
+    multiple_rels_test_firmware,
+    noreqs_test_firmware,
+    plugins_hdr,
     sources: [
-      'fu-progressbar.c',
       'fu-spawn.c',
       'fu-self-test.c',
-      daemon_src,
     ],
     include_directories: [
       root_incdir,
@@ -309,8 +336,9 @@ if get_option('tests')
       daemon_dep,
     ],
     link_with: [
-      fwupd,
-      fwupdplugin
+      fwupdengine,
+      fwupdutil,
+      plugin_libs,
     ],
     c_args: [
     ],

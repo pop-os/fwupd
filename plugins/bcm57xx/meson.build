@@ -2,12 +2,10 @@ if get_option('plugin_bcm57xx').require(gudev.found(),
     error_message: 'gudev is needed for plugin_bcm57xx').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginBcm57xx"']
 
-plugin_quirks += join_paths(meson.current_source_dir(), 'bcm57xx.quirk')
-
-shared_module('fu_plugin_bcm57xx',
-  fu_hash,
+plugin_quirks += files('bcm57xx.quirk')
+plugin_builtin_bcm57xx = static_library('fu_plugin_bcm57xx',
   sources: [
-    'fu-plugin-bcm57xx.c',
+    'fu-bcm57xx-plugin.c',
     'fu-bcm57xx-common.c',          # fuzzing
     'fu-bcm57xx-device.c',
     'fu-bcm57xx-dict-image.c',      # fuzzing
@@ -16,23 +14,15 @@ shared_module('fu_plugin_bcm57xx',
     'fu-bcm57xx-stage1-image.c',    # fuzzing
     'fu-bcm57xx-stage2-image.c',    # fuzzing
   ],
-  include_directories: [
-    root_incdir,
-    fwupd_incdir,
-    fwupdplugin_incdir,
-  ],
-  install: true,
-  install_dir: plugin_dir,
-  link_with: [
-    fwupd,
-    fwupdplugin,
-  ],
+  include_directories: plugin_incdirs,
+  link_with: plugin_libs,
   c_args: cargs,
   dependencies: [
     plugin_deps,
     valgrind,
   ],
 )
+plugin_builtins += plugin_builtin_bcm57xx
 
 if get_option('tests')
   install_data(['tests/bcm57xx.builder.xml'],
@@ -42,28 +32,17 @@ if get_option('tests')
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
   e = executable(
     'bcm57xx-self-test',
-    fu_hash,
     sources: [
       'fu-self-test.c',
-      'fu-bcm57xx-common.c',
-      'fu-bcm57xx-dict-image.c',
-      'fu-bcm57xx-firmware.c',
-      'fu-bcm57xx-stage1-image.c',
-      'fu-bcm57xx-stage2-image.c',
     ],
-    include_directories: [
-      root_incdir,
-      fwupd_incdir,
-      fwupdplugin_incdir,
-    ],
-    dependencies: [
-      plugin_deps,
-    ],
+    include_directories: plugin_incdirs,
+    dependencies: plugin_deps,
     link_with: [
-      fwupd,
-      fwupdplugin,
+      plugin_libs,
+      plugin_builtin_bcm57xx,
     ],
     install: true,
+    install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
   )
   test('bcm57xx-self-test', e, env: env)

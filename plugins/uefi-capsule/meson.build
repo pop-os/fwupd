@@ -7,7 +7,7 @@ if efi_os_dir != ''
   cargs += '-DEFI_OS_DIR="' + efi_os_dir + '"'
 endif
 
-plugin_quirks += join_paths(meson.current_source_dir(), 'uefi-capsule.quirk')
+plugin_quirks += files('uefi-capsule.quirk')
 
 backend_srcs = ['fu-uefi-backend.c']
 if host_machine.system() == 'linux'
@@ -28,10 +28,9 @@ else
   error('no ESRT support for @0@'.format(host_machine.system()))
 endif
 
-shared_module('fu_plugin_uefi_capsule',
-  fu_hash,
+plugin_builtin_uefi_capsule = static_library('fu_plugin_uefi_capsule',
   sources: [
-    'fu-plugin-uefi-capsule.c',
+    'fu-uefi-capsule-plugin.c',
     'fu-uefi-bgrt.c',
     'fu-uefi-bootmgr.c',
     'fu-uefi-common.c',
@@ -43,17 +42,8 @@ shared_module('fu_plugin_uefi_capsule',
     'fu-uefi-update-info.c',
     backend_srcs,
   ],
-  include_directories: [
-    root_incdir,
-    fwupd_incdir,
-    fwupdplugin_incdir,
-  ],
-  install: true,
-  install_dir: plugin_dir,
-  link_with: [
-    fwupd,
-    fwupdplugin,
-  ],
+  include_directories: plugin_incdirs,
+  link_with: plugin_libs,
   c_args: cargs,
   dependencies: [
     plugin_deps,
@@ -61,40 +51,27 @@ shared_module('fu_plugin_uefi_capsule',
     efiboot,
   ],
 )
+plugin_builtins += plugin_builtin_uefi_capsule
 
 if get_option('compat_cli')
 fwupdate = executable(
   'fwupdate',
-  fu_hash,
   sources: [
     'fu-uefi-tool.c',
-    'fu-uefi-bgrt.c',
-    'fu-uefi-bootmgr.c',
-    'fu-uefi-common.c',
-    'fu-uefi-device.c',
-    'fu-uefi-cod-device.c',
-    'fu-uefi-nvram-device.c',
-    'fu-uefi-grub-device.c',
-    'fu-uefi-devpath.c',
-    'fu-uefi-update-info.c',
-    backend_srcs,
   ],
-  include_directories: [
-    root_incdir,
-    fwupd_incdir,
-    fwupdplugin_incdir,
-  ],
+  include_directories: plugin_incdirs,
   dependencies: [
     plugin_deps,
     platform_deps,
     efiboot,
   ],
   link_with: [
-    fwupd,
-    fwupdplugin,
+    plugin_libs,
+    plugin_builtin_uefi_capsule,
   ],
   install: true,
   install_dir: bindir,
+  install_rpath: libdir_pkg,
   c_args: cargs,
 )
 endif
@@ -127,13 +104,13 @@ if get_option('plugin_uefi_capsule_splash')
   custom_target('ux-capsule-tar',
     input: [
       join_paths(meson.project_source_root(), 'po', 'LINGUAS'),
-      join_paths(meson.current_source_dir(), 'make-images.py'),
+      files('make-images.py'),
       ux_capsule_pofiles,
     ],
     output: 'uefi-capsule-ux.tar.xz',
     command: [
       python3.full_path(),
-      join_paths(meson.current_source_dir(), 'make-images.py'),
+      files('make-images.py'),
       '--podir', join_paths(meson.project_source_root(), 'po'),
       '--label', 'Installing firmware update…',
       '--out', '@OUTPUT@',
@@ -150,25 +127,10 @@ if get_option('tests')
   env.set('FWUPD_LOCALSTATEDIR', '/tmp/fwupd-self-test/var')
   e = executable(
     'uefi-self-test',
-    fu_hash,
     sources: [
       'fu-self-test.c',
-      'fu-uefi-bgrt.c',
-      'fu-uefi-bootmgr.c',
-      'fu-uefi-common.c',
-      'fu-uefi-device.c',
-      'fu-uefi-cod-device.c',
-      'fu-uefi-nvram-device.c',
-      'fu-uefi-grub-device.c',
-      'fu-uefi-devpath.c',
-      'fu-uefi-update-info.c',
-      backend_srcs,
     ],
-    include_directories: [
-      root_incdir,
-      fwupd_incdir,
-      fwupdplugin_incdir,
-    ],
+    include_directories: plugin_incdirs,
     dependencies: [
       plugin_deps,
       platform_deps,
@@ -177,6 +139,7 @@ if get_option('tests')
     link_with: [
       fwupd,
       fwupdplugin,
+      plugin_builtin_uefi_capsule,
     ],
     c_args: cargs
   )

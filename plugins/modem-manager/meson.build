@@ -11,12 +11,11 @@ if libmm_glib.found() and \
 cargs = ['-DG_LOG_DOMAIN="FuPluginMm"']
 cargs +=['-DMM_REQUIRED_VERSION="1.10.0"']
 
-plugin_quirks += join_paths(meson.current_source_dir(), 'modem-manager.quirk')
+plugin_quirks += files('modem-manager.quirk')
 
 shared_module('fu_plugin_modem_manager',
-  fu_hash,
   sources: [
-    'fu-plugin-modem-manager.c',
+    'fu-mm-plugin.c',
     'fu-mm-device.c',
     'fu-qmi-pdc-updater.c',
     'fu-mbim-qdu-updater.c',
@@ -24,20 +23,11 @@ shared_module('fu_plugin_modem_manager',
     'fu-sahara-loader.c',
     'fu-mm-utils.c'
   ],
-  include_directories: [
-    root_incdir,
-    fwupd_incdir,
-    fwupdplugin_incdir,
-  ],
+  include_directories: plugin_incdirs,
   install: true,
-  install_dir: plugin_dir,
-  c_args: [
-    cargs,
-  ],
-  link_with: [
-    fwupd,
-    fwupdplugin,
-  ],
+  install_dir: libdir_pkg,
+  c_args: cargs,
+  link_with: plugin_libs,
   dependencies: [
     plugin_deps,
     libmm_glib,

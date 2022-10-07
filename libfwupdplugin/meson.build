@@ -72,6 +72,7 @@ fwupdplugin_src = [
   'fu-ifd-firmware.c',            # fuzzing
   'fu-ifd-image.c',               # fuzzing
   'fu-uswid-firmware.c',          # fuzzing
+  'fu-coswid-common.c',           # fuzzing
   'fu-coswid-firmware.c',         # fuzzing
   'fu-efivar.c',
   'fu-udev-device.c',
@@ -177,25 +178,8 @@ fwupdplugin_headers = [
   'fu-usb-device.h',
   'fu-hid-device.h',
 ]
-install_headers(
-  'fwupdplugin.h',
-  subdir: 'fwupd-1',
-)
-install_headers([fwupdplugin_headers, 'fu-plugin-vfuncs.h'],
-  subdir: 'fwupd-1/libfwupdplugin',
-)
-
-fu_hash = custom_target(
-  'fu-hash.h',
-  input: fwupdplugin_src,
-  output: 'fu-hash.h',
-  command: [python3.full_path(),
-             join_paths(meson.current_source_dir(), 'fu-hash.py'),
-             '@OUTPUT@', '@INPUT@']
-)
 
 fwupdplugin_headers_private = [
-  fu_hash,
   'fu-backend-private.h',
   'fu-context-private.h',
   'fu-device-private.h',
@@ -254,8 +238,6 @@ fwupdplugin = library(
     fwupdplugin_headers,
     fwupdplugin_headers_private,
   ],
-  soversion: libfwupdplugin_lt_current,
-  version: libfwupdplugin_lt_version,
   include_directories: [
     root_incdir,
     fwupd_incdir,
@@ -268,18 +250,8 @@ fwupdplugin = library(
   ],
   link_args: cc.get_supported_link_arguments([vflag]),
   link_depends: fwupdplugin_mapfile,
+  install_dir: libdir_pkg,
   install: true
-)
-
-fwupdplugin_pkgg = import('pkgconfig')
-fwupdplugin_pkgg.generate(
-  libraries: fwupdplugin,
-  requires: pkgg_requires,
-  subdirs: 'fwupd-1',
-  version: meson.project_version(),
-  name: 'fwupdplugin',
-  filebase: 'fwupdplugin',
-  description: 'library for plugins to use to interact with fwupd daemon',
 )
 
 if introspection.allowed()
@@ -328,7 +300,7 @@ if introspection.allowed()
       girtargets,
       fwupd_gir[0],
     ],
-    install: true
+    install: false
   )
 
   # Verify the map file is correct -- note we can't actually use the generated
@@ -356,24 +328,19 @@ if introspection.allowed()
   test('fwupdplugin-exported-api', diffcmd,
        args: [
         '-urNp',
-        join_paths(meson.current_source_dir(), 'fwupdplugin.map'),
+        files('fwupdplugin.map'),
         fwupdplugin_mapfile_target,
         ],
       )
 endif
 
 if get_option('tests')
-  test_deps = [
-    fu_hash,
-  ]
   env = environment()
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
   e = executable(
     'fwupdplugin-self-test',
-    test_deps,
     sources: [
-      fwupdplugin_src,
       'fu-self-test.c'
     ],
     include_directories: [

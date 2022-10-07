@@ -28,13 +28,24 @@ if build_standalone
   install_data(['daemon.conf'],
     install_dir: join_paths(sysconfdir, 'fwupd')
   )
-  plugin_quirks += join_paths(meson.current_source_dir(), 'power.quirk')
-  plugin_quirks += join_paths(meson.current_source_dir(), 'cfi.quirk')
+  plugin_quirks += files([
+    'power.quirk',
+    'cfi.quirk',
+  ])
 endif
 
 if get_option('metainfo')
-  install_data(['org.freedesktop.fwupd.metainfo.xml'],
-    install_dir: join_paths(datadir, 'metainfo')
+  custom_target('metainfo',
+    input: 'org.freedesktop.fwupd.metainfo.xml',
+    output: 'org.freedesktop.fwupd.metainfo.xml',
+    command: [
+      python3,
+      join_paths(meson.project_source_root(), 'contrib', 'generate-metainfo.py'),
+      '@INPUT@',
+      '@OUTPUT@',
+    ],
+    install: true,
+    install_dir: join_paths(datadir, 'metainfo'),
   )
   install_data(['org.freedesktop.fwupd.svg'],
     install_dir: join_paths(datadir, 'icons', 'hicolor', 'scalable', 'apps')

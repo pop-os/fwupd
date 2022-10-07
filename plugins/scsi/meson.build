@@ -2,31 +2,18 @@ if get_option('plugin_scsi').require(gudev.found(),
     error_message: 'gudev is needed for plugin_scsi').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginScsi"']
 
-plugin_quirks += join_paths(meson.current_source_dir(), 'scsi.quirk')
-
-shared_module('fu_plugin_scsi',
-  fu_hash,
+plugin_quirks += files('scsi.quirk')
+plugin_builtins += static_library('fu_plugin_scsi',
   sources: [
-    'fu-plugin-scsi.c',
+    'fu-scsi-plugin.c',
     'fu-scsi-device.c',
   ],
-  include_directories: [
-    root_incdir,
-    fwupd_incdir,
-    fwupdplugin_incdir,
-  ],
-  install: true,
-  install_dir: plugin_dir,
+  include_directories: plugin_incdirs,
   c_args: [
     cargs,
     '-DLOCALSTATEDIR="' + localstatedir + '"',
   ],
-  link_with: [
-    fwupd,
-    fwupdplugin,
-  ],
-  dependencies: [
-    plugin_deps,
-  ],
+  link_with: plugin_libs,
+  dependencies: plugin_deps,
 )
 endif

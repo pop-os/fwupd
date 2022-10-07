@@ -456,6 +456,36 @@ fu_volume_new_from_mount_path(const gchar *mount_path)
 }
 
 /**
+ * fu_volume_kind_convert_to_gpt:
+ * @kind: UDisk reported type string, e.g. `efi` or `0xef`
+ *
+ * Converts a MBR type to a GPT type.
+ *
+ * Returns: the GPT type, usually a GUID. If not known @kind is returned.
+ *
+ * Since: 1.8.6
+ **/
+const gchar *
+fu_volume_kind_convert_to_gpt(const gchar *kind)
+{
+	struct {
+		const gchar *gpt;
+		const gchar *mbrs[6];
+	} typeguids[] = {{"c12a7328-f81f-11d2-ba4b-00a0c93ec93b", /* esp */
+			  {"0xef", "efi", NULL}},
+			 {"ebd0a0a2-b9e5-4433-87c0-68b6b72699c7", /* fat32 */
+			  {"0x0b", "0x06", "vfat", "fat32", "fat32lba", NULL}},
+			 {NULL, {NULL}}};
+	for (guint i = 0; typeguids[i].gpt != NULL; i++) {
+		for (guint j = 0; typeguids[i].mbrs[j] != NULL; j++) {
+			if (g_strcmp0(kind, typeguids[i].mbrs[j]) == 0)
+				return typeguids[i].gpt;
+		}
+	}
+	return kind;
+}
+
+/**
  * fu_volume_new_by_kind:
  * @kind: a volume kind, typically a GUID
  * @error: (nullable): optional return location for an error
@@ -529,7 +559,7 @@ fu_volume_new_by_kind(const gchar *kind, GError **error)
 				   NULL);
 
 		/* convert reported type to GPT type */
-		type_str = fu_common_convert_to_gpt_type(type_str);
+		type_str = fu_volume_kind_convert_to_gpt(type_str);
 		if (g_getenv("FWUPD_VERBOSE") != NULL) {
 			g_autofree gchar *id_type = fu_volume_get_id_type(vol);
 			g_debug("device %s, type: %s, internal: %d, fs: %s",
@@ -640,88 +670,6 @@ fu_volume_new_by_devnum(guint32 devnum, GError **error)
 
 	/* failed */
 	g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "no volumes for devnum %u", devnum);
-	return NULL;
-}
-
-/**
- * fu_volume_new_esp_default:
- * @error: (nullable): optional return location for an error
- *
- * Gets the platform default ESP.
- *
- * NOTE: This has been deprecated, please use fu_context_get_esp_volumes() instead.
- *
- * Returns: (transfer full): a volume, or %NULL if the ESP was not found
- *
- * Since: 1.8.2
- **/
-FuVolume *
-fu_volume_new_esp_default(GError **error)
-{
-	const gchar *path_tmp;
-	gboolean has_internal = FALSE;
-	g_autoptr(GPtrArray) volumes_fstab = g_ptr_array_new();
-	g_autoptr(GPtrArray) volumes_mtab = g_ptr_array_new();
-	g_autoptr(GPtrArray) volumes_vfat = g_ptr_array_new();
-	g_autoptr(GPtrArray) volumes = NULL;
-	g_autoptr(GError) error_local = NULL;
-
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	/* for the test suite use local directory for ESP */
-	path_tmp = g_getenv("FWUPD_UEFI_ESP_PATH");
-	if (path_tmp != NULL)
-		return fu_volume_new_from_mount_path(path_tmp);
-
-	volumes = fu_volume_new_by_kind(FU_VOLUME_KIND_ESP, &error_local);
-	if (volumes == NULL) {
-		g_debug("%s, falling back to %s", error_local->message, FU_VOLUME_KIND_BDP);
-		volumes = fu_volume_new_by_kind(FU_VOLUME_KIND_BDP, error);
-		if (volumes == NULL) {
-			g_prefix_error(error, "%s: ", error_local->message);
-			return NULL;
-		}
-	}
-
-	/* are there _any_ internal vfat partitions?
-	 * remember HintSystem is just that -- a hint! */
-	for (guint i = 0; i < volumes->len; i++) {
-		FuVolume *vol = g_ptr_array_index(volumes, i);
-		g_autofree gchar *type = fu_volume_get_id_type(vol);
-		if (g_strcmp0(type, "vfat") == 0 && fu_volume_is_internal(vol)) {
-			has_internal = TRUE;
-			break;
-		}
-	}
-
-	/* filter to vfat partitions */
-	for (guint i = 0; i < volumes->len; i++) {
-		FuVolume *vol = g_ptr_array_index(volumes, i);
-		g_autofree gchar *type = fu_volume_get_id_type(vol);
-		if (type == NULL)
-			continue;
-		if (has_internal && !fu_volume_is_internal(vol))
-			continue;
-		if (g_strcmp0(type, "vfat") == 0)
-			g_ptr_array_add(volumes_vfat, vol);
-	}
-	if (volumes_vfat->len == 0) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_FILENAME, "No ESP found");
-		return NULL;
-	}
-	for (guint i = 0; i < volumes_vfat->len; i++) {
-		FuVolume *vol = g_ptr_array_index(volumes_vfat, i);
-		g_ptr_array_add(fu_volume_is_mounted(vol) ? volumes_mtab : volumes_fstab, vol);
-	}
-	if (volumes_mtab->len == 1) {
-		FuVolume *vol = g_ptr_array_index(volumes_mtab, 0);
-		return g_object_ref(vol);
-	}
-	if (volumes_mtab->len == 0 && volumes_fstab->len == 1) {
-		FuVolume *vol = g_ptr_array_index(volumes_fstab, 0);
-		return g_object_ref(vol);
-	}
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_FILENAME, "More than one available ESP");
 	return NULL;
 }
 

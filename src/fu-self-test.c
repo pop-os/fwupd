@@ -16,6 +16,7 @@
 #include "fwupd-bios-setting-private.h"
 #include "fwupd-security-attr-private.h"
 
+#include "../plugins/test/fu-test-plugin.h"
 #include "fu-backend-private.h"
 #include "fu-bios-settings-private.h"
 #include "fu-cabinet-common.h"
@@ -24,7 +25,6 @@
 #include "fu-device-list.h"
 #include "fu-device-private.h"
 #include "fu-engine.h"
-#include "fu-hash.h"
 #include "fu-history.h"
 #include "fu-plugin-list.h"
 #include "fu-plugin-private.h"
@@ -165,42 +165,6 @@ fu_engine_generate_md_func(gconstpointer user_data)
 	g_assert_cmpstr(tmp, ==, "3da49ddd961144a79336b3ac3b0e469cb2531d0e");
 	tmp = xb_node_query_text(component, "releases/release/checksum[@target='content']", NULL);
 	g_assert_cmpstr(tmp, ==, NULL);
-}
-
-static void
-fu_plugin_hash_func(gconstpointer user_data)
-{
-	GError *error = NULL;
-	g_autofree gchar *pluginfn = NULL;
-	g_autoptr(FuEngine) engine = fu_engine_new();
-	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
-	g_autoptr(FuPlugin) plugin = fu_plugin_new(NULL);
-	gboolean ret = FALSE;
-
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-
-	/* make sure not tainted */
-	ret = fu_engine_get_tainted(engine);
-	g_assert_false(ret);
-
-	/* create a tainted plugin */
-	pluginfn = g_test_build_filename(G_TEST_BUILT,
-					 "..",
-					 "plugins",
-					 "test",
-					 "libfu_plugin_invalid." G_MODULE_SUFFIX,
-					 NULL);
-	ret = fu_plugin_open(plugin, pluginfn, &error);
-	g_assert_true(ret);
-	g_assert_no_error(error);
-
-	/* make sure it tainted now */
-	g_test_expect_message("FuEngine", G_LOG_LEVEL_WARNING, "* has incorrect built version*");
-	fu_engine_add_plugin(engine, plugin);
-	ret = fu_engine_get_tainted(engine);
-	g_assert_true(ret);
 }
 
 static void
@@ -3204,6 +3168,7 @@ _plugin_device_register_cb(FuPlugin *plugin, FuDevice *device, gpointer user_dat
 static void
 fu_backend_usb_func(gconstpointer user_data)
 {
+#ifdef HAVE_GUSB
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
 	FuDevice *device_tmp;
@@ -3217,7 +3182,7 @@ fu_backend_usb_func(gconstpointer user_data)
 	g_autoptr(GPtrArray) possible_plugins = NULL;
 	g_autoptr(JsonParser) parser = json_parser_new();
 
-#if !G_USB_CHECK_VERSION(0, 4, 0)
+#if !G_USB_CHECK_VERSION(0, 4, 2)
 	g_test_skip("GUsb version too old");
 	return;
 #endif
@@ -3264,11 +3229,15 @@ fu_backend_usb_func(gconstpointer user_data)
 	possible_plugins = fu_device_get_possible_plugins(device_tmp);
 	g_assert_cmpint(possible_plugins->len, ==, 1);
 	g_assert_cmpstr(g_ptr_array_index(possible_plugins, 0), ==, "dfu");
+#else
+	g_test_skip("No GUsb support");
+#endif
 }
 
 static void
 fu_backend_usb_invalid_func(gconstpointer user_data)
 {
+#ifdef HAVE_GUSB
 	FuTest *self = (FuTest *)user_data;
 	gboolean ret;
 	FuDevice *device_tmp;
@@ -3280,7 +3249,7 @@ fu_backend_usb_invalid_func(gconstpointer user_data)
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(JsonParser) parser = json_parser_new();
 
-#if !G_USB_CHECK_VERSION(0, 4, 0)
+#if !G_USB_CHECK_VERSION(0, 4, 2)
 	g_test_skip("GUsb version too old");
 	return;
 #endif
@@ -3327,6 +3296,9 @@ fu_backend_usb_invalid_func(gconstpointer user_data)
 
 	/* check the fwupd DS20 descriptor was *not* parsed */
 	g_assert_false(fu_device_has_icon(device_tmp, "computer"));
+#else
+	g_test_skip("No GUsb support");
+#endif
 }
 
 static void
@@ -4795,7 +4767,6 @@ int
 main(int argc, char **argv)
 {
 	gboolean ret;
-	g_autofree gchar *pluginfn = NULL;
 	g_autofree gchar *testdatadir = NULL;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(FuTest) self = g_new0(FuTest, 1);
@@ -4808,7 +4779,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_DEVICE_LIST_VERBOSE", "1", TRUE);
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
 	(void)g_setenv("FWUPD_DATADIR", testdatadir, TRUE);
-	(void)g_setenv("FWUPD_PLUGINDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_LIBDIR_PKG", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 	(void)g_setenv("CONFIGURATION_DIRECTORY", testdatadir, TRUE);
@@ -4826,22 +4797,12 @@ main(int argc, char **argv)
 	g_assert_true(ret);
 
 	/* load the test plugin */
-	self->plugin = fu_plugin_new(self->ctx);
-	pluginfn = g_test_build_filename(G_TEST_BUILT,
-					 "..",
-					 "plugins",
-					 "test",
-					 "libfu_plugin_test." G_MODULE_SUFFIX,
-					 NULL);
-	ret = fu_plugin_open(self->plugin, pluginfn, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
+	self->plugin = fu_plugin_new_from_gtype(fu_test_plugin_get_type(), self->ctx);
 
 	/* tests go here */
 	if (g_test_slow()) {
 		g_test_add_data_func("/fwupd/progressbar", self, fu_progressbar_func);
 	}
-	g_test_add_data_func("/fwupd/plugin{build-hash}", self, fu_plugin_hash_func);
 	g_test_add_data_func("/fwupd/backend{usb}", self, fu_backend_usb_func);
 	g_test_add_data_func("/fwupd/backend{usb-invalid}", self, fu_backend_usb_invalid_func);
 	g_test_add_data_func("/fwupd/plugin{module}", self, fu_plugin_module_func);

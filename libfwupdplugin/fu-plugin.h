@@ -30,12 +30,8 @@
 #include <libfwupd/fwupd-common.h>
 #include <libfwupd/fwupd-plugin.h>
 
-/* for in-tree plugins only */
-#ifdef FWUPD_COMPILATION
-#include "fu-hash.h"
 /* only until HSI is declared stable */
 #include "fwupd-security-attr-private.h"
-#endif
 
 #define FU_TYPE_PLUGIN (fu_plugin_get_type())
 G_DECLARE_DERIVABLE_TYPE(FuPlugin, fu_plugin, FU, PLUGIN, FwupdPlugin)
@@ -44,21 +40,6 @@ G_DECLARE_DERIVABLE_TYPE(FuPlugin, fu_plugin, FU, PLUGIN, FwupdPlugin)
 #define fu_plugin_has_flag(p, f)    fwupd_plugin_has_flag(FWUPD_PLUGIN(p), f)
 #define fu_plugin_add_flag(p, f)    fwupd_plugin_add_flag(FWUPD_PLUGIN(p), f)
 #define fu_plugin_remove_flag(p, f) fwupd_plugin_remove_flag(FWUPD_PLUGIN(p), f)
-
-struct _FuPluginClass {
-	FwupdPluginClass parent_class;
-	/* signals */
-	void (*device_added)(FuPlugin *self, FuDevice *device);
-	void (*device_removed)(FuPlugin *self, FuDevice *device);
-	void (*status_changed)(FuPlugin *self, FwupdStatus status);
-	void (*percentage_changed)(FuPlugin *self, guint percentage);
-	void (*device_register)(FuPlugin *self, FuDevice *device);
-	gboolean (*check_supported)(FuPlugin *self, const gchar *guid);
-	void (*rules_changed)(FuPlugin *self);
-	void (*config_changed)(FuPlugin *self);
-	/*< private >*/
-	gpointer padding[19];
-};
 
 /**
  * FuPluginVerifyFlags:
@@ -72,41 +53,39 @@ typedef enum {
 	FU_PLUGIN_VERIFY_FLAG_LAST
 } FuPluginVerifyFlags;
 
-/**
- * FuPluginVfuncs:
- *
- * The virtual functions that are implemented by the plugins.
- **/
-typedef struct {
-	/**
-	 * build_hash:
-	 *
-	 * Sets the plugin build hash which must be set to avoid tainting the engine.
-	 *
-	 * Since: 1.7.2
-	 **/
-	const gchar *build_hash;
+struct _FuPluginClass {
+	FwupdPluginClass parent_class;
+	/* signals */
+	void (*_device_added)(FuPlugin *self, FuDevice *device);
+	void (*_device_removed)(FuPlugin *self, FuDevice *device);
+	void (*_status_changed)(FuPlugin *self, FwupdStatus status);
+	void (*_percentage_changed)(FuPlugin *self, guint percentage);
+	void (*_device_register)(FuPlugin *self, FuDevice *device);
+	gboolean (*_check_supported)(FuPlugin *self, const gchar *guid);
+	void (*_rules_changed)(FuPlugin *self);
+	void (*_config_changed)(FuPlugin *self);
+
+	/* vfuncs */
 	/**
 	 * init:
 	 * @self: A #FuPlugin
 	 *
-	 * Initializes the plugin.
+	 * Initializes the modular plugin.
 	 * Sets up any static data structures for the plugin.
-	 * Most plugins should call fu_plugin_set_build_hash in here.
 	 *
 	 * Since: 1.7.2
 	 **/
-	void (*init)(FuPlugin *self);
+	void (*constructed)(GObject *obj);
 	/**
-	 * destroy:
+	 * finalize:
 	 * @self: a plugin
 	 *
-	 * Destroys the plugin.
+	 * Destroys the modular plugin.
 	 * Any allocated memory should be freed here.
 	 *
 	 * Since: 1.7.2
 	 **/
-	void (*destroy)(FuPlugin *self);
+	void (*finalize)(GObject *obj);
 	/**
 	 * startup:
 	 * @self: a #FuPlugin
@@ -391,9 +370,14 @@ typedef struct {
 	 * Since: 1.8.4
 	 **/
 	void (*to_string)(FuPlugin *self, guint idt, GString *str);
-	/*< private >*/
-	gpointer padding[7];
-} FuPluginVfuncs;
+};
+
+/**
+ * FuPluginVfuncs:
+ *
+ * A subset of virtual functions that are implemented by modular plugins.
+ **/
+typedef struct _FuPluginClass FuPluginVfuncs;
 
 /**
  * FuPluginRule:
@@ -428,6 +412,8 @@ typedef struct FuPluginData FuPluginData;
 /* for plugins to use */
 const gchar *
 fu_plugin_get_name(FuPlugin *self);
+void
+fu_plugin_set_name(FuPlugin *self, const gchar *name);
 FuPluginData *
 fu_plugin_get_data(FuPlugin *self);
 FuPluginData *
@@ -460,12 +446,6 @@ void
 fu_plugin_add_report_metadata(FuPlugin *self, const gchar *key, const gchar *value);
 gchar *
 fu_plugin_get_config_value(FuPlugin *self, const gchar *key);
-G_DEPRECATED_FOR(fu_plugin_set_config_value)
-gboolean
-fu_plugin_set_secure_config_value(FuPlugin *self,
-				  const gchar *key,
-				  const gchar *value,
-				  GError **error);
 gboolean
 fu_plugin_get_config_value_boolean(FuPlugin *self, const gchar *key);
 gboolean

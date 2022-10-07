@@ -22,6 +22,7 @@
 
 #include "fu-context-private.h"
 #include "fu-plugin-private.h"
+#include "fu-thunderbolt-plugin.h"
 #include "fu-udev-device-private.h"
 
 static gchar *
@@ -886,6 +887,7 @@ fu_thunderbolt_gudev_uevent_cb(GUdevClient *gudev_client,
 	if (g_strcmp0(action, "add") == 0) {
 		g_autoptr(FuUdevDevice) device = NULL;
 		g_autoptr(GError) error_local = NULL;
+		g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 
 		device = fu_udev_device_new(tt->ctx, udev_device);
 		if (!fu_device_probe(FU_DEVICE(device), &error_local)) {
@@ -894,6 +896,7 @@ fu_thunderbolt_gudev_uevent_cb(GUdevClient *gudev_client,
 		}
 		if (!fu_plugin_runner_backend_device_added(tt->plugin,
 							   FU_DEVICE(device),
+							   progress,
 							   &error_local))
 			g_debug("failed to add: %s", error_local->message);
 		return;
@@ -916,7 +919,6 @@ test_set_up(ThunderboltTest *tt, gconstpointer params)
 {
 	TestFlags flags = GPOINTER_TO_UINT(params);
 	gboolean ret;
-	g_autofree gchar *pluginfn = NULL;
 	g_autofree gchar *sysfs = NULL;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
@@ -935,15 +937,9 @@ test_set_up(ThunderboltTest *tt, gconstpointer params)
 	sysfs = umockdev_testbed_get_sys_dir(tt->bed);
 	g_debug("mock sysfs at %s", sysfs);
 
-	tt->plugin = fu_plugin_new(tt->ctx);
+	tt->plugin = fu_plugin_new_from_gtype(fu_thunderbolt_plugin_get_type(), tt->ctx);
+
 	g_assert_nonnull(tt->plugin);
-
-	pluginfn =
-	    g_test_build_filename(G_TEST_BUILT, "libfu_plugin_thunderbolt." G_MODULE_SUFFIX, NULL);
-	ret = fu_plugin_open(tt->plugin, pluginfn, &error);
-
-	g_assert_no_error(error);
-	g_assert_true(ret);
 
 	ret = fu_plugin_runner_startup(tt->plugin, progress, &error);
 	g_assert_no_error(error);
@@ -1078,8 +1074,8 @@ test_image_validation(ThunderboltTest *tt, gconstpointer user_data)
 
 	/* parse controller image */
 	ret = fu_firmware_parse(firmware_ctl, ctl_data, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
-	g_assert_true(ret);
 	g_assert_no_error(error);
+	g_assert_true(ret);
 
 	/* valid firmware update image */
 	fwi_path = g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw.bin", NULL);
@@ -1092,8 +1088,8 @@ test_image_validation(ThunderboltTest *tt, gconstpointer user_data)
 
 	/* parse */
 	ret = fu_firmware_parse(firmware_fwi, fwi_data, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
-	g_assert_true(ret);
 	g_assert_no_error(error);
+	g_assert_true(ret);
 
 	/* a wrong/bad firmware update image */
 	bad_path = g_test_build_filename(G_TEST_DIST, "tests", "colorhug.bin", NULL);

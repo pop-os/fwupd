@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.8.5',
+  version: '1.8.6',
   license: 'LGPL-2.1+',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c99'],
@@ -52,10 +52,6 @@ libfwupd_lt_current = '2'
 libfwupd_lt_revision = '0'
 libfwupd_lt_age = '0'
 libfwupd_lt_version = '@0@.@1@.@2@'.format(libfwupd_lt_current, libfwupd_lt_age, libfwupd_lt_revision)
-libfwupdplugin_lt_current = '7'
-libfwupdplugin_lt_revision = '0'
-libfwupdplugin_lt_age = '0'
-libfwupdplugin_lt_version = '@0@.@1@.@2@'.format(libfwupdplugin_lt_current, libfwupdplugin_lt_age, libfwupdplugin_lt_revision)
 
 # get supported warning flags
 warning_flags = [
@@ -504,11 +500,11 @@ conf.set_quoted('FWUPD_LOCALEDIR', localedir)
 
 if build_standalone
 if host_machine.system() == 'windows'
-  plugin_dir = 'fwupd-plugins-@0@'.format(libfwupdplugin_lt_current)
+  libdir_pkg = 'fwupd-@0@'.format(fwupd_version)
 else
-  plugin_dir = join_paths(libdir, 'fwupd-plugins-@0@'.format(libfwupdplugin_lt_current))
+  libdir_pkg = join_paths(libdir, 'fwupd-@0@'.format(fwupd_version))
 endif
-conf.set_quoted('FWUPD_PLUGINDIR', plugin_dir)
+conf.set_quoted('FWUPD_LIBDIR_PKG', libdir_pkg)
 endif
 
 # sanity check, otherwise there is not point building
@@ -572,14 +568,38 @@ if build_standalone
   subdir('libfwupdplugin')
   subdir('contrib')
 
-  # the plugins each add the gresource files into an array, and then in src:
-  # * for -Dgresource_quirks=enabled, they get built into ./src/fwupd and the files are ignored
-  # * for -Dgresource_quirks=disabled, the files get installed into quirks.d
+  # common to all plugins
+  plugin_builtins = []
+  plugin_incdirs = [
+    root_incdir,
+    fwupd_incdir,
+    fwupdplugin_incdir,
+  ]
+  plugin_libs = [
+    fwupd,
+    fwupdplugin,
+  ]
   subdir('plugins')
   subdir('src')
-
 endif
 subdir('docs')
+
+# append all the quirks into one big file and gzip it -- lzma is smaller, but needs libxmlb 0.3.3
+builtin_quirk = custom_target('builtin-quirk',
+  input: plugin_quirks,
+  output: 'builtin.quirk',
+  capture: true,
+  command: ['cat', '@INPUT@'],
+)
+gzip = find_program('gzip')
+custom_target('builtin-quirk-gz',
+  input: builtin_quirk,
+  output: 'builtin.quirk.gz',
+  capture: true,
+  command: [gzip, '-k', '--stdout', '@INPUT@'],
+  install: true,
+  install_dir: join_paths(datadir, 'fwupd', 'quirks.d'),
+)
 
 if build_daemon and libsystemd.found()
   install_symlink('fwupd-offline-update.service',

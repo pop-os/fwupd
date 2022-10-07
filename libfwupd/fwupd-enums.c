@@ -360,6 +360,8 @@ fwupd_device_problem_to_string(FwupdDeviceProblem device_problem)
 		return "lid-is-closed";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_IS_EMULATED)
 		return "is-emulated";
+	if (device_problem == FWUPD_DEVICE_PROBLEM_MISSING_LICENSE)
+		return "missing-license";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_UNKNOWN)
 		return "unknown";
 	return NULL;
@@ -394,6 +396,8 @@ fwupd_device_problem_from_string(const gchar *device_problem)
 		return FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED;
 	if (g_strcmp0(device_problem, "is-emulated") == 0)
 		return FWUPD_DEVICE_PROBLEM_IS_EMULATED;
+	if (g_strcmp0(device_problem, "missing-license") == 0)
+		return FWUPD_DEVICE_PROBLEM_MISSING_LICENSE;
 	return FWUPD_DEVICE_PROBLEM_UNKNOWN;
 }
 
@@ -442,6 +446,8 @@ fwupd_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		return "auth-required";
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_SECURE_CONFIG)
 		return "secure-config";
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_MODULAR)
+		return "modular";
 	return NULL;
 }
 
@@ -488,6 +494,8 @@ fwupd_plugin_flag_from_string(const gchar *plugin_flag)
 		return FWUPD_PLUGIN_FLAG_AUTH_REQUIRED;
 	if (g_strcmp0(plugin_flag, "secure-config") == 0)
 		return FWUPD_PLUGIN_FLAG_SECURE_CONFIG;
+	if (g_strcmp0(plugin_flag, "modular") == 0)
+		return FWUPD_PLUGIN_FLAG_MODULAR;
 	return FWUPD_DEVICE_FLAG_UNKNOWN;
 }
 
