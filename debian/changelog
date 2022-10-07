@@ -1,3 +1,12 @@
+fwupd (1.8.6-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.8.6)
+    - Notable change upstream is that libfwupdplugin is no longer a library
+      that is available for developing out-of-tree plugins.  All plugins are
+      now linked into an internal library distributed in the fwupd package.
+
+ -- Mario Limonciello <superm1@gmail.com>  Fri, 07 Oct 2022 13:42:24 -0500
+
 fwupd (1.8.5-1) unstable; urgency=medium
 
   * New upstream version (1.8.5)
