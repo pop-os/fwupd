@@ -4,6 +4,8 @@ fwupd (1.8.6-1) UNRELEASED; urgency=medium
     - Notable change upstream is that libfwupdplugin is no longer a library
       that is available for developing out-of-tree plugins.  All plugins are
       now linked into an internal library distributed in the fwupd package.
+  * debian/control:
+    - Refresh for this upstream change.
   * Drop all patches, upstream.
 
  -- Mario Limonciello <superm1@gmail.com>  Fri, 07 Oct 2022 13:42:24 -0500
