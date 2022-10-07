@@ -13,7 +13,6 @@ Build-Depends:
 	fwupd-unsigned-dev [amd64 arm64 armhf i386],
 	gcab,
 	gettext (>= 0.19.8.1),
-	gi-docgen,
 	gir1.2-pango-1.0,
 	gnu-efi [amd64 arm64 armhf i386],
 	gnutls-bin,
