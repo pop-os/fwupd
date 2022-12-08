@@ -1,3 +1,10 @@
+fwupd (1.8.8-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.8.8)
+  * drop symbol upstream.
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 07 Dec 2022 20:03:31 -0600
+
 fwupd (1.8.6-2) unstable; urgency=medium
 
   * debian/control:
