@@ -319,8 +319,8 @@ msgid "AMD Firmware Write Protection"
 msgstr "Ochrona przed zapisem oprogramowania sprzętowego AMD"
 
 #. TRANSLATORS: Title: if firmware enforces rollback protection
-msgid "AMD Rollback Protection"
-msgstr "Ochrona przed wycofaniem AMD"
+msgid "AMD Secure Processor Rollback Protection"
+msgstr "Ochrona procesora zabezpieczeń AMD przed wycofaniem"
 
 #. TRANSLATORS: the user needs to do something, e.g. remove the device
 msgid "Action Required:"
@@ -500,6 +500,14 @@ msgstr "Automatyczne zgłaszanie"
 #. TRANSLATORS: can we JFDI?
 msgid "Automatically upload every time?"
 msgstr "Automatycznie wysyłać za każdym razem?"
+
+#. TRANSLATORS: Title: if firmware enforces rollback protection
+msgid "BIOS Rollback Protection"
+msgstr "Ochrona BIOS-u przed wycofaniem"
+
+#. TRANSLATORS: Title: if firmware enforces rollback protection
+msgid "BIOS rollback protection"
+msgstr "Ochrona BIOS-u przed wycofaniem"
 
 #. TRANSLATORS: description of a BIOS setting
 msgid "BIOS updates delivered via LVFS or Windows Update"
@@ -755,6 +763,10 @@ msgstr "Usunięto urządzenie:"
 msgid "Device requires AC power to be connected"
 msgstr "Urządzenie wymaga podłączenia do prądu"
 
+#. TRANSLATORS: The device cannot be updated due to missing vendor's license."
+msgid "Device requires a software license to update"
+msgstr "Urządzenie wymaga licencji na oprogramowanie, aby zaktualizować"
+
 #. TRANSLATORS: Device supports a safety mechanism for flashing
 msgid "Device stages updates"
 msgstr "Urządzenie przygotowuje aktualizacje"
@@ -858,6 +870,14 @@ msgstr "Bez wykonywania testów bezpieczeństwa urządzenia"
 #. TRANSLATORS: command line option
 msgid "Do not prompt for devices"
 msgstr "Bez pytania o urządzenia"
+
+#. TRANSLATORS: command line option
+msgid "Do not search the firmware when parsing"
+msgstr "Bez wyszukiwania oprogramowania sprzętowego podczas przetwarzania"
+
+#. TRANSLATORS: warning message shown after update has been scheduled
+msgid "Do not turn off your computer or remove the AC adaptor while the update is in progress."
+msgstr "Nie należy wyłączać komputera ani odłączać zasilacza w czasie trwania aktualizacji."
 
 #. TRANSLATORS: command line option
 msgid "Do not write to the history database"
@@ -1657,6 +1677,10 @@ msgstr "Wyświetla listę dostępnych typów oprogramowania sprzętowego"
 msgid "Lists files on the ESP"
 msgstr "Wyświetla listę plików na ESP"
 
+#. TRANSLATORS: the plugin was created from a .so object, and was not built-in
+msgid "Loaded from an external module"
+msgstr "Wczytane z zewnętrznego modułu"
+
 #. TRANSLATORS: parsing the firmware information
 msgid "Loading…"
 msgstr "Wczytywanie…"
@@ -1668,6 +1692,16 @@ msgstr "Zablokowane"
 #. TRANSLATORS: the release urgency
 msgid "Low"
 msgstr "Niska"
+
+#. TRANSLATORS: Title: MEI = Intel Management Engine, and key refers
+#. * to the private/public key used to secure loading of firmware
+msgid "MEI Key Manifest"
+msgstr "Manifest klucza MEI"
+
+#. TRANSLATORS: Title: MEI = Intel Management Engine, and key refer
+#. * to the private/public key used to secure loading of firmware
+msgid "MEI key manifest"
+msgstr "Manifest klucza MEI"
 
 #. TRANSLATORS: Title: MEI = Intel Management Engine
 msgid "MEI manufacturing mode"
@@ -1907,6 +1941,10 @@ msgstr "Wykonać działanie?"
 msgid "Platform Debugging"
 msgstr "Debugowanie platformy"
 
+#. TRANSLATORS: Title: Allows debugging of parts using proprietary hardware
+msgid "Platform debugging"
+msgstr "Debugowanie platformy"
+
 #. TRANSLATORS: 'recovery key' here refers to a code, rather than a physical
 #. metal thing
 msgid "Please ensure you have the volume recovery key before continuing."
@@ -1941,6 +1979,10 @@ msgstr "Ochrona DMA przed uruchomieniem jest wyłączona"
 msgid "Pre-boot DMA protection is enabled"
 msgstr "Ochrona DMA przed uruchomieniem jest włączona"
 
+#. TRANSLATORS: warning message
+msgid "Press unlock on the device to continue the update process."
+msgstr "Proszę nacisnąć „Odblokuj” na urządzeniu, aby kontynuować aktualizację."
+
 #. TRANSLATORS: version number of previous firmware
 msgid "Previous version"
 msgstr "Poprzednia wersja"
@@ -1965,6 +2007,10 @@ msgstr "Kontynuować wysyłanie?"
 #. TRANSLATORS: Title: if fwupd supports HSI on this chip
 msgid "Processor Security Checks"
 msgstr "Testy zabezpieczeń procesora"
+
+#. TRANSLATORS: Title: if firmware enforces rollback protection
+msgid "Processor rollback protection"
+msgstr "Ochrona procesora przed wycofaniem"
 
 #. TRANSLATORS: a non-free software license
 msgid "Proprietary"
@@ -2108,10 +2154,6 @@ msgstr "Pobiera ustawienia BIOS-u. Jeśli żadne parametry nie zostaną przekaza
 #. TRANSLATORS: command description
 msgid "Return all the hardware IDs for the machine"
 msgstr "Zwraca wszystkie identyfikatory sprzętu dla komputera"
-
-#. TRANSLATORS: Title: if firmware enforces rollback protection
-msgid "Rollback protection"
-msgstr "Ochrona przed wycofaniem"
 
 #. TRANSLATORS: this is shown in the MOTD
 msgid "Run `fwupdmgr get-upgrades` for more information."
@@ -2564,6 +2606,14 @@ msgstr "Oprogramowanie sprzętowe od firmy %s nie jest dostarczane przez firmę 
 msgid "The system clock has not been set correctly and downloading files may fail."
 msgstr "Zegar komputera nie jest poprawnie ustawiony i pobieranie plików może się nie powieść."
 
+#. TRANSLATORS: warning message shown after update has been scheduled
+msgid "The update will continue when the device USB cable has been unplugged and then re-inserted."
+msgstr "Aktualizacja zostanie kontynuowana po odłączeniu i ponownym podłączeniu kabla USB urządzenia."
+
+#. TRANSLATORS: warning message shown after update has been scheduled
+msgid "The update will continue when the device USB cable has been unplugged."
+msgstr "Aktualizacja zostanie kontynuowana po odłączeniu kabla USB urządzenia."
+
 #. TRANSLATORS: naughty vendor
 msgid "The vendor did not supply any release notes."
 msgstr "Dostawca nie dostarczył żadnych informacji o wydaniu."
@@ -2909,6 +2959,11 @@ msgstr "Oczekiwanie…"
 #. TRANSLATORS: command description
 msgid "Watch for hardware changes"
 msgstr "Obserwuje zmiany sprzętu"
+
+#. TRANSLATORS: check various UEFI and ACPI tables are unchanged after the
+#. update
+msgid "Will measure elements of system integrity around an update"
+msgstr "Dokona pomiaru elementów spójności komputera wokół aktualizacji"
 
 #. TRANSLATORS: command description
 msgid "Write firmware from file into device"

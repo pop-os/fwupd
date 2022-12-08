@@ -241,7 +241,13 @@ fu_usb_device_query_hub(FuUsbDevice *self, GError **error)
 	}
 	if (hub->len > 0)
 		fu_device_add_instance_str(FU_DEVICE(self), "HUB", hub->str);
-	return fu_device_build_instance_id(FU_DEVICE(self), error, "VID", "PID", "HUB", NULL);
+	return fu_device_build_instance_id(FU_DEVICE(self),
+					   error,
+					   "USB",
+					   "VID",
+					   "PID",
+					   "HUB",
+					   NULL);
 }
 #endif
 
@@ -828,6 +834,13 @@ fu_udev_device_unbind_driver(FuDevice *device, GError **error)
 FuUsbDevice *
 fu_usb_device_new(FuContext *ctx, GUsbDevice *usb_device)
 {
+#if G_USB_CHECK_VERSION(0, 4, 3)
+	if (usb_device != NULL && g_usb_device_has_tag(usb_device, "is-transient")) {
+		g_critical("cannot use a device built using fu_udev_device_find_usb_device() as "
+			   "the GUsbContext is different");
+		return NULL;
+	}
+#endif
 	return g_object_new(FU_TYPE_USB_DEVICE, "context", ctx, "usb-device", usb_device, NULL);
 }
 

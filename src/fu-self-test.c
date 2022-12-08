@@ -1480,7 +1480,10 @@ fu_engine_require_hwid_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* load engine to get FuConfig set up */
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	ret = fu_engine_load(engine,
+			     FU_ENGINE_LOAD_FLAG_NO_CACHE | FU_ENGINE_LOAD_FLAG_HWINFO,
+			     progress,
+			     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -3307,7 +3310,7 @@ fu_plugin_module_func(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	GError *error = NULL;
 	FuDevice *device_tmp;
-	FwupdRelease *release;
+	FwupdRelease *release_tmp;
 	gboolean ret;
 	guint cnt = 0;
 	g_autofree gchar *localstatedir = NULL;
@@ -3320,6 +3323,7 @@ fu_plugin_module_func(gconstpointer user_data)
 	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(FuHistory) history = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(FwupdRelease) release = fwupd_release_new();
 	g_autoptr(GBytes) blob_cab = NULL;
 	g_autoptr(GMappedFile) mapped_file = NULL;
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
@@ -3371,7 +3375,6 @@ fu_plugin_module_func(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_nonnull(mapped_file);
 	blob_cab = g_mapped_file_get_bytes(mapped_file);
-	release = fu_device_get_release_default(device);
 	fwupd_release_set_version(release, "1.2.3");
 	ret = fu_engine_schedule_update(engine,
 					device,
@@ -3393,13 +3396,13 @@ fu_plugin_module_func(gconstpointer user_data)
 	g_assert_cmpint(fu_device_get_update_state(device2), ==, FWUPD_UPDATE_STATE_PENDING);
 	g_assert_cmpstr(fu_device_get_update_error(device2), ==, NULL);
 	g_assert_true(fu_device_has_flag(device2, FWUPD_DEVICE_FLAG_NEEDS_REBOOT));
-	release = fu_device_get_release_default(device2);
-	g_assert_nonnull(release);
-	g_assert_cmpstr(fwupd_release_get_filename(release), !=, NULL);
-	g_assert_cmpstr(fwupd_release_get_version(release), ==, "1.2.3");
+	release_tmp = fu_device_get_release_default(device2);
+	g_assert_nonnull(release_tmp);
+	g_assert_cmpstr(fwupd_release_get_filename(release_tmp), !=, NULL);
+	g_assert_cmpstr(fwupd_release_get_version(release_tmp), ==, "1.2.3");
 
 	/* save this; we'll need to delete it later */
-	pending_cap = g_strdup(fwupd_release_get_filename(release));
+	pending_cap = g_strdup(fwupd_release_get_filename(release_tmp));
 
 	/* lets do this online */
 	fu_engine_add_device(engine, device);
@@ -4096,7 +4099,6 @@ fu_spawn_timeout_func(void)
 static void
 fu_release_compare_func(gconstpointer user_data)
 {
-	FuDevice *device_tmp;
 	g_autoptr(GPtrArray) releases = g_ptr_array_new();
 	g_autoptr(FuDevice) device1 = fu_device_new(NULL);
 	g_autoptr(FuDevice) device2 = fu_device_new(NULL);
@@ -4105,25 +4107,31 @@ fu_release_compare_func(gconstpointer user_data)
 	g_autoptr(FuRelease) release2 = fu_release_new();
 	g_autoptr(FuRelease) release3 = fu_release_new();
 
-	fu_device_set_order(device1, 99);
+	fu_device_set_order(device1, 33);
 	fu_release_set_device(release1, device1);
-	g_ptr_array_add(releases, release1);
+	fu_release_set_priority(release1, 0);
+	fu_release_set_branch(release1, "1");
+
 	fu_device_set_order(device2, 11);
 	fu_release_set_device(release2, device2);
-	g_ptr_array_add(releases, release2);
-	fu_device_set_order(device3, 33);
+	fu_release_set_priority(release2, 0);
+	fu_release_set_branch(release2, "2");
+
+	fu_device_set_order(device3, 11);
 	fu_release_set_device(release3, device3);
+	fu_release_set_priority(release3, 99);
+	fu_release_set_branch(release3, "3");
+
+	g_ptr_array_add(releases, release1);
+	g_ptr_array_add(releases, release2);
 	g_ptr_array_add(releases, release3);
 
 	/* order the install tasks */
 	g_ptr_array_sort(releases, fu_release_compare_func_cb);
 	g_assert_cmpint(releases->len, ==, 3);
-	device_tmp = fu_release_get_device(g_ptr_array_index(releases, 0));
-	g_assert_cmpint(fu_device_get_order(device_tmp), ==, 11);
-	device_tmp = fu_release_get_device(g_ptr_array_index(releases, 1));
-	g_assert_cmpint(fu_device_get_order(device_tmp), ==, 33);
-	device_tmp = fu_release_get_device(g_ptr_array_index(releases, 2));
-	g_assert_cmpint(fu_device_get_order(device_tmp), ==, 99);
+	g_assert_cmpstr(fu_release_get_branch(g_ptr_array_index(releases, 0)), ==, "3");
+	g_assert_cmpstr(fu_release_get_branch(g_ptr_array_index(releases, 1)), ==, "2");
+	g_assert_cmpstr(fu_release_get_branch(g_ptr_array_index(releases, 2)), ==, "1");
 }
 
 static void

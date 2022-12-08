@@ -1,18 +1,25 @@
 if build_standalone and get_option('lvfs') != 'false'
-  install_data([
-      'lvfs-testing.conf',
-    ],
-    install_dir: join_paths(sysconfdir, 'fwupd', 'remotes.d')
-  )
   con3 = configuration_data()
   if get_option('lvfs') == 'disabled'
     con3.set('enabled', 'false')
   else
     con3.set('enabled', 'true')
   endif
+  if libxmlb.version().version_compare('>= 0.3.3')
+    con3.set('compression', 'xz')
+  else
+    con3.set('compression', 'gz')
+  endif
   configure_file(
     input: 'lvfs.conf',
     output: 'lvfs.conf',
+    configuration: con3,
+    install: true,
+    install_dir: join_paths(sysconfdir, 'fwupd', 'remotes.d'),
+  )
+  configure_file(
+    input: 'lvfs-testing.conf',
+    output: 'lvfs-testing.conf',
     configuration: con3,
     install: true,
     install_dir: join_paths(sysconfdir, 'fwupd', 'remotes.d'),

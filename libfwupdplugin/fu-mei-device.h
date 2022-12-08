@@ -17,10 +17,7 @@ struct _FuMeiDeviceClass {
 };
 
 gboolean
-fu_mei_device_connect(FuMeiDevice *self,
-		      const gchar *guid,
-		      guchar req_protocol_version,
-		      GError **error);
+fu_mei_device_connect(FuMeiDevice *self, guchar req_protocol_version, GError **error);
 gboolean
 fu_mei_device_read(FuMeiDevice *self,
 		   guint8 *buf,
@@ -38,3 +35,7 @@ guint
 fu_mei_device_get_max_msg_length(FuMeiDevice *self);
 guint8
 fu_mei_device_get_protocol_version(FuMeiDevice *self);
+gchar *
+fu_mei_device_get_fw_ver(FuMeiDevice *self, guint idx, GError **error);
+gchar *
+fu_mei_device_get_fw_status(FuMeiDevice *self, guint idx, GError **error);

@@ -1,4 +1,4 @@
-if gidocgen_dep.found() and docs_python_deps.allowed() and gidocgen_app.found() and introspection.allowed()
+if build_docs and introspection.allowed()
   toml_conf = configuration_data()
   docgen_version = source_version
   if git.found() and source_version != fwupd_version
@@ -43,6 +43,30 @@ if gidocgen_dep.found() and docs_python_deps.allowed() and gidocgen_app.found() 
     install_dir: join_paths(datadir, 'doc'),
   )
 
+  subdir('hsi-tests.d')
+  hsi_md = custom_target('generate-hsi-spec',
+    input: hsi_test_jsons,
+    output : 'hsi.md',
+    command : [
+      python3,
+      files(['generate-hsi-spec.py', 'hsi.md.in']),
+      '@OUTPUT@',
+      '@INPUT@',
+    ],
+  )
+  custom_target('generate-oval',
+    input: hsi_test_jsons,
+    output : 'oval.xml',
+    command : [
+      python3,
+      files(['generate-oval.py']),
+      '--version', fwupd_version,
+      '--schema-version', '5.11.3',
+      '@OUTPUT@',
+      '@INPUT@',
+    ],
+  )
+
   custom_target('doc-fwupdplugin',
     input: [
       fwupdplugin_toml,
@@ -58,11 +82,13 @@ if gidocgen_dep.found() and docs_python_deps.allowed() and gidocgen_app.found() 
       '--config=@INPUT0@',
       '--output-dir=@OUTPUT@',
       '--no-namespace-dir',
+      '--content-dir=@0@'.format(meson.current_build_dir()),
       '--content-dir=@0@'.format(meson.current_source_dir()),
       '@INPUT1@',
     ],
     depends: [
       fwupdplugin_gir[0],
+      hsi_md,
     ],
     build_by_default: true,
     install: true,

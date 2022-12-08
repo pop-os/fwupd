@@ -817,6 +817,11 @@ fu_util_release_get_name(FwupdRelease *release)
 			 * SATA or NVMe disk */
 			return g_strdup_printf(_("%s SSD Update"), name);
 		}
+		if (g_strcmp0(cat, "X-Gpu") == 0) {
+			/* TRANSLATORS: GPU refers to a Graphics Processing Unit, e.g.
+			 * the "video card" */
+			return g_strdup_printf(_("%s GPU Update"), name);
+		}
 	}
 
 	/* TRANSLATORS: this is the fallback where we don't know if the release
@@ -1702,6 +1707,10 @@ fu_util_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		/* TRANSLATORS: the plugin was created from a .so object, and was not built-in */
 		return _("Loaded from an external module");
 	}
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_MEASURE_SYSTEM_INTEGRITY) {
+		/* TRANSLATORS: check various UEFI and ACPI tables are unchanged after the update */
+		return _("Will measure elements of system integrity around an update");
+	}
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_EFIVAR_NOT_MOUNTED) {
 		/* TRANSLATORS: the user is using Gentoo/Arch and has screwed something up */
 		return _("Required efivarfs filesystem was not found");
@@ -1871,6 +1880,58 @@ fu_util_release_flag_to_string(FwupdReleaseFlags release_flag)
 	return fwupd_release_flag_to_string(release_flag);
 }
 
+static void
+fu_util_report_add_string(FwupdReport *report, guint idt, GString *str)
+{
+	const gchar *tmp2;
+	g_autofree gchar *title = NULL;
+
+	/* TRANSLATORS: the %s is a vendor name, e.g. Lenovo */
+	title = g_strdup_printf(_("Tested by %s"), fwupd_report_get_vendor(report));
+	fu_string_append(str, idt, title, NULL);
+	if (fwupd_report_get_created(report) != 0) {
+		gint64 value = (gint64)fwupd_report_get_created(report);
+		g_autoptr(GDateTime) date = g_date_time_new_from_unix_utc(value);
+		g_autofree gchar *tmp = g_date_time_format(date, "%F");
+		/* TRANSLATORS: when the release was tested */
+		fu_string_append(str, idt + 1, _("Tested"), tmp);
+	}
+	if (fwupd_report_get_distro_id(report) != NULL) {
+		g_autoptr(GString) str2 = g_string_new(fwupd_report_get_distro_id(report));
+		if (fwupd_report_get_distro_version(report) != NULL)
+			g_string_append_printf(str2,
+					       " %s",
+					       fwupd_report_get_distro_version(report));
+		if (fwupd_report_get_distro_variant(report) != NULL)
+			g_string_append_printf(str2,
+					       " (%s)",
+					       fwupd_report_get_distro_variant(report));
+		/* TRANSLATORS: the OS the release was tested on */
+		fu_string_append(str, idt + 1, _("Distribution"), str2->str);
+	}
+	if (fwupd_report_get_version_old(report) != NULL) {
+		fu_string_append(str,
+				 idt + 1,
+				 /* TRANSLATORS: the firmware old version */
+				 _("Old version"),
+				 fwupd_report_get_version_old(report));
+	}
+	tmp2 = fwupd_report_get_metadata_item(report, "RuntimeVersion(org.freedesktop.fwupd)");
+	if (tmp2 != NULL) {
+		/* TRANSLATORS: the fwupd version the release was tested on */
+		fu_string_append(str, idt + 1, _("Version[fwupd]"), tmp2);
+	}
+}
+
+gchar *
+fu_util_report_to_string(FwupdReport *report, guint idt)
+{
+	g_autoptr(GString) str = g_string_new(NULL);
+	g_return_val_if_fail(FWUPD_IS_RELEASE(report), NULL);
+	fu_util_report_add_string(report, idt, str);
+	return g_string_free(g_steal_pointer(&str), FALSE);
+}
+
 gchar *
 fu_util_release_to_string(FwupdRelease *rel, guint idt)
 {
@@ -1878,6 +1939,7 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 	const gchar *tmp2;
 	GPtrArray *issues = fwupd_release_get_issues(rel);
 	GPtrArray *tags = fwupd_release_get_tags(rel);
+	GPtrArray *reports = fwupd_release_get_reports(rel);
 	guint64 flags = fwupd_release_get_flags(rel);
 	g_autofree gchar *desc_fb = NULL;
 	g_autoptr(GString) str = g_string_new(NULL);
@@ -1951,6 +2013,10 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 				 /* TRANSLATORS: how important the release is */
 				 _("Urgency"),
 				 fu_util_release_urgency_to_string(tmp));
+	}
+	for (guint i = 0; i < reports->len; i++) {
+		FwupdReport *report = g_ptr_array_index(reports, i);
+		fu_util_report_add_string(report, idt + 1, str);
 	}
 	if (fwupd_release_get_details_url(rel) != NULL) {
 		fu_string_append(str,
@@ -2281,12 +2347,12 @@ fu_util_security_event_to_string(FwupdSecurityAttr *attr)
 		      FWUPD_SECURITY_ATTR_RESULT_TAINTED,
 		      FWUPD_SECURITY_ATTR_RESULT_NOT_TAINTED,
 		      /* TRANSLATORS: HSI event title */
-		      _("Kernel is tainted")},
+		      _("Kernel is no longer tainted")},
 		     {FWUPD_SECURITY_ATTR_ID_KERNEL_TAINTED,
 		      FWUPD_SECURITY_ATTR_RESULT_NOT_TAINTED,
 		      FWUPD_SECURITY_ATTR_RESULT_TAINTED,
 		      /* TRANSLATORS: HSI event title */
-		      _("Kernel is no longer tainted")},
+		      _("Kernel is tainted")},
 		     /* ------------------------------------------*/
 		     {FWUPD_SECURITY_ATTR_ID_KERNEL_LOCKDOWN,
 		      FWUPD_SECURITY_ATTR_RESULT_ENABLED,

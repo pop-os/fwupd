@@ -89,15 +89,15 @@ struct _FuDeviceClass {
 /**
  * FuDeviceInstanceFlags:
  * @FU_DEVICE_INSTANCE_FLAG_NONE:		No flags set
- * @FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS:	Only use instance ID for quirk matching
- * @FU_DEVICE_INSTANCE_FLAG_NO_QUIRKS:		Do no quirk matching
+ * @FU_DEVICE_INSTANCE_FLAG_VISIBLE:		Show to the user
+ * @FU_DEVICE_INSTANCE_FLAG_QUIRKS:		Match against quirk files
  *
  * The flags to use when interacting with a device instance
  **/
 typedef enum {
 	FU_DEVICE_INSTANCE_FLAG_NONE = 0,
-	FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS = 1 << 0,
-	FU_DEVICE_INSTANCE_FLAG_NO_QUIRKS = 1 << 1,
+	FU_DEVICE_INSTANCE_FLAG_VISIBLE = 1 << 0,
+	FU_DEVICE_INSTANCE_FLAG_QUIRKS = 1 << 1,
 	/*< private >*/
 	FU_DEVICE_INSTANCE_FLAG_LAST
 } FuDeviceInstanceFlags;
@@ -142,6 +142,7 @@ fu_device_new(FuContext *ctx);
 #define fu_device_has_instance_id(d, v)	   fwupd_device_has_instance_id(FWUPD_DEVICE(d), v)
 #define fu_device_has_vendor_id(d, v)	   fwupd_device_has_vendor_id(FWUPD_DEVICE(d), v)
 #define fu_device_has_protocol(d, v)	   fwupd_device_has_protocol(FWUPD_DEVICE(d), v)
+#define fu_device_has_checksum(d, v)	   fwupd_device_has_checksum(FWUPD_DEVICE(d), v)
 #define fu_device_add_checksum(d, v)	   fwupd_device_add_checksum(FWUPD_DEVICE(d), v)
 #define fu_device_add_release(d, v)	   fwupd_device_add_release(FWUPD_DEVICE(d), v)
 #define fu_device_add_icon(d, v)	   fwupd_device_add_icon(FWUPD_DEVICE(d), v)
@@ -203,6 +204,7 @@ fu_device_new(FuContext *ctx);
 #define fu_device_get_protocols(d)	    fwupd_device_get_protocols(FWUPD_DEVICE(d))
 #define fu_device_get_flashes_left(d)	    fwupd_device_get_flashes_left(FWUPD_DEVICE(d))
 #define fu_device_get_install_duration(d)   fwupd_device_get_install_duration(FWUPD_DEVICE(d))
+#define fu_device_get_release_default(d)    fwupd_device_get_release_default(FWUPD_DEVICE(d))
 
 /**
  * FuDeviceInternalFlags:
@@ -617,8 +619,6 @@ void
 fu_device_set_context(FuDevice *self, FuContext *ctx);
 FuContext *
 fu_device_get_context(FuDevice *self);
-FwupdRelease *
-fu_device_get_release_default(FuDevice *self);
 GType
 fu_device_get_specialized_gtype(FuDevice *self);
 GType

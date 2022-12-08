@@ -276,7 +276,16 @@ fu_udev_device_set_driver(FuUdevDevice *self, const gchar *driver)
 	g_object_notify(G_OBJECT(self), "driver");
 }
 
-static void
+/**
+ * fu_udev_device_set_device_file:
+ * @self: a #FuUdevDevice
+ * @device_file: (nullable): a device path
+ *
+ * Sets the device file to use for reading and writing.
+ *
+ * Since: 1.8.7
+ **/
+void
 fu_udev_device_set_device_file(FuUdevDevice *self, const gchar *device_file)
 {
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
@@ -547,11 +556,8 @@ fu_udev_device_probe(FuDevice *device, GError **error)
 	fu_device_build_instance_id_quirk(device, NULL, subsystem, "MODALIAS", NULL);
 
 	/* add subsystem to match in plugins */
-	if (subsystem != NULL) {
-		fu_device_add_instance_id_full(device,
-					       subsystem,
-					       FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
-	}
+	if (subsystem != NULL)
+		fu_device_add_instance_id_full(device, subsystem, FU_DEVICE_INSTANCE_FLAG_QUIRKS);
 
 	/* add firmware_id */
 	if (g_strcmp0(g_udev_device_get_subsystem(priv->udev_device), "serio") == 0) {
@@ -1195,7 +1201,8 @@ fu_udev_device_set_physical_id(FuUdevDevice *self, const gchar *subsystems, GErr
 	} else if (g_strcmp0(subsystem, "usb") == 0 || g_strcmp0(subsystem, "mmc") == 0 ||
 		   g_strcmp0(subsystem, "i2c") == 0 || g_strcmp0(subsystem, "platform") == 0 ||
 		   g_strcmp0(subsystem, "scsi") == 0 || g_strcmp0(subsystem, "mtd") == 0 ||
-		   g_strcmp0(subsystem, "block") == 0 || g_strcmp0(subsystem, "gpio") == 0) {
+		   g_strcmp0(subsystem, "block") == 0 || g_strcmp0(subsystem, "gpio") == 0 ||
+		   g_strcmp0(subsystem, "video4linux") == 0) {
 		tmp = g_udev_device_get_property(udev_device, "DEVPATH");
 		if (tmp == NULL) {
 			g_set_error_literal(error,
@@ -1962,7 +1969,7 @@ fu_udev_device_get_devtype(FuUdevDevice *self)
  * Since: 1.6.0
  */
 GPtrArray *
-fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *const subsystem)
+fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *subsystem)
 {
 	g_autoptr(GPtrArray) out = g_ptr_array_new_with_free_func(g_object_unref);
 
@@ -2001,7 +2008,7 @@ fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *cons
 /**
  * fu_udev_device_get_parent_with_subsystem
  * @self: a #FuUdevDevice
- * @subsystem: the name of a udev subsystem
+ * @subsystem: (nullable): the name of a udev subsystem
  *
  * Get the device that is a parent of self and has the provided subsystem.
  *
@@ -2016,7 +2023,12 @@ fu_udev_device_get_parent_with_subsystem(FuUdevDevice *self, const gchar *subsys
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
 	g_autoptr(GUdevDevice) device_tmp = NULL;
 
-	device_tmp = g_udev_device_get_parent_with_subsystem(priv->udev_device, subsystem, NULL);
+	if (subsystem == NULL) {
+		device_tmp = g_udev_device_get_parent(priv->udev_device);
+	} else {
+		device_tmp =
+		    g_udev_device_get_parent_with_subsystem(priv->udev_device, subsystem, NULL);
+	}
 	if (device_tmp == NULL)
 		return NULL;
 	return fu_udev_device_new(fu_device_get_context(FU_DEVICE(self)), device_tmp);
@@ -2070,6 +2082,75 @@ fu_udev_device_get_children_with_subsystem(FuUdevDevice *self, const gchar *cons
 #endif
 
 	return g_steal_pointer(&out);
+}
+
+/**
+ * fu_udev_device_find_usb_device:
+ * @self: a #FuUdevDevice
+ * @error: (nullable): optional return location for an error
+ *
+ * Gets the matching #GUsbDevice for the #GUdevDevice.
+ *
+ * NOTE: This should never be stored in the device class as an instance variable, as the lifecycle
+ * for `GUsbDevice` may be different to the `FuUdevDevice`. Every time the `GUsbDevice` is used
+ * this function should be called.
+ *
+ * Returns: (transfer full): a #GUsbDevice, or NULL if unset or invalid
+ *
+ * Since: 1.8.7
+ **/
+GUsbDevice *
+fu_udev_device_find_usb_device(FuUdevDevice *self, GError **error)
+{
+#if defined(HAVE_GUDEV) && defined(HAVE_GUSB)
+	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
+	guint8 bus = 0;
+	guint8 address = 0;
+	g_autoptr(GUdevDevice) udev_device = g_object_ref(priv->udev_device);
+	g_autoptr(GUsbContext) usb_ctx = NULL;
+	g_autoptr(GUsbDevice) usb_device = NULL;
+
+	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	/* look at the current device and all the parent devices until we can find the USB data */
+	while (udev_device != NULL) {
+		g_autoptr(GUdevDevice) udev_device_parent = NULL;
+		bus = g_udev_device_get_sysfs_attr_as_int(udev_device, "busnum");
+		address = g_udev_device_get_sysfs_attr_as_int(udev_device, "devnum");
+		if (bus != 0 || address != 0)
+			break;
+		udev_device_parent = g_udev_device_get_parent(udev_device);
+		g_set_object(&udev_device, udev_device_parent);
+	}
+
+	/* nothing found */
+	if (bus == 0x0 && address == 0x0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "No parent device with busnum and devnum");
+		return NULL;
+	}
+
+	/* match device */
+	usb_ctx = g_usb_context_new(error);
+	if (usb_ctx == NULL)
+		return NULL;
+	usb_device = g_usb_context_find_by_bus_address(usb_ctx, bus, address, error);
+	if (usb_device == NULL)
+		return NULL;
+#if G_USB_CHECK_VERSION(0, 4, 1)
+	g_usb_device_add_tag(usb_device, "is-transient");
+#endif
+	return g_steal_pointer(&usb_device);
+#else
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "Not supported as <gudev.h> or <gusb.h> is unavailable");
+	return NULL;
+#endif
 }
 
 static void

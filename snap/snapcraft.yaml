@@ -32,19 +32,15 @@ apps:
     command: fwupdagent.wrapper
 
 parts:
-  #fetch the latest version of the signed bootloader
-  #this might not match our fwupdx64.efi, but it's better than nothing
-  fwup-efi-signed:
-    build-packages:
-      - python3-apt
-    plugin: make
-    source: contrib/snap/fwup-efi-signed
   #needed for UEFI plugin to build UX labels
   build-introspection:
     plugin: nil
     stage-packages:
       - python3-gi
       - python3-cairo
+      - python3-gi-cairo
+    override-stage: |
+      craftctl default
     prime:
       - -etc
       - -usr
@@ -53,13 +49,13 @@ parts:
     plugin: meson
     meson-parameters: [--prefix=/,
                        -Defi_binary=false,
-                       -Dplugin_uefi_capsule_splash=false,
                        -Dtests=false,
                        -Dbuild=all,
                        -Dintrospection=disabled,
                        -Dman=false,
+                       -Dplugin_flashrom=false,
                        -Dplugin_powerd=disabled,
-                       -Dudevdir=$SNAPCRAFT_STAGE/lib/udev,
+                       -Dudevdir=$CRAFT_STAGE/lib/udev,
                        "-Dgusb:tests=false",
                        "-Dgusb:docs=false",
                        "-Dgusb:introspection=false",
@@ -73,24 +69,38 @@ parts:
     source: .
     source-type: git
     override-build: |
-      snapcraftctl build
-      echo $(git describe HEAD --always) > $SNAPCRAFT_STAGE/version
+      craftctl default
+      for name in ${CRAFT_PART_INSTALL}/lib/*/fwupd-*/libfwupd*; do
+        mv ${name} `dirname ${name}`/.. ;\
+      done
+      # fixes up commands like fwupdtool -> fwupd.fwupdtool
+      sed -i "s,\(complete -F _fwupd[a-z]*\) \(fwupd.*\),\1 fwupd.\2,;          \
+              s,\(command.*\)\(fwupdtool\),\1fwupd.\2,;                         \
+              s,\(command.*\)\(fwupdmgr\),\1fwupd.\2,;                          \
+              s,\(command.*\)\(fwupdagent\),\1fwupd.\2,"                        \
+              ${CRAFT_PART_INSTALL}/share/bash-completion/completions/*
+      # fixes up dbus service for classic snap
+      sed -i 's!SystemdService=\(.*\)!SystemdService=snap.fwupd.fwupd.service!' \
+              ${CRAFT_PART_INSTALL}/share/dbus-1/system-services/org.freedesktop.fwupd.service
+      cp -R /usr/libexec/fwupd/efi ${CRAFT_PART_INSTALL}/libexec/fwupd
     override-pull: |
-      snapcraftctl pull
-      snapcraftctl set-version $(git describe HEAD --always)
+      craftctl default
+      craftctl set version=$(git describe HEAD --always)
     build-packages:
       - bash-completion
       - curl
+      - fwupd-signed
+      - fwupd-unsigned
       - gettext
       - gcab
       - gnu-efi
+      - fwupd-unsigned-dev
       - libcurl4-openssl-dev
       - libarchive-dev
       - libcbor-dev
       - libcairo-dev
       - libefiboot-dev
       - libefivar-dev
-      - libflashrom-dev
       - libftdi1-dev
       - libgudev-1.0-dev
       - libgcab-dev
@@ -110,6 +120,7 @@ parts:
       - libsystemd-dev
       - libtss2-dev
       - libxmlb-dev
+      - libmm-glib-dev
       - libqmi-glib-dev
       - libmbim-glib-dev
       - locales
@@ -122,12 +133,17 @@ parts:
       - systemd
       - uuid-dev
     stage-packages:
+      - libunbound8
+      - libevent-2.1-7
+      - libnghttp2-14
+      - libpsl5
+      - librtmp1
       - libgcab-1.0-0
       - libarchive13
       - libcurl4
       - libcbor0.8
       - libassuan0
-      - libflashrom1
+      - libffi8
       - libjcat1
       - liblcms2-2
       - liblzma5
@@ -137,6 +153,8 @@ parts:
       - libusb-1.0-0
       - libgudev-1.0-0
       - libgpgme11
+      - libpcre32-3
+      - libprotobuf-c1
       - libpolkit-gobject-1-0
       - libsmbios-c2
       - libtss2-esys-3.0.2-0
@@ -160,6 +178,7 @@ parts:
       # /usr/bin/gpg2
       - -usr/bin
       - -usr/sbin
+      - -usr/libexec
       - -usr/share/man
       - -usr/share/GConf
       - -etc/X11
@@ -168,11 +187,17 @@ parts:
       - -usr/lib/dconf
       - -usr/lib/gcc
       - -usr/lib/glib-networking
+      - -usr/lib/gnupg
       - -usr/lib/gnupg2
       - -usr/lib/sasl2
       - -usr/lib/systemd
       - -usr/lib/*/audit
+      - -usr/share/bash-completion
+      - -usr/share/dbus-1
+      - -usr/share/gnupg
       - -usr/share/glib-2.0/schemas
+      - -usr/share/session-migration
+      - -usr/share/upstart
       - -usr/share/X11
       - -include
       - -lib/udev
@@ -188,11 +213,13 @@ parts:
       - -usr/share/gir-1.0
       - -usr/share/upstart
       - -usr/lib/*/pkgconfig
+      - -usr/lib/x86_64-linux-gnu/gio/modules/libdconfsettings.so
+      - -usr/lib/systemd/user/dconf.service
+      - -usr/share/dbus-1/services/ca.desrt.dconf.service
+      - -usr/lib/x86_64-linux-gnu/libdconf.so.1.0.0
     after: [build-introspection]
-  fix-bash-completion:
-    plugin: make
-    source: contrib/snap/fix-bash-completion
-    after: [fwupd]
+    build-environment:
+      - PYTHONPATH: "${CRAFT_STAGE}/usr/lib/python3/dist-packages"
   activate-shutdown:
     plugin: make
     source: contrib/snap/activate-shutdown

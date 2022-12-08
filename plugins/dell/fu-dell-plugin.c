@@ -17,6 +17,8 @@
 #include "fu-dell-plugin.h"
 #include "fu-plugin-dell.h"
 
+#define BIOS_SETTING_BIOS_DOWNGRADE "com.dell-wmi-sysman.AllowBiosDowngrade"
+
 struct _FuDellPlugin {
 	FuPlugin parent_instance;
 	FuDellSmiObj *smi_obj;
@@ -142,49 +144,74 @@ fu_dell_get_system_id(FuPlugin *plugin)
 }
 
 static gboolean
-fu_dell_supported(FuPlugin *plugin)
+fu_dell_supported(FuPlugin *plugin, GError **error)
 {
 	FuContext *ctx = fu_plugin_get_context(plugin);
 	g_autoptr(GBytes) de_table = NULL;
 	g_autoptr(GBytes) da_table = NULL;
 	g_autoptr(GBytes) enclosure = NULL;
-	const guint8 *value;
-	const struct da_structure *da_values;
-	gsize len;
+	guint8 value = 0;
+	struct da_structure da_values = {0x0};
 
 	/* make sure that Dell SMBIOS methods are available */
-	de_table = fu_context_get_smbios_data(ctx, 0xDE);
+	de_table = fu_context_get_smbios_data(ctx, 0xDE, error);
 	if (de_table == NULL)
 		return FALSE;
-	value = g_bytes_get_data(de_table, &len);
-	if (len == 0)
+	if (!fu_memread_uint8_safe(g_bytes_get_data(de_table, NULL),
+				   g_bytes_get_size(de_table),
+				   0x0,
+				   &value,
+				   error)) {
+		g_prefix_error(error, "invalid DE data: ");
 		return FALSE;
-	if (*value != 0xDE)
+	}
+	if (value != 0xDE) {
+		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "invalid DE data");
 		return FALSE;
-	da_table = fu_context_get_smbios_data(ctx, 0xDA);
+	}
+
+	da_table = fu_context_get_smbios_data(ctx, 0xDA, error);
 	if (da_table == NULL)
 		return FALSE;
-	da_values = (struct da_structure *)g_bytes_get_data(da_table, &len);
-	if (len == 0)
+	if (!fu_memcpy_safe((guint8 *)&da_values,
+			    sizeof(da_values),
+			    0x0, /* dst */
+			    g_bytes_get_data(da_table, NULL),
+			    g_bytes_get_size(da_table),
+			    0x0, /* src */
+			    sizeof(da_values),
+			    error)) {
+		g_prefix_error(error, "unable to access flash interface: ");
 		return FALSE;
-	if (!(da_values->supported_cmds & (1 << DACI_FLASH_INTERFACE_CLASS))) {
-		g_debug("unable to access flash interface. supported commands: 0x%x",
-			da_values->supported_cmds);
+	}
+	if (!(da_values.supported_cmds & (1 << DACI_FLASH_INTERFACE_CLASS))) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_INVALID_DATA,
+			    "unable to access flash interface. supported commands: 0x%x",
+			    da_values.supported_cmds);
 		return FALSE;
 	}
 
 	/* only run on intended Dell hw types */
-	enclosure = fu_context_get_smbios_data(ctx, FU_SMBIOS_STRUCTURE_TYPE_CHASSIS);
+	enclosure = fu_context_get_smbios_data(ctx, FU_SMBIOS_STRUCTURE_TYPE_CHASSIS, error);
 	if (enclosure == NULL)
 		return FALSE;
-	value = g_bytes_get_data(enclosure, &len);
-	if (len == 0)
+	if (!fu_memread_uint8_safe(g_bytes_get_data(enclosure, NULL),
+				   g_bytes_get_size(enclosure),
+				   0x0,
+				   &value,
+				   error)) {
+		g_prefix_error(error, "invalid enclosure data: ");
 		return FALSE;
+	}
 	for (guint i = 0; i < G_N_ELEMENTS(enclosure_allowlist); i++) {
-		if (enclosure_allowlist[i] == value[0])
+		if (enclosure_allowlist[i] == value)
 			return TRUE;
 	}
 
+	/* failed */
+	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "chassis invalid");
 	return FALSE;
 }
 
@@ -464,27 +491,27 @@ fu_dell_plugin_get_results(FuPlugin *plugin, FuDevice *device, GError **error)
 	FuContext *ctx = fu_plugin_get_context(plugin);
 	g_autoptr(GBytes) de_table = NULL;
 	const gchar *tmp = NULL;
-	const guint16 *completion_code;
-	gsize len;
+	guint16 completion_code = 0;
 
-	de_table = fu_context_get_smbios_data(ctx, 0xDE);
-	completion_code = g_bytes_get_data(de_table, &len);
-	if (len < 8) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "ERROR: Unable to read results of %s: %" G_GSIZE_FORMAT " < 8",
-			    fu_device_get_name(device),
-			    len);
+	de_table = fu_context_get_smbios_data(ctx, 0xDE, error);
+	if (de_table == NULL)
 		return FALSE;
-	}
 
 	/* look at byte offset 0x06  for identifier meaning completion code */
-	if (completion_code[3] == DELL_SUCCESS) {
+	if (!fu_memread_uint16_safe(g_bytes_get_data(de_table, NULL),
+				    g_bytes_get_size(de_table),
+				    0x06,
+				    &completion_code,
+				    G_LITTLE_ENDIAN,
+				    error)) {
+		g_prefix_error(error, "unable to read results of %s: ", fu_device_get_name(device));
+		return FALSE;
+	}
+	if (completion_code == DELL_SUCCESS) {
 		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_SUCCESS);
 	} else {
 		FwupdUpdateState update_state = FWUPD_UPDATE_STATE_FAILED;
-		switch (completion_code[3]) {
+		switch (completion_code) {
 		case DELL_CONSISTENCY_FAIL:
 			tmp = "The image failed one or more consistency checks.";
 			break;
@@ -703,13 +730,17 @@ fu_dell_plugin_detect_tpm(FuPlugin *plugin, GError **error)
 	self->smi_obj->input[0] = DACI_FLASH_ARG_TPM;
 	if (!fu_dell_execute_simple_smi(self->smi_obj,
 					DACI_FLASH_INTERFACE_CLASS,
-					DACI_FLASH_INTERFACE_SELECT))
+					DACI_FLASH_INTERFACE_SELECT)) {
+		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "cannot query");
 		return FALSE;
+	}
 
 	if (out->ret != 0) {
-		g_debug("Failed to query system for TPM information: "
-			"(%" G_GUINT32_FORMAT ")",
-			out->ret);
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_NOT_SUPPORTED,
+			    "failed to query system for TPM information: 0x%x",
+			    (guint)out->ret);
 		return FALSE;
 	}
 	/* HW version is output in second /input/ arg
@@ -720,7 +751,11 @@ fu_dell_plugin_detect_tpm(FuPlugin *plugin, GError **error)
 
 	/* test TPM enabled (Bit 0) */
 	if (!(out->status & TPM_EN_MASK)) {
-		g_debug("TPM not enabled (%x)", out->status);
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_NOT_SUPPORTED,
+			    "TPM not enabled: 0x%x",
+			    out->status);
 		return FALSE;
 	}
 
@@ -732,15 +767,20 @@ fu_dell_plugin_detect_tpm(FuPlugin *plugin, GError **error)
 		tpm_mode = "2.0";
 		tpm_mode_alt = "1.2";
 	} else {
-		g_debug("Unable to determine TPM mode");
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "unable to determine TPM mode");
 		return FALSE;
 	}
 
 	system_id = fu_dell_get_system_id(plugin);
-	if (self->smi_obj->fake_smbios)
+	if (self->smi_obj->fake_smbios) {
 		can_switch_modes = self->can_switch_modes;
-	else if (system_id == 0)
+	} else if (system_id == 0) {
+		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no system ID");
 		return FALSE;
+	}
 
 	for (guint i = 0; i < G_N_ELEMENTS(tpm_switch_allowlist); i++) {
 		if (tpm_switch_allowlist[i] == system_id) {
@@ -886,14 +926,12 @@ fu_dell_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 		return TRUE;
 	}
 
-	if (!fu_dell_supported(plugin)) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "Firmware updating not supported");
+	if (!fu_dell_supported(plugin, error)) {
+		g_prefix_error(error, "firmware updating not supported: ");
 		return FALSE;
 	}
 
+	self->smi_obj->smi = dell_smi_factory(DELL_SMI_DEFAULTS);
 	if (self->smi_obj->smi == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -925,10 +963,41 @@ fu_dell_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **error)
 static gboolean
 fu_dell_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
+	g_autoptr(GError) error_local = NULL;
+
 	/* look for switchable TPM */
-	if (!fu_dell_plugin_detect_tpm(plugin, error))
-		g_debug("No switchable TPM detected");
+	if (!fu_dell_plugin_detect_tpm(plugin, &error_local))
+		g_debug("no switchable TPM detected: %s", error_local->message);
+
+	/* always success */
 	return TRUE;
+}
+
+static void
+fu_dell_plugin_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
+{
+	FwupdBiosSetting *bios_attr;
+	FuContext *ctx = fu_plugin_get_context(plugin);
+	g_autoptr(FwupdSecurityAttr) attr = NULL;
+
+	bios_attr = fu_context_get_bios_setting(ctx, BIOS_SETTING_BIOS_DOWNGRADE);
+	if (bios_attr == NULL) {
+		g_debug("failed to find %s in cache", BIOS_SETTING_BIOS_DOWNGRADE);
+		return;
+	}
+
+	attr = fu_plugin_security_attr_new(plugin, FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION);
+	fu_security_attr_add_bios_target_value(attr, BIOS_SETTING_BIOS_DOWNGRADE, "Disabled");
+	fu_security_attrs_append(attrs, attr);
+
+	if (g_strcmp0(fwupd_bios_setting_get_current_value(bios_attr), "Enabled") == 0) {
+		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONFIG_FW);
+		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
+		return;
+	}
+
+	fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_ENABLED);
+	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
 }
 
 static void
@@ -955,8 +1024,6 @@ fu_dell_plugin_constructed(GObject *obj)
 	fu_context_add_runtime_version(ctx, "com.dell.libsmbios", tmp);
 	g_debug("Using libsmbios %s", tmp);
 
-	if (fu_dell_supported(plugin))
-		self->smi_obj->smi = dell_smi_factory(DELL_SMI_DEFAULTS);
 	self->smi_obj->fake_smbios = FALSE;
 	if (g_getenv("FWUPD_DELL_FAKE_SMBIOS") != NULL)
 		self->smi_obj->fake_smbios = TRUE;
@@ -992,4 +1059,5 @@ fu_dell_plugin_class_init(FuDellPluginClass *klass)
 	plugin_class->backend_device_added = fu_dell_plugin_backend_device_added;
 	plugin_class->device_registered = fu_dell_plugin_device_registered;
 	plugin_class->get_results = fu_dell_plugin_get_results;
+	plugin_class->add_security_attrs = fu_dell_plugin_add_security_attrs;
 }

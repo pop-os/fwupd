@@ -48,11 +48,11 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 {
 	const gchar *tmp;
 	FuDevice *device;
-	FwupdRelease *release;
+	g_autoptr(FwupdRelease) release = fwupd_release_new();
 
 	/* create new result */
 	device = fu_device_new(NULL);
-	release = fu_device_get_release_default(device);
+	fu_device_add_release(device, release);
 
 	/* device_id */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 0);
@@ -103,7 +103,7 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 	/* guid_default */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 9);
 	if (tmp != NULL)
-		fu_device_add_guid_full(device, tmp, FU_DEVICE_INSTANCE_FLAG_NO_QUIRKS);
+		fu_device_add_guid_full(device, tmp, FU_DEVICE_INSTANCE_FLAG_VISIBLE);
 
 	/* update_state */
 	fu_device_set_update_state(device, sqlite3_column_int(stmt, 10));
@@ -636,45 +636,53 @@ fu_history_modify_device(FuHistory *self, FuDevice *device, GError **error)
 }
 
 /**
- * fu_history_set_device_metadata:
+ * fu_history_modify_device_release:
  * @self: a #FuHistory
- * @device_id: a DeviceID string
- * @metadata: a #GHashTable of string:string
+ * @device: a #FuDevice
+ * @release: a #FwupdRelease
  * @error: (nullable): optional return location for an error
  *
- * Modify a device in the history database
+ * Modify a device in the history database, also changing metadata from the new release.
  *
  * Returns: @TRUE if successful, @FALSE for failure
  *
- * Since: 1.5.0
+ * Since: 1.8.8
  **/
 gboolean
-fu_history_set_device_metadata(FuHistory *self,
-			       const gchar *device_id,
-			       GHashTable *metadata,
-			       GError **error)
+fu_history_modify_device_release(FuHistory *self,
+				 FuDevice *device,
+				 FwupdRelease *release,
+				 GError **error)
 {
 #ifdef HAVE_SQLITE
 	gint rc;
-	g_autofree gchar *metadata_str = NULL;
-	g_autoptr(GRWLockWriterLocker) locker = NULL;
+	g_autofree gchar *metadata = NULL;
 	g_autoptr(sqlite3_stmt) stmt = NULL;
+	g_autoptr(GRWLockWriterLocker) locker = NULL;
 
 	g_return_val_if_fail(FU_IS_HISTORY(self), FALSE);
-	g_return_val_if_fail(device_id != NULL, FALSE);
+	g_return_val_if_fail(FU_IS_DEVICE(device), FALSE);
 
 	/* lazy load */
 	if (!fu_history_load(self, error))
 		return FALSE;
 
+	/* metadata is stored as a simple string */
+	metadata = _convert_hash_to_string(fwupd_release_get_metadata(release));
+
 	/* overwrite entry if it exists */
 	locker = g_rw_lock_writer_locker_new(&self->db_mutex);
 	g_return_val_if_fail(locker != NULL, FALSE);
-	g_debug("modifying %s", device_id);
+	g_debug("modifying device %s [%s]", fu_device_get_name(device), fu_device_get_id(device));
 	rc = sqlite3_prepare_v2(self->db,
 				"UPDATE history SET "
-				"metadata = ?1 "
-				"WHERE device_id = ?2;",
+				"update_state = ?1, "
+				"update_error = ?2, "
+				"checksum_device = ?6, "
+				"device_modified = ?7, "
+				"metadata = ?8, "
+				"flags = ?3 "
+				"WHERE device_id = ?4;",
 				-1,
 				&stmt,
 				NULL);
@@ -682,15 +690,24 @@ fu_history_set_device_metadata(FuHistory *self,
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INTERNAL,
-			    "failed to prepare SQL to update history: %s",
+			    "Failed to prepare SQL to update history: %s",
 			    sqlite3_errmsg(self->db));
 		return FALSE;
 	}
 
-	/* metadata is stored as a simple string */
-	metadata_str = _convert_hash_to_string(metadata);
-	sqlite3_bind_text(stmt, 1, metadata_str, -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 2, device_id, -1, SQLITE_STATIC);
+	sqlite3_bind_int(stmt, 1, fu_device_get_update_state(device));
+	sqlite3_bind_text(stmt, 2, fu_device_get_update_error(device), -1, SQLITE_STATIC);
+	sqlite3_bind_int64(stmt, 3, fu_history_get_device_flags_filtered(device));
+	sqlite3_bind_text(stmt, 4, fu_device_get_id(device), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 5, fu_device_get_version(device), -1, SQLITE_STATIC);
+	sqlite3_bind_text(
+	    stmt,
+	    6,
+	    fwupd_checksum_get_by_kind(fu_device_get_checksums(device), G_CHECKSUM_SHA1),
+	    -1,
+	    SQLITE_STATIC);
+	sqlite3_bind_int64(stmt, 7, fu_device_get_modified(device));
+	sqlite3_bind_text(stmt, 8, metadata, -1, SQLITE_STATIC);
 
 	return fu_history_stmt_exec(self, stmt, NULL, error);
 #else

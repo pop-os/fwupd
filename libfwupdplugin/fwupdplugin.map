@@ -139,17 +139,11 @@ LIBFWUPDPLUGIN_1.0.4 {
   local: *;
 } LIBFWUPDPLUGIN_1.0.3;
 
-LIBFWUPDPLUGIN_1.0.5 {
-  global:
-    fu_device_get_release_default;
-  local: *;
-} LIBFWUPDPLUGIN_1.0.4;
-
 LIBFWUPDPLUGIN_1.0.6 {
   global:
     fu_plugin_get_config_value;
   local: *;
-} LIBFWUPDPLUGIN_1.0.5;
+} LIBFWUPDPLUGIN_1.0.4;
 
 LIBFWUPDPLUGIN_1.0.8 {
   global:
@@ -1136,3 +1130,13 @@ LIBFWUPDPLUGIN_1.8.6 {
     fu_volume_kind_convert_to_gpt;
   local: *;
 } LIBFWUPDPLUGIN_1.8.5;
+
+LIBFWUPDPLUGIN_1.8.7 {
+  global:
+    fu_mei_device_get_fw_status;
+    fu_mei_device_get_fw_ver;
+    fu_progress_to_string;
+    fu_udev_device_find_usb_device;
+    fu_udev_device_set_device_file;
+  local: *;
+} LIBFWUPDPLUGIN_1.8.6;

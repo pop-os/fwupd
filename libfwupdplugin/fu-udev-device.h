@@ -13,6 +13,13 @@
 #define GUdevDevice	   GObject
 #endif
 
+#ifdef HAVE_GUSB
+#include <gusb.h>
+#else
+#define GUsbContext GObject
+#define GUsbDevice  GObject
+#endif
+
 #include "fu-plugin.h"
 
 #define FU_TYPE_UDEV_DEVICE (fu_udev_device_get_type())
@@ -57,6 +64,8 @@ void
 fu_udev_device_set_dev(FuUdevDevice *self, GUdevDevice *udev_device);
 const gchar *
 fu_udev_device_get_device_file(FuUdevDevice *self);
+void
+fu_udev_device_set_device_file(FuUdevDevice *self, const gchar *device_file);
 const gchar *
 fu_udev_device_get_sysfs_path(FuUdevDevice *self);
 const gchar *
@@ -137,3 +146,6 @@ GPtrArray *
 fu_udev_device_get_children_with_subsystem(FuUdevDevice *self, const gchar *subsystem);
 FuUdevDevice *
 fu_udev_device_get_parent_with_subsystem(FuUdevDevice *self, const gchar *subsystem);
+
+GUsbDevice *
+fu_udev_device_find_usb_device(FuUdevDevice *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;

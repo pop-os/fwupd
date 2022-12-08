@@ -25,6 +25,8 @@
 #define FU_DEVICE_RETRY_OPEN_COUNT 5
 #define FU_DEVICE_RETRY_OPEN_DELAY 500 /* ms */
 
+#define FU_DEVICE_GUID_MAIN_SYSTEM_FIRMWARE "230c8b18-8d9b-53ec-838b-6cfc0383493a"
+
 /**
  * FuDevice:
  *
@@ -74,6 +76,7 @@ typedef struct {
 	GType specialized_gtype;
 	GType firmware_gtype;
 	GPtrArray *possible_plugins;
+	GPtrArray *instance_id_quirks; /* of utf-8 */
 	GPtrArray *retry_recs; /* of FuDeviceRetryRecovery */
 	guint retry_delay;
 	FuDeviceInternalFlags internal_flags;
@@ -2066,9 +2069,9 @@ fu_device_add_guid_safe(FuDevice *self, const gchar *guid, FuDeviceInstanceFlags
 {
 	/* add the device GUID before adding additional GUIDs from quirks
 	 * to ensure the bootloader GUID is listed after the runtime GUID */
-	if ((flags & FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS) == 0)
+	if (flags & FU_DEVICE_INSTANCE_FLAG_VISIBLE)
 		fwupd_device_add_guid(FWUPD_DEVICE(self), guid);
-	if ((flags & FU_DEVICE_INSTANCE_FLAG_NO_QUIRKS) == 0)
+	if (flags & FU_DEVICE_INSTANCE_FLAG_QUIRKS)
 		fu_device_add_guid_quirks(self, guid);
 }
 
@@ -2097,6 +2100,30 @@ fu_device_has_guid(FuDevice *self, const gchar *guid)
 
 	/* already valid */
 	return fwupd_device_has_guid(FWUPD_DEVICE(self), guid);
+}
+
+static gboolean
+fu_device_has_instance_id_quirk(FuDevice *self, const gchar *instance_id)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	for (guint i = 0; i < priv->instance_id_quirks->len; i++) {
+		const gchar *instance_id_tmp = g_ptr_array_index(priv->instance_id_quirks, i);
+		if (g_strcmp0(instance_id, instance_id_tmp) == 0)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+static void
+fu_device_add_instance_id_quirk(FuDevice *self, const gchar *instance_id)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+
+	if (fu_device_has_instance_id(self, instance_id))
+		return;
+	if (fu_device_has_instance_id_quirk(self, instance_id))
+		return;
+	g_ptr_array_add(priv->instance_id_quirks, g_strdup(instance_id));
 }
 
 /**
@@ -2131,10 +2158,15 @@ fu_device_add_instance_id_full(FuDevice *self,
 	 * so the plugin is set, but not the LVFS metadata to match firmware
 	 * until we're sure the device isn't using _NO_AUTO_INSTANCE_IDS */
 	guid = fwupd_guid_hash_string(instance_id);
-	if ((flags & FU_DEVICE_INSTANCE_FLAG_NO_QUIRKS) == 0)
+	if (flags & FU_DEVICE_INSTANCE_FLAG_QUIRKS)
 		fu_device_add_guid_quirks(self, guid);
-	if ((flags & FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS) == 0)
+	if (flags & FU_DEVICE_INSTANCE_FLAG_VISIBLE)
 		fwupd_device_add_instance_id(FWUPD_DEVICE(self), instance_id);
+
+	/* save this to make debugging easier, and also so we can incorporate */
+	if ((flags & FU_DEVICE_INSTANCE_FLAG_VISIBLE) == 0 &&
+	    (flags & FU_DEVICE_INSTANCE_FLAG_QUIRKS) > 0)
+		fu_device_add_instance_id_quirk(self, instance_id);
 
 	/* already done by ->setup(), so this must be ->registered() */
 	if (priv->done_setup)
@@ -2156,7 +2188,10 @@ fu_device_add_instance_id(FuDevice *self, const gchar *instance_id)
 {
 	g_return_if_fail(FU_IS_DEVICE(self));
 	g_return_if_fail(instance_id != NULL);
-	fu_device_add_instance_id_full(self, instance_id, FU_DEVICE_INSTANCE_FLAG_NONE);
+	fu_device_add_instance_id_full(self,
+				       instance_id,
+				       FU_DEVICE_INSTANCE_FLAG_VISIBLE |
+					   FU_DEVICE_INSTANCE_FLAG_QUIRKS);
 }
 
 /**
@@ -2178,7 +2213,9 @@ fu_device_add_guid(FuDevice *self, const gchar *guid)
 		fu_device_add_instance_id(self, guid);
 		return;
 	}
-	fu_device_add_guid_safe(self, guid, FU_DEVICE_INSTANCE_FLAG_NONE);
+	fu_device_add_guid_safe(self,
+				guid,
+				FU_DEVICE_INSTANCE_FLAG_VISIBLE | FU_DEVICE_INSTANCE_FLAG_QUIRKS);
 }
 
 /**
@@ -3800,6 +3837,12 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 	tmp = fwupd_device_to_string(FWUPD_DEVICE(self));
 	if (tmp != NULL && tmp[0] != '\0')
 		g_string_append(str, tmp);
+	for (guint i = 0; i < priv->instance_id_quirks->len; i++) {
+		const gchar *instance_id = g_ptr_array_index(priv->instance_id_quirks, i);
+		g_autofree gchar *guid = fwupd_guid_hash_string(instance_id);
+		g_autofree gchar *tmp2 = g_strdup_printf("%s ← %s", guid, instance_id);
+		fu_string_append(str, idt + 1, "Guid[quirks]", tmp2);
+	}
 	if (priv->alternate_id != NULL)
 		fu_string_append(str, idt + 1, "AlternateId", priv->alternate_id);
 	if (priv->equivalent_id != NULL)
@@ -3975,28 +4018,6 @@ fu_device_get_context(FuDevice *self)
 }
 
 /**
- * fu_device_get_release_default:
- * @self: a #FuDevice
- *
- * Gets the default release for the device, creating one if not found.
- *
- * Returns: (transfer none): the #FwupdRelease object
- *
- * Since: 1.0.5
- **/
-FwupdRelease *
-fu_device_get_release_default(FuDevice *self)
-{
-	g_autoptr(FwupdRelease) rel = NULL;
-	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
-	if (fwupd_device_get_release_default(FWUPD_DEVICE(self)) != NULL)
-		return fwupd_device_get_release_default(FWUPD_DEVICE(self));
-	rel = fwupd_release_new();
-	fwupd_device_add_release(FWUPD_DEVICE(self), rel);
-	return rel;
-}
-
-/**
  * fu_device_get_results:
  * @self: a #FuDevice
  * @error: (nullable): optional return location for an error
@@ -4089,6 +4110,8 @@ fu_device_write_firmware(FuDevice *self,
 		if (update_request_id != NULL) {
 			fwupd_request_set_id(request, update_request_id);
 			fwupd_request_add_flag(request, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
+		} else {
+			fwupd_request_set_id(request, FWUPD_REQUEST_ID_REMOVE_REPLUG);
 		}
 		fwupd_request_set_message(request, fu_device_get_update_message(self));
 		fwupd_request_set_image(request, fu_device_get_update_image(self));
@@ -5093,6 +5116,10 @@ fu_device_incorporate(FuDevice *self, FuDevice *donor)
 		const gchar *possible_plugin = g_ptr_array_index(priv_donor->possible_plugins, i);
 		fu_device_add_possible_plugin(self, possible_plugin);
 	}
+	for (guint i = 0; i < priv_donor->instance_id_quirks->len; i++) {
+		const gchar *instance_id = g_ptr_array_index(priv_donor->instance_id_quirks, i);
+		fu_device_add_instance_id_full(self, instance_id, FU_DEVICE_INSTANCE_FLAG_QUIRKS);
+	}
 
 	/* copy all instance ID keys if not already set */
 	g_hash_table_iter_init(&iter, priv_donor->instance_hash);
@@ -5528,7 +5555,7 @@ fu_device_build_instance_id_quirk(FuDevice *self, GError **error, const gchar *s
 		return FALSE;
 
 	/* success */
-	fu_device_add_instance_id_full(self, str->str, FU_DEVICE_INSTANCE_FLAG_ONLY_QUIRKS);
+	fu_device_add_instance_id_full(self, str->str, FU_DEVICE_INSTANCE_FLAG_QUIRKS);
 	return TRUE;
 }
 
@@ -5555,6 +5582,21 @@ fu_device_security_attr_new(FuDevice *self, const gchar *appstream_id)
 	attr = fu_security_attr_new(priv->ctx, appstream_id);
 	fwupd_security_attr_set_plugin(attr, fu_device_get_plugin(FU_DEVICE(self)));
 	fwupd_security_attr_add_guids(attr, fu_device_get_guids(FU_DEVICE(self)));
+
+	/* if the device has a parent of main-system-firmware then add those GUIDs too */
+	if (fu_device_has_parent_guid(self, FU_DEVICE_GUID_MAIN_SYSTEM_FIRMWARE)) {
+		FuDevice *msf_device = fu_device_get_parent(self);
+		if (msf_device != NULL) {
+			GPtrArray *guids = fu_device_get_guids(msf_device);
+			for (guint i = 0; i < guids->len; i++) {
+				const gchar *guid = g_ptr_array_index(guids, i);
+				if (g_strcmp0(guid, FU_DEVICE_GUID_MAIN_SYSTEM_FIRMWARE) == 0)
+					continue;
+				fwupd_security_attr_add_guid(attr, guid);
+			}
+		}
+	}
+
 	return g_steal_pointer(&attr);
 }
 
@@ -5731,6 +5773,7 @@ fu_device_init(FuDevice *self)
 	priv->order = G_MAXINT;
 	priv->parent_guids = g_ptr_array_new_with_free_func(g_free);
 	priv->possible_plugins = g_ptr_array_new_with_free_func(g_free);
+	priv->instance_id_quirks = g_ptr_array_new_with_free_func(g_free);
 	priv->retry_recs = g_ptr_array_new_with_free_func(g_free);
 	priv->instance_hash = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	priv->backend_tags = g_ptr_array_new_with_free_func(g_free);
@@ -5770,6 +5813,7 @@ fu_device_finalize(GObject *object)
 		g_ptr_array_unref(priv->private_flag_items);
 	g_ptr_array_unref(priv->parent_guids);
 	g_ptr_array_unref(priv->possible_plugins);
+	g_ptr_array_unref(priv->instance_id_quirks);
 	g_ptr_array_unref(priv->retry_recs);
 	g_ptr_array_unref(priv->backend_tags);
 	g_free(priv->alternate_id);

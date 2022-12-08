@@ -592,15 +592,28 @@ fu_progress_get_step_percentage(FuProgress *self, guint idx)
 	FuProgressPrivate *priv = GET_PRIVATE(self);
 	guint current = 0;
 	guint total = 0;
+	gboolean any_step_weighting = FALSE;
 
+	/* we set the step weighting manually */
+	for (guint i = 0; i < priv->children->len; i++) {
+		FuProgress *child = g_ptr_array_index(priv->children, i);
+		if (fu_progress_get_step_weighting(child) > 0) {
+			any_step_weighting = TRUE;
+			break;
+		}
+	}
+
+	/* just use proportional */
+	if (!any_step_weighting)
+		return -1;
+
+	/* work out percentage */
 	for (guint i = 0; i < priv->children->len; i++) {
 		FuProgress *child = g_ptr_array_index(priv->children, i);
 		if (i <= idx)
 			current += fu_progress_get_step_weighting(child);
 		total += fu_progress_get_step_weighting(child);
 	}
-	if (total == 0)
-		return -1;
 	return ((gdouble)current * 100.f) / (gdouble)total;
 }
 
@@ -651,7 +664,7 @@ fu_progress_child_percentage_changed_cb(FuProgress *child, guint percentage, FuP
 		gdouble pc1 = fu_progress_get_step_percentage(self, priv->step_now - 1);
 		gdouble pc2 = fu_progress_get_step_percentage(self, priv->step_now);
 		/* bi-linearly interpolate */
-		if (pc1 > 0 && pc2 > 0)
+		if (pc1 >= 0 && pc2 >= 0)
 			parent_percentage = (((100 - percentage) * pc1) + (percentage * pc2)) / 100;
 	}
 	if (parent_percentage != G_MAXUINT) {
@@ -1007,6 +1020,55 @@ fu_progress_traceback(FuProgress *self)
 	}
 
 	fu_progress_traceback_cb(self, 0, G_MAXUINT, threshold_ms, str);
+	if (str->len == 0)
+		return NULL;
+	return g_string_free(g_steal_pointer(&str), FALSE);
+}
+
+static void
+fu_progress_to_string_cb(FuProgress *self, guint idt, GString *str)
+{
+	FuProgressPrivate *priv = GET_PRIVATE(self);
+
+	/* not interesting */
+	if (priv->id == NULL && priv->name == NULL)
+		return;
+
+	if (priv->id != NULL)
+		fu_string_append(str, idt, "Id", priv->id);
+	if (priv->name != NULL)
+		fu_string_append(str, idt, "Name", priv->name);
+	if (priv->percentage != G_MAXUINT)
+		fu_string_append_ku(str, idt, "Percentage", priv->percentage);
+	if (priv->status != FWUPD_STATUS_UNKNOWN)
+		fu_string_append(str, idt, "Status", fwupd_status_to_string(priv->status));
+	if (priv->duration > 0.0001)
+		fu_string_append_ku(str, idt, "DurationMs", priv->duration * 1000.f);
+	if (priv->step_weighting > 0)
+		fu_string_append_ku(str, idt, "StepWeighting", priv->step_weighting);
+	if (priv->step_now > 0)
+		fu_string_append_ku(str, idt, "StepNow", priv->step_now);
+	for (guint i = 0; i < priv->children->len; i++) {
+		FuProgress *child = g_ptr_array_index(priv->children, i);
+		fu_progress_to_string_cb(child, idt + 1, str);
+	}
+}
+
+/**
+ * fu_progress_to_string:
+ * @self: A #FuProgress
+ *
+ * Prints the progress for debugging.
+ *
+ * Return value: (transfer full): string
+ *
+ * Since: 1.8.7
+ **/
+gchar *
+fu_progress_to_string(FuProgress *self)
+{
+	g_autoptr(GString) str = g_string_new(NULL);
+	fu_progress_to_string_cb(self, 0, str);
 	if (str->len == 0)
 		return NULL;
 	return g_string_free(g_steal_pointer(&str), FALSE);

@@ -37,6 +37,9 @@ _test_add_fake_devices_from_dir(FuPlugin *plugin, const gchar *path)
 	ret = fu_context_load_quirks(ctx, FU_QUIRKS_LOAD_FLAG_NO_CACHE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+	ret = fu_context_load_hwinfo(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 
 	while ((basename = g_dir_read_name(dir)) != NULL) {
 		g_autofree gchar *fn = g_build_filename(path, basename, NULL);
@@ -81,6 +84,9 @@ fu_plugin_synaptics_mst_none_func(void)
 	ret = fu_context_load_quirks(ctx, FU_QUIRKS_LOAD_FLAG_NO_CACHE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+	ret = fu_context_load_hwinfo(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 
 	plugin = fu_plugin_new_from_gtype(fu_synaptics_mst_plugin_get_type(), ctx);
 	g_signal_connect(FU_PLUGIN(plugin),
@@ -119,6 +125,9 @@ fu_plugin_synaptics_mst_tb16_func(void)
 	g_autofree gchar *filename = NULL;
 
 	ret = fu_context_load_quirks(ctx, FU_QUIRKS_LOAD_FLAG_NO_CACHE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_context_load_hwinfo(ctx, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -194,6 +203,7 @@ main(int argc, char **argv)
 	/* only critical and error are fatal */
 	g_log_set_fatal_mask(NULL, G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL);
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
+	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", testdatadir, TRUE);
 
 	g_assert_cmpint(g_mkdir_with_parents("/tmp/fwupd-self-test/var/lib/fwupd", 0755), ==, 0);

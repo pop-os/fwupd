@@ -167,6 +167,14 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_MEI_OVERRIDE_STRAP "org.fwupd.hsi.Mei.OverrideStrap"
 /**
+ * FWUPD_SECURITY_ATTR_ID_MEI_KEY_MANIFEST:
+ *
+ * Host Security ID attribute for Intel ME Key Manifest
+ *
+ * Since: 1.8.7
+ **/
+#define FWUPD_SECURITY_ATTR_ID_MEI_KEY_MANIFEST "org.fwupd.hsi.Mei.KeyManifest"
+/**
  * FWUPD_SECURITY_ATTR_ID_MEI_VERSION:
  *
  * Host Security ID attribute for Intel ME version
@@ -333,6 +341,14 @@ G_BEGIN_DECLS
  * Since: 1.8.3
  **/
 #define FWUPD_SECURITY_ATTR_ID_HOST_EMULATION "org.fwupd.hsi.HostEmulation"
+/**
+ * FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION
+ *
+ * Host Security ID attribute for Rollback protection of BIOS firmware
+ *
+ * Since: 1.8.8
+ **/
+#define FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION "org.fwupd.hsi.Bios.RollbackProtection"
 
 GVariant *
 fwupd_security_attr_to_variant(FwupdSecurityAttr *self);

@@ -146,6 +146,11 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 		 * end users on consumer boards */
 		return g_strdup(_("MEI override"));
 	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_MEI_KEY_MANIFEST) == 0) {
+		/* TRANSLATORS: Title: MEI = Intel Management Engine, and key refer
+		 * to the private/public key used to secure loading of firmware */
+		return g_strdup(_("MEI key manifest"));
+	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_MEI_VERSION) == 0) {
 		/* TRANSLATORS: Title: MEI = Intel Management Engine */
 		const gchar *kind = fwupd_security_attr_get_metadata(attr, "kind");
@@ -176,7 +181,7 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_ENABLED) == 0 ||
 	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PLATFORM_DEBUG_LOCKED) == 0) {
 		/* TRANSLATORS: Title: Allows debugging of parts using proprietary hardware */
-		return g_strdup(_("Platform Debugging"));
+		return g_strdup(_("Platform debugging"));
 	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU) == 0) {
 		/* TRANSLATORS: Title: if fwupd supports HSI on this chip */
@@ -184,7 +189,7 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION) == 0) {
 		/* TRANSLATORS: Title: if firmware enforces rollback protection */
-		return g_strdup(_("Rollback protection"));
+		return g_strdup(_("Processor rollback protection"));
 	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION) == 0) {
 		/* TRANSLATORS: Title: if hardware enforces control of SPI replays */
@@ -202,7 +207,10 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: Title: if we are emulating a different host */
 		return g_strdup(_("Emulated host"));
 	}
-
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION) == 0) {
+		/* TRANSLATORS: Title: if firmware enforces rollback protection */
+		return g_strdup(_("BIOS rollback protection"));
+	}
 	/* we should not get here */
 	return g_strdup(fwupd_security_attr_get_name(attr));
 }
@@ -322,6 +330,11 @@ fu_security_attr_get_title(FwupdSecurityAttr *attr)
 		 * boards */
 		return _("Intel Management Engine Override");
 	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_MEI_KEY_MANIFEST) == 0) {
+		/* TRANSLATORS: Title: MEI = Intel Management Engine, and key refers
+		 * to the private/public key used to secure loading of firmware */
+		return _("MEI Key Manifest");
+	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_MEI_VERSION) == 0) {
 		/* TRANSLATORS: Title: MEI = Intel Management Engine */
 		return _("Intel Management Engine Version");
@@ -349,7 +362,7 @@ fu_security_attr_get_title(FwupdSecurityAttr *attr)
 	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION) == 0) {
 		/* TRANSLATORS: Title: if firmware enforces rollback protection */
-		return _("AMD Rollback Protection");
+		return _("AMD Secure Processor Rollback Protection");
 	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION) == 0) {
 		/* TRANSLATORS: Title: if hardware enforces control of SPI replays */
@@ -362,6 +375,10 @@ fu_security_attr_get_title(FwupdSecurityAttr *attr)
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_PLATFORM_FUSED) == 0) {
 		/* TRANSLATORS: Title: if the part has been fused */
 		return _("Fused Platform");
+	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION) == 0) {
+		/* TRANSLATORS: Title: if firmware enforces rollback protection */
+		return _("BIOS Rollback Protection");
 	}
 	return NULL;
 }
@@ -496,6 +513,11 @@ fu_security_attr_get_description(FwupdSecurityAttr *attr)
 		return _("Intel Management Engine Override disables checks for device software "
 			 "tampering.");
 	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_MEI_KEY_MANIFEST) == 0) {
+		/* TRANSLATORS: longer description */
+		return _("The Intel Management Engine Key Manifest must be valid so "
+			 "that the device firmware can be trusted by the CPU.");
+	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_MEI_VERSION) == 0) {
 		/* TRANSLATORS: longer description */
 		return _("The Intel Management Engine controls device components and needs "
@@ -527,11 +549,13 @@ fu_security_attr_get_description(FwupdSecurityAttr *attr)
 		return _("Each system should have tests to ensure firmware security.");
 	}
 	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION) == 0 ||
-	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION) == 0) {
+	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION) == 0 ||
+	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION) == 0) {
 		/* TRANSLATORS: longer description */
-		return _("AMD Rollback Protection prevents device software from being downgraded "
+		return _("Rollback Protection prevents device software from being downgraded "
 			 "to an older version that has security problems.");
 	}
+
 	return NULL;
 }
 
