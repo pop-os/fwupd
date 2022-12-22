@@ -1,0 +1,39 @@
+From 02e3549f1ae840292fcfd399818fbbb63647bd77 Mon Sep 17 00:00:00 2001
+From: Richard Hughes <richard@hughsie.com>
+Date: Wed, 14 Dec 2022 13:47:10 +0000
+Subject: [PATCH] trivial: Fix build failure when /var/cache/fwupd is not
+ writable
+
+The fu_context_load_quirks(FU_QUIRKS_LOAD_FLAG_NO_CACHE) has to be done first,
+otherwise fu_context_load_hwinfo() auto-loads the quirk db with the defaults.
+
+Fixes a build failure in Fedora QA.
+---
+ plugins/mtd/fu-self-test.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/plugins/mtd/fu-self-test.c b/plugins/mtd/fu-self-test.c
+index 677da32fd..73b8ed6df 100644
+--- a/plugins/mtd/fu-self-test.c
++++ b/plugins/mtd/fu-self-test.c
+@@ -28,14 +28,13 @@ fu_test_mtd_device_func(void)
+ 	g_autoptr(GUdevDevice) udev_device = NULL;
+ 	const gchar *dev_name;
+ 
+-	ret = fu_context_load_hwinfo(ctx, &error);
+-	g_assert_no_error(error);
+-	g_assert_true(ret);
+-
+ 	/* do not save silo */
+ 	ret = fu_context_load_quirks(ctx, FU_QUIRKS_LOAD_FLAG_NO_CACHE, &error);
+ 	g_assert_no_error(error);
+ 	g_assert_true(ret);
++	ret = fu_context_load_hwinfo(ctx, &error);
++	g_assert_no_error(error);
++	g_assert_true(ret);
+ 
+ 	udev_device =
+ 	    g_udev_client_query_by_sysfs_path(udev_client, "/sys/devices/virtual/mtd/mtd0");
+-- 
+2.34.1
+
