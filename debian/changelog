@@ -1,3 +1,9 @@
+fwupd (1.8.8-3) unstable; urgency=medium
+
+  * Backport another patch to fix another autopkgtest failure
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 22 Dec 2022 09:43:12 -0600
+
 fwupd (1.8.8-2) unstable; urgency=medium
 
   * Backport a patch for autopkgtest failure found in Ubuntu.
