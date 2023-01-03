@@ -822,6 +822,25 @@ fu_util_release_get_name(FwupdRelease *release)
 			 * the "video card" */
 			return g_strdup_printf(_("%s GPU Update"), name);
 		}
+		if (g_strcmp0(cat, "X-Dock") == 0) {
+			/* TRANSLATORS: Dock refers to the port replicator hardware laptops are
+			 * cradled in, or lowered onto */
+			return g_strdup_printf(_("%s Dock Update"), name);
+		}
+		if (g_strcmp0(cat, "X-UsbDock") == 0) {
+			/* TRANSLATORS: Dock refers to the port replicator device connected
+			 * by plugging in a USB cable -- which may or may not also provide power */
+			return g_strdup_printf(_("%s USB Dock Update"), name);
+		}
+		if (g_strcmp0(cat, "X-FingerprintReader") == 0) {
+			/* TRANSLATORS: a device that can read your fingerprint pattern */
+			return g_strdup_printf(_("%s Fingerprint Reader Update"), name);
+		}
+		if (g_strcmp0(cat, "X-GraphicsTablet") == 0) {
+			/* TRANSLATORS: a large pressure-sensitive drawing area typically used
+			 * by artists and digital artists */
+			return g_strdup_printf(_("%s Graphics Tablet Update"), name);
+		}
 	}
 
 	/* TRANSLATORS: this is the fallback where we don't know if the release
@@ -1159,7 +1178,7 @@ fu_util_device_flag_to_string(guint64 device_flag)
 		return _("Update requires a reboot");
 	}
 	if (device_flag == FWUPD_DEVICE_FLAG_REQUIRE_AC) {
-		/* TRANSLATORS: Must be plugged in to an outlet */
+		/* TRANSLATORS: Must be plugged into an outlet */
 		return _("System requires external power source");
 	}
 	if (device_flag == FWUPD_DEVICE_FLAG_LOCKED) {
@@ -1743,6 +1762,8 @@ fu_util_plugin_flag_to_cli_text(FwupdPluginFlags plugin_flag)
 	case FWUPD_PLUGIN_FLAG_NONE:
 	case FWUPD_PLUGIN_FLAG_REQUIRE_HWID:
 	case FWUPD_PLUGIN_FLAG_MODULAR:
+	case FWUPD_PLUGIN_FLAG_MEASURE_SYSTEM_INTEGRITY:
+	case FWUPD_PLUGIN_FLAG_SECURE_CONFIG:
 		return fu_util_term_format(fu_util_plugin_flag_to_string(plugin_flag),
 					   FU_UTIL_TERM_COLOR_GREEN);
 	case FWUPD_PLUGIN_FLAG_DISABLED:
@@ -1753,10 +1774,11 @@ fu_util_plugin_flag_to_cli_text(FwupdPluginFlags plugin_flag)
 	case FWUPD_PLUGIN_FLAG_CAPSULES_UNSUPPORTED:
 	case FWUPD_PLUGIN_FLAG_UNLOCK_REQUIRED:
 	case FWUPD_PLUGIN_FLAG_AUTH_REQUIRED:
-	case FWUPD_PLUGIN_FLAG_SECURE_CONFIG:
 	case FWUPD_PLUGIN_FLAG_EFIVAR_NOT_MOUNTED:
 	case FWUPD_PLUGIN_FLAG_ESP_NOT_FOUND:
 	case FWUPD_PLUGIN_FLAG_KERNEL_TOO_OLD:
+		return fu_util_term_format(fu_util_plugin_flag_to_string(plugin_flag),
+					   FU_UTIL_TERM_COLOR_RED);
 	default:
 		break;
 	}
@@ -1848,7 +1870,7 @@ fu_util_release_flag_to_string(FwupdReleaseFlags release_flag)
 		return _("Trusted payload");
 	}
 	if (release_flag == FWUPD_RELEASE_FLAG_TRUSTED_METADATA) {
-		/* TRANSLATORS: We verified the meatdata against the server */
+		/* TRANSLATORS: We verified the metadata against the server */
 		return _("Trusted metadata");
 	}
 	if (release_flag == FWUPD_RELEASE_FLAG_IS_UPGRADE) {
@@ -2247,6 +2269,11 @@ fu_util_request_get_message(FwupdRequest *req)
 			/* TRANSLATORS: warning message shown after update has been scheduled */
 			return _("The update will continue when the device USB cable has been "
 				 "unplugged.");
+		}
+		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_INSERT_USB_CABLE) == 0) {
+			/* TRANSLATORS: warning message shown after update has been scheduled */
+			return _("The update will continue when the device USB cable has been "
+				 "re-inserted.");
 		}
 		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_PRESS_UNLOCK) == 0) {
 			/* TRANSLATORS: warning message */

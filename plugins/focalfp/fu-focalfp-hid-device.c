@@ -27,7 +27,7 @@ G_DEFINE_TYPE(FuFocalfpHidDevice, fu_focalfp_hid_device, FU_TYPE_UDEV_DEVICE)
 #define CMD_READY_FOR_UPGRADE	       0x42
 #define CMD_SEND_DATA		       0x43
 #define CMD_UPGRADE_CHECKSUM	       0x44
-#define CMD_EXIT_UPRADE_MODE	       0x45
+#define CMD_EXIT_UPGRADE_MODE	       0x45
 #define CMD_USB_READ_UPGRADE_ID	       0x46
 #define CMD_USB_ERASE_FLASH	       0x47
 #define CMD_USB_BOOT_READ	       0x48
@@ -385,9 +385,7 @@ static gboolean
 fu_focalfp_hid_device_setup(FuDevice *device, GError **error)
 {
 	FuFocalfpHidDevice *self = FU_FOCALFP_HID_DEVICE(device);
-	guint16 fwver;
 	guint8 buf[2] = {0x0};
-	g_autofree gchar *version = NULL;
 
 	/* get current firmware version */
 	if (!fu_focalfp_hid_device_read_reg(self, 0xA6, buf, error)) {
@@ -398,9 +396,7 @@ fu_focalfp_hid_device_setup(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to read version2: ");
 		return FALSE;
 	}
-	fwver = fu_memread_uint16(buf, G_BIG_ENDIAN);
-	version = fu_version_from_uint16(fwver, FWUPD_VERSION_FORMAT_HEX);
-	fu_device_set_version(device, version);
+	fu_device_set_version_from_uint16(device, fu_memread_uint16(buf, G_BIG_ENDIAN));
 
 	/* success */
 	return TRUE;
@@ -617,7 +613,7 @@ static gboolean
 fu_focalfp_hid_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 {
 	FuFocalfpHidDevice *self = FU_FOCALFP_HID_DEVICE(device);
-	guint8 wbuf[64] = {CMD_EXIT_UPRADE_MODE};
+	guint8 wbuf[64] = {CMD_EXIT_UPGRADE_MODE};
 	guint8 rbuf[64] = {0x0};
 
 	if (!fu_focalfp_hid_device_io(self, wbuf, 1, rbuf, 6, error))

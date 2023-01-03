@@ -2584,7 +2584,7 @@ msgstr "System power is too low to perform the update"
 msgid "System power is too low to perform the update (%u%%, requires %u%%)"
 msgstr "System power is too low to perform the update (%u%%, requires %u%%)"
 
-#. TRANSLATORS: Must be plugged in to an outlet
+#. TRANSLATORS: Must be plugged into an outlet
 msgid "System requires external power source"
 msgstr "System requires external power source"
 
@@ -2790,7 +2790,7 @@ msgstr "Transient failure"
 msgid "True"
 msgstr "True"
 
-#. TRANSLATORS: We verified the meatdata against the server
+#. TRANSLATORS: We verified the metadata against the server
 msgid "Trusted metadata"
 msgstr "Trusted metadata"
 

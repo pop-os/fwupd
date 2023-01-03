@@ -33,6 +33,43 @@
     <binary>fwupdtool</binary>
   </provides>
   <releases>
+    <release version="1.8.9" date="2023-01-03">
+      <description>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Add an interactive request for re-inserting the USB cable</li>
+          <li>Add SHA384 support for TPM hashes</li>
+          <li>Add X-FingerprintReader, X-GraphicsTablet, X-Dock and X-UsbDock categories</li>
+          <li>Allow specifying OR parent requirements in metadata</li>
+        </ul>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Add the fwupd version to the HSI result if the chassis is invalid</li>
+          <li>Allow getting the ESP when there is a block device with no filesystem</li>
+          <li>Allow reinstalling on devices with only-version-upgrade set</li>
+          <li>Do not require the TPM event log to have all reconstructions</li>
+          <li>Fix a tiny memory leak when parsing signed reports</li>
+          <li>Ignore failure to mount the ESP if unsupported</li>
+          <li>Never allow using SHA-1 for checksum validation</li>
+          <li>Return a more useful error if USB recovery failed</li>
+          <li>Skip the fwupdx64.efi BootXXXX entry when measuring system integrity</li>
+          <li>Speed up daemon startup using prepared XPath queries</li>
+          <li>Suggest to turn on ThunderboltAccess for Lenovo systems</li>
+          <li>Use better defaults if the config file is missing</li>
+        </ul>
+        <p>This release adds support for the following hardware:</p>
+        <ul>
+          <li>More Solidigm NVMe devices</li>
+          <li>More Synaptics Cape devices</li>
+          <li>More Synaptics Prometheus devices</li>
+          <li>Most Texas Instruments USB-4 docks</li>
+          <li>Scaler support for Wacom USB devices</li>
+          <li>Several new Wistron USB-C docks</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.8.8" date="2022-12-07">
       <description>
         <p>
@@ -557,7 +594,7 @@
         <p>This release fixes the following bugs:</p>
         <ul>
           <li>Be case insensitive when fixing the device model</li>
-          <li>Fix a critial warning in ccgx found by the fuzzer</li>
+          <li>Fix a critical warning in ccgx found by the fuzzer</li>
           <li>Fix a DFU crash if the attach failed due to a hardware fault</li>
           <li>Fix a Redfish crash when specifying a URL without a port</li>
           <li>Fix CLI downloads when using fwupdmgr --ipfs</li>
@@ -643,7 +680,7 @@
           <li>Only probe SynapticsMST devices that have opted-in</li>
           <li>Remove support for --ignore-power as it did not work for UEFI firmware</li>
           <li>Reset the CMOS as required when changing system firmware branch</li>
-          <li>Restart the daemon if any of the the plugin config files are modified</li>
+          <li>Restart the daemon if any of the plugin config files are modified</li>
           <li>Show HSiLevel=0 attributes in JSON security output</li>
           <li>Update the child composite ID if the parent changes</li>
           <li>Use a per-device global percentage completion</li>
@@ -788,7 +825,7 @@
           <li>Add a composite ID that is used to identify dock device components</li>
           <li>Add an Intel Flash Descriptor parser</li>
           <li>Add API to allow the device to report its own battery level</li>
-          <li>Add API to recount why the the device is non-updatable</li>
+          <li>Add API to recount why the device is non-updatable</li>
           <li>Add lspcon-i2c-spi programmer support</li>
           <li>Add more hardware support to the pixart-rf plugin</li>
           <li>Add some more new category types for firmware to use</li>
@@ -2111,7 +2148,7 @@
         </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
-          <li>Do not spew a critial warning when parsing an invalid URI</li>
+          <li>Do not spew a critical warning when parsing an invalid URI</li>
           <li>Ensure device is closed if did not complete setup</li>
           <li>Ensure steelseries device is closed if it returns an invalid packet</li>
           <li>Fix man page installation location</li>

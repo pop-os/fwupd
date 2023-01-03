@@ -369,7 +369,7 @@ typedef guint64 FuDeviceInternalFlags;
 /**
  * FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE_CHILDREN:
  *
- * Do not auto-remove clildren in the device list.
+ * Do not auto-remove children in the device list.
  *
  * Since: 1.6.2
  */
@@ -539,6 +539,12 @@ void
 fu_device_set_version_lowest(FuDevice *self, const gchar *version);
 void
 fu_device_set_version_bootloader(FuDevice *self, const gchar *version);
+void
+fu_device_set_version_from_uint16(FuDevice *self, guint16 version_raw);
+void
+fu_device_set_version_from_uint32(FuDevice *self, guint32 version_raw);
+void
+fu_device_set_version_from_uint64(FuDevice *self, guint64 version_raw);
 void
 fu_device_add_backend_tag(FuDevice *self, const gchar *backend_tag);
 gboolean
@@ -748,8 +754,10 @@ fu_device_add_instance_u16(FuDevice *self, const gchar *key, guint16 value);
 void
 fu_device_add_instance_u32(FuDevice *self, const gchar *key, guint32 value);
 gboolean
-fu_device_build_instance_id(FuDevice *self, GError **error, const gchar *subsystem, ...);
+fu_device_build_instance_id(FuDevice *self, GError **error, const gchar *subsystem, ...)
+    G_GNUC_NULL_TERMINATED;
 gboolean
-fu_device_build_instance_id_quirk(FuDevice *self, GError **error, const gchar *subsystem, ...);
+fu_device_build_instance_id_quirk(FuDevice *self, GError **error, const gchar *subsystem, ...)
+    G_GNUC_NULL_TERMINATED;
 FuDeviceLocker *
 fu_device_poll_locker_new(FuDevice *self, GError **error);

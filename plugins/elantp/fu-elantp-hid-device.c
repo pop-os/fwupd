@@ -208,7 +208,7 @@ fu_elantp_hid_device_read_force_table_enable(FuElantpHidDevice *self, GError **e
 }
 
 static gboolean
-fu_elantp_hid_device_read_hatpic_enable(FuElantpHidDevice *self, GError **error)
+fu_elantp_hid_device_read_haptic_enable(FuElantpHidDevice *self, GError **error)
 {
 	guint8 buf[2] = {0x0};
 	guint16 value;
@@ -314,7 +314,6 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 	guint16 tmp;
 	guint8 buf[2] = {0x0};
 	g_autofree gchar *version_bl = NULL;
-	g_autofree gchar *version = NULL;
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GError) error_forcetable = NULL;
 
@@ -334,8 +333,7 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 	fwver = fu_memread_uint16(buf, G_LITTLE_ENDIAN);
 	if (fwver == 0xFFFF || fwver == ETP_CMD_I2C_FW_VERSION)
 		fwver = 0;
-	version = fu_version_from_uint16(fwver, FWUPD_VERSION_FORMAT_HEX);
-	fu_device_set_version(device, version);
+	fu_device_set_version_from_uint16(device, fwver);
 
 	/* get IAP firmware version */
 	if (!fu_elantp_hid_device_read_cmd(self,
@@ -424,10 +422,7 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 		g_debug("no forcetable detected: %s", error_forcetable->message);
 	} else {
 		if (!fu_elantp_hid_device_get_forcetable_address(self, error)) {
-			g_set_error(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "get forcetable address fail");
+			g_prefix_error(error, "get forcetable address fail: ");
 			return FALSE;
 		}
 		self->force_table_support = TRUE;
@@ -436,7 +431,7 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 			return FALSE;
 	}
 
-	if (!fu_elantp_hid_device_read_hatpic_enable(self, &error_local)) {
+	if (!fu_elantp_hid_device_read_haptic_enable(self, &error_local)) {
 		g_debug("no haptic device detected: %s", error_local->message);
 	} else {
 		g_autoptr(FuElantpHidHapticDevice) cfg = fu_elantp_haptic_device_new(device);

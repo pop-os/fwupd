@@ -158,6 +158,7 @@ fu_common_align_up_func(void)
 static void
 fu_common_byte_array_func(void)
 {
+	g_autofree gchar *str = NULL;
 	g_autoptr(GByteArray) array = g_byte_array_new();
 
 	fu_byte_array_append_uint8(array, (guint8)'h');
@@ -171,6 +172,9 @@ fu_common_byte_array_func(void)
 	fu_byte_array_set_size(array, 10, 0x00);
 	g_assert_cmpint(array->len, ==, 10);
 	g_assert_cmpint(memcmp(array->data, "hello\0\0\0\0\0", array->len), ==, 0);
+
+	str = fu_byte_array_to_string(array);
+	g_assert_cmpstr(str, ==, "68656c6c6f0000000000");
 }
 
 static void
@@ -1812,6 +1816,16 @@ fu_common_version_func(void)
 	    {0xc8, "0x000000c8", FWUPD_VERSION_FORMAT_HEX},
 	    {0, NULL}};
 	struct {
+		guint32 val;
+		const gchar *ver;
+		FwupdVersionFormat flags;
+	} version_from_uint24[] = {{0x0, NULL, FWUPD_VERSION_FORMAT_QUAD},
+				   {0x0, "0.0.0", FWUPD_VERSION_FORMAT_TRIPLET},
+				   {0xff, "0.0.255", FWUPD_VERSION_FORMAT_TRIPLET},
+				   {0x0, "0", FWUPD_VERSION_FORMAT_NUMBER},
+				   {0xc8, "0x0000c8", FWUPD_VERSION_FORMAT_HEX},
+				   {0, NULL}};
+	struct {
 		guint64 val;
 		const gchar *ver;
 		FwupdVersionFormat flags;
@@ -1863,6 +1877,12 @@ fu_common_version_func(void)
 		ver = fu_version_from_uint32(version_from_uint32[i].val,
 					     version_from_uint32[i].flags);
 		g_assert_cmpstr(ver, ==, version_from_uint32[i].ver);
+	}
+	for (i = 0; version_from_uint24[i].ver != NULL; i++) {
+		g_autofree gchar *ver = NULL;
+		ver = fu_version_from_uint24(version_from_uint24[i].val,
+					     version_from_uint24[i].flags);
+		g_assert_cmpstr(ver, ==, version_from_uint24[i].ver);
 	}
 	for (i = 0; version_from_uint16[i].ver != NULL; i++) {
 		g_autofree gchar *ver = NULL;
@@ -2010,7 +2030,7 @@ fu_firmware_ihex_func(void)
 	g_assert_true(ret);
 
 	/* export a ihex file (which will be slightly different due to
-	 * non-continous regions being expanded */
+	 * non-continuous regions being expanded */
 	data_hex = fu_firmware_write(firmware, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(data_hex);
@@ -2488,6 +2508,45 @@ fu_firmware_new_from_gtypes_func(void)
 						G_TYPE_INVALID);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_null(firmware3);
+}
+
+static void
+fu_firmware_archive_func(void)
+{
+	gboolean ret;
+	g_autofree gchar *fn = NULL;
+	g_autoptr(FuFirmware) firmware = fu_archive_firmware_new();
+	g_autoptr(FuFirmware) img_asc = NULL;
+	g_autoptr(FuFirmware) img_bin = NULL;
+	g_autoptr(FuFirmware) img_both = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GFile) file = NULL;
+
+	fn = g_test_build_filename(G_TEST_BUILT, "tests", "firmware.zip", NULL);
+	file = g_file_new_for_path(fn);
+	ret = fu_firmware_parse_file(firmware, file, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(fu_archive_firmware_get_format(FU_ARCHIVE_FIRMWARE(firmware)),
+			==,
+			FU_ARCHIVE_FORMAT_UNKNOWN);
+	g_assert_cmpint(fu_archive_firmware_get_compression(FU_ARCHIVE_FIRMWARE(firmware)),
+			==,
+			FU_ARCHIVE_COMPRESSION_UNKNOWN);
+
+	img_bin =
+	    fu_archive_firmware_get_image_fnmatch(FU_ARCHIVE_FIRMWARE(firmware), "*.bin", &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(img_bin);
+	img_asc = fu_archive_firmware_get_image_fnmatch(FU_ARCHIVE_FIRMWARE(firmware),
+							"*.bin.asc",
+							&error);
+	g_assert_no_error(error);
+	g_assert_nonnull(img_bin);
+	img_both =
+	    fu_archive_firmware_get_image_fnmatch(FU_ARCHIVE_FIRMWARE(firmware), "*.bin*", &error);
+	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT);
+	g_assert_null(img_both);
 }
 
 static void
@@ -3676,7 +3735,7 @@ fu_progress_child_finished(void)
 	child = fu_progress_get_child(progress);
 	fu_progress_set_id(child, G_STRLOC);
 	fu_progress_set_steps(child, 3);
-	/* some imaginary igorable error */
+	/* some imaginary ignorable error */
 
 	/* parent step done after child finish */
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_CHILD_FINISHED);
@@ -3750,6 +3809,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/smbios{class}", fu_smbios_class_func);
 	g_test_add_func("/fwupd/firmware", fu_firmware_func);
 	g_test_add_func("/fwupd/firmware{common}", fu_firmware_common_func);
+	g_test_add_func("/fwupd/firmware{archive}", fu_firmware_archive_func);
 	g_test_add_func("/fwupd/firmware{linear}", fu_firmware_linear_func);
 	g_test_add_func("/fwupd/firmware{dedupe}", fu_firmware_dedupe_func);
 	g_test_add_func("/fwupd/firmware{build}", fu_firmware_build_func);

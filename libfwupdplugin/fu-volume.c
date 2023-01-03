@@ -308,6 +308,7 @@ gboolean
 fu_volume_mount(FuVolume *self, GError **error)
 {
 	GVariantBuilder builder;
+	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GVariant) val = NULL;
 
 	g_return_val_if_fail(FU_IS_VOLUME(self), FALSE);
@@ -325,9 +326,19 @@ fu_volume_mount(FuVolume *self, GError **error)
 				     G_DBUS_CALL_FLAGS_NONE,
 				     -1,
 				     NULL,
-				     error);
-	if (val == NULL)
+				     &error_local);
+	if (val == NULL) {
+		if (g_error_matches(error_local, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_INTERFACE) ||
+		    g_error_matches(error_local, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD)) {
+			g_set_error_literal(error,
+					    G_IO_ERROR,
+					    G_IO_ERROR_NOT_SUPPORTED,
+					    error_local->message);
+			return FALSE;
+		}
+		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
+	}
 	g_variant_get(val, "(s)", &self->mount_path);
 	return TRUE;
 }
@@ -516,6 +527,7 @@ fu_volume_new_by_kind(const gchar *kind, GError **error)
 		g_autoptr(FuVolume) vol = NULL;
 		g_autoptr(GDBusProxy) proxy_part = NULL;
 		g_autoptr(GDBusProxy) proxy_fs = NULL;
+		g_autoptr(GError) error_proxy_fs = NULL;
 		g_autoptr(GVariant) val = NULL;
 
 		proxy_part = g_dbus_proxy_new_sync(g_dbus_proxy_get_connection(proxy_blk),
@@ -544,12 +556,12 @@ fu_volume_new_by_kind(const gchar *kind, GError **error)
 						 g_dbus_proxy_get_object_path(proxy_blk),
 						 UDISKS_DBUS_INTERFACE_FILESYSTEM,
 						 NULL,
-						 error);
+						 &error_proxy_fs);
 		if (proxy_fs == NULL) {
-			g_prefix_error(error,
-				       "failed to initialize d-bus proxy %s: ",
-				       g_dbus_proxy_get_object_path(proxy_blk));
-			return NULL;
+			g_debug("failed to get filesystem for %s: %s",
+				g_dbus_proxy_get_object_path(proxy_blk),
+				error_proxy_fs->message);
+			continue;
 		}
 		vol = g_object_new(FU_TYPE_VOLUME,
 				   "proxy-block",

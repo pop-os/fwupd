@@ -1140,3 +1140,14 @@ LIBFWUPDPLUGIN_1.8.7 {
     fu_udev_device_set_device_file;
   local: *;
 } LIBFWUPDPLUGIN_1.8.6;
+
+LIBFWUPDPLUGIN_1.8.9 {
+  global:
+    fu_archive_firmware_get_image_fnmatch;
+    fu_byte_array_to_string;
+    fu_device_set_version_from_uint16;
+    fu_device_set_version_from_uint32;
+    fu_device_set_version_from_uint64;
+    fu_version_from_uint24;
+  local: *;
+} LIBFWUPDPLUGIN_1.8.7;

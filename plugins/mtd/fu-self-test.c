@@ -32,6 +32,9 @@ fu_test_mtd_device_func(void)
 	ret = fu_context_load_quirks(ctx, FU_QUIRKS_LOAD_FLAG_NO_CACHE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+	ret = fu_context_load_hwinfo(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 
 	udev_device =
 	    g_udev_client_query_by_sysfs_path(udev_client, "/sys/devices/virtual/mtd/mtd0");
