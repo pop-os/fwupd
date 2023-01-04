@@ -1,3 +1,9 @@
+fwupd (1.8.9-2) unstable; urgency=medium
+
+  * Backport a patch to fix FTBFS on s390x.
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 04 Jan 2023 10:23:10 -0600
+
 fwupd (1.8.9-1) unstable; urgency=medium
 
   * New upstream version (1.8.9)
