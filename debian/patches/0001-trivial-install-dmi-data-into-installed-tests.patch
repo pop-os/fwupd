@@ -1,0 +1,56 @@
+From c2a494e8711dd4d5813d72aed126091fe6a3434f Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Tue, 10 Jan 2023 21:17:18 -0600
+Subject: [PATCH] trivial: install dmi data into installed-tests
+
+fixes: #5402
+---
+ contrib/fwupd.spec.in      |  1 +
+ libfwupdplugin/meson.build | 19 +++++++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/contrib/fwupd.spec.in b/contrib/fwupd.spec.in
+index 3fefe3a32..694369dcc 100644
+--- a/contrib/fwupd.spec.in
++++ b/contrib/fwupd.spec.in
+@@ -463,6 +463,7 @@ done
+ %if 0%{?have_uefi}
+ %{_datadir}/installed-tests/fwupd/efi
+ %endif
++%{_datadir}/installed-tests/fwupd/dmi
+ %{_datadir}/fwupd/device-tests/*.json
+ %{_libexecdir}/installed-tests/fwupd/*
+ %dir %{_sysconfdir}/fwupd/remotes.d
+diff --git a/libfwupdplugin/meson.build b/libfwupdplugin/meson.build
+index 1c57b2c47..4c8152388 100644
+--- a/libfwupdplugin/meson.build
++++ b/libfwupdplugin/meson.build
+@@ -361,6 +361,25 @@ if get_option('tests')
+     ],
+   )
+   test('fwupdplugin-self-test', e, is_parallel: false, timeout: 180, env: env)
++
++  install_data([
++      'tests/dmi/class/chassis_type',
++      'tests/dmi/class/sys_vendor',
++    ],
++    install_dir: join_paths(installed_test_datadir, 'dmi/class'),
++  )
++  install_data([
++      'tests/dmi/tables/DMI',
++      'tests/dmi/tables/smbios_entry_point',
++    ],
++    install_dir: join_paths(installed_test_datadir, 'dmi/tables'),
++  )
++  install_data([
++      'tests/dmi/tables64/DMI',
++      'tests/dmi/tables64/smbios_entry_point',
++    ],
++    install_dir: join_paths(installed_test_datadir, 'dmi/tables64'),
++  )
+ endif
+ 
+ fwupdplugin_incdir = include_directories('.')
+-- 
+2.34.1
+

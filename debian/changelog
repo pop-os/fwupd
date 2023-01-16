@@ -1,3 +1,9 @@
+fwupd (1.8.9-3) unstable; urgency=medium
+
+  * Backport a patch to fix the autopkgtest failure on s390x.
+
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 16 Jan 2023 14:36:18 -0600
+
 fwupd (1.8.9-2) unstable; urgency=medium
 
   * Backport a patch to fix FTBFS on s390x.

@@ -1,1 +1,2 @@
 0001-mtd-Use-dummy-SMBIOS-data-to-fix-self-test-on-s390x.patch
+0001-trivial-install-dmi-data-into-installed-tests.patch
