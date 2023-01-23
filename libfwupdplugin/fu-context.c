@@ -10,7 +10,9 @@
 
 #include "fu-bios-settings-private.h"
 #include "fu-context-private.h"
-#include "fu-hwids.h"
+#include "fu-fdt-firmware.h"
+#include "fu-hwids-private.h"
+#include "fu-path.h"
 #include "fu-smbios-private.h"
 #include "fu-volume-private.h"
 
@@ -25,6 +27,7 @@ typedef struct {
 	FuContextFlags flags;
 	FuHwids *hwids;
 	FuSmbios *smbios;
+	FuSmbiosChassisKind chassis_kind;
 	FuQuirks *quirks;
 	GHashTable *runtime_versions;
 	GHashTable *compile_versions;
@@ -38,6 +41,7 @@ typedef struct {
 	guint battery_threshold;
 	FuBiosSettings *host_bios_settings;
 	gboolean loaded_hwinfo;
+	FuFirmware *fdt; /* optional */
 } FuContextPrivate;
 
 enum { SIGNAL_SECURITY_CHANGED, SIGNAL_LAST };
@@ -48,6 +52,7 @@ enum {
 	PROP_LID_STATE,
 	PROP_BATTERY_LEVEL,
 	PROP_BATTERY_THRESHOLD,
+	PROP_FLAGS,
 	PROP_LAST
 };
 
@@ -57,11 +62,116 @@ G_DEFINE_TYPE_WITH_PRIVATE(FuContext, fu_context, G_TYPE_OBJECT)
 
 #define GET_PRIVATE(o) (fu_context_get_instance_private(o))
 
+static GFile *
+fu_context_get_fdt_file(GError **error)
+{
+	g_autofree gchar *fdtfn_local = NULL;
+	g_autofree gchar *fdtfn_sys = NULL;
+	g_autofree gchar *localstatedir_pkg = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+	g_autofree gchar *sysfsdir = NULL;
+
+	/* look for override first, fall back to system value */
+	fdtfn_local = g_build_filename(localstatedir_pkg, "system.dtb", NULL);
+	if (g_file_test(fdtfn_local, G_FILE_TEST_EXISTS))
+		return g_file_new_for_path(fdtfn_local);
+
+	/* actual hardware value */
+	sysfsdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
+	fdtfn_sys = g_build_filename(sysfsdir, "fdt", NULL);
+	if (g_file_test(fdtfn_sys, G_FILE_TEST_EXISTS))
+		return g_file_new_for_path(fdtfn_sys);
+
+	/* failed */
+	g_set_error(error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
+		    "cannot find %s or override %s",
+		    fdtfn_sys,
+		    fdtfn_local);
+	return NULL;
+}
+
+/**
+ * fu_context_get_fdt:
+ * @self: a #FuContext
+ * @error: (nullable): optional return location for an error
+ *
+ * Gets and parses the system FDT, aka. the Flat Device Tree.
+ *
+ * The results are cached internally to the context, and subsequent calls to this function
+ * returns the pre-parsed object.
+ *
+ * Returns: (transfer full): a #FuFdtFirmware, or %NULL
+ *
+ * Since: 1.8.10
+ **/
+FuFirmware *
+fu_context_get_fdt(FuContext *self, GError **error)
+{
+	FuContextPrivate *priv = GET_PRIVATE(self);
+
+	g_return_val_if_fail(FU_IS_CONTEXT(self), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	/* load if not already parsed */
+	if (priv->fdt == NULL) {
+		g_autoptr(FuFirmware) fdt_tmp = fu_fdt_firmware_new();
+		g_autoptr(GFile) file = fu_context_get_fdt_file(error);
+		if (file == NULL)
+			return NULL;
+		if (!fu_firmware_parse_file(fdt_tmp, file, FWUPD_INSTALL_FLAG_NO_SEARCH, error)) {
+			g_prefix_error(error, "failed to parse FDT: ");
+			return NULL;
+		}
+		priv->fdt = g_steal_pointer(&fdt_tmp);
+	}
+
+	/* success */
+	return g_object_ref(priv->fdt);
+}
+
+/**
+ * fu_context_get_smbios:
+ * @self: a #FuContext
+ *
+ * Gets the SMBIOS store.
+ *
+ * Returns: (transfer none): a #FuSmbios
+ *
+ * Since: 1.8.10
+ **/
+FuSmbios *
+fu_context_get_smbios(FuContext *self)
+{
+	FuContextPrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_CONTEXT(self), NULL);
+	return priv->smbios;
+}
+
+/**
+ * fu_context_get_hwids:
+ * @self: a #FuContext
+ *
+ * Gets the HWIDs store.
+ *
+ * Returns: (transfer none): a #FuHwids
+ *
+ * Since: 1.8.10
+ **/
+FuHwids *
+fu_context_get_hwids(FuContext *self)
+{
+	FuContextPrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_CONTEXT(self), NULL);
+	return priv->hwids;
+}
+
 /**
  * fu_context_get_smbios_string:
  * @self: a #FuContext
  * @structure_type: a SMBIOS structure type, e.g. %FU_SMBIOS_STRUCTURE_TYPE_BIOS
  * @offset: a SMBIOS offset
+ * @error: (nullable): optional return location for an error
  *
  * Gets a hardware SMBIOS string.
  *
@@ -73,7 +183,7 @@ G_DEFINE_TYPE_WITH_PRIVATE(FuContext, fu_context, G_TYPE_OBJECT)
  * Since: 1.6.0
  **/
 const gchar *
-fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offset)
+fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offset, GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_CONTEXT(self), NULL);
@@ -81,7 +191,7 @@ fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offs
 		g_critical("cannot use SMBIOS before calling ->load_hwinfo()");
 		return NULL;
 	}
-	return fu_smbios_get_string(priv->smbios, structure_type, offset, NULL);
+	return fu_smbios_get_string(priv->smbios, structure_type, offset, error);
 }
 
 /**
@@ -125,6 +235,7 @@ fu_context_get_smbios_data(FuContext *self, guint8 structure_type, GError **erro
  * @self: a #FuContext
  * @type: a structure type, e.g. %FU_SMBIOS_STRUCTURE_TYPE_BIOS
  * @offset: a structure offset
+ * @error: (nullable): optional return location for an error
  *
  * Reads an integer value from the SMBIOS string table of a specific structure.
  *
@@ -136,7 +247,7 @@ fu_context_get_smbios_data(FuContext *self, guint8 structure_type, GError **erro
  * Since: 1.6.0
  **/
 guint
-fu_context_get_smbios_integer(FuContext *self, guint8 type, guint8 offset)
+fu_context_get_smbios_integer(FuContext *self, guint8 type, guint8 offset, GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_CONTEXT(self), G_MAXUINT);
@@ -144,7 +255,7 @@ fu_context_get_smbios_integer(FuContext *self, guint8 type, guint8 offset)
 		g_critical("cannot use SMBIOS before calling ->load_hwinfo()");
 		return G_MAXUINT;
 	}
-	return fu_smbios_get_integer(priv->smbios, type, offset, NULL);
+	return fu_smbios_get_integer(priv->smbios, type, offset, error);
 }
 
 /**
@@ -220,6 +331,41 @@ fu_context_get_bios_setting_pending_reboot(FuContext *self)
 	g_return_val_if_fail(FU_IS_CONTEXT(self), FALSE);
 	fu_bios_settings_get_pending_reboot(priv->host_bios_settings, &ret, NULL);
 	return ret;
+}
+
+/**
+ * fu_context_get_chassis_kind:
+ * @self: a #FuContext
+ *
+ * Gets the chassis kind, if known.
+ *
+ * Returns: a #FuSmbiosChassisKind, e.g. %FU_SMBIOS_CHASSIS_KIND_LAPTOP
+ *
+ * Since: 1.8.10
+ **/
+FuSmbiosChassisKind
+fu_context_get_chassis_kind(FuContext *self)
+{
+	FuContextPrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_CONTEXT(self), FALSE);
+	return priv->chassis_kind;
+}
+
+/**
+ * fu_context_set_chassis_kind:
+ * @self: a #FuContext
+ * @chassis_kind: a #FuSmbiosChassisKind, e.g. %FU_SMBIOS_CHASSIS_KIND_TABLET
+ *
+ * Sets the chassis kind.
+ *
+ * Since: 1.8.10
+ **/
+void
+fu_context_set_chassis_kind(FuContext *self, FuSmbiosChassisKind chassis_kind)
+{
+	FuContextPrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FU_IS_CONTEXT(self));
+	priv->chassis_kind = chassis_kind;
 }
 
 /**
@@ -310,8 +456,11 @@ gchar *
 fu_context_get_hwid_replace_value(FuContext *self, const gchar *keys, GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
+
 	g_return_val_if_fail(FU_IS_CONTEXT(self), NULL);
 	g_return_val_if_fail(keys != NULL, NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
 	if (!priv->loaded_hwinfo) {
 		g_critical("cannot use HWIDs before calling ->load_hwinfo()");
 		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_INITIALIZED, "no data");
@@ -621,31 +770,84 @@ fu_context_security_changed(FuContext *self)
 /**
  * fu_context_load_hwinfo:
  * @self: a #FuContext
+ * @flags: a #FuContextHwidFlags, e.g. %FU_CONTEXT_HWID_FLAG_LOAD_SMBIOS
  * @error: (nullable): optional return location for an error
  *
  * Loads all hardware information parts of the context.
  *
  * Returns: %TRUE for success
  *
- * Since: 1.6.0
+ * Since: 1.8.10
  **/
 gboolean
-fu_context_load_hwinfo(FuContext *self, GError **error)
+fu_context_load_hwinfo(FuContext *self, FuContextHwidFlags flags, GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	GPtrArray *guids;
-	g_autoptr(GError) error_smbios = NULL;
 	g_autoptr(GError) error_hwids = NULL;
 	g_autoptr(GError) error_bios_settings = NULL;
 
 	g_return_val_if_fail(FU_IS_CONTEXT(self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
-	if (!fu_smbios_setup(priv->smbios, &error_smbios))
-		g_warning("Failed to load SMBIOS: %s", error_smbios->message);
-	if (!fu_hwids_setup(priv->hwids, priv->smbios, &error_hwids))
-		g_warning("Failed to load HWIDs: %s", error_hwids->message);
+	if ((flags & FU_CONTEXT_HWID_FLAG_LOAD_CONFIG) > 0) {
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_hwids_config_setup(self, priv->hwids, &error_local)) {
+			if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+				g_propagate_prefixed_error(error,
+							   g_steal_pointer(&error_local),
+							   "Failed to load HWIDs config: ");
+				return FALSE;
+			}
+		}
+	}
+	if ((flags & FU_CONTEXT_HWID_FLAG_LOAD_DMI) > 0) {
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_hwids_dmi_setup(self, priv->hwids, &error_local)) {
+			if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+				g_propagate_prefixed_error(error,
+							   g_steal_pointer(&error_local),
+							   "Failed to load HWIDs DMI: ");
+				return FALSE;
+			}
+		}
+	}
+	if ((flags & FU_CONTEXT_HWID_FLAG_LOAD_FDT) > 0) {
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_hwids_fdt_setup(self, priv->hwids, &error_local)) {
+			if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+				g_propagate_prefixed_error(error,
+							   g_steal_pointer(&error_local),
+							   "Failed to load HWIDs FDT: ");
+				return FALSE;
+			}
+		}
+	}
+	if ((flags & FU_CONTEXT_HWID_FLAG_LOAD_KENV) > 0) {
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_hwids_kenv_setup(self, priv->hwids, &error_local)) {
+			if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+				g_propagate_prefixed_error(error,
+							   g_steal_pointer(&error_local),
+							   "Failed to load HWIDs kenv: ");
+				return FALSE;
+			}
+		}
+	}
+	if ((flags & FU_CONTEXT_HWID_FLAG_LOAD_SMBIOS) > 0) {
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_hwids_smbios_setup(self, priv->hwids, &error_local)) {
+			if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+				g_propagate_prefixed_error(error,
+							   g_steal_pointer(&error_local),
+							   "Failed to load SMBIOS: ");
+				return FALSE;
+			}
+		}
+	}
 	priv->loaded_hwinfo = TRUE;
+	if (!fu_hwids_setup(priv->hwids, &error_hwids))
+		g_warning("Failed to load HWIDs: %s", error_hwids->message);
 
 	/* set the hwid flags */
 	guids = fu_context_get_hwid_guids(self);
@@ -891,7 +1093,30 @@ fu_context_add_flag(FuContext *context, FuContextFlags flag)
 {
 	FuContextPrivate *priv = GET_PRIVATE(context);
 	g_return_if_fail(FU_IS_CONTEXT(context));
+	if (priv->flags & flag)
+		return;
 	priv->flags |= flag;
+	g_object_notify(G_OBJECT(context), "flags");
+}
+
+/**
+ * fu_context_remove_flag:
+ * @context: a #FuContext
+ * @flag: the context flag
+ *
+ * Removes a specific flag from the context.
+ *
+ * Since: 1.8.10
+ **/
+void
+fu_context_remove_flag(FuContext *context, FuContextFlags flag)
+{
+	FuContextPrivate *priv = GET_PRIVATE(context);
+	g_return_if_fail(FU_IS_CONTEXT(context));
+	if ((priv->flags & flag) == 0)
+		return;
+	priv->flags &= ~flag;
+	g_object_notify(G_OBJECT(context), "flags");
 }
 
 /**
@@ -1039,6 +1264,9 @@ fu_context_get_property(GObject *object, guint prop_id, GValue *value, GParamSpe
 	case PROP_BATTERY_THRESHOLD:
 		g_value_set_uint(value, priv->battery_threshold);
 		break;
+	case PROP_FLAGS:
+		g_value_set_uint64(value, priv->flags);
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -1049,6 +1277,7 @@ static void
 fu_context_set_property(GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec)
 {
 	FuContext *self = FU_CONTEXT(object);
+	FuContextPrivate *priv = GET_PRIVATE(self);
 	switch (prop_id) {
 	case PROP_BATTERY_STATE:
 		fu_context_set_battery_state(self, g_value_get_uint(value));
@@ -1061,6 +1290,9 @@ fu_context_set_property(GObject *object, guint prop_id, const GValue *value, GPa
 		break;
 	case PROP_BATTERY_THRESHOLD:
 		fu_context_set_battery_threshold(self, g_value_get_uint(value));
+		break;
+	case PROP_FLAGS:
+		priv->flags = g_value_get_uint64(value);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -1078,6 +1310,8 @@ fu_context_finalize(GObject *object)
 		g_hash_table_unref(priv->runtime_versions);
 	if (priv->compile_versions != NULL)
 		g_hash_table_unref(priv->compile_versions);
+	if (priv->fdt != NULL)
+		g_object_unref(priv->fdt);
 	g_object_unref(priv->hwids);
 	g_hash_table_unref(priv->hwid_flags);
 	g_object_unref(priv->quirks);
@@ -1164,6 +1398,22 @@ fu_context_class_init(FuContextClass *klass)
 	g_object_class_install_property(object_class, PROP_BATTERY_THRESHOLD, pspec);
 
 	/**
+	 * FuContext:flags:
+	 *
+	 * The context flags.
+	 *
+	 * Since: 1.8.10
+	 */
+	pspec = g_param_spec_uint64("flags",
+				    NULL,
+				    NULL,
+				    FU_CONTEXT_FLAG_NONE,
+				    G_MAXUINT64,
+				    FU_CONTEXT_FLAG_NONE,
+				    G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_FLAGS, pspec);
+
+	/**
 	 * FuContext::security-changed:
 	 * @self: the #FuContext instance that emitted the signal
 	 *
@@ -1190,6 +1440,7 @@ static void
 fu_context_init(FuContext *self)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
+	priv->chassis_kind = FU_SMBIOS_CHASSIS_KIND_UNKNOWN;
 	priv->battery_level = FWUPD_BATTERY_LEVEL_INVALID;
 	priv->battery_threshold = FWUPD_BATTERY_LEVEL_INVALID;
 	priv->smbios = fu_smbios_new();

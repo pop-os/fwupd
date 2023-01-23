@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.8.9',
+  version: '1.8.10',
   license: 'LGPL-2.1+',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -219,7 +219,7 @@ hsi = get_option('hsi').disable_auto_if(host_machine.system() != 'linux').disabl
 if hsi
   conf.set('HAVE_HSI', '1')
 endif
-libxmlb = dependency('xmlb', version: '>= 0.1.13', fallback: ['libxmlb', 'libxmlb_dep'])
+libxmlb = dependency('xmlb', version: '>= 0.1.15', fallback: ['libxmlb', 'libxmlb_dep'])
 gusb = dependency('gusb', version: '>= 0.3.0', fallback: ['gusb', 'gusb_dep'], required: get_option('gusb'))
 if gusb.found()
   conf.set('HAVE_GUSB', '1')
@@ -267,8 +267,13 @@ if build_daemon
 endif
 libm = cc.find_library('m', required: false)
 libgcab = dependency('libgcab-1.0', version: '>= 1.0', fallback: ['gcab', 'gcab_dep'])
-if libgcab.type_name() == 'pkgconfig' and cc.has_function('gcab_file_set_bytes', dependencies: libgcab)
-  conf.set('HAVE_GCAB_FILE_SET_BYTES', '1')
+if libgcab.type_name() == 'pkgconfig'
+  if cc.has_function('gcab_file_set_bytes', dependencies: libgcab)
+    conf.set('HAVE_GCAB_FILE_SET_BYTES', '1')
+  endif
+  if cc.has_function('gcab_cabinet_add_allowed_compression', dependencies: libgcab)
+    conf.set('HAVE_GCAB_CABINET_ADD_ALLOWED_COMPRESSION', '1')
+  endif
 endif
 
 bashcomp = dependency('bash-completion', required: false)
@@ -608,7 +613,7 @@ custom_target('builtin-quirk-gz',
   install_dir: join_paths(datadir, 'fwupd', 'quirks.d'),
 )
 
-if build_daemon and libsystemd.found()
+if build_daemon and libsystemd.found() and offline.allowed()
   install_symlink('fwupd-offline-update.service',
     install_dir: join_paths(systemdunitdir, 'system-update.target.wants'),
     pointing_to: join_paths('..', 'fwupd-offline-update.service')

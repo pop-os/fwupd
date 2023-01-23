@@ -45,6 +45,7 @@
 #include <libfwupdplugin/fu-fit-firmware.h>
 #include <libfwupdplugin/fu-fmap-firmware.h>
 #include <libfwupdplugin/fu-hid-device.h>
+#include <libfwupdplugin/fu-hwids.h>
 #include <libfwupdplugin/fu-i2c-device.h>
 #include <libfwupdplugin/fu-ifd-bios.h>
 #include <libfwupdplugin/fu-ifd-firmware.h>
@@ -61,11 +62,13 @@
 #include <libfwupdplugin/fu-mem.h>
 #include <libfwupdplugin/fu-oprom-firmware.h>
 #include <libfwupdplugin/fu-path.h>
+#include <libfwupdplugin/fu-pefile-firmware.h>
 #include <libfwupdplugin/fu-plugin-vfuncs.h>
 #include <libfwupdplugin/fu-plugin.h>
 #include <libfwupdplugin/fu-progress.h>
 #include <libfwupdplugin/fu-security-attr.h>
 #include <libfwupdplugin/fu-security-attrs.h>
+#include <libfwupdplugin/fu-smbios.h>
 #include <libfwupdplugin/fu-srec-firmware.h>
 #include <libfwupdplugin/fu-string.h>
 #include <libfwupdplugin/fu-sum.h>

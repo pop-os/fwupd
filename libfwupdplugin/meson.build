@@ -48,6 +48,11 @@ fwupdplugin_src = [
   'fu-dfuse-firmware.c',    # fuzzing
   'fu-fmap-firmware.c',     # fuzzing
   'fu-hwids.c',             # fuzzing
+  'fu-hwids-config.c',      # fuzzing
+  'fu-hwids-dmi.c',         # fuzzing
+  'fu-hwids-fdt.c',         # fuzzing
+  'fu-hwids-kenv.c',        # fuzzing
+  'fu-hwids-smbios.c',      # fuzzing
   'fu-ihex-firmware.c',     # fuzzing
   'fu-io-channel.c',        # fuzzing
   'fu-plugin.c',
@@ -74,6 +79,7 @@ fwupdplugin_src = [
   'fu-uswid-firmware.c',          # fuzzing
   'fu-coswid-common.c',           # fuzzing
   'fu-coswid-firmware.c',         # fuzzing
+  'fu-pefile-firmware.c',         # fuzzing
   'fu-efivar.c',
   'fu-udev-device.c',
   'fu-i2c-device.c',
@@ -149,6 +155,7 @@ fwupdplugin_headers = [
   'fu-ifd-firmware.h',
   'fu-uswid-firmware.h',
   'fu-coswid-firmware.h',
+  'fu-pefile-firmware.h',
   'fu-ifd-image.h',
   'fu-linear-firmware.h',
   'fu-volume.h',
@@ -359,6 +366,25 @@ if get_option('tests')
     ],
   )
   test('fwupdplugin-self-test', e, is_parallel: false, timeout: 180, env: env)
+
+  install_data([
+      'tests/chassis_type',
+      'tests/sys_vendor',
+    ],
+    install_dir: installed_test_datadir,
+  )
+  install_data([
+      'tests/dmi/tables/DMI',
+      'tests/dmi/tables/smbios_entry_point',
+    ],
+    install_dir: join_paths(installed_test_datadir, 'tests/dmi/tables'),
+  )
+  install_data([
+      'tests/dmi/tables64/DMI',
+      'tests/dmi/tables64/smbios_entry_point',
+    ],
+    install_dir: join_paths(installed_test_datadir, 'tests/dmi/tables64'),
+  )
 endif
 
 fwupdplugin_incdir = include_directories('.')

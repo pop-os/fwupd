@@ -10,6 +10,8 @@
 
 #include "fu-bios-settings.h"
 #include "fu-common.h"
+#include "fu-firmware.h"
+#include "fu-smbios.h"
 
 #define FU_TYPE_CONTEXT (fu_context_get_type())
 G_DECLARE_DERIVABLE_TYPE(FuContext, fu_context, FU, CONTEXT, GObject)
@@ -61,13 +63,15 @@ typedef guint64 FuContextFlags;
 
 void
 fu_context_add_flag(FuContext *context, FuContextFlags flag);
+void
+fu_context_remove_flag(FuContext *context, FuContextFlags flag);
 gboolean
 fu_context_has_flag(FuContext *context, FuContextFlags flag);
 
 const gchar *
-fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offset);
+fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offset, GError **error);
 guint
-fu_context_get_smbios_integer(FuContext *self, guint8 type, guint8 offset);
+fu_context_get_smbios_integer(FuContext *self, guint8 type, guint8 offset, GError **error);
 GBytes *
 fu_context_get_smbios_data(FuContext *self, guint8 structure_type, GError **error);
 gboolean
@@ -124,3 +128,7 @@ fu_context_get_bios_setting(FuContext *self, const gchar *name);
 
 GPtrArray *
 fu_context_get_esp_volumes(FuContext *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
+FuFirmware *
+fu_context_get_fdt(FuContext *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
+FuSmbiosChassisKind
+fu_context_get_chassis_kind(FuContext *self);

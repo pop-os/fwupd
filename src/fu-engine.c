@@ -3773,27 +3773,49 @@ fu_engine_appstream_upgrade_cb(XbBuilderFixup *self,
 	return TRUE;
 }
 
-static XbBuilderSource *
-fu_engine_create_metadata_builder_source(FuEngine *self, const gchar *fn, GError **error)
+static GInputStream *
+fu_engine_builder_cabinet_adapter_cb(XbBuilderSource *source,
+				     XbBuilderSourceCtx *ctx,
+				     gpointer user_data,
+				     GCancellable *cancellable,
+				     GError **error)
 {
+	FuEngine *self = FU_ENGINE(user_data);
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-	g_autoptr(XbBuilderSource) source = xb_builder_source_new();
 	g_autofree gchar *xml = NULL;
 
-	g_debug("building metadata for %s", fn);
-	blob = fu_bytes_get_contents(fn, error);
+	/* convert the CAB into metadata XML */
+	blob = xb_builder_source_ctx_get_bytes(ctx, cancellable, error);
 	if (blob == NULL)
 		return NULL;
-
-	/* convert the silo for the CAB into a XbBuilderSource */
 	silo = fu_engine_get_silo_from_blob(self, blob, error);
 	if (silo == NULL)
 		return NULL;
 	xml = xb_silo_export(silo, XB_NODE_EXPORT_FLAG_NONE, error);
 	if (xml == NULL)
 		return NULL;
-	if (!xb_builder_source_load_xml(source, xml, XB_BUILDER_SOURCE_FLAG_NONE, error))
+	return g_memory_input_stream_new_from_data(g_steal_pointer(&xml), -1, g_free);
+}
+
+static XbBuilderSource *
+fu_engine_create_metadata_builder_source(FuEngine *self, const gchar *fn, GError **error)
+{
+	g_autoptr(GFile) file = g_file_new_for_path(fn);
+	g_autoptr(XbBuilderSource) source = xb_builder_source_new();
+
+	g_debug("using %s as metadata source", fn);
+	xb_builder_source_add_simple_adapter(source,
+					     "application/vnd.ms-cab-compressed",
+					     fu_engine_builder_cabinet_adapter_cb,
+					     self,
+					     NULL);
+	if (!xb_builder_source_load_file(source,
+					 file,
+					 XB_BUILDER_SOURCE_FLAG_WATCH_FILE |
+					     XB_BUILDER_SOURCE_FLAG_WATCH_DIRECTORY,
+					 NULL,
+					 error))
 		return NULL;
 	return g_steal_pointer(&source);
 }
@@ -4216,7 +4238,7 @@ fu_engine_load_metadata_store(FuEngine *self, FuEngineLoadFlags flags, GError **
 
 		/* generate all metadata on demand */
 		if (fwupd_remote_get_kind(remote) == FWUPD_REMOTE_KIND_DIRECTORY) {
-			g_debug("building metadata for remote '%s'", fwupd_remote_get_id(remote));
+			g_debug("loading metadata for remote '%s'", fwupd_remote_get_id(remote));
 			if (!fu_engine_create_metadata(self, builder, remote, &error_local)) {
 				g_warning("failed to generate remote %s: %s",
 					  fwupd_remote_get_id(remote),
@@ -5348,11 +5370,17 @@ fu_engine_add_releases_for_device_component(FuEngine *self,
 
 		/* invalid */
 		locations = fwupd_release_get_locations(FWUPD_RELEASE(release));
-		if (locations->len == 0)
+		if (locations->len == 0) {
+			g_autofree gchar *str = fwupd_release_to_string(FWUPD_RELEASE(release));
+			g_debug("no locations for %s", str);
 			continue;
+		}
 		checksums = fu_release_get_checksums(release);
-		if (checksums->len == 0)
+		if (checksums->len == 0) {
+			g_autofree gchar *str = fwupd_release_to_string(FWUPD_RELEASE(release));
+			g_debug("no locations for %s", str);
 			continue;
+		}
 
 		/* different branch */
 		if (g_strcmp0(fu_release_get_branch(release), fu_device_get_branch(device)) != 0) {
@@ -6601,17 +6629,16 @@ fu_engine_ensure_security_attrs_tainted(FuEngine *self)
 static gchar *
 fu_engine_attrs_calculate_hsi_for_chassis(FuEngine *self)
 {
-	guint val =
-	    fu_context_get_smbios_integer(self->ctx, FU_SMBIOS_STRUCTURE_TYPE_CHASSIS, 0x05);
+	FuSmbiosChassisKind chassis_kind = fu_context_get_chassis_kind(self->ctx);
 
 	/* if emulating, force the chassis type to be valid */
-	if (self->host_emulation &&
-	    (val == FU_SMBIOS_CHASSIS_KIND_OTHER || val == FU_SMBIOS_CHASSIS_KIND_UNKNOWN)) {
-		g_debug("forcing chassis kind [0x%x] to be valid", val);
-		val = FU_SMBIOS_CHASSIS_KIND_DESKTOP;
+	if (self->host_emulation && (chassis_kind == FU_SMBIOS_CHASSIS_KIND_OTHER ||
+				     chassis_kind == FU_SMBIOS_CHASSIS_KIND_UNKNOWN)) {
+		g_debug("forcing chassis kind [0x%x] to be valid", chassis_kind);
+		chassis_kind = FU_SMBIOS_CHASSIS_KIND_DESKTOP;
 	}
 
-	switch (val) {
+	switch (chassis_kind) {
 	case FU_SMBIOS_CHASSIS_KIND_DESKTOP:
 	case FU_SMBIOS_CHASSIS_KIND_LOW_PROFILE_DESKTOP:
 	case FU_SMBIOS_CHASSIS_KIND_MINI_TOWER:
@@ -6637,7 +6664,7 @@ fu_engine_attrs_calculate_hsi_for_chassis(FuEngine *self)
 	}
 
 	return g_strdup_printf("HSI:INVALID:chassis[0x%02x] (v%d.%d.%d)",
-			       val,
+			       chassis_kind,
 			       FWUPD_MAJOR_VERSION,
 			       FWUPD_MINOR_VERSION,
 			       FWUPD_MICRO_VERSION);
@@ -7777,11 +7804,20 @@ fu_engine_backends_coldplug(FuEngine *self, FuProgress *progress)
 							 backend,
 							 fu_progress_get_child(progress),
 							 &error_backend)) {
-			g_warning("failed to coldplug backend %s: %s",
-				  fu_backend_get_name(backend),
-				  error_backend->message);
-			fu_progress_step_done(progress);
-			continue;
+			if (g_error_matches(error_backend,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED)) {
+				if (g_getenv("FWUPD_PROBE_VERBOSE") != NULL) {
+					g_debug("ignoring coldplug failure %s: %s",
+						fu_backend_get_name(backend),
+						error_backend->message);
+				}
+			} else {
+				g_warning("failed to coldplug backend %s: %s",
+					  fu_backend_get_name(backend),
+					  error_backend->message);
+			}
+			fu_progress_finished(fu_progress_get_child(progress));
 		}
 		fu_progress_step_done(progress);
 	}
@@ -7970,7 +8006,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 
 	/* load SMBIOS and the hwids */
 	if (flags & FU_ENGINE_LOAD_FLAG_HWINFO) {
-		if (!fu_context_load_hwinfo(self->ctx, error))
+		if (!fu_context_load_hwinfo(self->ctx, FU_CONTEXT_HWID_FLAG_LOAD_ALL, error))
 			return FALSE;
 		self->has_hwinfo = TRUE;
 	}
@@ -8017,6 +8053,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "cfu-payload", FU_TYPE_CFU_PAYLOAD);
 	fu_context_add_firmware_gtype(self->ctx, "uswid", FU_TYPE_USWID_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "coswid", FU_TYPE_COSWID_FIRMWARE);
+	fu_context_add_firmware_gtype(self->ctx, "pefile", FU_TYPE_PEFILE_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx,
 				      "intel-thunderbolt",
 				      FU_TYPE_INTEL_THUNDERBOLT_FIRMWARE);

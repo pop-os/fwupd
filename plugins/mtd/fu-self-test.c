@@ -32,7 +32,7 @@ fu_test_mtd_device_func(void)
 	ret = fu_context_load_quirks(ctx, FU_QUIRKS_LOAD_FLAG_NO_CACHE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	ret = fu_context_load_hwinfo(ctx, &error);
+	ret = fu_context_load_hwinfo(ctx, FU_CONTEXT_HWID_FLAG_LOAD_SMBIOS, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -103,6 +103,7 @@ main(int argc, char **argv)
 	g_test_init(&argc, &argv, NULL);
 	(void)g_setenv("FWUPD_MTD_VERBOSE", "1", TRUE);
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
+	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", testdatadir, TRUE);
 
 	g_log_set_fatal_mask(NULL, G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL);

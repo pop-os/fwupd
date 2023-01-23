@@ -416,84 +416,39 @@ fu_smbios3_func(void)
 }
 
 static void
-fu_smbios_dt_func(void)
+fu_context_flags_func(void)
 {
-	const gchar *str;
-	gboolean ret;
-	g_autofree gchar *path = NULL;
-	g_autoptr(FuSmbios) smbios = NULL;
-	g_autoptr(GError) error = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
 
-	path = g_test_build_filename(G_TEST_DIST, "tests", "devicetree", "base", NULL);
-	smbios = fu_smbios_new();
-	ret = fu_smbios_setup_from_path(smbios, path, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	if (g_getenv("FWUPD_VERBOSE") != NULL) {
-		g_autofree gchar *dump = fu_firmware_to_string(FU_FIRMWARE(smbios));
-		g_debug("%s", dump);
-	}
-
-	/* get vendor */
-	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_SYSTEM, 0x04, &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(str, ==, "Hughski Limited");
+	g_assert_false(fu_context_has_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS));
+	fu_context_add_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS);
+	g_assert_true(fu_context_has_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS));
+	fu_context_remove_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS);
+	fu_context_remove_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS);
+	g_assert_false(fu_context_has_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS));
+	fu_context_add_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS);
+	fu_context_add_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS);
+	g_assert_true(fu_context_has_flag(ctx, FU_CONTEXT_FLAG_SAVE_EVENTS));
 }
 
 static void
-fu_smbios_dt_fallback_func(void)
+fu_context_hwids_dmi_func(void)
 {
-	const gchar *str;
-	gboolean ret;
-	g_autofree gchar *path = NULL;
-	g_autoptr(FuSmbios) smbios = fu_smbios_new();
+	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(GError) error = NULL;
+	gboolean ret;
 
-	path = g_test_build_filename(G_TEST_DIST, "tests", "devicetree-fallback", "base", NULL);
-	ret = fu_smbios_setup_from_path(smbios, path, &error);
+	ret = fu_context_load_hwinfo(ctx, FU_CONTEXT_HWID_FLAG_LOAD_DMI, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	if (g_getenv("FWUPD_VERBOSE") != NULL) {
-		g_autofree gchar *dump = fu_firmware_to_string(FU_FIRMWARE(smbios));
+		g_autofree gchar *dump =
+		    fu_firmware_to_string(FU_FIRMWARE(fu_context_get_smbios(ctx)));
 		g_debug("%s", dump);
 	}
 
-	/* get vendor */
-	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_SYSTEM, 0x04, &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(str, ==, "solidrun");
-
-	/* get model */
-	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_SYSTEM, 0x05, &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(str, ==, "honeycomb");
-}
-
-static void
-fu_smbios_class_func(void)
-{
-	g_autofree gchar *path = g_test_build_filename(G_TEST_DIST, "tests", "dmi", "class", NULL);
-	g_autoptr(FuSmbios) smbios = fu_smbios_new();
-	g_autoptr(GError) error = NULL;
-	gboolean ret;
-	const gchar *str;
-	guint8 byte;
-
-	ret = fu_smbios_setup_from_kernel(smbios, path, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	if (g_getenv("FWUPD_VERBOSE") != NULL) {
-		g_autofree gchar *dump = fu_firmware_to_string(FU_FIRMWARE(smbios));
-		g_debug("%s", dump);
-	}
-
-	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_SYSTEM, 4, &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(str, ==, "FwupdTest");
-
-	byte = fu_smbios_get_integer(smbios, FU_SMBIOS_STRUCTURE_TYPE_CHASSIS, 5, &error);
-	g_assert_no_error(error);
-	g_assert_cmpuint(byte, ==, 16);
+	g_assert_cmpstr(fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER), ==, "FwupdTest");
+	g_assert_cmpuint(fu_context_get_chassis_kind(ctx), ==, 16);
 }
 
 static gboolean
@@ -603,8 +558,7 @@ static void
 fu_hwids_func(void)
 {
 	g_autofree gchar *testdatadir = NULL;
-	g_autoptr(FuHwids) hwids = NULL;
-	g_autoptr(FuSmbios) smbios = NULL;
+	g_autoptr(FuContext) context = NULL;
 	g_autoptr(GError) error = NULL;
 	gboolean ret;
 
@@ -638,36 +592,42 @@ fu_hwids_func(void)
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 
-	smbios = fu_smbios_new();
-	ret = fu_smbios_setup(smbios, &error);
+	context = fu_context_new();
+	ret = fu_context_load_hwinfo(context, FU_CONTEXT_HWID_FLAG_LOAD_SMBIOS, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	hwids = fu_hwids_new();
-	ret = fu_hwids_setup(hwids, smbios, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_MANUFACTURER), ==, "LENOVO");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_ENCLOSURE_KIND), ==, "a");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_FAMILY), ==, "ThinkPad T440s");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_PRODUCT_NAME), ==, "20ARS19C0C");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_BIOS_VENDOR), ==, "LENOVO");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_BIOS_VERSION),
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_MANUFACTURER),
+			==,
+			"LENOVO");
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_ENCLOSURE_KIND), ==, "a");
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_FAMILY),
+			==,
+			"ThinkPad T440s");
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_PRODUCT_NAME),
+			==,
+			"20ARS19C0C");
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_BIOS_VENDOR), ==, "LENOVO");
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_BIOS_VERSION),
 			==,
 			"GJET75WW (2.25 )");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_BIOS_MAJOR_RELEASE), ==, "02");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_BIOS_MINOR_RELEASE), ==, "19");
-	g_assert_cmpstr(fu_hwids_get_value(hwids, FU_HWIDS_KEY_PRODUCT_SKU),
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_BIOS_MAJOR_RELEASE),
+			==,
+			"02");
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_BIOS_MINOR_RELEASE),
+			==,
+			"19");
+	g_assert_cmpstr(fu_context_get_hwid_value(context, FU_HWIDS_KEY_PRODUCT_SKU),
 			==,
 			"LENOVO_MT_20AR_BU_Think_FM_ThinkPad T440s");
 	for (guint i = 0; guids[i].key != NULL; i++) {
+		FuHwids *hwids = fu_context_get_hwids(context);
 		g_autofree gchar *guid = fu_hwids_get_guid(hwids, guids[i].key, &error);
 		g_assert_no_error(error);
 		g_assert_cmpstr(guid, ==, guids[i].value);
 	}
 	for (guint i = 0; guids[i].key != NULL; i++)
-		g_assert_true(fu_hwids_has_guid(hwids, guids[i].value));
+		g_assert_true(fu_context_has_hwid_guid(context, guids[i].value));
 }
 
 static void
@@ -836,6 +796,47 @@ fu_plugin_delay_func(void)
 			==,
 			"b7eccd0059d6d7dc2ef76c35d6de0048cc8c029d");
 	g_clear_object(&device_tmp);
+}
+
+static void
+fu_plugin_fdt_func(void)
+{
+	gboolean ret;
+	g_autofree gchar *compatible = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuFirmware) fdt = NULL;
+	g_autoptr(FuFirmware) fdt_root = NULL;
+	g_autoptr(FuFirmware) fdt_tmp = fu_fdt_firmware_new();
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GFile) file =
+	    g_file_new_for_path("/tmp/fwupd-self-test/var/lib/fwupd/system.dtb");
+
+	/* write file */
+	ret = fu_firmware_build_from_xml(
+	    FU_FIRMWARE(fdt_tmp),
+	    "<firmware gtype=\"FuFdtFirmware\">\n"
+	    "  <firmware gtype=\"FuFdtImage\">\n"
+	    "    <metadata key=\"compatible\" format=\"str\">pine64,rockpro64-v2.1</metadata>\n"
+	    "  </firmware>\n"
+	    "</firmware>\n",
+	    &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_firmware_write_file(FU_FIRMWARE(fdt_tmp), file, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* get compatible from the context */
+	fdt = fu_context_get_fdt(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(fdt);
+	fdt_root = fu_firmware_get_image_by_id(fdt, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(fdt_root);
+	ret = fu_fdt_image_get_attr_str(FU_FDT_IMAGE(fdt_root), "compatible", &compatible, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpstr(compatible, ==, "pine64,rockpro64-v2.1");
 }
 
 static void
@@ -3759,6 +3760,8 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_LIBDIR_PKG", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_SYSFSDMIDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_LOCALSTATEDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_OFFLINE_TRIGGER", "/tmp/fwupd-self-test/system-update", TRUE);
 	(void)g_setenv("FWUPD_LOCALSTATEDIR", "/tmp/fwupd-self-test/var", TRUE);
 	(void)g_setenv("FWUPD_PROFILE", "1", TRUE);
@@ -3780,6 +3783,7 @@ main(int argc, char **argv)
 			fu_plugin_device_inhibit_children_func);
 	g_test_add_func("/fwupd/plugin{delay}", fu_plugin_delay_func);
 	g_test_add_func("/fwupd/plugin{quirks}", fu_plugin_quirks_func);
+	g_test_add_func("/fwupd/plugin{fdt}", fu_plugin_fdt_func);
 	g_test_add_func("/fwupd/plugin{quirks-performance}", fu_plugin_quirks_performance_func);
 	g_test_add_func("/fwupd/plugin{quirks-device}", fu_plugin_quirks_device_func);
 	g_test_add_func("/fwupd/backend", fu_backend_func);
@@ -3802,11 +3806,10 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{strsafe}", fu_strsafe_func);
 	g_test_add_func("/fwupd/efivar", fu_efivar_func);
 	g_test_add_func("/fwupd/hwids", fu_hwids_func);
+	g_test_add_func("/fwupd/context{flags}", fu_context_flags_func);
+	g_test_add_func("/fwupd/context{hwids-dmi}", fu_context_hwids_dmi_func);
 	g_test_add_func("/fwupd/smbios", fu_smbios_func);
 	g_test_add_func("/fwupd/smbios3", fu_smbios3_func);
-	g_test_add_func("/fwupd/smbios{dt}", fu_smbios_dt_func);
-	g_test_add_func("/fwupd/smbios{dt-fallback}", fu_smbios_dt_fallback_func);
-	g_test_add_func("/fwupd/smbios{class}", fu_smbios_class_func);
 	g_test_add_func("/fwupd/firmware", fu_firmware_func);
 	g_test_add_func("/fwupd/firmware{common}", fu_firmware_common_func);
 	g_test_add_func("/fwupd/firmware{archive}", fu_firmware_archive_func);

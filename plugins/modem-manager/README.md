@@ -1,4 +1,6 @@
-# ModemManager
+---
+title: Plugin: ModemManager
+---
 
 ## Introduction
 
@@ -29,6 +31,12 @@ This plugin uses the following plugin-specific quirk:
 AT command to execute to determine the firmware branch currently installed on the modem.
 
 Since: 1.7.4
+
+### ModemManagerFirehoseProgFile
+
+Firehose program file to use during the switch to EDL (Emergency Download) mode.
+
+Since: 1.8.10
 
 ## Vendor ID Security
 
