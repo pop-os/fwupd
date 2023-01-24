@@ -1,8 +1,8 @@
-fwupd (1.8.10-2) UNRELEASED; urgency=medium
+fwupd (1.8.10-2) unstable; urgency=medium
 
   * Backport a patch to hopefully help with autopkgtest failures on !x86
 
- -- Mario Limonciello <mario.limonciello@amd.com>  Tue, 24 Jan 2023 09:11:44 -0600
+ -- Mario Limonciello <mario.limonciello@amd.com>  Tue, 24 Jan 2023 09:12:43 -0600
 
 fwupd (1.8.10-1) unstable; urgency=medium
 
