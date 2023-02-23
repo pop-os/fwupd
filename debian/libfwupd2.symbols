@@ -57,6 +57,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.7.4@LIBFWUPD_1.7.4 1.7.4
  LIBFWUPD_1.7.6@LIBFWUPD_1.7.6 1.7.6
  LIBFWUPD_1.8.0@LIBFWUPD_1.8.0 1.8.0
+ LIBFWUPD_1.8.11@LIBFWUPD_1.8.11 1.8.11
  LIBFWUPD_1.8.1@LIBFWUPD_1.8.1 1.8.1
  LIBFWUPD_1.8.2@LIBFWUPD_1.8.2 1.8.2
  LIBFWUPD_1.8.3@LIBFWUPD_1.8.3 1.8.3
@@ -118,6 +119,12 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_download_bytes_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_download_bytes_finish@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_download_file@LIBFWUPD_1.5.2 1.5.2
+ fwupd_client_emulation_load@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_emulation_load_async@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_emulation_load_finish@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_emulation_save@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_emulation_save_async@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_emulation_save_finish@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_ensure_networking@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_get_approved_firmware@LIBFWUPD_1.2.6 1.2.6
  fwupd_client_get_approved_firmware_async@LIBFWUPD_1.5.0 1.5.0
@@ -190,6 +197,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_get_upgrades_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_upgrades_finish@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_user_agent@LIBFWUPD_1.5.2 1.5.2
+ fwupd_client_inhibit@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_inhibit_async@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_inhibit_finish@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_install@LIBFWUPD_0.7.0 1.0.0
  fwupd_client_install_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_install_bytes@LIBFWUPD_1.4.5 1.4.5
@@ -214,6 +224,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_modify_remote_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_modify_remote_finish@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_new@LIBFWUPD_0.7.0 1.0.0
+ fwupd_client_quit@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_quit_async@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_quit_finish@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_refresh_remote@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_refresh_remote_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_refresh_remote_finish@LIBFWUPD_1.5.0 1.5.0
@@ -226,12 +239,16 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_set_blocked_firmware@LIBFWUPD_1.4.6 1.4.6
  fwupd_client_set_blocked_firmware_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_set_blocked_firmware_finish@LIBFWUPD_1.5.0 1.5.0
+ fwupd_client_set_daemon_version@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_set_feature_flags@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_set_feature_flags_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_set_feature_flags_finish@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_set_main_context@LIBFWUPD_1.5.3 1.5.3
  fwupd_client_set_user_agent@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_set_user_agent_for_package@LIBFWUPD_1.4.5 1.4.5
+ fwupd_client_uninhibit@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_uninhibit_async@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_uninhibit_finish@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_unlock@LIBFWUPD_0.7.0 1.0.0
  fwupd_client_unlock_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_unlock_finish@LIBFWUPD_1.5.0 1.5.0
@@ -287,6 +304,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_get_name@LIBFWUPD_0.9.3 1.0.0
  fwupd_device_get_parent@LIBFWUPD_1.0.8 1.0.8
  fwupd_device_get_parent_id@LIBFWUPD_1.0.8 1.0.8
+ fwupd_device_get_percentage@LIBFWUPD_1.8.11 1.8.11
  fwupd_device_get_plugin@LIBFWUPD_1.0.0 1.0.0
  fwupd_device_get_problems@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_get_protocol@LIBFWUPD_1.3.6 1.3.6
@@ -343,6 +361,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_set_name@LIBFWUPD_0.9.3 1.0.0
  fwupd_device_set_parent@LIBFWUPD_1.0.8 1.0.8
  fwupd_device_set_parent_id@LIBFWUPD_1.0.8 1.0.8
+ fwupd_device_set_percentage@LIBFWUPD_1.8.11 1.8.11
  fwupd_device_set_plugin@LIBFWUPD_1.0.0 1.0.0
  fwupd_device_set_problems@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_set_protocol@LIBFWUPD_1.3.6 1.3.6

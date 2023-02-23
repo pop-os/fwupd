@@ -1,3 +1,9 @@
+fwupd (1.8.11-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.8.11)
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 23 Feb 2023 09:52:25 -0600
+
 fwupd (1.8.10-2) unstable; urgency=medium
 
   * Backport a patch to hopefully help with autopkgtest failures on !x86
