@@ -25,6 +25,7 @@ Build-Depends:
 	libcurl4-gnutls-dev,
 	libefiboot-dev [amd64 arm64 armhf i386],
 	libefivar-dev [amd64 arm64 armhf i386],
+	libjaylink-dev [!ia64],
 	libflashrom-dev [!ia64],
 	libfreetype6-dev,
 	libftdi1-dev,

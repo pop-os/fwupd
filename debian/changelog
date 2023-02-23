@@ -1,6 +1,7 @@
 fwupd (1.8.11-1) UNRELEASED; urgency=medium
 
   * New upstream version (1.8.11)
+  * Add libjaylink-dev for flashrom
 
  -- Mario Limonciello <superm1@gmail.com>  Thu, 23 Feb 2023 09:52:25 -0600
 
