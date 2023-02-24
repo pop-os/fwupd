@@ -53,6 +53,7 @@ Build-Depends:
 	locales,
 	meson,
 	mingw-w64-tools [amd64 arm64 armhf i386],
+	pandoc,
 	pkg-config,
 	policykit-1 (>> 0.105-14),
 	protobuf-c-compiler,
