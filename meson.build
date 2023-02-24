@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.8.11',
+  version: '1.8.12',
   license: 'LGPL-2.1+',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -272,6 +272,9 @@ if libgcab.type_name() == 'pkgconfig'
     conf.set('HAVE_GCAB_CABINET_ADD_ALLOWED_COMPRESSION', '1')
   endif
 endif
+
+# manpages
+pandoc = find_program('pandoc', required: get_option('man'))
 
 bashcomp = dependency('bash-completion', required: false)
 python3 = import('python').find_installation('python3')

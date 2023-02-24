@@ -696,33 +696,43 @@ fu_engine_load_release(FuEngine *self,
 static const gchar *
 fu_engine_get_remote_id_for_checksum(FuEngine *self, const gchar *csum)
 {
-	g_autoptr(XbNode) key = NULL;
 #if LIBXMLB_CHECK_VERSION(0, 3, 0)
 	g_auto(XbQueryContext) context = XB_QUERY_CONTEXT_INIT();
-
 	xb_query_context_set_flags(&context, XB_QUERY_FLAG_USE_INDEXES);
 	xb_value_bindings_bind_str(xb_query_context_get_bindings(&context), 0, csum, NULL);
-	key = xb_silo_query_first_with_context(self->silo,
-					       self->query_container_checksum1,
-					       &context,
-					       NULL);
-	if (key != NULL)
-		return xb_node_get_text(key);
-	key = xb_silo_query_first_with_context(self->silo,
-					       self->query_container_checksum2,
-					       &context,
-					       NULL);
-	if (key != NULL)
-		return xb_node_get_text(key);
+	if (self->query_container_checksum1 != NULL) {
+		g_autoptr(XbNode) key =
+		    xb_silo_query_first_with_context(self->silo,
+						     self->query_container_checksum1,
+						     &context,
+						     NULL);
+		if (key != NULL)
+			return xb_node_get_text(key);
+	}
+	if (self->query_container_checksum2 != NULL) {
+		g_autoptr(XbNode) key =
+		    xb_silo_query_first_with_context(self->silo,
+						     self->query_container_checksum2,
+						     &context,
+						     NULL);
+		if (key != NULL)
+			return xb_node_get_text(key);
+	}
 #else
-	xb_query_bind_str(self->query_container_checksum1, 0, csum, NULL);
-	key = xb_silo_query_first_full(self->silo, self->query_container_checksum1, NULL);
-	if (key != NULL)
-		return xb_node_get_text(key);
-	xb_query_bind_str(self->query_container_checksum2, 0, csum, NULL);
-	key = xb_silo_query_first_full(self->silo, self->query_container_checksum2, NULL);
-	if (key != NULL)
-		return xb_node_get_text(key);
+	if (self->query_container_checksum1 != NULL) {
+		g_autoptr(XbNode) key = NULL;
+		xb_query_bind_str(self->query_container_checksum1, 0, csum, NULL);
+		key = xb_silo_query_first_full(self->silo, self->query_container_checksum1, NULL);
+		if (key != NULL)
+			return xb_node_get_text(key);
+	}
+	if (self->query_container_checksum2 != NULL) {
+		g_autoptr(XbNode) key = NULL;
+		xb_query_bind_str(self->query_container_checksum2, 0, csum, NULL);
+		key = xb_silo_query_first_full(self->silo, self->query_container_checksum2, NULL);
+		if (key != NULL)
+			return xb_node_get_text(key);
+	}
 #endif
 
 	/* failed */
@@ -4127,12 +4137,21 @@ static gboolean
 fu_engine_create_silo_index(FuEngine *self, GError **error)
 {
 	g_autoptr(GPtrArray) components = NULL;
+	g_autoptr(GError) error_container_checksum1 = NULL;
+	g_autoptr(GError) error_container_checksum2 = NULL;
+	g_autoptr(GError) error_tag_by_guid_version = NULL;
 
 	/* print what we've got */
 	components = xb_silo_query(self->silo, "components/component[@type='firmware']", 0, NULL);
 	if (components == NULL)
 		return TRUE;
 	g_debug("%u components now in silo", components->len);
+
+	/* clear old prepared queries */
+	g_clear_object(&self->query_component_by_guid);
+	g_clear_object(&self->query_container_checksum1);
+	g_clear_object(&self->query_container_checksum2);
+	g_clear_object(&self->query_tag_by_guid_version);
 
 	/* build the index */
 	if (!xb_silo_query_build_index(self->silo, "components/component", "type", error))
@@ -4173,22 +4192,18 @@ fu_engine_create_silo_index(FuEngine *self, GError **error)
 			      "checksum[@target='container'][text()=?]/../../"
 			      "../../custom/value[@key='fwupd::RemoteId']",
 			      XB_QUERY_FLAG_OPTIMIZE,
-			      error);
-	if (self->query_container_checksum1 == NULL) {
-		g_prefix_error(error, "failed to prepare query: ");
-		return FALSE;
-	}
+			      &error_container_checksum1);
+	if (self->query_container_checksum1 == NULL)
+		g_debug("ignoring prepared query: %s", error_container_checksum1->message);
 	self->query_container_checksum2 =
 	    xb_query_new_full(self->silo,
 			      "components/component[@type='firmware']/releases/release/"
 			      "artifacts/artifact[@type='binary']/checksum[text()=?]/../../"
 			      "../../../../custom/value[@key='fwupd::RemoteId']",
 			      XB_QUERY_FLAG_OPTIMIZE,
-			      error);
-	if (self->query_container_checksum2 == NULL) {
-		g_prefix_error(error, "failed to prepare query: ");
-		return FALSE;
-	}
+			      &error_container_checksum2);
+	if (self->query_container_checksum2 == NULL)
+		g_debug("ignoring prepared query: %s", error_container_checksum2->message);
 
 	/* prepare tag query with bound GUID parameter */
 	self->query_tag_by_guid_version =
@@ -4197,9 +4212,9 @@ fu_engine_create_silo_index(FuEngine *self, GError **error)
 			      "firmware[text()=?]/../../releases/release[@version=?]/../../"
 			      "tags/tag",
 			      XB_QUERY_FLAG_OPTIMIZE,
-			      error);
+			      &error_tag_by_guid_version);
 	if (self->query_tag_by_guid_version == NULL)
-		return FALSE;
+		g_debug("ignoring prepared query: %s", error_tag_by_guid_version->message);
 
 	/* success */
 	return TRUE;
@@ -4267,8 +4282,12 @@ fu_engine_create_metadata_builder_source(FuEngine *self, const gchar *fn, GError
 					     NULL);
 	if (!xb_builder_source_load_file(source,
 					 file,
+#if LIBJCAT_CHECK_VERSION(0, 2, 0)
 					 XB_BUILDER_SOURCE_FLAG_WATCH_FILE |
 					     XB_BUILDER_SOURCE_FLAG_WATCH_DIRECTORY,
+#else
+					 XB_BUILDER_SOURCE_FLAG_WATCH_FILE,
+#endif
 					 NULL,
 					 error))
 		return NULL;
@@ -4956,7 +4975,6 @@ fu_engine_update_metadata_bytes(FuEngine *self,
 	FwupdKeyringKind keyring_kind;
 	FwupdRemote *remote;
 	JcatVerifyFlags jcat_flags = JCAT_VERIFY_FLAG_REQUIRE_SIGNATURE;
-	g_autofree gchar *content_type = NULL;
 	g_autoptr(JcatFile) jcat_file = jcat_file_new();
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
@@ -4981,20 +4999,6 @@ fu_engine_update_metadata_bytes(FuEngine *self,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "remote %s not enabled",
 			    remote_id);
-		return FALSE;
-	}
-
-	/* check for xz payload */
-	content_type = g_content_type_guess(NULL,
-					    (const guchar *)g_bytes_get_data(bytes_raw, NULL),
-					    g_bytes_get_size(bytes_raw),
-					    NULL);
-	if (content_type != NULL && g_strcmp0(content_type, "application/x-xz") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "only application/x-xz payload supported, got %s",
-			    content_type);
 		return FALSE;
 	}
 
@@ -6917,6 +6921,9 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 	/* create new device */
 	fu_device_list_add(self->device_list, device);
 
+	/* clean up any state only valid for ->probe */
+	fu_device_probe_complete(device);
+
 	/* fix order */
 	fu_device_list_depsolve_order(self->device_list, device);
 
@@ -8383,7 +8390,6 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	FuPlugin *plugin_uefi;
 	FuQuirksLoadFlags quirks_flags = FU_QUIRKS_LOAD_FLAG_NONE;
 	const gchar *host_emulate = g_getenv("FWUPD_HOST_EMULATE");
-	guint backend_cnt = 0;
 	g_autoptr(GPtrArray) checksums_approved = NULL;
 	g_autoptr(GPtrArray) checksums_blocked = NULL;
 	g_autoptr(GError) error_quirks = NULL;
@@ -8644,14 +8650,6 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 					error_backend->message);
 				continue;
 			}
-			backend_cnt++;
-		}
-		if (backend_cnt == 0) {
-			g_set_error_literal(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_NOT_SUPPORTED,
-					    "all backends failed setup");
-			return FALSE;
 		}
 	}
 	fu_progress_step_done(progress);
