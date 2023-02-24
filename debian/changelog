@@ -1,3 +1,10 @@
+fwupd (1.8.12-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.8.12)
+  * Fixes some regressions with other fwupd clients.
+
+ -- Mario Limonciello <superm1@gmail.com>  Fri, 24 Feb 2023 14:13:28 -0600
+
 fwupd (1.8.11-1) unstable; urgency=medium
 
   * New upstream version (1.8.11)
