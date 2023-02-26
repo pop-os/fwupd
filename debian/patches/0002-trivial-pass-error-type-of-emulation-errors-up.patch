@@ -1,0 +1,29 @@
+From ad793c0009fccc6daefdb0041e8c296ed29d1731 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Sat, 25 Feb 2023 19:05:29 -0600
+Subject: [PATCH 2/5] trivial: pass error type of emulation errors up
+
+This way we won't mask errors that are not the config being
+disabled.
+---
+ src/fu-daemon.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/fu-daemon.c b/src/fu-daemon.c
+index 39dd83e05..ec725e54a 100644
+--- a/src/fu-daemon.c
++++ b/src/fu-daemon.c
+@@ -1408,8 +1408,8 @@ fu_daemon_daemon_method_call(GDBusConnection *connection,
+ 		data = g_variant_get_data_as_bytes(g_variant_get_child_value(parameters, 0));
+ 		if (!fu_engine_emulation_load(self->engine, data, &error)) {
+ 			g_dbus_method_invocation_return_error(invocation,
+-							      FWUPD_ERROR,
+-							      FWUPD_ERROR_NOT_SUPPORTED,
++							      error->domain,
++							      error->code,
+ 							      "failed to load emulation data: %s",
+ 							      error->message);
+ 			return;
+-- 
+2.34.1
+
