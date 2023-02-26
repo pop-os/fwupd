@@ -1,9 +1,9 @@
-fwupd (1.8.12-2) UNRELEASED; urgency=medium
+fwupd (1.8.12-2) unstable; urgency=medium
 
   * Backport a series of patches to help with autopkgtest failing when
     compiled against an older gusb.
 
- -- Mario Limonciello <superm1@gmail.com>  Sun, 26 Feb 2023 10:52:24 -0600
+ -- Mario Limonciello <superm1@gmail.com>  Sun, 26 Feb 2023 11:05:26 -0600
 
 fwupd (1.8.12-1) unstable; urgency=medium
 
