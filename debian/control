@@ -82,7 +82,7 @@ Package: libfwupd2
 Section: libs
 Architecture: linux-any
 Depends: ${misc:Depends},
-         ${shlibs:Depends}
+         ${shlibs:Depends},
 Multi-Arch: same
 Description: Firmware update daemon library
  fwupd is a daemon to allow session software to update device firmware.
@@ -97,17 +97,18 @@ Package: fwupd
 Architecture: linux-any
 Depends: ${misc:Depends},
          ${shlibs:Depends},
-	 adduser,
-         shared-mime-info
+	       adduser,
+         shared-mime-info,
+         libfwupdplugin5,
 Recommends: python3,
 	    bolt,
 	    dbus,
 	    secureboot-db,
 	    udisks2,
 	    fwupd-signed,
-	    jq
+	    jq,
 Suggests: gir1.2-fwupd-2.0
-Provides: fwupdate
+Provides: fwupdate,
 Conflicts: fwupdate-amd64-signed,
 	   fwupdate-i386-signed,
 	   fwupdate-arm64-signed,
@@ -202,3 +203,12 @@ Description: GObject introspection data for libfwupd
  .
  It can be used by packages using the GIRepository format to generate
  dynamic bindings.
+
+Package: libfwupdplugin5
+Architecture: linux-any
+Depends: ${misc:Depends},
+         ${gir:Depends},
+         fwupd,
+Description: Transitional package for Fwupd
+ This is a transitional package for libfwupdplugin5, and can be
+ safely removed after the installation is complete.
