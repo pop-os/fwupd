@@ -196,3 +196,12 @@ Description: GObject introspection data for libfwupd
  .
  It can be used by packages using the GIRepository format to generate
  dynamic bindings.
+
+Package: libfwupdplugin5
+Architecture: linux-any
+Depends: ${misc:Depends},
+         ${gir:Depends},
+         fwupd,
+Description: Transitional package for Fwupd
+ This is a transitional package for libfwupdplugin5, and can be
+ safely removed after the installation is complete.
