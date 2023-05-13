@@ -1,6 +1,7 @@
 fwupd (1.9.1-1) experimental; urgency=medium
 
   * New upstream version (1.9.1)
+  * Drop all patches
 
  -- Mario Limonciello <superm1@gmail.com>  Sat, 13 May 2023 06:53:09 -0500
 
