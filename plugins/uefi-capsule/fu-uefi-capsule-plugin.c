@@ -18,6 +18,7 @@
 #include "fu-uefi-cod-device.h"
 #include "fu-uefi-common.h"
 #include "fu-uefi-grub-device.h"
+#include "fu-uefi-struct.h"
 
 struct _FuUefiCapsulePlugin {
 	FuPlugin parent_instance;
@@ -29,6 +30,13 @@ struct _FuUefiCapsulePlugin {
 };
 
 G_DEFINE_TYPE(FuUefiCapsulePlugin, fu_uefi_capsule_plugin, FU_TYPE_PLUGIN)
+
+/* defaults changed here will also be reflected in the fwupd.conf man page */
+#define FU_UEFI_CAPSULE_CONFIG_DEFAULT_ENABLE_GRUB_CHAIN_LOAD	      FALSE
+#define FU_UEFI_CAPSULE_CONFIG_DEFAULT_DISABLE_SHIM_FOR_SECURE_BOOT   FALSE
+#define FU_UEFI_CAPSULE_CONFIG_DEFAULT_REQUIRE_ESP_FREE_SPACE	      "0" /* in MB */
+#define FU_UEFI_CAPSULE_CONFIG_DEFAULT_DISABLE_CAPSULE_UPDATE_ON_DISK FALSE
+#define FU_UEFI_CAPSULE_CONFIG_DEFAULT_ENABLE_EFI_DEBUGGING	      FALSE
 
 static void
 fu_uefi_capsule_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
@@ -223,16 +231,13 @@ fu_uefi_capsule_plugin_write_splash_data(FuUefiCapsulePlugin *self,
 	gssize size;
 	guint32 height, width;
 	guint8 csum = 0;
-	efi_ux_capsule_header_t header = {0};
-	efi_capsule_header_t capsule_header = {.flags =
-						   EFI_CAPSULE_HEADER_FLAGS_PERSIST_ACROSS_RESET,
-					       .guid = {0x0},
-					       .header_size = sizeof(efi_capsule_header_t),
-					       .capsule_image_size = 0};
+	fwupd_guid_t guid = {0x0};
 	g_autofree gchar *esp_path = NULL;
 	g_autofree gchar *fn = NULL;
 	g_autofree gchar *directory = NULL;
 	g_autofree gchar *basename = NULL;
+	g_autoptr(GByteArray) st_cap = fu_struct_efi_capsule_header_new();
+	g_autoptr(GByteArray) st_uxh = fu_struct_efi_ux_capsule_header_new();
 	g_autoptr(GFile) ofile = NULL;
 	g_autoptr(GOutputStream) ostream = NULL;
 
@@ -261,40 +266,39 @@ fu_uefi_capsule_plugin_write_splash_data(FuUefiCapsulePlugin *self,
 	if (ostream == NULL)
 		return FALSE;
 
+	fu_struct_efi_capsule_header_set_flags(st_cap,
+					       EFI_CAPSULE_HEADER_FLAGS_PERSIST_ACROSS_RESET);
 	if (!fwupd_guid_from_string(FU_EFIVAR_GUID_UX_CAPSULE,
-				    &capsule_header.guid,
+				    &guid,
 				    FWUPD_GUID_FLAG_MIXED_ENDIAN,
 				    error))
 		return FALSE;
-	capsule_header.capsule_image_size =
-	    g_bytes_get_size(blob) + sizeof(efi_capsule_header_t) + sizeof(efi_ux_capsule_header_t);
+	fu_struct_efi_capsule_header_set_guid(st_cap, &guid);
+	fu_struct_efi_capsule_header_set_image_size(st_cap,
+						    g_bytes_get_size(blob) +
+							FU_STRUCT_EFI_CAPSULE_HEADER_SIZE +
+							FU_STRUCT_EFI_UX_CAPSULE_HEADER_SIZE);
 
-	header.version = 1;
-	header.image_type = 0;
-	header.reserved = 0;
-	header.x_offset = (screen_x / 2) - (width / 2);
+	fu_struct_efi_ux_capsule_header_set_x_offset(st_uxh, (screen_x / 2) - (width / 2));
 	if (screen_y == fu_uefi_bgrt_get_height(self->bgrt)) {
-		header.y_offset = (gdouble)screen_y * 0.8f;
+		fu_struct_efi_ux_capsule_header_set_y_offset(st_uxh, (gdouble)screen_y * 0.8f);
 	} else {
-		header.y_offset =
-		    fu_uefi_bgrt_get_yoffset(self->bgrt) + fu_uefi_bgrt_get_height(self->bgrt);
+		fu_struct_efi_ux_capsule_header_set_y_offset(
+		    st_uxh,
+		    fu_uefi_bgrt_get_yoffset(self->bgrt) + fu_uefi_bgrt_get_height(self->bgrt));
 	};
 
 	/* header, payload and image has to add to zero */
-	csum += fu_sum8((guint8 *)&capsule_header, sizeof(capsule_header));
-	csum += fu_sum8((guint8 *)&header, sizeof(header));
+	csum += fu_sum8(st_cap->data, st_cap->len);
+	csum += fu_sum8(st_uxh->data, st_uxh->len);
 	csum += fu_sum8_bytes(blob);
-	header.checksum = 0x100 - csum;
+	fu_struct_efi_ux_capsule_header_set_checksum(st_uxh, 0x100 - csum);
 
 	/* write capsule file */
-	size = g_output_stream_write(ostream,
-				     &capsule_header,
-				     capsule_header.header_size,
-				     NULL,
-				     error);
+	size = g_output_stream_write(ostream, st_cap->data, st_cap->len, NULL, error);
 	if (size < 0)
 		return FALSE;
-	size = g_output_stream_write(ostream, &header, sizeof(header), NULL, error);
+	size = g_output_stream_write(ostream, st_uxh->data, st_uxh->len, NULL, error);
 	if (size < 0)
 		return FALSE;
 	size = g_output_stream_write_bytes(ostream, blob, NULL, error);
@@ -334,7 +338,7 @@ fu_uefi_capsule_plugin_update_splash(FuPlugin *plugin, FuDevice *device, GError 
 
 	/* no UX capsule support, so deleting var if it exists */
 	if (fu_device_has_private_flag(device, FU_UEFI_DEVICE_FLAG_NO_UX_CAPSULE)) {
-		g_debug("not providing UX capsule");
+		g_info("not providing UX capsule");
 		return fu_efivar_delete(FU_EFIVAR_GUID_FWUPDATE, "fwupd-ux-capsule", error);
 	}
 
@@ -426,9 +430,8 @@ fu_uefi_capsule_plugin_write_firmware(FuPlugin *plugin,
 
 	/* perform the update */
 	fu_progress_set_status(progress, FWUPD_STATUS_SCHEDULING);
-	if (!fu_uefi_capsule_plugin_update_splash(plugin, device, &error_splash)) {
-		g_debug("failed to upload UEFI UX capsule text: %s", error_splash->message);
-	}
+	if (!fu_uefi_capsule_plugin_update_splash(plugin, device, &error_splash))
+		g_info("failed to upload UEFI UX capsule text: %s", error_splash->message);
 
 	return fu_device_write_firmware(device, blob_fw, progress, flags, error);
 }
@@ -436,29 +439,30 @@ fu_uefi_capsule_plugin_write_firmware(FuPlugin *plugin,
 static void
 fu_uefi_capsule_plugin_load_config(FuPlugin *plugin, FuDevice *device)
 {
-	gboolean disable_shim;
-	gboolean enable_efi_debugging;
 	guint64 sz_reqd = 0;
 	g_autofree gchar *require_esp_free_space = NULL;
 	g_autoptr(GError) error_local = NULL;
 
 	/* parse free space needed for ESP */
-	require_esp_free_space = fu_plugin_get_config_value(plugin, "RequireESPFreeSpace");
-	if (require_esp_free_space != NULL) {
-		if (!fu_strtoull(require_esp_free_space, &sz_reqd, 0, G_MAXUINT64, &error_local)) {
-			g_warning("invalid ESP free space specified: %s", error_local->message);
-		}
-	}
+	require_esp_free_space =
+	    fu_plugin_get_config_value(plugin,
+				       "RequireESPFreeSpace",
+				       FU_UEFI_CAPSULE_CONFIG_DEFAULT_REQUIRE_ESP_FREE_SPACE);
+	if (!fu_strtoull(require_esp_free_space, &sz_reqd, 0, G_MAXUINT64, &error_local))
+		g_warning("invalid ESP free space specified: %s", error_local->message);
 	fu_uefi_device_set_require_esp_free_space(FU_UEFI_DEVICE(device), sz_reqd);
 
 	/* shim used for SB or not? */
-	disable_shim = fu_plugin_get_config_value_boolean(plugin, "DisableShimForSecureBoot");
-	if (!disable_shim)
+	if (!fu_plugin_get_config_value_boolean(
+		plugin,
+		"DisableShimForSecureBoot",
+		FU_UEFI_CAPSULE_CONFIG_DEFAULT_DISABLE_SHIM_FOR_SECURE_BOOT))
 		fu_device_add_private_flag(device, FU_UEFI_DEVICE_FLAG_USE_SHIM_FOR_SB);
 
 	/* enable the fwupd.efi debug log? */
-	enable_efi_debugging = fu_plugin_get_config_value_boolean(plugin, "EnableEfiDebugging");
-	if (enable_efi_debugging)
+	if (fu_plugin_get_config_value_boolean(plugin,
+					       "EnableEfiDebugging",
+					       FU_UEFI_CAPSULE_CONFIG_DEFAULT_ENABLE_EFI_DEBUGGING))
 		fu_device_add_private_flag(device, FU_UEFI_DEVICE_FLAG_ENABLE_EFI_DEBUGGING);
 }
 
@@ -488,7 +492,7 @@ fu_uefi_capsule_plugin_is_esp_linux(FuVolume *esp, GError **error)
 		g_autofree gchar *basename = g_path_get_basename(fn);
 		g_autofree gchar *basename_lower = g_utf8_strdown(basename, -1);
 		if (g_strv_contains((const gchar *const *)basenames, basename_lower)) {
-			g_debug("found %s which indicates a Linux ESP, using %s", fn, mount_point);
+			g_info("found %s which indicates a Linux ESP, using %s", fn, mount_point);
 			return TRUE;
 		}
 	}
@@ -521,7 +525,7 @@ fu_uefi_capsule_plugin_get_default_esp(FuPlugin *plugin, GError **error)
 				g_string_append_c(str, ',');
 			g_string_append(str, fu_volume_get_id(vol));
 		}
-		g_debug("more than one ESP possible: %s", str->str);
+		g_info("more than one ESP possible: %s", str->str);
 	}
 
 	/* we found more than one: lets look for something plausible */
@@ -706,7 +710,10 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 		return TRUE;
 
 	/* use GRUB to load updates */
-	if (fu_plugin_get_config_value_boolean(plugin, "EnableGrubChainLoad")) {
+	if (fu_plugin_get_config_value_boolean(
+		plugin,
+		"EnableGrubChainLoad",
+		FU_UEFI_CAPSULE_CONFIG_DEFAULT_ENABLE_GRUB_CHAIN_LOAD)) {
 		fu_uefi_backend_set_device_gtype(FU_UEFI_BACKEND(self->backend),
 						 FU_TYPE_UEFI_GRUB_DEVICE);
 	}
@@ -732,7 +739,7 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 	fu_plugin_add_report_metadata(plugin, "EfivarNvramUsed", nvram_total_str);
 
 	/* override the default ESP path */
-	esp_path = fu_plugin_get_config_value(plugin, "OverrideESPMountPoint");
+	esp_path = fu_plugin_get_config_value(plugin, "OverrideESPMountPoint", NULL);
 	if (esp_path != NULL) {
 		self->esp = fu_volume_new_esp_for_path(esp_path, error);
 		if (self->esp == NULL) {
@@ -768,7 +775,7 @@ fu_uefi_capsule_plugin_unlock(FuPlugin *plugin, FuDevice *device, GError **error
 	}
 
 	/* for unlocking TPM1.2 <-> TPM2.0 switching */
-	g_debug("Unlocking upgrades for: %s (%s)",
+	g_debug("unlocking upgrades for: %s (%s)",
 		fu_device_get_name(device),
 		fu_device_get_id(device));
 	device_alt = fu_device_get_alternate(device);
@@ -780,7 +787,7 @@ fu_uefi_capsule_plugin_unlock(FuPlugin *plugin, FuDevice *device, GError **error
 			    fu_device_get_name(device));
 		return FALSE;
 	}
-	g_debug("Preventing upgrades for: %s (%s)",
+	g_debug("preventing upgrades for: %s (%s)",
 		fu_device_get_name(device_alt),
 		fu_device_get_id(device_alt));
 
@@ -923,7 +930,10 @@ fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 	fu_progress_step_done(progress);
 
 	/* firmware may lie */
-	if (!fu_plugin_get_config_value_boolean(plugin, "DisableCapsuleUpdateOnDisk")) {
+	if (!fu_plugin_get_config_value_boolean(
+		plugin,
+		"DisableCapsuleUpdateOnDisk",
+		FU_UEFI_CAPSULE_CONFIG_DEFAULT_DISABLE_CAPSULE_UPDATE_ON_DISK)) {
 		g_autoptr(GError) error_cod = NULL;
 		if (!fu_uefi_capsule_plugin_check_cod_support(plugin, &error_cod)) {
 			g_debug("not using CapsuleOnDisk support: %s", error_cod->message);
@@ -986,7 +996,7 @@ fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 	if (!fu_uefi_bgrt_setup(self->bgrt, &error_local))
 		g_debug("BGRT setup failed: %s", error_local->message);
 	str = fu_uefi_bgrt_get_supported(self->bgrt) ? "Enabled" : "Disabled";
-	g_debug("UX Capsule support : %s", str);
+	g_info("UX capsule support : %s", str);
 	fu_plugin_add_report_metadata(plugin, "UEFIUXCapsule", str);
 	fu_progress_step_done(progress);
 
@@ -1034,8 +1044,10 @@ fu_uefi_capsule_finalize(GObject *obj)
 		g_file_monitor_cancel(self->fwupd_efi_monitor);
 		g_object_unref(self->fwupd_efi_monitor);
 	}
-	g_object_unref(self->backend);
-	g_object_unref(self->bgrt);
+	if (self->backend != NULL)
+		g_object_unref(self->backend);
+	if (self->bgrt != NULL)
+		g_object_unref(self->bgrt);
 	G_OBJECT_CLASS(fu_uefi_capsule_plugin_parent_class)->finalize(obj);
 }
 
@@ -1045,8 +1057,8 @@ fu_uefi_capsule_plugin_class_init(FuUefiCapsulePluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->constructed = fu_uefi_capsule_plugin_constructed;
 	object_class->finalize = fu_uefi_capsule_finalize;
+	plugin_class->constructed = fu_uefi_capsule_plugin_constructed;
 	plugin_class->to_string = fu_uefi_capsule_plugin_to_string;
 	plugin_class->clear_results = fu_uefi_capsule_plugin_clear_results;
 	plugin_class->add_security_attrs = fu_uefi_capsule_plugin_add_security_attrs;

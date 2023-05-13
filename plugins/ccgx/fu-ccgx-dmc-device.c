@@ -20,7 +20,7 @@
 
 struct _FuCcgxDmcDevice {
 	FuUsbDevice parent_instance;
-	FWImageType fw_image_type;
+	FuCcgxImageType fw_image_type;
 	DmcDockIdentity dock_id;
 	DmcDockStatus dock_status;
 	guint8 ep_intr_in;
@@ -101,12 +101,10 @@ fu_ccgx_dmc_device_ensure_status(FuCcgxDmcDevice *self, GError **error)
 			return FALSE;
 		}
 	}
-	if (g_getenv("FWUPD_CCGX_VERBOSE") != NULL) {
-		fu_dump_raw(G_LOG_DOMAIN,
-			    "DmcDockStatus",
-			    (const guint8 *)&self->dock_status,
-			    sizeof(self->dock_status));
-	}
+	fu_dump_raw(G_LOG_DOMAIN,
+		    "DmcDockStatus",
+		    (const guint8 *)&self->dock_status,
+		    sizeof(self->dock_status));
 
 	/* add devx children */
 	for (guint i = 0; i < self->dock_status.device_count; i++) {
@@ -259,6 +257,8 @@ fu_ccgx_dmc_device_send_fwct(FuCcgxDmcDevice *self,
 static gboolean
 fu_ccgx_dmc_device_read_intr_req(FuCcgxDmcDevice *self, DmcIntRqt *intr_rqt, GError **error)
 {
+	g_autofree gchar *title = NULL;
+
 	g_return_val_if_fail(intr_rqt != NULL, FALSE);
 
 	if (!g_usb_device_interrupt_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
@@ -272,6 +272,15 @@ fu_ccgx_dmc_device_read_intr_req(FuCcgxDmcDevice *self, DmcIntRqt *intr_rqt, GEr
 		g_prefix_error(error, "read intr rqt error: ");
 		return FALSE;
 	}
+
+	/* success */
+	title = g_strdup_printf("DmcIntRqt-opcode=0x%02x[%s]",
+				intr_rqt->opcode,
+				fu_ccgx_dmc_int_opcode_to_string(intr_rqt->opcode));
+	fu_dump_raw(G_LOG_DOMAIN,
+		    title,
+		    intr_rqt->data,
+		    MIN(intr_rqt->length, sizeof(intr_rqt->data)));
 	return TRUE;
 }
 
@@ -330,11 +339,11 @@ fu_ccgx_dmc_device_to_string(FuDevice *device, guint idt, GString *str)
 			 idt,
 			 "UpdateModel",
 			 fu_ccgx_dmc_update_model_type_to_string(self->update_model));
-	if (self->fw_image_type != FW_IMAGE_TYPE_UNKNOWN) {
+	if (self->fw_image_type != FU_CCGX_IMAGE_TYPE_UNKNOWN) {
 		fu_string_append(str,
 				 idt,
 				 "FwImageType",
-				 fu_ccgx_fw_image_type_to_string(self->fw_image_type));
+				 fu_ccgx_image_type_to_string(self->fw_image_type));
 	}
 	fu_string_append_kx(str, idt, "EpBulkOut", self->ep_bulk_out);
 	fu_string_append_kx(str, idt, "EpIntrIn", self->ep_intr_in);
@@ -356,16 +365,18 @@ fu_ccgx_dmc_get_image_write_status_cb(FuDevice *device, gpointer user_data, GErr
 
 	/* get interrupt request */
 	if (!fu_ccgx_dmc_device_read_intr_req(self, &dmc_int_req, error)) {
-		g_prefix_error(error, "read intr req error in image write status: ");
+		g_prefix_error(error, "failed to read intr req in image write status: ");
 		return FALSE;
 	}
+
 	/* check opcode for fw write */
 	if (dmc_int_req.opcode != DMC_INT_OPCODE_IMG_WRITE_STATUS) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "invalid dmc intr req opcode in image write status = %d",
-			    dmc_int_req.opcode);
+			    "invalid intr req opcode in image write status: %u [%s]",
+			    dmc_int_req.opcode,
+			    fu_ccgx_dmc_int_opcode_to_string(dmc_int_req.opcode));
 		return FALSE;
 	}
 
@@ -374,7 +385,7 @@ fu_ccgx_dmc_get_image_write_status_cb(FuDevice *device, gpointer user_data, GErr
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "invalid dmc intr req data in image write status = %d",
+			    "invalid intr req data in image write status = %u",
 			    dmc_int_req.data[0]);
 		fu_device_sleep(device, DMC_FW_WRITE_STATUS_RETRY_DELAY_MS);
 		return FALSE;
@@ -554,6 +565,7 @@ fu_ccgx_dmc_write_firmware(FuDevice *device,
 		}
 
 		/* write image */
+		g_debug("writing image index %u/%u", img_index, image_records->len - 1);
 		img_rcd = g_ptr_array_index(image_records, img_index);
 		if (!fu_ccgx_dmc_write_firmware_image(device,
 						      img_rcd,
@@ -565,18 +577,21 @@ fu_ccgx_dmc_write_firmware(FuDevice *device,
 	}
 	if (dmc_int_rqt.opcode != DMC_INT_OPCODE_FW_UPGRADE_STATUS) {
 		if (dmc_int_rqt.opcode == DMC_INT_OPCODE_FWCT_ANALYSIS_STATUS) {
-			g_set_error(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "fwct analysis failed with status = %d",
-				    dmc_int_rqt.data[0]);
+			g_set_error(
+			    error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "invalid fwct analysis failed with status 0x%02x[%s]",
+			    dmc_int_rqt.data[0],
+			    fu_ccgx_dmc_fwct_analysis_status_to_string(dmc_int_rqt.data[0]));
 			return FALSE;
 		}
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "invalid dmc intr req opcode = %d with status = %d",
+			    "invalid dmc intr req opcode 0x%02x[%s] with status 0x%02x",
 			    dmc_int_rqt.opcode,
+			    fu_ccgx_dmc_int_opcode_to_string(dmc_int_rqt.opcode),
 			    dmc_int_rqt.data[0]);
 		return FALSE;
 	}
@@ -686,7 +701,7 @@ fu_ccgx_dmc_device_ensure_factory_version(FuCcgxDmcDevice *self)
 		guint64 fwver_img1 = fu_memread_uint64(status->fw_version + 0x08, G_LITTLE_ENDIAN);
 		guint64 fwver_img2 = fu_memread_uint64(status->fw_version + 0x10, G_LITTLE_ENDIAN);
 		if (status->device_type == 0x2 && fwver_img1 == fwver_img2 && fwver_img1 != 0) {
-			g_debug("overriding version as device is in factory mode");
+			g_info("overriding version as device is in factory mode");
 			fu_device_set_version_from_uint32(FU_DEVICE(self), 0x1);
 			return;
 		}
@@ -739,8 +754,8 @@ fu_ccgx_dmc_device_set_quirk_kv(FuDevice *device,
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CcgxImageKind") == 0) {
-		self->fw_image_type = fu_ccgx_fw_image_type_from_string(value);
-		if (self->fw_image_type != FW_IMAGE_TYPE_UNKNOWN)
+		self->fw_image_type = fu_ccgx_image_type_from_string(value);
+		if (self->fw_image_type != FU_CCGX_IMAGE_TYPE_UNKNOWN)
 			return TRUE;
 		g_set_error_literal(error,
 				    G_IO_ERROR,
@@ -768,7 +783,7 @@ fu_ccgx_dmc_device_init(FuCcgxDmcDevice *self)
 {
 	self->ep_intr_in = DMC_INTERRUPT_PIPE_ID;
 	self->ep_bulk_out = DMC_BULK_PIPE_ID;
-	self->fw_image_type = FW_IMAGE_TYPE_DMC_COMPOSITE;
+	self->fw_image_type = FU_CCGX_IMAGE_TYPE_DMC_COMPOSITE;
 	fu_device_add_protocol(FU_DEVICE(self), "com.cypress.ccgx.dmc");
 	fu_device_add_protocol(FU_DEVICE(self), "com.infineon.ccgx.dmc");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_QUAD);
@@ -777,6 +792,7 @@ fu_ccgx_dmc_device_init(FuCcgxDmcDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_usb_device_add_interface(FU_USB_DEVICE(self), 0x01);
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_CCGX_DMC_DEVICE_FLAG_HAS_MANUAL_REPLUG,
 					"has-manual-replug");

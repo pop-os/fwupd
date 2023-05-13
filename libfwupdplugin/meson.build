@@ -8,6 +8,20 @@ fwupdplugin_version_h = configure_file(
   configuration: conf
 )
 
+fwupdplugin_structs = rustgen.process(
+  'fu-acpi-table.rs',   # fuzzing
+  'fu-cfu.rs',          # fuzzing
+  'fu-dfu.rs',          # fuzzing
+  'fu-efi.rs',          # fuzzing
+  'fu-fdt.rs',          # fuzzing
+  'fu-fmap.rs',         # fuzzing
+  'fu-ifwi.rs',         # fuzzing
+  'fu-oprom.rs',        # fuzzing
+  'fu-smbios.rs',       # fuzzing
+  'fu-usb-device-ds20.rs', # fuzzing
+  'fu-uswid.rs',        # fuzzing
+)
+
 fwupdplugin_src = [
   'fu-acpi-table.c',        # fuzzing
   'fu-archive.c',
@@ -16,6 +30,7 @@ fwupdplugin_src = [
   'fu-cabinet.c',
   'fu-chunk.c',             # fuzzing
   'fu-common.c',            # fuzzing
+  'fu-config.c',            # fuzzing
   'fu-sum.c',               # fuzzing
   'fu-crc.c',               # fuzzing
   'fu-mem.c',               # fuzzing
@@ -120,6 +135,7 @@ fwupdplugin_headers = [
   'fu-cabinet.h',
   'fu-chunk.h',
   'fu-common.h',
+  'fu-config.h',
   'fu-byte-array.h',
   'fu-string.h',
   'fu-sum.h',
@@ -191,9 +207,11 @@ fwupdplugin_headers = [
 fwupdplugin_headers_private = [
   'fu-backend-private.h',
   'fu-context-private.h',
+  'fu-config-private.h',
   'fu-device-private.h',
   'fu-device-progress.h',
   'fu-kenv.h',
+  'fu-mem-private.h',
   'fu-plugin-private.h',
   'fu-bios-settings-private.h',
   'fu-security-attrs-private.h',
@@ -243,6 +261,7 @@ fwupdplugin_mapfile = 'fwupdplugin.map'
 vflag = '-Wl,--version-script,@0@/@1@'.format(meson.current_source_dir(), fwupdplugin_mapfile)
 fwupdplugin = library(
   'fwupdplugin',
+  fwupdplugin_structs,
   sources: [
     fwupdplugin_src,
     fwupdplugin_headers,
@@ -351,6 +370,7 @@ if get_option('tests')
   e = executable(
     'fwupdplugin-self-test',
     installed_firmware_zip,
+    rustgen.process('fu-self-test.rs'),
     sources: [
       'fu-self-test.c'
     ],
@@ -366,6 +386,7 @@ if get_option('tests')
       fwupdplugin
     ],
     c_args: [
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
     ],
   )
   test('fwupdplugin-self-test', e, is_parallel: false, timeout: 180, env: env)

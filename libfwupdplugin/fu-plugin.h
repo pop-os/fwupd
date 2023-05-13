@@ -62,7 +62,6 @@ struct _FuPluginClass {
 	void (*_device_register)(FuPlugin *self, FuDevice *device);
 	gboolean (*_check_supported)(FuPlugin *self, const gchar *guid);
 	void (*_rules_changed)(FuPlugin *self);
-	void (*_config_changed)(FuPlugin *self);
 
 	/* vfuncs */
 	/**
@@ -448,9 +447,9 @@ fu_plugin_add_rule(FuPlugin *self, FuPluginRule rule, const gchar *name);
 void
 fu_plugin_add_report_metadata(FuPlugin *self, const gchar *key, const gchar *value);
 gchar *
-fu_plugin_get_config_value(FuPlugin *self, const gchar *key);
+fu_plugin_get_config_value(FuPlugin *self, const gchar *key, const gchar *value_default);
 gboolean
-fu_plugin_get_config_value_boolean(FuPlugin *self, const gchar *key);
+fu_plugin_get_config_value_boolean(FuPlugin *self, const gchar *key, gboolean value_default);
 gboolean
 fu_plugin_set_config_value(FuPlugin *self, const gchar *key, const gchar *value, GError **error);
 FwupdSecurityAttr *

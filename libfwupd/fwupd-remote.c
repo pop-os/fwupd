@@ -152,10 +152,21 @@ fwupd_remote_set_username(FwupdRemote *self, const gchar *username)
 	priv->username = g_strdup(username);
 }
 
-static void
+/**
+ * fwupd_remote_set_title:
+ * @self: a #FwupdRemote
+ * @title: (nullable): title text, e.g. "Backup"
+ *
+ * Sets the remote title.
+ *
+ * Since: 1.8.13
+ **/
+void
 fwupd_remote_set_title(FwupdRemote *self, const gchar *title)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
+
+	g_return_if_fail(FWUPD_IS_REMOTE(self));
 
 	/* not changed */
 	if (g_strcmp0(priv->title, title) == 0)
@@ -179,6 +190,8 @@ fwupd_remote_set_agreement(FwupdRemote *self, const gchar *agreement)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
 
+	g_return_if_fail(FWUPD_IS_REMOTE(self));
+
 	/* not changed */
 	if (g_strcmp0(priv->agreement, agreement) == 0)
 		return;
@@ -200,6 +213,8 @@ void
 fwupd_remote_set_checksum(FwupdRemote *self, const gchar *checksum)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
+
+	g_return_if_fail(FWUPD_IS_REMOTE(self));
 
 	/* not changed */
 	if (g_strcmp0(priv->checksum, checksum) == 0)
@@ -242,6 +257,7 @@ void
 fwupd_remote_set_keyring_kind(FwupdRemote *self, FwupdKeyringKind keyring_kind)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FWUPD_IS_REMOTE(self));
 	priv->keyring_kind = keyring_kind;
 }
 
@@ -273,6 +289,7 @@ void
 fwupd_remote_set_filename_source(FwupdRemote *self, const gchar *filename_source)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FWUPD_IS_REMOTE(self));
 	if (priv->filename_source == filename_source)
 		return;
 	g_free(priv->filename_source);
@@ -292,15 +309,26 @@ fwupd_remote_get_suffix_for_keyring_kind(FwupdKeyringKind keyring_kind)
 }
 
 static gchar *
-fwupd_remote_build_uri(FwupdRemote *self, const gchar *url, GError **error)
+fwupd_remote_build_uri(FwupdRemote *self,
+		       const gchar *base_uri,
+		       const gchar *url_noauth,
+		       GError **error)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
 #ifdef HAVE_LIBCURL_7_62_0
+	g_autofree gchar *url = NULL;
 	g_autoptr(curlptr) tmp_uri = NULL;
 	g_autoptr(CURLU) uri = curl_url();
 
+	/* the LVFS can't accept basic auth on an endpoint not expecting authentication */
+	if (priv->username != NULL || priv->password != NULL) {
+		url = g_strdup_printf("%s/auth", url_noauth);
+	} else {
+		url = g_strdup(url_noauth);
+	}
+
 	/* create URI, substituting if required */
-	if (priv->firmware_base_uri != NULL) {
+	if (base_uri != NULL) {
 		g_autofree gchar *basename = NULL;
 		g_autofree gchar *path_new = NULL;
 		g_autoptr(curlptr) path = NULL;
@@ -348,32 +376,48 @@ fwupd_remote_build_uri(FwupdRemote *self, const gchar *url, GError **error)
 		}
 	}
 
-	/* set the username and password */
-	if (priv->username != NULL)
-		(void)curl_url_set(uri, CURLUPART_USER, priv->username, 0);
-	if (priv->password != NULL)
-		(void)curl_url_set(uri, CURLUPART_PASSWORD, priv->password, 0);
+	/* set the escaped username and password */
+	if (priv->username != NULL) {
+		g_autofree gchar *user_escaped = g_uri_escape_string(priv->username, NULL, FALSE);
+		(void)curl_url_set(uri, CURLUPART_USER, user_escaped, 0);
+	}
+	if (priv->password != NULL) {
+		g_autofree gchar *pass_escaped = g_uri_escape_string(priv->password, NULL, FALSE);
+		(void)curl_url_set(uri, CURLUPART_PASSWORD, pass_escaped, 0);
+	}
 	(void)curl_url_get(uri, CURLUPART_URL, &tmp_uri, 0);
 	return g_strdup(tmp_uri);
 #else
 	if (priv->firmware_base_uri != NULL) {
-		g_autofree gchar *basename = g_path_get_basename(url);
+		g_autofree gchar *basename = g_path_get_basename(url_noauth);
 		return g_build_filename(priv->firmware_base_uri, basename, NULL);
 	}
-	if (g_strstr_len(url, -1, "/") == NULL) {
+	if (g_strstr_len(url_noauth, -1, "/") == NULL) {
 		g_autofree gchar *basename = g_path_get_dirname(priv->metadata_uri);
-		return g_build_filename(basename, url, NULL);
+		return g_build_filename(basename, url_noauth, NULL);
 	}
-	return g_strdup(url);
+	return g_strdup(url_noauth);
 #endif
 }
 
-/* note, this has to be set before username and password */
-static void
+/**
+ * fwupd_remote_set_metadata_uri:
+ * @self: a #FwupdRemote
+ * @metadata_uri: (nullable): metadata URI
+ *
+ * Sets the remote metadata URI.
+ *
+ * NOTE: This has to be set before the username and password.
+ *
+ * Since: 1.8.13
+ **/
+void
 fwupd_remote_set_metadata_uri(FwupdRemote *self, const gchar *metadata_uri)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
 	const gchar *suffix;
+
+	g_return_if_fail(FWUPD_IS_REMOTE(self));
 
 	/* save this so we can export the object as a GVariant */
 	priv->metadata_uri = g_strdup(metadata_uri);
@@ -561,6 +605,13 @@ fwupd_remote_setup(FwupdRemote *self, GError **error)
 			return FALSE;
 		}
 		/* set cache to /var/lib... */
+		if (priv->metadata_uri == NULL) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INTERNAL,
+					    "metadata URI not set");
+			return FALSE;
+		}
 		if (g_str_has_suffix(priv->metadata_uri, ".xml.xz")) {
 			filename_cache =
 			    g_build_filename(priv->remotes_dir, priv->id, "metadata.xml.xz", NULL);
@@ -730,6 +781,76 @@ fwupd_remote_load_from_filename(FwupdRemote *self,
 	/* success */
 	fwupd_remote_set_filename_source(self, filename);
 	return TRUE;
+}
+
+/**
+ * fwupd_remote_save_to_filename:
+ * @self: a #FwupdRemote
+ * @filename: (not nullable): a filename
+ * @cancellable: (nullable): optional #GCancellable
+ * @error: (nullable): optional return location for an error
+ *
+ * Saves metadata about the remote to a keyfile.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.8.13
+ **/
+gboolean
+fwupd_remote_save_to_filename(FwupdRemote *self,
+			      const gchar *filename,
+			      GCancellable *cancellable,
+			      GError **error)
+{
+	FwupdRemotePrivate *priv = GET_PRIVATE(self);
+	const gchar *group = "fwupd Remote";
+	g_autoptr(GKeyFile) kf = g_key_file_new();
+
+	g_return_val_if_fail(FWUPD_IS_REMOTE(self), FALSE);
+	g_return_val_if_fail(filename != NULL, FALSE);
+	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* optional keys */
+	if (priv->keyring_kind != FWUPD_KEYRING_KIND_UNKNOWN) {
+		g_key_file_set_string(kf,
+				      group,
+				      "Keyring",
+				      fwupd_keyring_kind_to_string(priv->keyring_kind));
+	}
+	if (priv->metadata_uri != NULL)
+		g_key_file_set_string(kf, group, "MetadataURI", priv->metadata_uri);
+	if (priv->title != NULL)
+		g_key_file_set_string(kf, group, "Title", priv->title);
+	if (priv->report_uri != NULL)
+		g_key_file_set_string(kf, group, "ReportURI", priv->report_uri);
+	if (priv->security_report_uri != NULL)
+		g_key_file_set_string(kf, group, "SecurityReportURI", priv->security_report_uri);
+	if (priv->username != NULL)
+		g_key_file_set_string(kf, group, "Username", priv->username);
+	if (priv->password != NULL)
+		g_key_file_set_string(kf, group, "Password", priv->password);
+	if (priv->firmware_base_uri != NULL)
+		g_key_file_set_string(kf, group, "FirmwareBaseURI", priv->firmware_base_uri);
+	if (priv->order_after != NULL) {
+		g_autofree gchar *str = g_strjoinv(";", priv->order_after);
+		g_key_file_set_string(kf, group, "OrderAfter", str);
+	}
+	if (priv->order_before != NULL) {
+		g_autofree gchar *str = g_strjoinv(";", priv->order_before);
+		g_key_file_set_string(kf, group, "OrderBefore", str);
+	}
+	if (priv->enabled)
+		g_key_file_set_boolean(kf, group, "Enabled", TRUE);
+	if (priv->approval_required)
+		g_key_file_set_boolean(kf, group, "ApprovalRequired", TRUE);
+	if (priv->automatic_reports)
+		g_key_file_set_boolean(kf, group, "AutomaticReports", TRUE);
+	if (priv->automatic_security_reports)
+		g_key_file_set_boolean(kf, group, "AutomaticSecurityReports", TRUE);
+
+	/* save file */
+	return g_key_file_save_to_file(kf, filename, error);
 }
 
 /**
@@ -1079,10 +1200,31 @@ fwupd_remote_get_checksum(FwupdRemote *self)
 gchar *
 fwupd_remote_build_firmware_uri(FwupdRemote *self, const gchar *url, GError **error)
 {
+	FwupdRemotePrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FWUPD_IS_REMOTE(self), NULL);
 	g_return_val_if_fail(url != NULL, NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-	return fwupd_remote_build_uri(self, url, error);
+	return fwupd_remote_build_uri(self, priv->firmware_base_uri, url, error);
+}
+
+/**
+ * fwupd_remote_build_report_uri:
+ * @self: a #FwupdRemote
+ * @error: (nullable): optional return location for an error
+ *
+ * Builds a URI for the URL using the username and password set for the remote.
+ *
+ * Returns: (transfer full): a URI, or %NULL for error
+ *
+ * Since: 1.9.1
+ **/
+gchar *
+fwupd_remote_build_report_uri(FwupdRemote *self, GError **error)
+{
+	FwupdRemotePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FWUPD_IS_REMOTE(self), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+	return fwupd_remote_build_uri(self, NULL, priv->report_uri, error);
 }
 
 /**
@@ -1172,7 +1314,7 @@ fwupd_remote_load_signature_jcat(FwupdRemote *self, JcatFile *jcat_file, GError 
 	baseuri = g_path_get_dirname(priv->metadata_uri);
 	metadata_uri = g_build_path("/", baseuri, id, NULL);
 	if (g_strcmp0(metadata_uri, priv->metadata_uri) != 0) {
-		g_debug("changing metadata URI from %s to %s", priv->metadata_uri, metadata_uri);
+		g_info("changing metadata URI from %s to %s", priv->metadata_uri, metadata_uri);
 		g_free(priv->metadata_uri);
 		priv->metadata_uri = g_steal_pointer(&metadata_uri);
 	}
@@ -1303,6 +1445,23 @@ fwupd_remote_get_enabled(FwupdRemote *self)
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FWUPD_IS_REMOTE(self), FALSE);
 	return priv->enabled;
+}
+
+/**
+ * fwupd_remote_set_enabled:
+ * @self: a #FwupdRemote
+ * @enabled: boolean
+ *
+ * Sets if the remote is enabled and should be used.
+ *
+ * Since: 1.8.13
+ **/
+void
+fwupd_remote_set_enabled(FwupdRemote *self, gboolean enabled)
+{
+	FwupdRemotePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FWUPD_IS_REMOTE(self));
+	priv->enabled = enabled;
 }
 
 /**

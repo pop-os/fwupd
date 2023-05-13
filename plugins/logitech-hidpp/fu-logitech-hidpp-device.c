@@ -11,6 +11,7 @@
 #include "fu-logitech-hidpp-hidpp.h"
 #include "fu-logitech-hidpp-radio.h"
 #include "fu-logitech-hidpp-runtime-bolt.h"
+#include "fu-logitech-hidpp-struct.h"
 
 typedef struct {
 	guint8 cached_fw_entity;
@@ -74,14 +75,6 @@ fu_logitech_hidpp_device_set_hidpp_pid(FuLogitechHidPpDevice *self, guint16 hidp
 	priv->hidpp_pid = hidpp_pid;
 }
 
-const gchar *
-fu_logitech_hidpp_device_get_model_id(FuLogitechHidPpDevice *self)
-{
-	FuLogitechHidPpDevicePrivate *priv = GET_PRIVATE(self);
-	g_return_val_if_fail(FU_IS_HIDPP_DEVICE(self), NULL);
-	return priv->model_id;
-}
-
 static void
 fu_logitech_hidpp_device_set_model_id(FuLogitechHidPpDevice *self, const gchar *model_id)
 {
@@ -137,30 +130,6 @@ fu_logitech_hidpp_device_get_summary(FuLogitechHidPpDeviceKind kind)
 	return NULL;
 }
 
-static const gchar *
-fu_logitech_hidpp_feature_to_string(guint16 feature)
-{
-	if (feature == HIDPP_FEATURE_ROOT)
-		return "Root";
-	if (feature == HIDPP_FEATURE_I_FIRMWARE_INFO)
-		return "IFirmwareInfo";
-	if (feature == HIDPP_FEATURE_GET_DEVICE_NAME_TYPE)
-		return "GetDevicenameType";
-	if (feature == HIDPP_FEATURE_BATTERY_LEVEL_STATUS)
-		return "BatteryLevelStatus";
-	if (feature == HIDPP_FEATURE_UNIFIED_BATTERY)
-		return "UnifiedBattery";
-	if (feature == HIDPP_FEATURE_DFU_CONTROL)
-		return "DfuControl";
-	if (feature == HIDPP_FEATURE_DFU_CONTROL_SIGNED)
-		return "DfuControlSigned";
-	if (feature == HIDPP_FEATURE_DFU_CONTROL_BOLT)
-		return "DfuControlBolt";
-	if (feature == HIDPP_FEATURE_DFU)
-		return "Dfu";
-	return NULL;
-}
-
 static gboolean
 fu_logitech_hidpp_device_ping(FuLogitechHidPpDevice *self, GError **error)
 {
@@ -204,7 +173,7 @@ fu_logitech_hidpp_device_ping(FuLogitechHidPpDevice *self, GError **error)
 	if (priv->device_idx == HIDPP_DEVICE_IDX_UNSET &&
 	    msg->device_id != HIDPP_DEVICE_IDX_UNSET) {
 		priv->device_idx = msg->device_id;
-		g_debug("Device index is %02x", priv->device_idx);
+		g_debug("device index is %02x", priv->device_idx);
 	}
 
 	/* format version in BCD format */
@@ -402,7 +371,8 @@ fu_logitech_hidpp_device_fetch_firmware_info(FuLogitechHidPpDevice *self, GError
 	gboolean radio_ok = FALSE;
 
 	/* get the feature index */
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_I_FIRMWARE_INFO);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self,
+						       FU_LOGITECH_HIDPP_FEATURE_I_FIRMWARE_INFO);
 	if (idx == 0x00)
 		return TRUE;
 
@@ -485,7 +455,8 @@ fu_logitech_hidpp_device_fetch_model_id(FuLogitechHidPpDevice *self, GError **er
 	g_autoptr(GString) str = g_string_new(NULL);
 
 	/* get the (optional) feature index */
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_I_FIRMWARE_INFO);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self,
+						       FU_LOGITECH_HIDPP_FEATURE_I_FIRMWARE_INFO);
 	if (idx == 0x00)
 		return TRUE;
 
@@ -520,7 +491,9 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidPpDevice *self, GError
 		guint8 idx;
 
 		/* try the Unified Battery feature first */
-		idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_UNIFIED_BATTERY);
+		idx = fu_logitech_hidpp_device_feature_get_idx(
+		    self,
+		    FU_LOGITECH_HIDPP_FEATURE_UNIFIED_BATTERY);
 		if (idx != 0x00) {
 			gboolean socc = FALSE; /* state of charge capability */
 			g_autoptr(FuLogitechHidPpHidppMsg) msg = fu_logitech_hidpp_msg_new();
@@ -565,8 +538,9 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidPpDevice *self, GError
 		}
 
 		/* fall back to the legacy Battery Level feature */
-		idx = fu_logitech_hidpp_device_feature_get_idx(self,
-							       HIDPP_FEATURE_BATTERY_LEVEL_STATUS);
+		idx = fu_logitech_hidpp_device_feature_get_idx(
+		    self,
+		    FU_LOGITECH_HIDPP_FEATURE_BATTERY_LEVEL_STATUS);
 		if (idx != 0x00) {
 			g_autoptr(FuLogitechHidPpHidppMsg) msg = fu_logitech_hidpp_msg_new();
 			msg->report_id = HIDPP_REPORT_ID_SHORT;
@@ -726,15 +700,15 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 	FuLogitechHidPpDevice *self = FU_HIDPP_DEVICE(device);
 	FuLogitechHidPpDevicePrivate *priv = GET_PRIVATE(self);
 	guint8 idx;
-	const guint16 map_features[] = {HIDPP_FEATURE_GET_DEVICE_NAME_TYPE,
-					HIDPP_FEATURE_I_FIRMWARE_INFO,
-					HIDPP_FEATURE_BATTERY_LEVEL_STATUS,
-					HIDPP_FEATURE_UNIFIED_BATTERY,
-					HIDPP_FEATURE_DFU_CONTROL,
-					HIDPP_FEATURE_DFU_CONTROL_SIGNED,
-					HIDPP_FEATURE_DFU_CONTROL_BOLT,
-					HIDPP_FEATURE_DFU,
-					HIDPP_FEATURE_ROOT};
+	const guint16 map_features[] = {FU_LOGITECH_HIDPP_FEATURE_GET_DEVICE_NAME_TYPE,
+					FU_LOGITECH_HIDPP_FEATURE_I_FIRMWARE_INFO,
+					FU_LOGITECH_HIDPP_FEATURE_BATTERY_LEVEL_STATUS,
+					FU_LOGITECH_HIDPP_FEATURE_UNIFIED_BATTERY,
+					FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL,
+					FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL_SIGNED,
+					FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL_BOLT,
+					FU_LOGITECH_HIDPP_FEATURE_DFU,
+					FU_LOGITECH_HIDPP_FEATURE_ROOT};
 
 	if (fu_device_has_private_flag(device, FU_LOGITECH_HIDPP_DEVICE_FLAG_BLE)) {
 		priv->hidpp_version = FU_HIDPP_VERSION_BLE;
@@ -774,12 +748,12 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 	if (priv->hidpp_version >= 2.f) {
 		FuLogitechHidPpHidppMap *map = g_new0(FuLogitechHidPpHidppMap, 1);
 		map->idx = 0x00;
-		map->feature = HIDPP_FEATURE_ROOT;
+		map->feature = FU_LOGITECH_HIDPP_FEATURE_ROOT;
 		g_ptr_array_add(priv->feature_index, map);
 	}
 
 	/* map some *optional* HID++2.0 features we might use */
-	for (guint i = 0; map_features[i] != HIDPP_FEATURE_ROOT; i++) {
+	for (guint i = 0; map_features[i] != FU_LOGITECH_HIDPP_FEATURE_ROOT; i++) {
 		g_autoptr(GError) error_local = NULL;
 		if (!fu_logitech_hidpp_feature_search(device, map_features[i], &error_local)) {
 			g_debug("%s", error_local->message);
@@ -796,7 +770,9 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* try using HID++2.0 */
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_GET_DEVICE_NAME_TYPE);
+	idx = fu_logitech_hidpp_device_feature_get_idx(
+	    self,
+	    FU_LOGITECH_HIDPP_FEATURE_GET_DEVICE_NAME_TYPE);
 	if (idx != 0x00) {
 		const gchar *tmp;
 		g_autoptr(FuLogitechHidPpHidppMsg) msg = fu_logitech_hidpp_msg_new();
@@ -818,16 +794,18 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 		if (tmp != NULL)
 			fu_device_add_icon(FU_DEVICE(device), tmp);
 	}
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU_CONTROL);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL);
 	if (idx != 0x00) {
 		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 		fu_device_remove_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
 		fu_device_add_protocol(FU_DEVICE(self), "com.logitech.unifying");
 	}
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU_CONTROL_BOLT);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self,
+						       FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL_BOLT);
 	if (idx == 0x00)
-		idx = fu_logitech_hidpp_device_feature_get_idx(self,
-							       HIDPP_FEATURE_DFU_CONTROL_SIGNED);
+		idx = fu_logitech_hidpp_device_feature_get_idx(
+		    self,
+		    FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL_SIGNED);
 	if (idx != 0x00) {
 		/* check the feature is available */
 		g_autoptr(FuLogitechHidPpHidppMsg) msg = fu_logitech_hidpp_msg_new();
@@ -848,11 +826,11 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 		fu_device_add_protocol(FU_DEVICE(device), "com.logitech.unifyingsigned");
 		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	}
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU);
 	if (idx != 0x00) {
 		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
 		if (fu_device_get_version(device) == NULL) {
-			g_debug("repairing device in bootloader mode");
+			g_info("repairing device in bootloader mode");
 			fu_device_set_version(FU_DEVICE(device), "MPK00.00_B0000");
 		}
 		/* we do not actually know which protocol when in recovery mode,
@@ -889,9 +867,12 @@ fu_logitech_hidpp_device_detach(FuDevice *device, FuProgress *progress, GError *
 	}
 
 	/* these may require user action */
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU_CONTROL_BOLT);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self,
+						       FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL_BOLT);
 	if (idx == 0x00)
-		idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU_CONTROL);
+		idx =
+		    fu_logitech_hidpp_device_feature_get_idx(self,
+							     FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL);
 	if (idx != 0x00) {
 		FuDevice *parent;
 		g_autoptr(FwupdRequest) request = fwupd_request_new();
@@ -951,7 +932,9 @@ fu_logitech_hidpp_device_detach(FuDevice *device, FuProgress *progress, GError *
 	}
 
 	/* this can reboot all by itself */
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU_CONTROL_SIGNED);
+	idx =
+	    fu_logitech_hidpp_device_feature_get_idx(self,
+						     FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL_SIGNED);
 	if (idx != 0x00) {
 		msg->report_id = HIDPP_REPORT_ID_LONG;
 		msg->device_id = priv->device_idx;
@@ -1128,8 +1111,7 @@ fu_logitech_hidpp_device_write_firmware_pkt(FuLogitechHidPpDevice *self,
 				    G_BIG_ENDIAN,
 				    error))
 		return FALSE;
-	if (g_getenv("FWUPD_LOGITECH_HIDPP_VERBOSE") != NULL)
-		g_debug("packet_cnt=0x%04x", packet_cnt);
+	g_debug("packet_cnt=0x%04x", packet_cnt);
 	if (fu_logitech_hidpp_device_check_status(msg->data[4], &error_local))
 		return TRUE;
 
@@ -1181,7 +1163,7 @@ fu_logitech_hidpp_device_write_firmware(FuDevice *device,
 	g_autoptr(GBytes) fw = NULL;
 
 	/* if we're in bootloader mode, we should be able to get this feature */
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU);
 	if (idx == 0x00) {
 		g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no DFU feature available");
 		return FALSE;
@@ -1201,8 +1183,7 @@ fu_logitech_hidpp_device_write_firmware(FuDevice *device,
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
 	for (gsize i = 0; i < sz / 16; i++) {
 		/* send packet and wait for reply */
-		if (g_getenv("FWUPD_LOGITECH_HIDPP_VERBOSE") != NULL)
-			g_debug("send data at addr=0x%04x", (guint)i * 16);
+		g_debug("send data at addr=0x%04x", (guint)i * 16);
 		if (!fu_logitech_hidpp_device_write_firmware_pkt(self,
 								 idx,
 								 cmd,
@@ -1247,7 +1228,7 @@ fu_logitech_hidpp_device_attach(FuLogitechHidPpDevice *self,
 	}
 
 	/* if we're in bootloader mode, we should be able to get this feature */
-	idx = fu_logitech_hidpp_device_feature_get_idx(self, HIDPP_FEATURE_DFU);
+	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU);
 	if (idx == 0x00) {
 		g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no DFU feature available");
 		return FALSE;

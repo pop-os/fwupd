@@ -105,7 +105,7 @@ fu_synaptics_mst_plugin_backend_device_added(FuPlugin *plugin,
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "open");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 99, "rescan");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 99, "rescan");
 
 	dev = fu_synaptics_mst_device_new(FU_UDEV_DEVICE(device));
 	locker = fu_device_locker_new(dev, error);
@@ -177,8 +177,8 @@ fu_synaptics_mst_plugin_class_init(FuSynapticsMstPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->constructed = fu_synaptics_mst_plugin_constructed;
 	object_class->finalize = fu_synaptics_mst_finalize;
+	plugin_class->constructed = fu_synaptics_mst_plugin_constructed;
 	plugin_class->write_firmware = fu_synaptics_mst_plugin_write_firmware;
 	plugin_class->backend_device_added = fu_synaptics_mst_plugin_backend_device_added;
 	plugin_class->backend_device_changed = fu_synaptics_mst_plugin_backend_device_changed;

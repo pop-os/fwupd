@@ -164,7 +164,7 @@ fwupd_enums_func(void)
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_device_flag_from_string(tmp), ==, i);
 	}
-	for (guint64 i = 1; i <= FWUPD_DEVICE_PROBLEM_UPDATE_IN_PROGRESS; i *= 2) {
+	for (guint64 i = 1; i <= FWUPD_DEVICE_PROBLEM_IN_USE; i *= 2) {
 		const gchar *tmp = fwupd_device_problem_to_string(i);
 		if (tmp == NULL)
 			g_warning("missing device problem 0x%x", (guint)i);
@@ -192,7 +192,7 @@ fwupd_enums_func(void)
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_feature_flag_from_string(tmp), ==, i);
 	}
-	for (guint64 i = 1; i <= FWUPD_RELEASE_FLAG_IS_COMMUNITY; i *= 2) {
+	for (guint64 i = 1; i <= FWUPD_RELEASE_FLAG_TRUSTED_REPORT; i *= 2) {
 		const gchar *tmp = fwupd_release_flag_to_string(i);
 		if (tmp == NULL)
 			g_warning("missing release flag 0x%x", (guint)i);
@@ -809,6 +809,7 @@ fwupd_report_func(void)
 				    "  VersionOld:           1.2.3\n"
 				    "  Vendor:               acme\n"
 				    "  VendorId:             2468\n"
+				    "  Flags:                none\n"
 				    "  foo:                  bar\n"
 				    "  baz:                  bam\n",
 				    &error);
@@ -1637,6 +1638,7 @@ int
 main(int argc, char **argv)
 {
 	setlocale(LC_ALL, "");
+	(void)g_setenv("G_TEST_SRCDIR", SRCDIR, FALSE);
 	g_test_init(&argc, &argv, NULL);
 
 	/* only critical and error are fatal */

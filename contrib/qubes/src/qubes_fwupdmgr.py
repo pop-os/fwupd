@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import sys
 import xml.etree.ElementTree as ET
 
@@ -30,20 +31,18 @@ try:
     from qubes_fwupd_heads import FwupdHeads
     from qubes_fwupd_update import FwupdUpdate, run_in_tty
     from fwupd_receive_updates import FwupdReceiveUpdates
+    from qubes_fwupd_common import EXIT_CODES, create_dirs
 except ModuleNotFoundError:
     raise ModuleNotFoundError(
         "qubes-fwupd modules not found.  You may need to reinstall package."
     )
 
-FWUPD_DOM0_DIR = "/var/cache/qubes-fwupd"
+FWUPD_DOM0_DIR = "/var/cache/fwupd/qubes"
 FWUPD_DOM0_METADATA_DIR = os.path.join(FWUPD_DOM0_DIR, "metadata")
 FWUPD_DOM0_UPDATES_DIR = os.path.join(FWUPD_DOM0_DIR, "updates")
-FWUPD_DOM0_METADATA_SIGNATURE = os.path.join(
-    FWUPD_DOM0_METADATA_DIR, "firmware.xml.gz.asc"
-)
-FWUPD_DOM0_METADATA_FILE = os.path.join(FWUPD_DOM0_METADATA_DIR, "firmware.xml.gz")
-FWUPD_DOM0_METADATA_JCAT = os.path.join(FWUPD_DOM0_METADATA_DIR, "firmware.xml.gz.jcat")
 FWUPD_DOWNLOAD_PREFIX = "https://fwupd.org/downloads/"
+METADATA_URL = "https://fwupd.org/downloads/firmware.xml.xz"
+METADATA_URL_JCAT = "https://fwupd.org/downloads/firmware.xml.xz.jcat"
 
 FWUPDMGR = "/bin/fwupdmgr"
 
@@ -63,7 +62,7 @@ HELP = {
             "get-updates": "Get the list of updates for connected hardware",
             "refresh": "Refresh metadata from remote server",
             "update": "Update chosen device to latest firmware version",
-            "update-heads": "Updates heads firmware to the latest version",
+            "update-heads": "Updates heads firmware to the latest version (EXPERIMENTAL, not fully supported yet)",
             "downgrade": "Downgrade chosen device to chosen firmware version",
             "clean": "Delete all cached update files\n",
         }
@@ -78,8 +77,6 @@ HELP = {
     "Help": [{"-h --help": "Show help options\n"}],
 }
 
-EXIT_CODES = {"ERROR": 1, "SUCCESS": 0, "NOTHING_TO_DO": 2}
-
 
 class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
     def _download_metadata(self, whonix=False, metadata_url=None):
@@ -89,35 +86,78 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         whonix -- Flag enforces downloading the metadata updates via Tor
         metadata_url -- Download metadata from the custom url
         """
+        if not metadata_url:
+            raise Exception("missing metadata URL")
         self.download_metadata(whonix=whonix, metadata_url=metadata_url)
         self.handle_metadata_update(self.updatevm, metadata_url=metadata_url)
         if not os.path.exists(self.metadata_file):
             raise FileNotFoundError("Metadata file does not exist")
 
-    def refresh_metadata(self, whonix=False, metadata_url=None):
+    def get_remotes(self):
+        """Get metadata URLs for all enabled remotes"""
+
+        if hasattr(self, "_remotes_cache"):
+            return self._remotes_cache
+
+        remotes_json = subprocess.check_output(
+            [
+                FWUPDMGR,
+                "get-remotes",
+                "--json",
+            ]
+        ).decode()
+        remotes_list = json.loads(remotes_json)["Remotes"]
+        remotes = {}
+        for remote in remotes_list:
+            name = remote["Id"]
+            # skip disabled
+            if remote.get("Enabled", "true") != "true":
+                continue
+            # skip local - for metadata refresh, we only care about those
+            # actually needing refreshing
+            if remote.get("Kind") != "download":
+                continue
+            # skip unsupported keyring kind
+            if remote.get("KeyringKind") not in ("jcat",):
+                print(
+                    "Skipping remote '{}' due to unsupported keyring type '{}'".format(
+                        name, remote.get("KeyringKind")
+                    )
+                )
+            assert "MetadataUri" in remote
+            remotes[name] = remote["MetadataUri"]
+
+        self._remotes_cache = remotes
+        return self._remotes_cache
+
+    def refresh_metadata(self, whonix=False, metadata_url=None, remote_name=None):
         """Updates metadata with downloaded files.
 
         Keyword arguments:
         whonix -- Flag enforces downloading the metadata updates via Tor
         metadata_url -- Use custom metadata from the url
+        remote_name -- Set refreshed metadata to this remote
         """
-        if metadata_url:
-            metadata_name = metadata_url.replace(FWUPD_DOWNLOAD_PREFIX, "")
-            self.metadata_file = os.path.join(FWUPD_DOM0_METADATA_DIR, metadata_name)
-            self.metadata_file_jcat = self.metadata_file + ".jcat"
-            self.lvfs = "lvfs-testing"
-            self._enable_lvfs_testing_dom0()
-        else:
-            self.metadata_file = FWUPD_DOM0_METADATA_FILE
-            self.metadata_file_jcat = FWUPD_DOM0_METADATA_JCAT
-            self.lvfs = "lvfs"
+        if not metadata_url:
+            if remote_name:
+                metadata_url = self.get_remotes()[remote_name]
+            else:
+                raise Exception("missing metadata URL")
+        metadata_name = os.path.basename(metadata_url)
+        self.metadata_file = os.path.join(FWUPD_DOM0_METADATA_DIR, metadata_name)
+        self.metadata_file_jcat = self.metadata_file + ".jcat"
+        if not remote_name:
+            if "testing" in metadata_url:
+                remote_name = "lvfs-testing"
+            else:
+                remote_name = "lvfs"
         self._download_metadata(whonix=whonix, metadata_url=metadata_url)
         cmd_refresh = [
             FWUPDMGR,
             "refresh",
             self.metadata_file,
             self.metadata_file_jcat,
-            self.lvfs,
+            remote_name,
         ]
         p = subprocess.Popen(cmd_refresh, stdout=subprocess.PIPE)
         output = p.communicate()[0].decode()
@@ -126,6 +166,18 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
             raise Exception("fwupd-qubes: Refresh failed")
         if not output != "Successfully refreshed metadata manually":
             raise Exception("Manual metadata refresh failed!!!")
+
+    def refresh_metadata_all(self, whonix=False):
+        """Refresh metadata for all 'download' remotes
+
+        Keyword arguments:
+        whonix -- Flag enforces downloading the metadata updates via Tor
+        """
+        for name, url in self.get_remotes().items():
+            try:
+                self.refresh_metadata(whonix=whonix, remote_name=name, metadata_url=url)
+            except Exception as e:
+                print("Failed to refresh remote '{}': {}".format(name, e))
 
     def _get_dom0_updates(self):
         """Gathers information about available updates."""
@@ -171,9 +223,8 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         self.download_firmware_updates(url, sha, whonix=whonix)
         if not self.cached:
             self.handle_fw_update(self.updatevm, sha, self.arch_name)
-        update_path = self.arch_path.replace(".cab", "")
-        if not os.path.exists(update_path):
-            raise NotADirectoryError("Firmware update files do not exist")
+        if not os.path.exists(self.arch_path):
+            raise FileNotFoundError("Firmware update files do not exist")
 
     def _user_input(self, updates_list, downgrade=False):
         """UI for update process.
@@ -185,7 +236,7 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         decorator = "======================================================"
         if len(updates_list) == 0:
             print("No updates available.")
-            return EXIT_CODES["NOTHING_TO_DO"]
+            return -EXIT_CODES["NOTHING_TO_DO"]
         if downgrade:
             print("Available downgrades:")
         else:
@@ -197,7 +248,7 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
                 print("If you want to abandon process press 'N'.")
                 choice = input("Otherwise choose a device number: ")
                 if choice == "N" or choice == "n":
-                    return EXIT_CODES["NOTHING_TO_DO"]
+                    return -EXIT_CODES["NOTHING_TO_DO"]
                 device_num = int(choice) - 1
                 if 0 <= device_num < len(updates_list):
                     if not downgrade:
@@ -228,7 +279,7 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
                     print("If you want to abandon downgrade process press N.")
                     choice = input("Otherwise choose downgrade number: ")
                     if choice == "N" or choice == "n":
-                        return EXIT_CODES["NOTHING_TO_DO"]
+                        return -EXIT_CODES["NOTHING_TO_DO"]
                     downgrade_num = int(choice) - 1
                     if 0 <= downgrade_num < len(releases):
                         return device_num, downgrade_num
@@ -277,17 +328,23 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
             raise Exception("dmidecode: Reading DMI failed")
         return p.communicate()[0].decode()
 
-    def _verify_dmi(self, path, version, downgrade=False):
+    def _verify_dmi(self, arch_path, version, downgrade=False):
         """Verifies DMI tables for BIOS updates.
 
         Keywords arguments:
-        path -- absolute path of the updates files
+        arch_path -- absolute path of the update archive
         version -- version of the update
         downgrade -- downgrade flag
         """
         dmi_info = self._read_dmi()
-        path_metainfo = os.path.join(path, "firmware.metainfo.xml")
-        tree = ET.parse(path_metainfo)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cmd_extract = ["gcab", "-x", f"--directory={tmpdir}", "--", arch_path]
+            p = subprocess.Popen(cmd_extract, stdout=subprocess.PIPE)
+            p.communicate()
+            if p.returncode != 0:
+                raise Exception(f"gcab: Error while extracting {arch_path}.")
+            path_metainfo = os.path.join(tmpdir, "firmware.metainfo.xml")
+            tree = ET.parse(path_metainfo)
         root = tree.getroot()
         vendor = root.find("developer_name").text
         if vendor is None:
@@ -317,15 +374,14 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         self._parse_dom0_updates_info(self.dom0_updates_info)
         updates_list = self.dom0_updates_list
         ret_input = self._user_input(updates_list)
-        if ret_input == EXIT_CODES["NOTHING_TO_DO"]:
+        if ret_input == -EXIT_CODES["NOTHING_TO_DO"]:
             exit(EXIT_CODES["NOTHING_TO_DO"])
         choice = ret_input
         self._parse_parameters(updates_list, choice)
         self._download_firmware_updates(self.url, self.sha, whonix=whonix)
         if self.name == "System Firmware":
             Path(BIOS_UPDATE_FLAG).touch(mode=0o644, exist_ok=True)
-            extracted_path = self.arch_path.replace(".cab", "")
-            self._verify_dmi(extracted_path, self.version)
+            self._verify_dmi(self.arch_path, self.version)
         self._install_dom0_firmware_update(self.arch_path)
 
     def _parse_downgrades(self, device_list):
@@ -384,7 +440,7 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         self._get_dom0_devices()
         dom0_downgrades = self._parse_downgrades(self.dom0_devices_info)
         ret_input = self._user_input(dom0_downgrades, downgrade=True)
-        if ret_input == EXIT_CODES["NOTHING_TO_DO"]:
+        if ret_input == -EXIT_CODES["NOTHING_TO_DO"]:
             exit(EXIT_CODES["NOTHING_TO_DO"])
         device_choice, downgrade_choice = ret_input
         downgrade = dom0_downgrades[device_choice]
@@ -394,9 +450,8 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         self._download_firmware_updates(downgrade_url, downgrade_sha, whonix=whonix)
         if downgrade["Name"] == "System Firmware":
             Path(BIOS_UPDATE_FLAG).touch(mode=0o644, exist_ok=True)
-            extracted_path = self.arch_path.replace(".cab", "")
             self._verify_dmi(
-                extracted_path,
+                self.arch_path,
                 downgrade["Version"],
                 downgrade=True,
             )
@@ -519,12 +574,12 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         if os.path.exists(BIOS_UPDATE_FLAG):
             print("BIOS was updated. Refreshing metadata...")
             if "--whonix" in sys.argv:
-                self.refresh_metadata(whonix=True)
+                self.refresh_metadata_all(whonix=True)
             else:
-                self.refresh_metadata()
+                self.refresh_metadata_all()
             os.remove(BIOS_UPDATE_FLAG)
 
-    def heads_update(self, device="x230", whonix=False, metadata_url=None):
+    def heads_update(self, device=None, whonix=False, metadata_url=None):
         """
         Updates heads firmware
 
@@ -533,14 +588,13 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
         whonix -- Flag enforces downloading the metadata updates via Tor
         metadata_url -- Use custom metadata from the url
         """
-        if metadata_url:
-            custom_metadata_name = metadata_url.replace(FWUPD_DOWNLOAD_PREFIX, "")
-            self.metadata_file = os.path.join(
-                FWUPD_DOM0_METADATA_DIR, custom_metadata_name
-            )
-        else:
-            self.metadata_file = FWUPD_DOM0_METADATA_FILE
+        if not metadata_url:
+            metadata_url = METADATA_URL
+        metadata_name = os.path.basename(metadata_url)
+        self.metadata_file = os.path.join(FWUPD_DOM0_METADATA_DIR, metadata_name)
         self._get_hwids()
+        if device is None:
+            device = self._get_hwid_device()
         self._download_metadata(whonix=whonix, metadata_url=metadata_url)
         self._parse_metadata(self.metadata_file)
         if self._gather_firmware_version() == EXIT_CODES["NOTHING_TO_DO"]:
@@ -572,15 +626,14 @@ class QubesFwupdmgr(FwupdHeads, FwupdUpdate, FwupdReceiveUpdates):
     def validate_dom0_dirs(self):
         """Validates and creates directories"""
         if not os.path.exists(FWUPD_DOM0_DIR):
-            self._create_dirs(FWUPD_DOM0_DIR)
+            create_dirs(FWUPD_DOM0_DIR)
         if os.path.exists(FWUPD_DOM0_METADATA_DIR):
             shutil.rmtree(FWUPD_DOM0_METADATA_DIR)
-            self._create_dirs(FWUPD_DOM0_METADATA_DIR)
+            create_dirs(FWUPD_DOM0_METADATA_DIR)
         else:
-            self._create_dirs(FWUPD_DOM0_METADATA_DIR)
+            create_dirs(FWUPD_DOM0_METADATA_DIR)
         if not os.path.exists(FWUPD_DOM0_UPDATES_DIR):
-            self._create_dirs(FWUPD_DOM0_UPDATES_DIR)
-        os.umask(self.old_umask)
+            create_dirs(FWUPD_DOM0_UPDATES_DIR)
 
 
 def main():
@@ -589,19 +642,15 @@ def main():
         exit(EXIT_CODES["ERROR"])
 
     q = QubesFwupdmgr()
-    q.validate_dom0_dirs()
-    q.trusted_cleanup()
-    q.refresh_metadata_after_bios_update()
-
-    metadata_url = None
-    device = "x230"
-
-    if not os.path.exists(FWUPD_DOM0_DIR):
-        q.refresh_metadata()
 
     if len(sys.argv) < 2:
         q.help()
         exit(1)
+
+    metadata_url = None
+    device_override = None
+    whonix = False
+
     for arg in sys.argv:
         if "--url=" in arg:
             metadata_url = arg.replace("--url=", "")
@@ -613,30 +662,37 @@ def main():
                 print("Exiting...")
                 exit(1)
         if "--device=" in arg:
-            device = arg.replace("--device=", "")
+            device_override = arg.replace("--device=", "")
+        if "--whonix" == arg:
+            whonix = True
+
+    q.validate_dom0_dirs()
+    q.trusted_cleanup()
+    q.refresh_metadata_after_bios_update()
+
+    if not os.path.exists(FWUPD_DOM0_DIR):
+        if metadata_url:
+            q.refresh_metadata(whonix=whonix, metadata_url=metadata_url)
+        else:
+            q.refresh_metadata_all(whonix=whonix)
 
     if sys.argv[1] == "get-updates":
         q.get_updates_qubes()
     elif sys.argv[1] == "get-devices":
         q.get_devices_qubes()
-    elif sys.argv[1] == "update" and "--whonix" in sys.argv:
-        q.update_firmware(whonix=True)
-    elif sys.argv[1] == "update" and "--whonix" not in sys.argv:
-        q.update_firmware()
-    elif sys.argv[1] == "downgrade" and "--whonix" in sys.argv:
-        q.downgrade_firmware(whonix=True)
-    elif sys.argv[1] == "downgrade" and "--whonix" not in sys.argv:
-        q.downgrade_firmware()
+    elif sys.argv[1] == "update":
+        q.update_firmware(whonix=whonix)
+    elif sys.argv[1] == "downgrade":
+        q.downgrade_firmware(whonix=whonix)
     elif sys.argv[1] == "clean":
         q.clean_cache()
-    elif sys.argv[1] == "refresh" and "--whonix" not in sys.argv:
-        q.refresh_metadata(metadata_url=metadata_url)
-    elif sys.argv[1] == "refresh" and "--whonix" in sys.argv:
-        q.refresh_metadata(whonix=True, metadata_url=metadata_url)
-    elif sys.argv[1] == "update-heads" and "--whonix" not in sys.argv:
-        q.heads_update(device=device, metadata_url=metadata_url)
-    elif sys.argv[1] == "update-heads" and "--whonix" in sys.argv:
-        q.heads_update(device=device, metadata_url=metadata_url, whonix=True)
+    elif sys.argv[1] == "refresh":
+        if metadata_url:
+            q.refresh_metadata(whonix=whonix, metadata_url=metadata_url)
+        else:
+            q.refresh_metadata_all(whonix=whonix)
+    elif sys.argv[1] == "update-heads":
+        q.heads_update(device=device_override, metadata_url=metadata_url, whonix=whonix)
     else:
         q.help()
         exit(1)

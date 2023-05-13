@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fwupd\n"
 "Report-Msgid-Bugs-To: \n"
-"Language-Team: Galician (http://www.transifex.com/freedesktop/fwupd/language/gl/)\n"
+"Language-Team: Galician (http://app.transifex.com/freedesktop/fwupd/language/gl/)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -419,14 +419,6 @@ msgstr "IOMMU"
 msgid "Idle…"
 msgstr "Ocioso…"
 
-#. TRANSLATORS: command description
-msgid "Install a firmware blob on a device"
-msgstr "Instalar un blob de firmware nun dispositivo"
-
-#. TRANSLATORS: command description
-msgid "Install a firmware file on this hardware"
-msgstr "Instalar un ficheiro de firmware neste hardware"
-
 msgid "Install signed device firmware"
 msgstr "Instalar firmware de dispositivo asinado"
 
@@ -747,10 +739,6 @@ msgstr "Mostrar información de depuración adicional"
 #. TRANSLATORS: command description
 msgid "Show history of firmware updates"
 msgstr "Mostrar o historial das actualizacións de firmware"
-
-#. TRANSLATORS: this is for plugin development
-msgid "Show plugin verbose information"
-msgstr "Mostrar información de depuración do engadido"
 
 #. TRANSLATORS: command line option
 msgid "Show the calculated version of the dbx"

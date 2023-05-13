@@ -201,6 +201,7 @@ int
 main(int argc, char **argv)
 {
 	g_autofree gchar *testdatadir = NULL;
+	(void)g_setenv("G_TEST_SRCDIR", SRCDIR, FALSE);
 	g_test_init(&argc, &argv, NULL);
 
 	/* only critical and error are fatal */
@@ -208,6 +209,7 @@ main(int argc, char **argv)
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", testdatadir, TRUE);
+	(void)g_setenv("CONFIGURATION_DIRECTORY", testdatadir, TRUE);
 
 	g_assert_cmpint(g_mkdir_with_parents("/tmp/fwupd-self-test/var/lib/fwupd", 0755), ==, 0);
 

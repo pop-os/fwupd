@@ -5,6 +5,9 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginSynapticsMST"']
 plugin_quirks += files('synaptics-mst.quirk')
 
 plugin_builtin_synaptics_mst = static_library('fu_plugin_synaptics_mst',
+  rustgen.process(
+    'fu-synaptics-mst.rs', # fuzzing
+  ),
   sources: [
     'fu-synaptics-mst-plugin.c',
     'fu-synaptics-mst-common.c',
@@ -44,12 +47,13 @@ if get_option('tests')
       fwupdplugin,
       plugin_builtin_synaptics_mst,
     ],
-    c_args: [
-      cargs,
-    ],
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('synaptics-mst-self-test', e, env: env)
 endif

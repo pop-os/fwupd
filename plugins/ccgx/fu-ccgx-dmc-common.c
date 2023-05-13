@@ -12,11 +12,11 @@ const gchar *
 fu_ccgx_dmc_update_model_type_to_string(DmcUpdateModel val)
 {
 	if (val == DMC_UPDATE_MODEL_NONE)
-		return "None";
+		return "none";
 	if (val == DMC_UPDATE_MODEL_DOWNLOAD_TRIGGER)
-		return "Download Trigger";
+		return "download-trigger";
 	if (val == DMC_UPDATE_MODEL_PENDING_RESET)
-		return "Pending Reset";
+		return "pending-reset";
 	return NULL;
 }
 
@@ -129,5 +129,37 @@ fu_ccgx_dmc_img_status_to_string(DmcImgStatus img_status)
 		return "recovered-from-secondary";
 	if (img_status == DMC_IMG_STATUS_NOT_SUPPORTED)
 		return "not-supported";
+	return NULL;
+}
+
+const gchar *
+fu_ccgx_dmc_int_opcode_to_string(DmcIntOpcode int_opcode)
+{
+	if (int_opcode == DMC_INT_OPCODE_FW_UPGRADE_RQT)
+		return "fw-upgrade-rqt";
+	if (int_opcode == DMC_INT_OPCODE_FW_UPGRADE_STATUS)
+		return "fw-upgrade-status";
+	if (int_opcode == DMC_INT_OPCODE_IMG_WRITE_STATUS)
+		return "img-write-status";
+	if (int_opcode == DMC_INT_OPCODE_REENUM)
+		return "reenum";
+	if (int_opcode == DMC_INT_OPCODE_FWCT_ANALYSIS_STATUS)
+		return "fwct-analysis-status";
+	return NULL;
+}
+
+const gchar *
+fu_ccgx_dmc_fwct_analysis_status_to_string(DmcFwctAnalysisStatus fwct_analysis_status)
+{
+	if (fwct_analysis_status == DMC_FWCT_ANALYSIS_STATUS_INVALID_FWCT)
+		return "invalid-fwct";
+	if (fwct_analysis_status == DMC_FWCT_ANALYSIS_STATUS_INVALID_DOCK_IDENTITY)
+		return "invalid-dock-identity";
+	if (fwct_analysis_status == DMC_FWCT_ANALYSIS_STATUS_INVALID_COMPOSITE_VERSION)
+		return "invalid-composite-version";
+	if (fwct_analysis_status == DMC_FWCT_ANALYSIS_STATUS_AUTHENTICATION_FAILED)
+		return "authentication-failed";
+	if (fwct_analysis_status == DMC_FWCT_ANALYSIS_STATUS_INVALID_ALGORITHM)
+		return "invalid-algorithm";
 	return NULL;
 }

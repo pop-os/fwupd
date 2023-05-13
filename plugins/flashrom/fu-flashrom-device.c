@@ -233,7 +233,7 @@ fu_flashrom_device_write_firmware(FuDevice *device,
 
 	/* Check if CMOS needs a reset */
 	if (fu_device_has_private_flag(device, FU_FLASHROM_DEVICE_FLAG_RESET_CMOS)) {
-		g_debug("Attempting CMOS Reset");
+		g_debug("attempting CMOS reset");
 		if (!fu_flashrom_cmos_reset(error)) {
 			g_prefix_error(error, "failed CMOS reset: ");
 			return FALSE;
@@ -266,6 +266,7 @@ fu_flashrom_device_init(FuFlashromDevice *self)
 	fu_device_add_protocol(FU_DEVICE(self), "org.flashrom");
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ENSURE_SEMVER);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
 	fu_device_set_physical_id(FU_DEVICE(self), "flashrom");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_add_icon(FU_DEVICE(self), "computer");
@@ -393,16 +394,10 @@ fu_flashrom_device_new(FuContext *ctx, struct flashrom_flashctx *flashctx, FuIfd
 				      NULL));
 }
 
-FuIfdRegion
-fu_flashrom_device_get_region(FuFlashromDevice *self)
-{
-	return self->region;
-}
-
 gboolean
 fu_flashrom_device_unlock(FuFlashromDevice *self, GError **error)
 {
-	if (fu_flashrom_device_get_region(self) == FU_IFD_REGION_ME &&
+	if (self->region == FU_IFD_REGION_ME &&
 	    fu_device_has_private_flag(FU_DEVICE(self), FU_FLASHROM_DEVICE_FLAG_FN_M_ME_UNLOCK)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,

@@ -60,21 +60,6 @@ fu_uefi_bootmgr_get_suffix(GError **error)
 }
 
 gchar *
-fu_uefi_get_fallback_app_path(FuDevice *device,
-			      const gchar *esp_path,
-			      const gchar *cmd,
-			      GError **error)
-{
-	const gchar *suffix = fu_uefi_bootmgr_get_suffix(error);
-	g_autofree gchar *base = NULL;
-	if (suffix == NULL)
-		return NULL;
-
-	base = g_build_filename(esp_path, "EFI", "boot", NULL);
-	return g_strdup_printf("%s/%s%s.efi", base, cmd, suffix);
-}
-
-gchar *
 fu_uefi_get_esp_app_path(FuDevice *device, const gchar *esp_path, const gchar *cmd, GError **error)
 {
 	const gchar *suffix = fu_uefi_bootmgr_get_suffix(error);
@@ -266,7 +251,7 @@ fu_uefi_get_esp_path_for_os(FuDevice *device, const gchar *base)
 			g_autofree gchar *id_like_path =
 			    g_build_filename(base, "EFI", split[i], NULL);
 			if (g_file_test(id_like_path, G_FILE_TEST_IS_DIR)) {
-				g_debug("Using ID_LIKE key from os-release");
+				g_debug("using ID_LIKE key from os-release");
 				return g_steal_pointer(&id_like_path);
 			}
 		}

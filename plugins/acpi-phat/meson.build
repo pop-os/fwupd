@@ -2,6 +2,9 @@ if get_option('plugin_acpi_phat').disable_auto_if(host_machine.system() != 'linu
 cargs = ['-DG_LOG_DOMAIN="FuPluginAcpiPhat"']
 
 plugin_builtin_acpi_phat = static_library('fu_plugin_acpi_phat',
+  rustgen.process(
+    'fu-acpi-phat.rs',            # fuzzing
+  ),
   sources: [
     'fu-acpi-phat-plugin.c',
     'fu-acpi-phat.c',                 # fuzzing
@@ -34,6 +37,9 @@ if get_option('tests')
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('acpi-phat-self-test', e, env: env)  # added to installed-tests
 endif

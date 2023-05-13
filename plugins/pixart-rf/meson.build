@@ -3,6 +3,7 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginPixartRf"']
 
 plugin_quirks += files('pixart-rf.quirk')
 plugin_builtin_pxi = static_library('fu_plugin_pxi',
+  rustgen.process('fu-pxi.rs'),
   sources: [
     'fu-pxi-plugin.c',
     'fu-pxi-common.c',
@@ -38,6 +39,9 @@ if get_option('tests')
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('pxi-self-test', e, env: env)
 endif

@@ -3,6 +3,9 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginWacomUsb"']
 
 plugin_quirks += files('wacom-usb.quirk')
 plugin_builtin_wac = static_library('fu_plugin_wac',
+  rustgen.process(
+    'fu-wac.rs',              # fuzzing
+  ),
   sources: [
     'fu-wac-common.c',
     'fu-wac-android-device.c',
@@ -13,6 +16,7 @@ plugin_builtin_wac = static_library('fu_plugin_wac',
     'fu-wac-module-bluetooth-id6.c',
     'fu-wac-module-scaler.c',
     'fu-wac-module-touch.c',
+    'fu-wac-module-touch-id7.c',
     'fu-wac-plugin.c',
   ],
   include_directories: plugin_incdirs,
@@ -30,6 +34,7 @@ if get_option('tests')
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
   e = executable(
     'wacom-usb-self-test',
+    rustgen.process('fu-wac.rs'),
     sources: [
       'fu-self-test.c',
     ],
@@ -39,10 +44,13 @@ if get_option('tests')
       plugin_libs,
       plugin_builtin_wac,
     ],
-    c_args: cargs,
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('wacom-usb-self-test', e, env: env)  # added to installed-tests
 endif

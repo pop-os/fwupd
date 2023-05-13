@@ -15,6 +15,7 @@ import sys
 import imp
 import io
 import platform
+import tempfile
 from packaging.version import Version
 from pathlib import Path
 from .fwupd_logs import UPDATE_INFO, GET_DEVICES, DMI_DECODE
@@ -30,12 +31,12 @@ if os.path.exists(QUBES_FWUPDMGR_REPO):
 elif os.path.exists(QUBES_FWUPDMGR_BINDIR):
     qfwupd = imp.load_source("qubes_fwupdmgr", QUBES_FWUPDMGR_BINDIR)
 
-FWUPD_DOM0_DIR = "/var/cache/qubes-fwupd"
+FWUPD_DOM0_DIR = "/var/cache/fwupd/qubes"
 FWUPD_DOM0_UPDATES_DIR = os.path.join(FWUPD_DOM0_DIR, "updates")
 FWUPD_DOM0_UNTRUSTED_DIR = os.path.join(FWUPD_DOM0_UPDATES_DIR, "untrusted")
 FWUPD_DOM0_METADATA_DIR = os.path.join(FWUPD_DOM0_DIR, "metadata")
-FWUPD_DOM0_METADATA_FILE = os.path.join(FWUPD_DOM0_METADATA_DIR, "firmware.xml.gz")
-FWUPD_DOM0_METADATA_FILE_JCAT = os.path.join(FWUPD_DOM0_METADATA_DIR, "firmware.xml.gz")
+FWUPD_DOM0_METADATA_FILE = os.path.join(FWUPD_DOM0_METADATA_DIR, "firmware.xml.xz")
+FWUPD_DOM0_METADATA_FILE_JCAT = os.path.join(FWUPD_DOM0_METADATA_DIR, "firmware.xml.xz")
 REQUIRED_DEV = "Requires device not connected"
 XL_LIST_LOG = "Name                                        ID   Mem VCPUs	State	Time(s)"
 FWUPDMGR = "/bin/fwupdmgr"
@@ -66,12 +67,16 @@ class TestQubesFwupdmgr(unittest.TestCase):
         self.q = qfwupd.QubesFwupdmgr()
         self.maxDiff = 2000
         self.captured_output = io.StringIO()
+        self.orig_stdout = sys.stdout
         sys.stdout = self.captured_output
+
+    def tearDown(self):
+        sys.stdout = self.orig_stdout
 
     @unittest.skipUnless("qubes" in platform.release(), "Requires Qubes OS")
     def test_download_metadata(self):
         self.q.metadata_file = FWUPD_DOM0_METADATA_FILE
-        self.q._download_metadata()
+        self.q._download_metadata(metadata_url=qfwupd.METADATA_URL)
         self.assertTrue(
             os.path.exists(FWUPD_DOM0_METADATA_FILE),
             msg="Metadata update file does not exist",
@@ -112,28 +117,29 @@ class TestQubesFwupdmgr(unittest.TestCase):
 
     @unittest.skipUnless("qubes" in platform.release(), "Requires Qubes OS")
     def test_refresh_metadata_dom0(self):
-        self.q.refresh_metadata()
+        self.q.refresh_metadata(metadata_url=qfwupd.METADATA_URL)
         self.assertEqual(
-            self.q.output,
-            "Successfully refreshed metadata manually\n",
+            self.captured_output.getvalue().strip(),
+            "Successfully refreshed metadata manually",
             msg="Metadata refresh failed.",
         )
 
     @unittest.skipUnless("qubes" in platform.release(), "Requires Qubes OS")
+    @unittest.expectedFailure  # fwupd refuses metadata downgrade
     def test_refresh_metadata_dom0_custom(self):
         self.q.refresh_metadata(metadata_url=CUSTOM_METADATA)
         self.assertEqual(
-            self.q.output,
-            "Successfully refreshed metadata manually\n",
+            self.captured_output.getvalue().strip(),
+            "Successfully refreshed metadata manually",
             msg="Metadata refresh failed.",
         )
 
     @unittest.skipUnless(check_whonix_updatevm(), "Requires sys-whonix")
     def test_refresh_metadata_whonix(self):
-        self.q.refresh_metadata(whonix=True)
+        self.q.refresh_metadata(whonix=True, metadata_url=qfwupd.METADATA_URL)
         self.assertEqual(
-            self.q.output,
-            "Successfully refreshed metadata manually\n",
+            self.captured_output.getvalue().strip(),
+            "Successfully refreshed metadata manually",
             msg="Metadata refresh failed.",
         )
 
@@ -193,19 +199,19 @@ class TestQubesFwupdmgr(unittest.TestCase):
         self.assertTrue(os.path.exists(update_path))
 
     def test_user_input_empty_dict(self):
-        self.assertEqual(self.q._user_input([]), 2)
+        self.assertEqual(self.q._user_input([]), -2)
 
     def test_user_input_n(self):
         user_input = ["sth", "n"]
         with patch("builtins.input", side_effect=user_input):
             self.q._parse_dom0_updates_info(UPDATE_INFO)
             choice = self.q._user_input(self.q.dom0_updates_list)
-        self.assertEqual(choice, 2)
+        self.assertEqual(choice, -2)
         user_input = ["sth", "N"]
         with patch("builtins.input", side_effect=user_input):
             self.q._parse_dom0_updates_info(UPDATE_INFO)
             choice = self.q._user_input(self.q.dom0_updates_list)
-        self.assertEqual(choice, 2)
+        self.assertEqual(choice, -2)
 
     def test_user_input_choice(self):
         user_input = ["6", "1"]
@@ -278,7 +284,12 @@ class TestQubesFwupdmgr(unittest.TestCase):
     )
     def test_verify_dmi(self, output):
         self.q.dmi_version = "P.1.0"
-        self.q._verify_dmi("test/logs/", "P1.1")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            arch_name = tmpdir + "/firmware.cab"
+            subprocess.check_call(
+                ["gcab", "-c", arch_name, "firmware.metainfo.xml"], cwd="test/logs"
+            )
+            self.q._verify_dmi(arch_name, "P1.1")
 
     @patch(
         "test.test_qubes_fwupdmgr.qfwupd.QubesFwupdmgr._read_dmi",
@@ -287,7 +298,13 @@ class TestQubesFwupdmgr(unittest.TestCase):
     def test_verify_dmi_wrong_vendor(self, output):
         with self.assertRaises(ValueError) as wrong_vendor:
             self.q.dmi_version = "P.1.0"
-            self.q._verify_dmi("test/logs/metainfo_name/", "P1.1")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                arch_name = tmpdir + "/firmware.cab"
+                subprocess.check_call(
+                    ["gcab", "-c", arch_name, "firmware.metainfo.xml"],
+                    cwd="test/logs/metainfo_name",
+                )
+                self.q._verify_dmi(arch_name, "P1.1")
         self.assertIn("Wrong firmware provider.", str(wrong_vendor.exception))
 
     @patch(
@@ -297,7 +314,13 @@ class TestQubesFwupdmgr(unittest.TestCase):
     def test_verify_dmi_version(self, output):
         self.q.dmi_version = "P1.0"
         with self.assertRaises(ValueError) as downgrade:
-            self.q._verify_dmi("test/logs/metainfo_version/", "P0.1")
+            with tempfile.TemporaryDirectory() as tmpdir:
+                arch_name = tmpdir + "/firmware.cab"
+                subprocess.check_call(
+                    ["gcab", "-c", arch_name, "firmware.metainfo.xml"],
+                    cwd="test/logs/metainfo_version",
+                )
+                self.q._verify_dmi(arch_name, "P0.1")
         self.assertIn("P0.1 < P1.0 Downgrade not allowed", str(downgrade.exception))
 
     @unittest.skipUnless(device_connected_dom0(), REQUIRED_DEV)
@@ -353,11 +376,10 @@ class TestQubesFwupdmgr(unittest.TestCase):
         user_input = ["1", "6", "sth", "2.2.1", "", " ", "\0", "2"]
         with patch("builtins.input", side_effect=user_input):
             downgrade_list = self.q._parse_downgrades(GET_DEVICES)
-            downgrade_dict = {"dom0": downgrade_list}
-            key, device_choice, downgrade_choice = self.q._user_input(
+            downgrade_dict = downgrade_list
+            device_choice, downgrade_choice = self.q._user_input(
                 downgrade_dict, downgrade=True
             )
-        self.assertEqual(key, "dom0")
         self.assertEqual(device_choice, 0)
         self.assertEqual(downgrade_choice, 1)
 
@@ -366,7 +388,7 @@ class TestQubesFwupdmgr(unittest.TestCase):
         with patch("builtins.input", side_effect=user_input):
             downgrade_list = self.q._parse_downgrades(GET_DEVICES)
             N_choice = self.q._user_input(downgrade_list, downgrade=True)
-        self.assertEqual(N_choice, 2)
+        self.assertEqual(N_choice, -2)
 
     @unittest.skipUnless(device_connected_dom0(), REQUIRED_DEV)
     def test_update_firmware_dom0(self):
@@ -396,13 +418,6 @@ class TestQubesFwupdmgr(unittest.TestCase):
         if new_version is None:
             self.fail("Test device not found")
         self.assertLess(Version(old_version), Version(new_version))
-
-    @unittest.skipUnless("qubes" in platform.release(), "Requires Qubes OS")
-    def test_enable_lvfs_testing_dom0(self):
-        if os.path.exists(LVFS_TESTING_DOM0_FLAG):
-            os.remove(LVFS_TESTING_DOM0_FLAG)
-        self.q._enable_lvfs_testing_dom0()
-        self.assertTrue(os.path.exists(LVFS_TESTING_DOM0_FLAG))
 
 
 if __name__ == "__main__":

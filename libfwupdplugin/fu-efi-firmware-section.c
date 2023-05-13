@@ -12,6 +12,7 @@
 #include "fu-efi-firmware-common.h"
 #include "fu-efi-firmware-section.h"
 #include "fu-efi-firmware-volume.h"
+#include "fu-efi-struct.h"
 #include "fu-mem.h"
 
 /**
@@ -28,15 +29,6 @@ typedef struct {
 
 G_DEFINE_TYPE_WITH_PRIVATE(FuEfiFirmwareSection, fu_efi_firmware_section, FU_TYPE_FIRMWARE)
 #define GET_PRIVATE(o) (fu_efi_firmware_section_get_instance_private(o))
-
-#define FU_EFI_FIRMWARE_SECTION_OFFSET_SIZE 0x00
-#define FU_EFI_FIRMWARE_SECTION_OFFSET_TYPE 0x03
-#define FU_EFI_FIRMWARE_SECTION_SIZE	    0x04
-
-/* only GUID defined */
-#define FU_EFI_FIRMWARE_SECTION_OFFSET_GUID_NAME	0x04
-#define FU_EFI_FIRMWARE_SECTION_OFFSET_GUID_DATA_OFFSET 0x14
-#define FU_EFI_FIRMWARE_SECTION_OFFSET_GUID_ATTR	0x16
 
 #define FU_EFI_FIRMWARE_SECTION_TYPE_COMPRESSION	   0x01
 #define FU_EFI_FIRMWARE_SECTION_TYPE_GUID_DEFINED	   0x02
@@ -110,27 +102,24 @@ fu_efi_firmware_section_export(FuFirmware *firmware, FuFirmwareExportFlags flags
 static gboolean
 fu_efi_firmware_section_parse(FuFirmware *firmware,
 			      GBytes *fw,
-			      gsize offset_ignored,
+			      gsize offset,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
 	FuEfiFirmwareSection *self = FU_EFI_FIRMWARE_SECTION(firmware);
 	FuEfiFirmwareSectionPrivate *priv = GET_PRIVATE(self);
 	gsize bufsz = 0;
-	guint16 attr = 0x0;
-	guint16 offset = FU_EFI_FIRMWARE_SECTION_SIZE;
-	guint32 size = 0x0;
+	guint32 size;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GByteArray) st = NULL;
 
-	if (!fu_memread_uint24_safe(buf,
-				    bufsz,
-				    FU_EFI_FIRMWARE_SECTION_OFFSET_SIZE,
-				    &size,
-				    G_LITTLE_ENDIAN,
-				    error))
+	/* parse */
+	st = fu_struct_efi_section_parse(buf, bufsz, offset, error);
+	if (st == NULL)
 		return FALSE;
-	if (size < FU_EFI_FIRMWARE_SECTION_SIZE) {
+	size = fu_struct_efi_section_get_size(st);
+	if (size < FU_STRUCT_EFI_SECTION_SIZE) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INTERNAL,
@@ -138,53 +127,31 @@ fu_efi_firmware_section_parse(FuFirmware *firmware,
 			    (guint)size);
 		return FALSE;
 	}
-	if (!fu_memread_uint8_safe(buf,
-				   bufsz,
-				   FU_EFI_FIRMWARE_SECTION_OFFSET_TYPE,
-				   &priv->type,
-				   error))
-		return FALSE;
 
 	/* name */
+	priv->type = fu_struct_efi_section_get_type(st);
 	if (priv->type == FU_EFI_FIRMWARE_SECTION_TYPE_GUID_DEFINED) {
-		fwupd_guid_t guid = {0x0};
 		g_autofree gchar *guid_str = NULL;
-		if (!fu_memcpy_safe((guint8 *)&guid,
-				    sizeof(guid),
-				    0x0, /* dst */
-				    buf,
-				    bufsz,
-				    FU_EFI_FIRMWARE_SECTION_OFFSET_GUID_NAME, /* src */
-				    sizeof(guid),
-				    error))
+		g_autoptr(GByteArray) st_def = NULL;
+		st_def = fu_struct_efi_section_guid_defined_parse(buf, bufsz, st->len, error);
+		if (st_def == NULL)
 			return FALSE;
-		guid_str = fwupd_guid_to_string(&guid, FWUPD_GUID_FLAG_MIXED_ENDIAN);
+		guid_str = fwupd_guid_to_string(fu_struct_efi_section_guid_defined_get_name(st_def),
+						FWUPD_GUID_FLAG_MIXED_ENDIAN);
 		fu_firmware_set_id(firmware, guid_str);
-		if (!fu_memread_uint16_safe(buf,
-					    bufsz,
-					    FU_EFI_FIRMWARE_SECTION_OFFSET_GUID_DATA_OFFSET,
-					    &offset,
-					    G_LITTLE_ENDIAN,
-					    error))
-			return FALSE;
-		if (offset < FU_EFI_FIRMWARE_SECTION_SIZE) {
+		if (fu_struct_efi_section_guid_defined_get_offset(st_def) <
+		    FU_STRUCT_EFI_SECTION_SIZE) {
 			g_set_error(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INTERNAL,
 				    "invalid section size, got 0x%x",
-				    (guint)size);
+				    (guint)fu_struct_efi_section_guid_defined_get_offset(st_def));
 			return FALSE;
 		}
-		if (!fu_memread_uint16_safe(buf,
-					    bufsz,
-					    FU_EFI_FIRMWARE_SECTION_OFFSET_GUID_ATTR,
-					    &attr,
-					    G_LITTLE_ENDIAN,
-					    error))
-			return FALSE;
 	}
 
 	/* create blob */
+	offset += st->len;
 	blob = fu_bytes_new_offset(fw, offset, size - offset, error);
 	if (blob == NULL)
 		return FALSE;
@@ -222,7 +189,7 @@ fu_efi_firmware_section_write(FuFirmware *firmware, GError **error)
 {
 	FuEfiFirmwareSection *self = FU_EFI_FIRMWARE_SECTION(firmware);
 	FuEfiFirmwareSectionPrivate *priv = GET_PRIVATE(self);
-	g_autoptr(GByteArray) buf = g_byte_array_new();
+	g_autoptr(GByteArray) buf = fu_struct_efi_section_new();
 	g_autoptr(GBytes) blob = NULL;
 
 	/* simple blob for now */
@@ -231,28 +198,20 @@ fu_efi_firmware_section_write(FuFirmware *firmware, GError **error)
 		return NULL;
 
 	/* header */
-	fu_byte_array_append_uint32(buf, 0x0, G_LITTLE_ENDIAN); /* will fixup */
 	if (priv->type == FU_EFI_FIRMWARE_SECTION_TYPE_GUID_DEFINED) {
 		fwupd_guid_t guid = {0x0};
+		g_autoptr(GByteArray) st_def = fu_struct_efi_section_guid_defined_new();
 		if (!fwupd_guid_from_string(fu_firmware_get_id(firmware),
 					    &guid,
 					    FWUPD_GUID_FLAG_MIXED_ENDIAN,
 					    error))
 			return NULL;
-		g_byte_array_append(buf, (guint8 *)&guid, sizeof(guid));
-		fu_byte_array_append_uint16(buf, buf->len + 0x4, G_LITTLE_ENDIAN);
-		fu_byte_array_append_uint16(buf, 0x0, G_LITTLE_ENDIAN);
+		fu_struct_efi_section_guid_defined_set_name(st_def, &guid);
+		fu_struct_efi_section_guid_defined_set_offset(st_def, buf->len + st_def->len);
+		g_byte_array_append(buf, st_def->data, st_def->len);
 	}
-
-	/* correct size and type in common header */
-	if (!fu_memwrite_uint32_safe(buf->data,
-				     buf->len, /* uint24_t! */
-				     FU_EFI_FIRMWARE_SECTION_OFFSET_SIZE,
-				     buf->len + g_bytes_get_size(blob),
-				     G_LITTLE_ENDIAN,
-				     error))
-		return NULL;
-	buf->data[FU_EFI_FIRMWARE_SECTION_OFFSET_TYPE] = priv->type;
+	fu_struct_efi_section_set_type(buf, priv->type);
+	fu_struct_efi_section_set_size(buf, buf->len + g_bytes_get_size(blob));
 
 	/* blob */
 	fu_byte_array_append_bytes(buf, blob);

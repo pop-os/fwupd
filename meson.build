@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.8.12',
+  version: '1.9.1',
   license: 'LGPL-2.1+',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -273,9 +273,7 @@ if libgcab.type_name() == 'pkgconfig'
   endif
 endif
 
-# manpages
-pandoc = find_program('pandoc', required: get_option('man'))
-
+generate_man = join_paths(meson.project_source_root(), 'contrib', 'generate-man.py')
 bashcomp = dependency('bash-completion', required: false)
 python3 = import('python').find_installation('python3')
 
@@ -415,10 +413,6 @@ efiboot = dependency('efiboot', required: get_option('plugin_uefi_capsule'))
 efivar = dependency('efivar', required: get_option('plugin_uefi_capsule'))
 if build_standalone and efiboot.found() and efivar.found()
 
-  if cc.has_header_symbol('efivar/efivar-types.h', 'efi_time_t', dependencies: efivar)
-    conf.set('HAVE_EFI_TIME_T', '1')
-  endif
-
   efi_app_location = join_paths(libexecdir, 'fwupd', 'efi')
   conf.set_quoted('EFI_APP_LOCATION', efi_app_location)
 
@@ -491,6 +485,11 @@ if get_option('supported_build').disable_auto_if(not tag).allowed()
     conf.set('SUPPORTED_BUILD', '1')
 endif
 
+# compatibility with behavior in < kernel 6.3
+if get_option('thinklmi_compat')
+  conf.set('FU_THINKLMI_COMPAT', '1')
+endif
+
 gnome = import('gnome')
 i18n = import('i18n')
 
@@ -560,6 +559,13 @@ if build_docs and gidocgen_dep.version().version_compare('< 2022.2')
   ).allowed()
 endif
 
+jinja2 = run_command(
+  [python3, '-c', 'import jinja2; print(jinja2.__version__)'],
+)
+if jinja2.stderr().strip() != ''
+  error('Python module jinja2 not found')
+endif
+
 # using "meson configure -Db_sanitize=address,undefined" is super useful in finding corruption,
 # but it does not work with our GMainContext-abuse tests...
 if get_option('b_sanitize') in ['address,undefined', 'address', 'undefined', 'leak']
@@ -567,6 +573,17 @@ if get_option('b_sanitize') in ['address,undefined', 'address', 'undefined', 'le
 else
   run_sanitize_unsafe_tests = true
 endif
+
+# take foo.rs and generate foo-struct.c and foo-struct.h files like protobuf_c
+rustgen = generator(python3,
+  output  : ['@BASENAME@-struct.c', '@BASENAME@-struct.h'],
+  arguments : [
+    join_paths(meson.project_source_root(), 'libfwupdplugin', 'rustgen.py'),
+    '@INPUT@',
+    '@OUTPUT0@',
+    '@OUTPUT1@',
+  ],
+)
 
 subdir('libfwupd')
 if polkit.found()

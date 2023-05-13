@@ -236,7 +236,7 @@ fu_daemon_create_request(FuDaemon *self, const gchar *sender, GError **error)
 	FuDaemonSenderItem *sender_item;
 	FwupdDeviceFlags device_flags = FWUPD_DEVICE_FLAG_NONE;
 	guint calling_uid = 0;
-	g_autoptr(FuEngineRequest) request = fu_engine_request_new(FU_ENGINE_REQUEST_KIND_ACTIVE);
+	g_autoptr(FuEngineRequest) request = fu_engine_request_new();
 	g_autoptr(GVariant) value = NULL;
 
 	/* if using FWUPD_DBUS_SOCKET... */
@@ -288,7 +288,7 @@ fu_daemon_device_array_to_variant(FuDaemon *self,
 	g_variant_builder_init(&builder, G_VARIANT_TYPE_ARRAY);
 
 	/* override when required */
-	if (fu_config_get_show_device_private(fu_engine_get_config(self->engine)))
+	if (fu_engine_config_get_show_device_private(fu_engine_get_config(self->engine)))
 		flags |= FWUPD_DEVICE_FLAG_TRUSTED;
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
@@ -794,6 +794,11 @@ fu_daemon_install_with_helper_device(FuMainAuthHelper *helper,
 	/* is this component valid for the device */
 	fu_release_set_device(release, device);
 	fu_release_set_request(release, helper->request);
+	if (helper->remote_id != NULL) {
+		fu_release_set_remote(
+		    release,
+		    fu_engine_get_remote_by_id(self->engine, helper->remote_id, NULL));
+	}
 	if (!fu_release_load(release,
 			     component,
 			     NULL,
@@ -815,9 +820,6 @@ fu_daemon_install_with_helper_device(FuMainAuthHelper *helper,
 		g_ptr_array_add(helper->errors, g_steal_pointer(&error_local));
 		return TRUE;
 	}
-
-	/* possibly update version format */
-	fu_engine_md_refresh_device_from_component(self->engine, device, component);
 
 	/* sync update message from CAB */
 	fu_device_incorporate_from_component(device, component);
@@ -935,6 +937,7 @@ fu_daemon_install_with_helper(FuMainAuthHelper *helper_ref, GError **error)
 	helper->action_ids = g_ptr_array_new_with_free_func(g_free);
 	helper->releases = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	helper->errors = g_ptr_array_new_with_free_func((GDestroyNotify)g_error_free);
+	helper->remote_id = fu_engine_get_remote_id_for_blob(self->engine, helper->blob_cab);
 
 	/* do any devices pass the requirements */
 	for (guint i = 0; i < components->len; i++) {
@@ -996,7 +999,7 @@ fu_daemon_schedule_process_quit_cb(gpointer user_data)
 {
 	FuDaemon *self = FU_DAEMON(user_data);
 
-	g_debug("daemon asked to quit, shutting down");
+	g_info("daemon asked to quit, shutting down");
 	self->process_quit_id = 0;
 	g_main_loop_quit(self->loop);
 	return G_SOURCE_REMOVE;
@@ -1408,8 +1411,8 @@ fu_daemon_daemon_method_call(GDBusConnection *connection,
 		data = g_variant_get_data_as_bytes(g_variant_get_child_value(parameters, 0));
 		if (!fu_engine_emulation_load(self->engine, data, &error)) {
 			g_dbus_method_invocation_return_error(invocation,
-							      FWUPD_ERROR,
-							      FWUPD_ERROR_NOT_SUPPORTED,
+							      error->domain,
+							      error->code,
 							      "failed to load emulation data: %s",
 							      error->message);
 			return;
@@ -1839,7 +1842,7 @@ fu_daemon_daemon_method_call(GDBusConnection *connection,
 		 * what action ID to use, for instance, if this is trusted --
 		 * this will also close the fd when done */
 		archive_size_max =
-		    fu_config_get_archive_size_max(fu_engine_get_config(self->engine));
+		    fu_engine_config_get_archive_size_max(fu_engine_get_config(self->engine));
 		helper->blob_cab = fu_bytes_get_contents_fd(fd, archive_size_max, &error);
 		if (helper->blob_cab == NULL) {
 			g_dbus_method_invocation_return_gerror(invocation, error);
@@ -2049,7 +2052,7 @@ fu_daemon_daemon_get_property(GDBusConnection *connection_,
 
 	if (g_strcmp0(property_name, "OnlyTrusted") == 0) {
 		return g_variant_new_boolean(
-		    fu_config_get_only_trusted(fu_engine_get_config(self->engine)));
+		    fu_engine_config_get_only_trusted(fu_engine_get_config(self->engine)));
 	}
 
 	/* return an error */
@@ -2130,7 +2133,7 @@ fu_daemon_dbus_connection_closed_cb(GDBusConnection *connection,
 				    gpointer user_data)
 {
 	FuDaemon *self = FU_DAEMON(user_data);
-	g_debug("client connection closed: %s", error != NULL ? error->message : "unknown");
+	g_info("client connection closed: %s", error != NULL ? error->message : "unknown");
 	g_clear_object(&self->connection);
 }
 

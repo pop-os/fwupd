@@ -32,38 +32,51 @@ _plugin_device_added_cb(FuPlugin *plugin, FuDevice *device, gpointer user_data)
 }
 
 static gboolean
-fu_test_self_init(FuTest *self, GError **error_global)
+fu_test_fatal_handler_cb(const gchar *log_domain,
+			 GLogLevelFlags log_level,
+			 const gchar *message,
+			 gpointer user_data)
+{
+	return log_level >= G_LOG_LEVEL_MESSAGE;
+}
+
+static gboolean
+fu_test_self_init(FuTest *self, GError **error)
 {
 	gboolean ret;
 	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
-	g_autoptr(GError) error = NULL;
 
-	g_test_expect_message("FuBiosSettings", G_LOG_LEVEL_WARNING, "*KERNEL*BUG*");
+	g_test_log_set_fatal_handler(fu_test_fatal_handler_cb, NULL);
 
 	ret = fu_context_load_quirks(ctx,
 				     FU_QUIRKS_LOAD_FLAG_NO_CACHE | FU_QUIRKS_LOAD_FLAG_NO_VERIFY,
-				     &error);
-	g_assert_no_error(error);
+				     error);
+	g_assert_no_error(*error);
 	g_assert_true(ret);
-	ret = fu_context_load_hwinfo(ctx, progress, FU_CONTEXT_HWID_FLAG_LOAD_CONFIG, &error);
-	g_assert_no_error(error);
+	ret = fu_context_load_hwinfo(ctx, progress, FU_CONTEXT_HWID_FLAG_LOAD_CONFIG, error);
+	g_assert_no_error(*error);
 	g_assert_true(ret);
-	ret = fu_context_reload_bios_settings(ctx, &error);
-	g_assert_no_error(error);
+	ret = fu_context_reload_bios_settings(ctx, error);
+#ifdef FU_THINKLMI_COMPAT
+	g_assert_no_error(*error);
 	g_assert_true(ret);
-	g_test_assert_expected_messages();
+#else
+	g_assert_error(*error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
+	g_assert_false(ret);
+	return FALSE;
+#endif
 
 	self->plugin_uefi_capsule =
 	    fu_plugin_new_from_gtype(fu_uefi_capsule_plugin_get_type(), ctx);
-	ret = fu_plugin_runner_startup(self->plugin_uefi_capsule, progress, &error);
-	g_assert_no_error(error);
+	ret = fu_plugin_runner_startup(self->plugin_uefi_capsule, progress, error);
+	g_assert_no_error(*error);
 	g_assert_true(ret);
 
 	self->plugin_lenovo_thinklmi =
 	    fu_plugin_new_from_gtype(fu_lenovo_thinklmi_plugin_get_type(), ctx);
-	ret = fu_plugin_runner_startup(self->plugin_lenovo_thinklmi, progress, &error);
-	g_assert_no_error(error);
+	ret = fu_plugin_runner_startup(self->plugin_lenovo_thinklmi, progress, error);
+	g_assert_no_error(*error);
 	g_assert_true(ret);
 	self->ctx = fu_plugin_get_context(self->plugin_lenovo_thinklmi);
 	return TRUE;
@@ -178,6 +191,7 @@ main(int argc, char **argv)
 	g_autoptr(FuTest) self = g_new0(FuTest, 1);
 	g_autoptr(GError) error = NULL;
 
+	(void)g_setenv("G_TEST_SRCDIR", SRCDIR, FALSE);
 	g_test_init(&argc, &argv, NULL);
 
 	/* starting thinklmi dir to make startup pass */
@@ -194,7 +208,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_UEFI_ESP_PATH", sysfsdir, TRUE);
 	(void)g_setenv("FWUPD_UEFI_TEST", "1", TRUE);
 
-	/* to load daemon.conf */
+	/* to load fwupd.conf */
 	confdir = g_test_build_filename(G_TEST_DIST, "tests", "etc", "fwupd", NULL);
 	(void)g_setenv("CONFIGURATION_DIRECTORY", confdir, TRUE);
 

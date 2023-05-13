@@ -73,6 +73,9 @@ G_DEFINE_TYPE(FuMsrPlugin, fu_msr_plugin, FU_TYPE_PLUGIN)
 #define PCI_MSR_AMD64_SYSCFG	     0xC0010010
 #define PCI_MSR_AMD64_SEV	     0xC0010131
 
+/* defaults changed here will also be reflected in the fwupd.conf man page */
+#define FU_MSR_CONFIG_DEFAULT_MINIMUM_SME_KERNEL_VERSION "5.18.0"
+
 static void
 fu_msr_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 {
@@ -412,12 +415,10 @@ fu_plugin_add_security_attr_dci_locked(FuPlugin *plugin, FuSecurityAttrs *attrs)
 static gboolean
 fu_msr_plugin_safe_kernel_for_sme(FuPlugin *plugin, GError **error)
 {
-	g_autofree gchar *min = fu_plugin_get_config_value(plugin, "MinimumSmeKernelVersion");
-
-	if (min == NULL) {
-		g_debug("Ignoring kernel safety checks");
-		return TRUE;
-	}
+	g_autofree gchar *min =
+	    fu_plugin_get_config_value(plugin,
+				       "MinimumSmeKernelVersion",
+				       FU_MSR_CONFIG_DEFAULT_MINIMUM_SME_KERNEL_VERSION);
 	return fu_kernel_check_version(min, error);
 }
 
@@ -475,7 +476,7 @@ fu_plugin_add_security_attr_amd_sme_enabled(FuPlugin *plugin, FuSecurityAttrs *a
 	}
 
 	if (!fu_msr_plugin_safe_kernel_for_sme(plugin, &error_local)) {
-		g_debug("Unable to properly detect SME: %s", error_local->message);
+		g_debug("unable to properly detect SME: %s", error_local->message);
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_UNKNOWN);
 		return;
 	}
@@ -518,9 +519,7 @@ static void
 fu_msr_plugin_class_init(FuMsrPluginClass *klass)
 {
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
-	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-
-	object_class->constructed = fu_msr_plugin_constructed;
+	plugin_class->constructed = fu_msr_plugin_constructed;
 	plugin_class->to_string = fu_msr_plugin_to_string;
 	plugin_class->startup = fu_msr_plugin_startup;
 	plugin_class->backend_device_added = fu_msr_plugin_backend_device_added;

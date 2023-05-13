@@ -6,6 +6,9 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginSynapticsRmi"']
 
 plugin_quirks += files('synaptics-rmi.quirk')
 plugin_builtin_synaptics_rmi = static_library('fu_plugin_synaptics_rmi',
+  rustgen.process(
+    'fu-synaptics-rmi.rs',        # fuzzing
+  ),
   sources: [
     'fu-synaptics-rmi-plugin.c',
     'fu-synaptics-rmi-common.c',      # fuzzing
@@ -44,6 +47,9 @@ if get_option('tests')
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('synaptics-rmi-self-test', e, env: env)
 endif

@@ -9,6 +9,7 @@
 
 #include <fwupdplugin.h>
 
+#include "fu-vli-struct.h"
 #include "fu-vli-usbhub-common.h"
 #include "fu-vli-usbhub-i2c-common.h"
 #include "fu-vli-usbhub-msp430-device.h"
@@ -57,8 +58,7 @@ fu_vli_usbhub_device_i2c_read(FuVliUsbhubDevice *self,
 		g_prefix_error(error, "failed to read I2C: ");
 		return FALSE;
 	}
-	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "I2cReadData", buf, bufsz);
+	fu_dump_raw(G_LOG_DOMAIN, "I2cReadData", buf, bufsz);
 	return TRUE;
 }
 
@@ -85,8 +85,7 @@ fu_vli_usbhub_device_i2c_write_data(FuVliUsbhubDevice *self,
 {
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	guint16 value = (((guint16)disable_start_bit) << 8) | disable_end_bit;
-	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, bufsz);
+	fu_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, bufsz);
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
@@ -294,11 +293,11 @@ fu_vli_usbhub_msp430_device_probe(FuDevice *device, GError **error)
 	FuVliDeviceKind device_kind = FU_VLI_DEVICE_KIND_MSP430;
 	FuVliUsbhubDevice *parent = FU_VLI_USBHUB_DEVICE(fu_device_get_parent(device));
 
-	fu_device_set_name(device, fu_vli_common_device_kind_to_string(device_kind));
+	fu_device_set_name(device, fu_vli_device_kind_to_string(device_kind));
 	fu_device_set_physical_id(device, fu_device_get_physical_id(FU_DEVICE(parent)));
 
 	/* add instance ID */
-	fu_device_add_instance_str(device, "I2C", fu_vli_common_device_kind_to_string(device_kind));
+	fu_device_add_instance_str(device, "I2C", fu_vli_device_kind_to_string(device_kind));
 	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", NULL);
 }
 

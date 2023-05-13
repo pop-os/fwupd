@@ -188,9 +188,9 @@ fu_dell_dock_plugin_separate_activation(FuPlugin *plugin)
 		    fu_device_has_flag(device_ec, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
 			fu_device_remove_flag(FU_DEVICE(device_ec),
 					      FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION);
-			g_debug("activate for %s is inhibited by %s",
-				fu_device_get_name(device_ec),
-				fu_device_get_name(device_usb4));
+			g_info("activate for %s is inhibited by %s",
+			       fu_device_get_name(device_ec),
+			       fu_device_get_name(device_usb4));
 		}
 	}
 }
@@ -276,6 +276,7 @@ fu_dell_dock_plugin_composite_cleanup(FuPlugin *plugin, GPtrArray *devices, GErr
 	for (guint i = 0; i < devices->len; i++) {
 		dev = g_ptr_array_index(devices, i);
 		if ((g_strcmp0(fu_device_get_plugin(dev), "thunderbolt") == 0 ||
+		     g_strcmp0(fu_device_get_plugin(dev), "intel_usb4") == 0 ||
 		     g_strcmp0(fu_device_get_plugin(dev), "dell_dock") == 0) &&
 		    fu_device_has_flag(dev, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
 			/* the kernel and/or thunderbolt plugin have been configured to let HW
@@ -346,8 +347,7 @@ static void
 fu_dell_dock_plugin_class_init(FuDellDockPluginClass *klass)
 {
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
-	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	object_class->constructed = fu_dell_dock_plugin_constructed;
+	plugin_class->constructed = fu_dell_dock_plugin_constructed;
 	plugin_class->device_registered = fu_dell_dock_plugin_device_registered;
 	plugin_class->backend_device_added = fu_dell_dock_plugin_backend_device_added;
 	plugin_class->backend_device_removed = fu_dell_dock_plugin_backend_device_removed;

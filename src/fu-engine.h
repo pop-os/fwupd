@@ -13,7 +13,7 @@
 #include "fwupd-device.h"
 #include "fwupd-enums.h"
 
-#include "fu-config.h"
+#include "fu-engine-config.h"
 #include "fu-release.h"
 
 #define FU_TYPE_ENGINE (fu_engine_get_type())
@@ -67,7 +67,7 @@ const gchar *
 fu_engine_get_host_security_id(FuEngine *self);
 XbSilo *
 fu_engine_get_silo_from_blob(FuEngine *self, GBytes *blob_cab, GError **error);
-FuConfig *
+FuEngineConfig *
 fu_engine_get_config(FuEngine *self);
 GPtrArray *
 fu_engine_get_plugins(FuEngine *self);
@@ -194,8 +194,6 @@ void
 fu_engine_set_approved_firmware(FuEngine *self, GPtrArray *checksums);
 GPtrArray *
 fu_engine_get_blocked_firmware(FuEngine *self);
-void
-fu_engine_add_blocked_firmware(FuEngine *self, const gchar *checksum);
 gboolean
 fu_engine_set_blocked_firmware(FuEngine *self, GPtrArray *checksums, GError **error);
 gchar *
@@ -204,8 +202,6 @@ gboolean
 fu_engine_modify_config(FuEngine *self, const gchar *key, const gchar *value, GError **error);
 FuContext *
 fu_engine_get_context(FuEngine *self);
-void
-fu_engine_md_refresh_device_from_component(FuEngine *self, FuDevice *device, XbNode *component);
 GPtrArray *
 fu_engine_get_releases_for_device(FuEngine *self,
 				  FuEngineRequest *request,
@@ -235,6 +231,8 @@ void
 fu_engine_set_silo(FuEngine *self, XbSilo *silo);
 XbNode *
 fu_engine_get_component_by_guids(FuEngine *self, FuDevice *device);
+gchar *
+fu_engine_get_remote_id_for_blob(FuEngine *self, GBytes *blob);
 gboolean
 fu_engine_schedule_update(FuEngine *self,
 			  FuDevice *device,

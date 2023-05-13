@@ -18,9 +18,6 @@ plugin_builtin_thunderbolt = static_library('fu_plugin_thunderbolt',
 )
 plugin_builtins += plugin_builtin_thunderbolt
 
-install_data(['thunderbolt.conf'],
-  install_dir: join_paths(sysconfdir, 'fwupd')
-)
 # we use functions from 2.52 in the tests
 if get_option('tests') and run_sanitize_unsafe_tests and umockdev.found() and gio.version().version_compare('>= 2.52')
   env = environment()
@@ -44,7 +41,10 @@ if get_option('tests') and run_sanitize_unsafe_tests and umockdev.found() and gi
       fwupdplugin,
       plugin_builtin_thunderbolt,
     ],
-    c_args: cargs
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   if get_option('b_sanitize') == 'address'
     env.prepend('LD_PRELOAD', 'libasan.so.5', 'libumockdev-preload.so.0', separator: ' ')

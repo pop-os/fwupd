@@ -32,6 +32,11 @@
 #define SYSTEMD_FWUPD_UNIT	"fwupd.service"
 #define SYSTEMD_SNAP_FWUPD_UNIT "snap.fwupd.fwupd.service"
 
+static gchar *
+fu_util_remote_to_string(FwupdRemote *remote, guint idt);
+static gchar *
+fu_util_release_to_string(FwupdRelease *rel, guint idt);
+
 const gchar *
 fu_util_get_systemd_unit(void)
 {
@@ -73,11 +78,11 @@ fu_util_using_correct_daemon(GError **error)
 
 	default_target = fu_systemd_get_default_target(&error_local);
 	if (default_target == NULL) {
-		g_debug("Systemd isn't accessible: %s\n", error_local->message);
+		g_info("systemd is not accessible: %s", error_local->message);
 		return TRUE;
 	}
 	if (!fu_systemd_unit_check_exists(target, &error_local)) {
-		g_debug("wrong target: %s\n", error_local->message);
+		g_info("wrong target: %s", error_local->message);
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INVALID_ARGS,
@@ -113,7 +118,7 @@ fu_util_traverse_tree(GNode *n, gpointer data)
 	} else if (FWUPD_IS_RELEASE(n->data)) {
 		FwupdRelease *release = FWUPD_RELEASE(n->data);
 		tmp = fu_util_release_to_string(release, idx);
-		g_debug("%s", tmp);
+		g_info("%s", tmp);
 	}
 
 	/* root node */
@@ -122,7 +127,8 @@ fu_util_traverse_tree(GNode *n, gpointer data)
 		    g_strdup_printf("%s %s",
 				    fwupd_client_get_host_vendor(helper->client),
 				    fwupd_client_get_host_product(helper->client));
-		g_print("%s\n│\n", str);
+		fu_console_print_literal(helper->console, str);
+		fu_console_print_literal(helper->console, "│");
 		return FALSE;
 	}
 
@@ -630,7 +636,7 @@ fu_util_branch_for_display(const gchar *branch)
 	return branch;
 }
 
-gchar *
+static gchar *
 fu_util_release_get_name(FwupdRelease *release)
 {
 	const gchar *name = fwupd_release_get_name(release);
@@ -1243,6 +1249,10 @@ fu_util_device_problem_to_string(FwupdClient *client, FwupdDevice *dev, FwupdDev
 		/* TRANSLATORS: another application is updating the device already */
 		return g_strdup(_("An update is in progress"));
 	}
+	if (problem == FWUPD_DEVICE_PROBLEM_IN_USE) {
+		/* TRANSLATORS: device cannot be interrupted, for instance taking a phone call */
+		return g_strdup(_("Device is in use"));
+	}
 	return NULL;
 }
 
@@ -1265,7 +1275,7 @@ fu_util_device_to_string(FwupdClient *client, FwupdDevice *dev, guint idt)
 	if (g_getenv("FWUPD_VERBOSE") != NULL) {
 		g_autofree gchar *debug_str = NULL;
 		debug_str = fwupd_device_to_string(dev);
-		g_debug("%s", debug_str);
+		g_info("%s", debug_str);
 		return NULL;
 	}
 
@@ -1739,6 +1749,10 @@ fu_util_release_flag_to_string(FwupdReleaseFlags release_flag)
 		/* TRANSLATORS: is not supported by the vendor */
 		return _("Community supported");
 	}
+	if (release_flag == FWUPD_RELEASE_FLAG_TRUSTED_REPORT) {
+		/* TRANSLATORS: someone we trust has tested this */
+		return _("Tested by trusted vendor");
+	}
 
 	/* fall back for unknown types */
 	return fwupd_release_flag_to_string(release_flag);
@@ -1787,16 +1801,7 @@ fu_util_report_add_string(FwupdReport *report, guint idt, GString *str)
 	}
 }
 
-gchar *
-fu_util_report_to_string(FwupdReport *report, guint idt)
-{
-	g_autoptr(GString) str = g_string_new(NULL);
-	g_return_val_if_fail(FWUPD_IS_RELEASE(report), NULL);
-	fu_util_report_add_string(report, idt, str);
-	return g_string_free(g_steal_pointer(&str), FALSE);
-}
-
-gchar *
+static gchar *
 fu_util_release_to_string(FwupdRelease *rel, guint idt)
 {
 	const gchar *title;
@@ -1806,11 +1811,12 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 	GPtrArray *reports = fwupd_release_get_reports(rel);
 	guint64 flags = fwupd_release_get_flags(rel);
 	g_autofree gchar *desc_fb = NULL;
+	g_autofree gchar *name = fu_util_release_get_name(rel);
 	g_autoptr(GString) str = g_string_new(NULL);
 
 	g_return_val_if_fail(FWUPD_IS_RELEASE(rel), NULL);
 
-	fu_string_append(str, idt, fwupd_release_get_name(rel), NULL);
+	fu_string_append(str, idt, name, NULL);
 
 	/* TRANSLATORS: version number of new firmware */
 	fu_string_append(str, idt + 1, _("New version"), fwupd_release_get_version(rel));
@@ -1971,7 +1977,7 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 	return g_string_free(g_steal_pointer(&str), FALSE);
 }
 
-gchar *
+static gchar *
 fu_util_remote_to_string(FwupdRemote *remote, guint idt)
 {
 	FwupdRemoteKind kind = fwupd_remote_get_kind(remote);
@@ -2348,7 +2354,7 @@ fu_util_security_events_to_string(GPtrArray *events, FuSecurityAttrToStringFlags
 		for (guint i = 0; i < events->len; i++) {
 			FwupdSecurityAttr *attr = g_ptr_array_index(events, i);
 			g_autofree gchar *tmp = fwupd_security_attr_to_string(attr);
-			g_debug("%s", tmp);
+			g_info("%s", tmp);
 		}
 	}
 
@@ -2595,7 +2601,7 @@ fu_util_send_report(FwupdClient *client,
 
 	/* server wanted us to see the message */
 	if (server_msg != NULL) {
-		g_debug("server message: %s", server_msg);
+		g_info("server message: %s", server_msg);
 		if (g_strstr_len(server_msg, -1, "known issue") != NULL &&
 		    json_object_has_member(json_object, "uri")) {
 			if (uri != NULL)

@@ -11,6 +11,7 @@
 #include "fu-ti-tps6598x-device.h"
 #include "fu-ti-tps6598x-firmware.h"
 #include "fu-ti-tps6598x-pd-device.h"
+#include "fu-ti-tps6598x-struct.h"
 
 struct _FuTiTps6598xDevice {
 	FuUsbDevice parent_instance;
@@ -44,6 +45,7 @@ fu_ti_tps6598x_device_usbep_read_raw(FuTiTps6598xDevice *self,
 {
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length = 0;
+	g_autofree gchar *title = g_strdup_printf("read@0x%x", addr);
 	g_autoptr(GByteArray) buf = g_byte_array_new();
 
 	/* first byte is length */
@@ -65,10 +67,7 @@ fu_ti_tps6598x_device_usbep_read_raw(FuTiTps6598xDevice *self,
 		g_prefix_error(error, "failed to contact device: ");
 		return NULL;
 	}
-	if (g_getenv("FWUPD_TI_TPS6598X_VERBOSE") != NULL) {
-		g_autofree gchar *title = g_strdup_printf("read@0x%x", addr);
-		fu_dump_raw(G_LOG_DOMAIN, title, buf->data, buf->len);
-	}
+	fu_dump_raw(G_LOG_DOMAIN, title, buf->data, buf->len);
 	if (actual_length != buf->len) {
 		g_set_error(error,
 			    G_IO_ERROR,
@@ -121,11 +120,9 @@ fu_ti_tps6598x_device_usbep_write(FuTiTps6598xDevice *self,
 {
 	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	g_autoptr(GPtrArray) chunks = NULL;
+	g_autofree gchar *title = g_strdup_printf("write@0x%x", addr);
 
-	if (g_getenv("FWUPD_TI_TPS6598X_VERBOSE") != NULL) {
-		g_autofree gchar *title = g_strdup_printf("write@0x%x", addr);
-		fu_dump_raw(G_LOG_DOMAIN, title, buf->data, buf->len);
-	}
+	fu_dump_raw(G_LOG_DOMAIN, title, buf->data, buf->len);
 	chunks =
 	    fu_chunk_array_mutable_new(buf->data, buf->len, 0x0, 0x0, TI_TPS6598X_USB_BUFFER_SIZE);
 	for (guint i = 0; i < chunks->len; i++) {
@@ -304,22 +301,20 @@ fu_ti_tps6598x_device_sfwi(FuTiTps6598xDevice *self, GError **error)
 	if (buf == NULL)
 		return FALSE;
 	res = buf->data[0] & 0b1111;
-	if (res != TI_TPS6598X_SFWI_SUCCESS) {
+	if (res != FU_TI_TPS6598X_SFWI_SUCCESS) {
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_ARGUMENT,
 			    "SFWi failed, got %s [0x%02x]",
-			    fu_ti_tps6598x_device_sfwi_strerror(res),
+			    fu_ti_tps6598x_sfwi_to_string(res),
 			    res);
 		return FALSE;
 	}
 
 	/* success */
-	if (g_getenv("FWUPD_TI_TPS6598X_VERBOSE") != NULL) {
-		g_debug("prod-key-present: %u", (guint)(buf->data[2] & 0b00010) >> 1);
-		g_debug("engr-key-present: %u", (guint)(buf->data[2] & 0b00100) >> 2);
-		g_debug("new-flash-region: %u", (guint)(buf->data[2] & 0b11000) >> 3);
-	}
+	g_debug("prod-key-present: %u", (guint)(buf->data[2] & 0b00010) >> 1);
+	g_debug("engr-key-present: %u", (guint)(buf->data[2] & 0b00100) >> 2);
+	g_debug("new-flash-region: %u", (guint)(buf->data[2] & 0b11000) >> 3);
 	return TRUE;
 }
 
@@ -338,19 +333,18 @@ fu_ti_tps6598x_device_sfwd(FuTiTps6598xDevice *self, GByteArray *data, GError **
 	if (buf == NULL)
 		return FALSE;
 	res = buf->data[0] & 0b1111;
-	if (res != TI_TPS6598X_SFWD_SUCCESS) {
+	if (res != FU_TI_TPS6598X_SFWD_SUCCESS) {
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_ARGUMENT,
 			    "SFWd failed, got %s [0x%02x]",
-			    fu_ti_tps6598x_device_sfwd_strerror(res),
+			    fu_ti_tps6598x_sfwd_to_string(res),
 			    res);
 		return FALSE;
 	}
 
 	/* success */
-	if (g_getenv("FWUPD_TI_TPS6598X_VERBOSE") != NULL)
-		g_debug("more-data-expected: %i", (buf->data[0] & 0x80) > 0);
+	g_debug("more-data-expected: %i", (buf->data[0] & 0x80) > 0);
 	return TRUE;
 }
 
@@ -369,25 +363,23 @@ fu_ti_tps6598x_device_sfws(FuTiTps6598xDevice *self, GByteArray *data, GError **
 	if (buf == NULL)
 		return FALSE;
 	res = buf->data[0] & 0b1111;
-	if (res != TI_TPS6598X_SFWS_SUCCESS) {
+	if (res != FU_TI_TPS6598X_SFWS_SUCCESS) {
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_ARGUMENT,
 			    "SFWs failed, got %s [0x%02x]",
-			    fu_ti_tps6598x_device_sfws_strerror(res),
+			    fu_ti_tps6598x_sfws_to_string(res),
 			    res);
 		return FALSE;
 	}
 
 	/* success */
-	if (g_getenv("FWUPD_TI_TPS6598X_VERBOSE") != NULL) {
-		g_debug("more-data-expected: %i", (buf->data[0] & 0x80) > 0);
-		g_debug("signature-data-block: %u", (guint)buf->data[1]);
-		g_debug("prod-key-present: %u", (guint)(buf->data[2] & 0b00010) >> 1);
-		g_debug("engr-key-present: %u", (guint)(buf->data[2] & 0b00100) >> 2);
-		g_debug("new-flash-region: %u", (guint)(buf->data[2] & 0b11000) >> 3);
-		g_debug("hash-match: %u", (guint)(buf->data[2] & 0b1100000) >> 5);
-	}
+	g_debug("more-data-expected: %i", (buf->data[0] & 0x80) > 0);
+	g_debug("signature-data-block: %u", (guint)buf->data[1]);
+	g_debug("prod-key-present: %u", (guint)(buf->data[2] & 0b00010) >> 1);
+	g_debug("engr-key-present: %u", (guint)(buf->data[2] & 0b00100) >> 2);
+	g_debug("new-flash-region: %u", (guint)(buf->data[2] & 0b11000) >> 3);
+	g_debug("hash-match: %u", (guint)(buf->data[2] & 0b1100000) >> 5);
 	return TRUE;
 }
 

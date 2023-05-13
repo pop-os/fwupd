@@ -16,7 +16,9 @@
 #include "fu-wac-module-bluetooth-id6.h"
 #include "fu-wac-module-bluetooth.h"
 #include "fu-wac-module-scaler.h"
+#include "fu-wac-module-touch-id7.h"
 #include "fu-wac-module-touch.h"
+#include "fu-wac-struct.h"
 
 typedef struct {
 	guint32 start_addr;
@@ -123,13 +125,11 @@ fu_wac_device_to_string(FuDevice *device, guint idt, GString *str)
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->configuration);
 		fu_string_append(str, idt, "Configuration", tmp);
 	}
-	if (g_getenv("FWUPD_WACOM_USB_VERBOSE") != NULL) {
-		for (guint i = 0; i < self->flash_descriptors->len; i++) {
-			FuWacFlashDescriptor *fd = g_ptr_array_index(self->flash_descriptors, i);
-			g_autofree gchar *title = g_strdup_printf("FlashDescriptor%02u", i);
-			fu_string_append(str, idt, title, NULL);
-			fu_wac_device_flash_descriptor_to_string(fd, idt + 1, str);
-		}
+	for (guint i = 0; i < self->flash_descriptors->len; i++) {
+		FuWacFlashDescriptor *fd = g_ptr_array_index(self->flash_descriptors, i);
+		g_autofree gchar *title = g_strdup_printf("FlashDescriptor%02u", i);
+		fu_string_append(str, idt, title, NULL);
+		fu_wac_device_flash_descriptor_to_string(fd, idt + 1, str);
 	}
 	status_str = fu_wac_device_status_to_string(self->status_word);
 	fu_string_append(str, idt, "Status", status_str->str);
@@ -237,7 +237,7 @@ fu_wac_device_ensure_flash_descriptors(FuWacDevice *self, GError **error)
 		return FALSE;
 	}
 
-	g_debug("added %u flash descriptors", self->flash_descriptors->len);
+	g_info("added %u flash descriptors", self->flash_descriptors->len);
 	return TRUE;
 }
 
@@ -278,14 +278,13 @@ fu_wac_device_ensure_checksums(FuWacDevice *self, GError **error)
 
 	/* parse */
 	updater_version = fu_memread_uint32(buf + 1, G_LITTLE_ENDIAN);
-	g_debug("updater-version: %" G_GUINT32_FORMAT, updater_version);
+	g_info("updater-version: %" G_GUINT32_FORMAT, updater_version);
 
 	/* get block checksums */
 	g_array_set_size(self->checksums, 0);
 	for (guint i = 0; i < self->nr_flash_blocks; i++) {
 		guint32 csum = fu_memread_uint32(buf + 5 + (i * 4), G_LITTLE_ENDIAN);
-		if (g_getenv("FWUPD_WACOM_USB_VERBOSE") != NULL)
-			g_debug("checksum block %02u: 0x%08x", i, (guint)csum);
+		g_debug("checksum block %02u: 0x%08x", i, (guint)csum);
 		g_array_append_val(self->checksums, csum);
 	}
 	g_debug("added %u checksums", self->flash_descriptors->len);
@@ -592,8 +591,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 
 		/* calculate expected checksum and save to device RAM */
 		csum_local[i] = GUINT32_TO_LE(fu_sum32w_bytes(blob_block, G_LITTLE_ENDIAN));
-		if (g_getenv("FWUPD_WACOM_USB_VERBOSE") != NULL)
-			g_debug("block checksum %02u: 0x%08x", i, csum_local[i]);
+		g_debug("block checksum %02u: 0x%08x", i, csum_local[i]);
 		if (!fu_wac_device_set_checksum_of_block(self, i, csum_local[i], error))
 			return FALSE;
 
@@ -651,8 +649,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 				    (guint)csum_local[i]);
 			return FALSE;
 		}
-		if (g_getenv("FWUPD_WACOM_USB_VERBOSE") != NULL)
-			g_debug("matched checksum at block %u of 0x%08x", i, csum_rom);
+		g_debug("matched checksum at block %u of 0x%08x", i, csum_rom);
 	}
 	fu_progress_step_done(progress);
 
@@ -789,6 +786,15 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 			fu_device_set_name(FU_DEVICE(module), name);
 			fu_device_set_version_from_uint16(FU_DEVICE(module), ver);
 			break;
+		case FU_WAC_MODULE_FW_TYPE_TOUCH_ID7:
+			module = fu_wac_module_touch_id7_new(FU_DEVICE(self));
+			name = g_strdup_printf("%s [Touch Module]",
+					       fu_device_get_name(FU_DEVICE(self)));
+			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
+			fu_device_set_name(FU_DEVICE(module), name);
+			fu_device_set_summary(FU_DEVICE(module), "ID7");
+			fu_device_set_version_from_uint16(FU_DEVICE(module), ver);
+			break;
 		case FU_WAC_MODULE_FW_TYPE_BLUETOOTH:
 			module = fu_wac_module_bluetooth_new(FU_DEVICE(self));
 			name = g_strdup_printf("%s [Bluetooth Module]",
@@ -799,10 +805,11 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 			break;
 		case FU_WAC_MODULE_FW_TYPE_BLUETOOTH_ID6:
 			module = fu_wac_module_bluetooth_id6_new(FU_DEVICE(self));
-			name = g_strdup_printf("%s [Bluetooth Module (ID6)]",
+			name = g_strdup_printf("%s [Bluetooth Module]",
 					       fu_device_get_name(FU_DEVICE(self)));
 			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 			fu_device_set_name(FU_DEVICE(module), name);
+			fu_device_set_summary(FU_DEVICE(module), "ID6");
 			fu_device_set_version_from_uint16(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_SCALER:

@@ -29,6 +29,7 @@ else
 endif
 
 plugin_builtin_uefi_capsule = static_library('fu_plugin_uefi_capsule',
+  rustgen.process('fu-uefi.rs'),
   sources: [
     'fu-uefi-capsule-plugin.c',
     'fu-uefi-bgrt.c',
@@ -57,6 +58,7 @@ plugin_builtins += plugin_builtin_uefi_capsule
 if get_option('compat_cli')
 fwupdate = executable(
   'fwupdate',
+  rustgen.process('fu-uefi.rs'),
   sources: [
     'fu-uefi-tool.c',
   ],
@@ -77,28 +79,18 @@ fwupdate = executable(
 )
 endif
 
-if get_option('compat_cli') and pandoc.found()
-  conf_man = configuration_data()
-  conf_man.set('PACKAGE_VERSION', fwupd_version)
-  fwupdate_md = configure_file(
-    input: 'fwupdate.md',
-    output: 'fwupdate.md',
-    configuration: conf_man,
-  )
+if get_option('compat_cli') and get_option('man')
   custom_target('fwupdate.1',
-    input: fwupdate_md,
+    input: 'fwupdate.md',
     output: 'fwupdate.1',
     command: [
-      pandoc, '--standalone', '--to', 'man', '@INPUT@', '-o', '@OUTPUT@',
+      generate_man, '@INPUT@', '-o', '@OUTPUT@',
+      '--replace', 'PACKAGE_VERSION', fwupd_version,
     ],
     install: true,
     install_dir: join_paths(mandir, 'man1'),
   )
 endif
-
-install_data(['uefi_capsule.conf'],
-  install_dir: join_paths(sysconfdir, 'fwupd')
-)
 
 # add all the .po files as inputs to watch
 ux_linguas = run_command(
@@ -138,6 +130,7 @@ if get_option('tests')
   env.set('FWUPD_LOCALSTATEDIR', '/tmp/fwupd-self-test/var')
   e = executable(
     'uefi-self-test',
+    rustgen.process('fu-uefi.rs'),
     sources: [
       'fu-self-test.c',
     ],
@@ -152,7 +145,10 @@ if get_option('tests')
       fwupdplugin,
       plugin_builtin_uefi_capsule,
     ],
-    c_args: cargs
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('uefi-self-test', e, env: env)
 

@@ -36,10 +36,10 @@ endif
 
 fwupd_engine_src = [
   'fu-cabinet-common.c',
-  'fu-config.c',
   'fu-debug.c',
   'fu-device-list.c',
   'fu-engine.c',
+  'fu-engine-config.c',
   'fu-engine-helper.c',
   'fu-engine-request.c',
   'fu-history.c',
@@ -47,7 +47,6 @@ fwupd_engine_src = [
   'fu-polkit-authority.c',
   'fu-release.c',
   'fu-release-common.c',
-  'fu-keyring-utils.c',
   'fu-plugin-list.c',
   'fu-remote-list.c',
   'fu-security-attr-common.c',
@@ -194,8 +193,18 @@ plugins_hdr = custom_target('fwupd-generate-plugins-header',
 )
 
 # build all the plugins and engine into one installed library
+fwupdengine_rs = custom_target('fu-engine-rs',
+  input: 'fu-engine.rs',
+  output: ['fu-engine-struct.c', 'fu-engine-struct.h'],
+  command: [
+    python3,
+    join_paths(meson.project_source_root(), 'libfwupdplugin', 'rustgen.py'),
+    '@INPUT@', '@OUTPUT0@', '@OUTPUT1@',
+  ],
+)
 fwupdengine = library(
   'fwupdengine',
+  fwupdengine_rs,
   resources_src,
   plugins_hdr,
   sources: fwupd_engine_src,
@@ -217,6 +226,7 @@ fwupdengine = library(
 
 fwupdtool = executable(
   'fwupdtool',
+  fwupdengine_rs,
   resources_src,
   plugins_hdr,
   export_dynamic: true,
@@ -245,52 +255,38 @@ fwupdtool = executable(
   install_dir: bindir
 )
 
-if pandoc.found()
-  conf_man = configuration_data()
-  conf_man.set('PACKAGE_VERSION', fwupd_version)
+if get_option('man')
   if build_daemon
-    fwupdmgr_md = configure_file(
-      input: 'fwupdmgr.md',
-      output: 'fwupdmgr.md',
-      configuration: conf_man,
-    )
     custom_target('fwupdmgr.1',
-      input: fwupdmgr_md,
+      input: 'fwupdmgr.md',
       output: 'fwupdmgr.1',
       command: [
-        pandoc, '--standalone', '--to', 'man', '@INPUT@', '-o', '@OUTPUT@',
+        generate_man, '@INPUT@', '-o', '@OUTPUT@',
+        '--replace', 'PACKAGE_VERSION', fwupd_version,
       ],
       install: true,
       install_dir: join_paths(mandir, 'man1'),
     )
   endif
   if build_daemon and get_option('compat_cli')
-    fwupdagent_md = configure_file(
-      input: 'fwupdagent.md',
-      output: 'fwupdagent.md',
-      configuration: conf_man,
-    )
     custom_target('fwupdagent.1',
-      input: fwupdagent_md,
+      input: 'fwupdagent.md',
       output: 'fwupdagent.1',
       command: [
-        pandoc, '--standalone', '--to', 'man', '@INPUT@', '-o', '@OUTPUT@',
+        generate_man, '@INPUT@', '-o', '@OUTPUT@',
+        '--replace', 'PACKAGE_VERSION', fwupd_version,
       ],
       install: true,
       install_dir: join_paths(mandir, 'man1'),
     )
   endif
   if build_standalone
-    fwupdtool_md = configure_file(
-      input: 'fwupdtool.md',
-      output: 'fwupdtool.md',
-      configuration: conf_man,
-    )
     custom_target('fwupdtool.1',
-      input: fwupdtool_md,
+      input: 'fwupdtool.md',
       output: 'fwupdtool.1',
       command: [
-        pandoc, '--standalone', '--to', 'man', '@INPUT@', '-o', '@OUTPUT@',
+        generate_man, '@INPUT@', '-o', '@OUTPUT@',
+        '--replace', 'PACKAGE_VERSION', fwupd_version,
       ],
       install: true,
       install_dir: join_paths(mandir, 'man1'),
@@ -309,6 +305,7 @@ endif
 
 executable(
   'fwupd',
+  fwupdengine_rs,
   resources_src,
   plugins_hdr,
   sources: [
@@ -346,6 +343,7 @@ if get_option('tests')
   env.set('FWUPD_LOCALSTATEDIR', '/tmp/fwupd-self-test/var')
   e = executable(
     'fu-self-test',
+    fwupdengine_rs,
     resources_src,
     colorhug_test_firmware,
     hwid_test_firmware,
@@ -370,6 +368,7 @@ if get_option('tests')
       plugin_libs,
     ],
     c_args: [
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
     ],
   )
   test('fu-self-test', e, is_parallel: false, timeout: 180, env: env)

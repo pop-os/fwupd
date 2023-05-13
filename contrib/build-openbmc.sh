@@ -1,7 +1,11 @@
 #!/bin/sh
 
-meson setup ../ \
+rm -rf build-openbmc
+
+meson setup build-openbmc \
     -Dauto_features=disabled \
+    -Ddocs=disabled \
+    -Dpolkit=disabled \
     -Dbash_completion=false \
     -Dcompat_cli=false \
     -Dfish_completion=false \
@@ -9,7 +13,11 @@ meson setup ../ \
     -Dhsi=disabled \
     -Dman=false \
     -Dmetainfo=false \
-    -Dtests=false \
+    -Dtests=true \
     -Dudevdir=/tmp \
     -Dsystemd_root_prefix=/tmp \
     $@
+
+ninja install -C build-openbmc
+build-openbmc/src/fwupdtool get-devices --verbose
+test $? -eq 2 || exit 1

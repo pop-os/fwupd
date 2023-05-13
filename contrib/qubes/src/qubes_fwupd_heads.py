@@ -8,17 +8,17 @@
 #
 
 import subprocess
+import tempfile
 import os
 import shutil
 import xml.etree.ElementTree as ET
 from packaging.version import Version
+from qubes_fwupd_common import EXIT_CODES, create_dirs, LooseVersion
 
 FWUPDTOOL = "/bin/fwupdtool"
 
 BOOT = "/boot"
 HEADS_UPDATES_DIR = os.path.join(BOOT, "updates")
-
-EXIT_CODES = {"ERROR": 1, "SUCCESS": 0, "NOTHING_TO_DO": 2}
 
 
 class FwupdHeads:
@@ -44,11 +44,28 @@ class FwupdHeads:
             print("Exiting...")
             return EXIT_CODES["NOTHING_TO_DO"]
 
+    def _get_hwid_device(self):
+        """
+        Device model for Heads update, currently supports ThinkPad only.
+        """
+        for line in self.dom0_hwids_info.splitlines():
+            if line.startswith("Family: ThinkPad"):
+                return line.split(":", 1)[1].split(" ", 1)[1].lower()
+        return None
+
     def _parse_metadata(self, metadata_file):
         """
         Parse metadata info.
         """
-        cmd_metadata = ["zcat", metadata_file]
+        metadata_ext = os.path.splitext(metadata_file)[-1]
+        if metadata_ext == ".xz":
+            cmd_metadata = ["xzcat", metadata_file]
+        elif metadata_ext == ".gz":
+            cmd_metadata = ["zcat", metadata_file]
+        else:
+            raise NotImplementedError(
+                "Unsupported metadata compression " + metadata_ext
+            )
         p = subprocess.Popen(cmd_metadata, stdout=subprocess.PIPE)
         self.metadata_info = p.communicate()[0].decode()
         if p.returncode != 0:
@@ -74,12 +91,12 @@ class FwupdHeads:
             return EXIT_CODES["NOTHING_TO_DO"]
         for release in heads_metadata_info.find("releases").findall("release"):
             release_ver = release.get("version")
-            if self.heads_version == "heads" or Version(release_ver) > Version(
-                self.heads_version
-            ):
-                if not self.heads_update_version or Version(release_ver) > Version(
-                    self.heads_update_version
-                ):
+            if self.heads_version == "heads" or LooseVersion(
+                release_ver
+            ) > LooseVersion(self.heads_version):
+                if not self.heads_update_version or LooseVersion(
+                    release_ver
+                ) > LooseVersion(self.heads_update_version):
                     self.heads_update_url = release.find("location").text
                     for sha in release.findall("checksum"):
                         if (
@@ -99,17 +116,22 @@ class FwupdHeads:
         Copies heads update to the boot path
         """
         heads_boot_path = os.path.join(HEADS_UPDATES_DIR, self.heads_update_version)
-        update_path = arch_path.replace(".cab", "/firmware.rom")
 
         heads_update_path = os.path.join(heads_boot_path, "firmware.rom")
-        if not os.path.exists(HEADS_UPDATES_DIR):
-            os.mkdir(HEADS_UPDATES_DIR)
+        create_dirs(HEADS_UPDATES_DIR)
         if os.path.exists(heads_update_path):
             print(f"Heads Update == {self.heads_update_version} " "already downloaded.")
             return EXIT_CODES["NOTHING_TO_DO"]
         else:
             os.mkdir(heads_boot_path)
-            shutil.copyfile(update_path, heads_update_path)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cmd_extract = ["gcab", "-x", f"--directory={tmpdir}", "--", arch_path]
+                p = subprocess.Popen(cmd_extract, stdout=subprocess.PIPE)
+                p.communicate()
+                if p.returncode != 0:
+                    raise Exception(f"gcab: Error while extracting {arch_path}.")
+                update_path = os.path.join(tmpdir, "firmware.rom")
+                shutil.copyfile(update_path, heads_update_path)
             print(
                 f"Heads Update == {self.heads_update_version} "
                 f"available at {heads_boot_path}"

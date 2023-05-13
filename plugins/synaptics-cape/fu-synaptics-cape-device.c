@@ -14,11 +14,12 @@
 #include "fu-synaptics-cape-firmware.h"
 
 /* defines timings */
-#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_WRITE_TIMEOUT	20000 /* us */
-#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_READ_TIMEOUT	30000 /* us */
-#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_RETRY_INTERVAL 10    /* ms */
-#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_RETRY_TIMEOUT	300   /* ms */
-#define FU_SYNAPTICS_CAPE_DEVICE_USB_RESET_DELAY_MS	3000  /* ms */
+#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_WRITE_TIMEOUT	20   /* ms */
+#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_READ_TIMEOUT	30   /* ms */
+#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_RETRY_INTERVAL 10   /* ms */
+#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_RETRY_TIMEOUT	300  /* ms */
+#define FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_INTR_TIMEOUT	5000 /* ms */
+#define FU_SYNAPTICS_CAPE_DEVICE_USB_RESET_DELAY_MS	3000 /* ms */
 
 /* defines CAPE command constant values and macro */
 #define FU_SYNAPTICS_CAPE_DEVICE_GOLEM_REPORT_ID 1 /* HID report id */
@@ -95,8 +96,7 @@ fu_synaptics_cape_device_set_report(FuSynapticsCapeDevice *self,
 	g_return_val_if_fail(data != NULL, FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
-	if (g_getenv("FWUPD_SYNAPTICS_CAPE_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "SetReport", (guint8 *)data, sizeof(*data));
+	fu_dump_raw(G_LOG_DOMAIN, "SetReport", (guint8 *)data, sizeof(*data));
 
 	return fu_hid_device_set_report(FU_HID_DEVICE(self),
 					FU_SYNAPTICS_CAPE_DEVICE_GOLEM_REPORT_ID,
@@ -126,8 +126,7 @@ fu_synaptics_cape_device_get_report(FuSynapticsCapeDevice *self,
 				      error))
 		return FALSE;
 
-	if (g_getenv("FWUPD_SYNAPTICS_CAPE_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
+	fu_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
 
 	/* success */
 	return TRUE;
@@ -149,15 +148,14 @@ fu_synaptics_cape_device_get_report_intr(FuSynapticsCapeDevice *self,
 					     (guint8 *)data,
 					     sizeof(*data),
 					     &actual_len,
-					     FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_RETRY_TIMEOUT,
+					     FU_SYNAPTICS_CAPE_DEVICE_USB_CMD_INTR_TIMEOUT,
 					     NULL,
 					     error)) {
 		g_prefix_error(error, "failed to get report over interrupt ep: ");
 		return FALSE;
 	}
 
-	if (g_getenv("FWUPD_SYNAPTICS_CAPE_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
+	fu_dump_raw(G_LOG_DOMAIN, "GetReport", (guint8 *)data, sizeof(*data));
 
 	/* success */
 	return TRUE;
@@ -530,15 +528,6 @@ fu_synaptics_cape_device_prepare_firmware(FuDevice *device,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INVALID_FILE,
 				    "data not aligned to 32 bits");
-		return NULL;
-	}
-
-	/* checks file size */
-	if (bufsz < FW_CAPE_HID_HEADER_SIZE * 2) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "file size is too small");
 		return NULL;
 	}
 

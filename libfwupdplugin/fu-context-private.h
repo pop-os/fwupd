@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "fu-config.h"
 #include "fu-context.h"
 #include "fu-hwids.h"
 #include "fu-progress.h"
@@ -41,6 +42,8 @@ void
 fu_context_add_firmware_gtype(FuContext *self, const gchar *id, GType gtype);
 GPtrArray *
 fu_context_get_firmware_gtype_ids(FuContext *self);
+GArray *
+fu_context_get_firmware_gtypes(FuContext *self);
 GType
 fu_context_get_firmware_gtype_by_id(FuContext *self, const gchar *id);
 void
@@ -53,5 +56,7 @@ FuSmbios *
 fu_context_get_smbios(FuContext *self);
 FuHwids *
 fu_context_get_hwids(FuContext *self);
+FuConfig *
+fu_context_get_config(FuContext *self);
 void
 fu_context_set_chassis_kind(FuContext *self, FuSmbiosChassisKind chassis_kind);

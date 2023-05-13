@@ -22,12 +22,24 @@ struct _FuNvmeDevice {
 	guint64 write_block_size;
 };
 
+#define FU_NVME_COMMIT_ACTION_CA0 0b000 /* replace only */
+#define FU_NVME_COMMIT_ACTION_CA1 0b001 /* replace, and activate on next reset */
+#define FU_NVME_COMMIT_ACTION_CA2 0b010 /* activate on next reset */
+#define FU_NVME_COMMIT_ACTION_CA3 0b011 /* replace, and activate immediately */
+
 /**
  * FU_NVME_DEVICE_FLAG_FORCE_ALIGN:
  *
  * Force alignment of the firmware file.
  */
 #define FU_NVME_DEVICE_FLAG_FORCE_ALIGN (1 << 0)
+
+/**
+ * FU_NVME_DEVICE_FLAG_COMMIT_CA3:
+ *
+ * Replace, and activate immediately rather than on next reset.
+ */
+#define FU_NVME_DEVICE_FLAG_COMMIT_CA3 (1 << 1)
 
 G_DEFINE_TYPE(FuNvmeDevice, fu_nvme_device, FU_TYPE_UDEV_DEVICE)
 
@@ -235,8 +247,7 @@ fu_nvme_device_parse_cns(FuNvmeDevice *self, const guint8 *buf, gsize sz, GError
 	fawr = (buf[260] & 0x10) >> 4;
 	nfws = (buf[260] & 0x0e) >> 1;
 	s1ro = buf[260] & 0x01;
-	if (g_getenv("FWUPD_NVME_VERBOSE") != NULL)
-		g_debug("fawr: %u, nr fw slots: %u, slot1 r/o: %u", fawr, nfws, s1ro);
+	g_debug("fawr: %u, nr fw slots: %u, slot1 r/o: %u", fawr, nfws, s1ro);
 
 	/* FRU globally unique identifier (FGUID) */
 	gu = fu_nvme_device_get_guid_safe(buf, 127);
@@ -254,20 +265,6 @@ fu_nvme_device_parse_cns(FuNvmeDevice *self, const guint8 *buf, gsize sz, GError
 		fu_device_add_instance_id(FU_DEVICE(self), mn);
 	}
 	return TRUE;
-}
-
-static void
-fu_nvme_device_dump(const gchar *title, const guint8 *buf, gsize sz)
-{
-	if (g_getenv("FWUPD_NVME_VERBOSE") == NULL)
-		return;
-	g_print("%s (%" G_GSIZE_FORMAT "):", title, sz);
-	for (gsize i = 0; i < sz; i++) {
-		if (i % 64 == 0)
-			g_print("\naddr 0x%04x: ", (guint)i);
-		g_print("%02x", buf[i]);
-	}
-	g_print("\n");
 }
 
 /*
@@ -323,9 +320,10 @@ fu_nvme_device_probe(FuDevice *device, GError **error)
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
 	}
 
-	/* all devices need at least a warm reset, but some quirked drives
+	/* most devices need at least a warm reset, but some quirked drives
 	 * need a full "cold" shutdown and startup */
-	if (!fu_device_has_flag(self, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN))
+	if (!fu_device_has_private_flag(device, FU_NVME_DEVICE_FLAG_COMMIT_CA3) &&
+	    !fu_device_has_flag(self, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN))
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
 
 	return TRUE;
@@ -344,7 +342,7 @@ fu_nvme_device_setup(FuDevice *device, GError **error)
 			       fu_device_get_physical_id(FU_DEVICE(self)));
 		return FALSE;
 	}
-	fu_nvme_device_dump("CNS", buf, sizeof(buf));
+	fu_dump_raw(G_LOG_DOMAIN, "CNS", buf, sizeof(buf));
 	if (!fu_nvme_device_parse_cns(self, buf, sizeof(buf), error))
 		return FALSE;
 
@@ -368,6 +366,7 @@ fu_nvme_device_write_firmware(FuDevice *device,
 	g_autoptr(GBytes) fw = NULL;
 	g_autoptr(GPtrArray) chunks = NULL;
 	guint64 block_size = self->write_block_size > 0 ? self->write_block_size : 0x1000;
+	guint8 commit_action = FU_NVME_COMMIT_ACTION_CA1;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -410,9 +409,11 @@ fu_nvme_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* commit */
+	if (fu_device_has_private_flag(device, FU_NVME_DEVICE_FLAG_COMMIT_CA3))
+		commit_action = FU_NVME_COMMIT_ACTION_CA3;
 	if (!fu_nvme_device_fw_commit(self,
 				      0x00, /* let controller choose */
-				      0x01, /* download replaces, activated on reboot */
+				      commit_action,
 				      0x00, /* boot partition identifier */
 				      error)) {
 		g_prefix_error(error, "failed to commit to auto slot: ");
@@ -456,6 +457,7 @@ fu_nvme_device_init(FuNvmeDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_summary(FU_DEVICE(self), "NVM Express solid state drive");
 	fu_device_add_icon(FU_DEVICE(self), "drive-harddisk");
@@ -466,6 +468,9 @@ fu_nvme_device_init(FuNvmeDevice *self)
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_NVME_DEVICE_FLAG_FORCE_ALIGN,
 					"force-align");
+	fu_device_register_private_flag(FU_DEVICE(self),
+					FU_NVME_DEVICE_FLAG_COMMIT_CA3,
+					"commit-ca3");
 }
 
 static void

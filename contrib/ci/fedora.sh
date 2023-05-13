@@ -29,7 +29,8 @@ meson setup \
     -Ddocs=disabled \
     -Dman=true \
     -Dtests=true \
-    -Db_sanitize=address,undefined \
+    -Dcompat_cli=true \
+    -Db_sanitize=undefined \
     -Dgusb:tests=false \
     -Dplugin_dummy=true \
     -Dplugin_flashrom=enabled \
@@ -37,6 +38,8 @@ meson setup \
     -Dplugin_uefi_capsule=enabled \
     -Dplugin_dell=enabled \
     -Dplugin_synaptics_mst=enabled $@
+ninja-build
+../contrib/ci/check-unused.py
 ninja-build dist
 popd
 VERSION=`meson introspect build --projectinfo | jq -r .version`
@@ -73,8 +76,8 @@ mkdir -p dist
 cp $HOME/rpmbuild/RPMS/*/*.rpm dist
 
 if [ "$CI" = "true" ]; then
-	sed "s,^DisabledPlugins=.*,DisabledPlugins=," -i /etc/fwupd/daemon.conf
-	sed "s,^AllowEmulation=false,AllowEmulation=true," -i /etc/fwupd/daemon.conf
+	sed "s,^DisabledPlugins=.*,DisabledPlugins=," -i /etc/fwupd/fwupd.conf
+	sed "s,^AllowEmulation=false,AllowEmulation=true," -i /etc/fwupd/fwupd.conf
 
 	# set up enough PolicyKit and D-Bus to run the daemon
 	mkdir -p /run/dbus

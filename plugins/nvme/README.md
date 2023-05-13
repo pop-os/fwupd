@@ -61,6 +61,7 @@ Since: 1.1.3
 ### Flags
 
 * `force-align` if image should be padded, since 1.2.4
+* `commit-ca3` download and activate immediately, since 1.8.15
 
 ## Vendor ID Security
 
@@ -69,3 +70,7 @@ The vendor ID is set from the udev vendor, for example set to `NVME:0x1179`
 ## External Interface Access
 
 This plugin requires ioctl `NVME_IOCTL_ADMIN_CMD` access.
+
+## Version Considerations
+
+This plugin has been available since fwupd version `1.1.2`.

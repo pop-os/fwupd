@@ -10,7 +10,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: fwupd\n"
 "Report-Msgid-Bugs-To: \n"
-"Language-Team: German (http://www.transifex.com/freedesktop/fwupd/language/de/)\n"
+"Language-Team: German (http://app.transifex.com/freedesktop/fwupd/language/de/)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -1343,14 +1343,6 @@ msgstr "Strenge SSL-Prüfungen werden ignoriert; um dies in Zukunft automatisch 
 msgid "Install Duration"
 msgstr "Installationsdauer"
 
-#. TRANSLATORS: command description
-msgid "Install a firmware blob on a device"
-msgstr "Firmware-Blob auf einem Gerät installieren"
-
-#. TRANSLATORS: command description
-msgid "Install a firmware file on this hardware"
-msgstr "Eine Firmware-Datei auf dieser Hardware installieren"
-
 msgid "Install old version of signed system firmware"
 msgstr "Alte Version der signierten System-Firmware installieren"
 
@@ -2135,10 +2127,6 @@ msgstr "Zusätzliche Informationen zur Fehlerdiagnose anzeigen"
 #. TRANSLATORS: command description
 msgid "Show history of firmware updates"
 msgstr "Verlauf von Firmware-Aktualisierungen anzeigen"
-
-#. TRANSLATORS: this is for plugin development
-msgid "Show plugin verbose information"
-msgstr "Ausführliche Informationen zum Plugin anzeigen"
 
 #. TRANSLATORS: command line option
 msgid "Show the calculated version of the dbx"

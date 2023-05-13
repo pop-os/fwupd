@@ -37,6 +37,9 @@ static void
 fu_mtd_plugin_constructed(GObject *obj)
 {
 	FuPlugin *plugin = FU_PLUGIN(obj);
+	FuContext *ctx = fu_plugin_get_context(plugin);
+	fu_context_add_quirk_key(ctx, "MtdMetadataOffset");
+	fu_context_add_quirk_key(ctx, "MtdMetadataSize");
 	fu_plugin_add_udev_subsystem(plugin, "mtd");
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_MTD_DEVICE);
 }
@@ -45,7 +48,6 @@ static void
 fu_mtd_plugin_class_init(FuMtdPluginClass *klass)
 {
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
-	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	object_class->constructed = fu_mtd_plugin_constructed;
+	plugin_class->constructed = fu_mtd_plugin_constructed;
 	plugin_class->startup = fu_mtd_plugin_startup;
 }

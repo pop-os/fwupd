@@ -374,6 +374,8 @@ fwupd_device_problem_to_string(FwupdDeviceProblem device_problem)
 		return "system-inhibit";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_UPDATE_IN_PROGRESS)
 		return "update-in-process";
+	if (device_problem == FWUPD_DEVICE_PROBLEM_IN_USE)
+		return "in-use";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_UNKNOWN)
 		return "unknown";
 	return NULL;
@@ -414,6 +416,8 @@ fwupd_device_problem_from_string(const gchar *device_problem)
 		return FWUPD_DEVICE_PROBLEM_SYSTEM_INHIBIT;
 	if (g_strcmp0(device_problem, "update-in-process") == 0)
 		return FWUPD_DEVICE_PROBLEM_UPDATE_IN_PROGRESS;
+	if (g_strcmp0(device_problem, "in-use") == 0)
+		return FWUPD_DEVICE_PROBLEM_IN_USE;
 	return FWUPD_DEVICE_PROBLEM_UNKNOWN;
 }
 
@@ -770,6 +774,8 @@ fwupd_release_flag_to_string(FwupdReleaseFlags release_flag)
 		return "is-alternate-branch";
 	if (release_flag == FWUPD_RELEASE_FLAG_IS_COMMUNITY)
 		return "is-community";
+	if (release_flag == FWUPD_RELEASE_FLAG_TRUSTED_REPORT)
+		return "trusted-report";
 	return NULL;
 }
 
@@ -802,6 +808,8 @@ fwupd_release_flag_from_string(const gchar *release_flag)
 		return FWUPD_RELEASE_FLAG_IS_ALTERNATE_BRANCH;
 	if (g_strcmp0(release_flag, "is-community") == 0)
 		return FWUPD_RELEASE_FLAG_IS_COMMUNITY;
+	if (g_strcmp0(release_flag, "trusted-report") == 0)
+		return FWUPD_RELEASE_FLAG_TRUSTED_REPORT;
 	return FWUPD_RELEASE_FLAG_NONE;
 }
 

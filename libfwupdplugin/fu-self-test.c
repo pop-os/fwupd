@@ -24,6 +24,7 @@
 #include "fu-device-progress.h"
 #include "fu-plugin-private.h"
 #include "fu-security-attrs-private.h"
+#include "fu-self-test-struct.h"
 #include "fu-smbios-private.h"
 
 static GMainLoop *_test_loop = NULL;
@@ -370,8 +371,7 @@ fu_smbios_func(void)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	dump = fu_firmware_to_string(FU_FIRMWARE(smbios));
-	if (g_getenv("FWUPD_VERBOSE") != NULL)
-		g_debug("%s", dump);
+	g_debug("%s", dump);
 
 	/* test for missing table */
 	str = fu_smbios_get_string(smbios, 0xff, 0, &error);
@@ -392,10 +392,28 @@ fu_smbios_func(void)
 }
 
 static void
+fu_kernel_func(void)
+{
+	const gchar *buf = "key=val foo bar=\"baz baz baz\" tail";
+	g_autoptr(GHashTable) hash = NULL;
+
+	hash = fu_kernel_parse_cmdline(buf, strlen(buf));
+	g_assert_nonnull(hash);
+	g_assert_true(g_hash_table_contains(hash, "key"));
+	g_assert_cmpstr(g_hash_table_lookup(hash, "key"), ==, "val");
+	g_assert_true(g_hash_table_contains(hash, "foo"));
+	g_assert_cmpstr(g_hash_table_lookup(hash, "foo"), ==, NULL);
+	g_assert_true(g_hash_table_contains(hash, "bar"));
+	g_assert_cmpstr(g_hash_table_lookup(hash, "bar"), ==, "baz baz baz");
+	g_assert_true(g_hash_table_contains(hash, "tail"));
+}
+
+static void
 fu_smbios3_func(void)
 {
 	const gchar *str;
 	gboolean ret;
+	g_autofree gchar *dump = NULL;
 	g_autofree gchar *path = NULL;
 	g_autoptr(FuSmbios) smbios = NULL;
 	g_autoptr(GError) error = NULL;
@@ -405,10 +423,8 @@ fu_smbios3_func(void)
 	ret = fu_smbios_setup_from_path(smbios, path, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	if (g_getenv("FWUPD_VERBOSE") != NULL) {
-		g_autofree gchar *dump = fu_firmware_to_string(FU_FIRMWARE(smbios));
-		g_debug("%s", dump);
-	}
+	dump = fu_firmware_to_string(FU_FIRMWARE(smbios));
+	g_debug("%s", dump);
 
 	/* get vendor */
 	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0x04, &error);
@@ -435,6 +451,7 @@ fu_context_flags_func(void)
 static void
 fu_context_hwids_dmi_func(void)
 {
+	g_autofree gchar *dump = NULL;
 	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
@@ -443,11 +460,8 @@ fu_context_hwids_dmi_func(void)
 	ret = fu_context_load_hwinfo(ctx, progress, FU_CONTEXT_HWID_FLAG_LOAD_DMI, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	if (g_getenv("FWUPD_VERBOSE") != NULL) {
-		g_autofree gchar *dump =
-		    fu_firmware_to_string(FU_FIRMWARE(fu_context_get_smbios(ctx)));
-		g_debug("%s", dump);
-	}
+	dump = fu_firmware_to_string(FU_FIRMWARE(fu_context_get_smbios(ctx)));
+	g_debug("%s", dump);
 
 	g_assert_cmpstr(fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER), ==, "FwupdTest");
 	g_assert_cmpuint(fu_context_get_chassis_kind(ctx), ==, 16);
@@ -648,11 +662,13 @@ fu_plugin_config_func(void)
 	gboolean ret;
 	gint rc;
 	g_autofree gchar *conf_dir = NULL;
-	g_autofree gchar *conf_file = NULL;
 	g_autofree gchar *fn = NULL;
 	g_autofree gchar *testdatadir = NULL;
 	g_autofree gchar *value = NULL;
-	g_autoptr(FuPlugin) plugin = fu_plugin_new(NULL);
+	g_autofree gchar *value_missing = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuPlugin) plugin = fu_plugin_new(ctx);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 
 	/* this is a build file */
@@ -662,13 +678,17 @@ fu_plugin_config_func(void)
 
 	/* remove existing file */
 	fu_plugin_set_name(plugin, "test");
-	conf_file = g_strdup_printf("%s.conf", fu_plugin_get_name(plugin));
-	fn = g_build_filename(conf_dir, conf_file, NULL);
+	fn = g_build_filename(conf_dir, "fwupd.conf", NULL);
 	ret = fu_path_mkdir_parent(fn, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	g_remove(fn);
 	ret = g_file_set_contents(fn, "", -1, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* load context */
+	ret = fu_context_load_hwinfo(ctx, progress, FU_CONTEXT_HWID_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -678,24 +698,17 @@ fu_plugin_config_func(void)
 	g_assert_true(ret);
 	g_assert_true(g_file_test(fn, G_FILE_TEST_EXISTS));
 
-	/* check it is world readable */
-	rc = g_stat(fn, &statbuf);
-	g_assert_cmpint(rc, ==, 0);
-	g_assert_cmpint(statbuf.st_mode & 0777, ==, 0644);
-
-	/* read back the value */
-	value = fu_plugin_get_config_value(plugin, "Key");
-	g_assert_cmpstr(value, ==, "True");
-	g_assert_true(fu_plugin_get_config_value_boolean(plugin, "Key"));
-
-	/* write it private, i.e. only readable by the user/group */
-	fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_SECURE_CONFIG);
-	ret = fu_plugin_set_config_value(plugin, "Key", "False", &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
+	/* check it is only readable by the user/group */
 	rc = g_stat(fn, &statbuf);
 	g_assert_cmpint(rc, ==, 0);
 	g_assert_cmpint(statbuf.st_mode & 0777, ==, 0640);
+
+	/* read back the value */
+	value_missing = fu_plugin_get_config_value(plugin, "NotGoingToExist", "Foo");
+	g_assert_cmpstr(value_missing, ==, "Foo");
+	value = fu_plugin_get_config_value(plugin, "Key", "Foo");
+	g_assert_cmpstr(value, ==, "True");
+	g_assert_true(fu_plugin_get_config_value_boolean(plugin, "Key", FALSE));
 }
 
 static void
@@ -972,6 +985,7 @@ fu_plugin_quirks_append_func(void)
 	g_assert_true(ret);
 	ret = fu_quirks_lookup_by_id_iter(quirks,
 					  "b19d1c67-a29a-51ce-9cae-f7b40fe5505b",
+					  NULL,
 					  fu_plugin_quirks_append_cb,
 					  &helper);
 	g_assert_true(ret);
@@ -1403,8 +1417,6 @@ fu_device_private_flags_func(void)
 	g_assert_cmpint(fu_device_get_private_flags(device), ==, TEST_FLAG_FOO);
 	fu_device_set_custom_flags(device, "baz");
 	g_assert_cmpint(fu_device_get_private_flags(device), ==, TEST_FLAG_FOO);
-	fu_device_add_private_flag(device, TEST_FLAG_BAZ);
-	g_assert_cmpint(fu_device_get_private_flags(device), ==, TEST_FLAG_FOO | TEST_FLAG_BAZ);
 
 	tmp = fu_device_to_string(device);
 	g_assert_cmpstr(tmp,
@@ -2551,6 +2563,11 @@ fu_firmware_archive_func(void)
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GFile) file = NULL;
 
+#ifndef HAVE_LIBARCHIVE
+	g_test_skip("no libarchive support");
+	return;
+#endif
+
 	fn = g_test_build_filename(G_TEST_BUILT, "tests", "firmware.zip", NULL);
 	file = g_file_new_for_path(fn);
 	ret = fu_firmware_parse_file(firmware, file, FWUPD_INSTALL_FLAG_NONE, &error);
@@ -3134,25 +3151,26 @@ fu_bios_settings_load_func(void)
 	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(GError) error = NULL;
 	g_autoptr(FuBiosSettings) p620_settings = NULL;
+	g_autoptr(FuBiosSettings) p620_6_3_settings = NULL;
 	g_autoptr(FuBiosSettings) p14s_settings = NULL;
 	g_autoptr(FuBiosSettings) xp29310_settings = NULL;
 	g_autoptr(GPtrArray) p14s_items = NULL;
 	g_autoptr(GPtrArray) p620_items = NULL;
+	g_autoptr(GPtrArray) p620_6_3_items = NULL;
 	g_autoptr(GPtrArray) xps9310_items = NULL;
 
 	/* load BIOS settings from a Lenovo P620 (with thinklmi driver problems) */
 	test_dir = g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", "lenovo-p620", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", test_dir, TRUE);
 
-	g_test_expect_message("FuBiosSettings", G_LOG_LEVEL_WARNING, "*BUG*");
 	ret = fu_context_reload_bios_settings(ctx, &error);
+#ifdef FU_THINKLMI_COMPAT
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	g_test_assert_expected_messages();
 
 	p620_settings = fu_context_get_bios_settings(ctx);
 	p620_items = fu_bios_settings_get_all(p620_settings);
-	g_assert_cmpint(p620_items->len, ==, 128);
+	g_assert_cmpint(p620_items->len, ==, 5);
 
 	/* make sure nothing pending */
 	ret = fu_context_get_bios_setting_pending_reboot(ctx);
@@ -3192,12 +3210,94 @@ fu_bios_settings_load_func(void)
 			g_assert_cmpstr(possible, ==, "Automatic");
 	}
 
-	/* check no BIOS settings have [Status in them */
+	/* check BIOS settings that should be read only */
 	for (guint i = 0; i < p620_items->len; i++) {
+		const gchar *name;
+		gboolean ro;
+
 		setting = g_ptr_array_index(p620_items, i);
+		ro = fwupd_bios_setting_get_read_only(setting);
 		tmp = fwupd_bios_setting_get_current_value(setting);
-		g_debug("%s", tmp);
-		g_assert_null(g_strrstr(tmp, "[Status"));
+		name = fwupd_bios_setting_get_name(setting);
+		g_debug("%s: %s", name, tmp);
+		if ((g_strcmp0(name, "pending_reboot") == 0) || (g_strrstr(tmp, "[Status") != NULL))
+			g_assert_true(ro);
+		else
+			g_assert_false(ro);
+	}
+
+#else
+	g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
+	g_assert_false(ret);
+	g_clear_error(&error);
+#endif
+	g_free(test_dir);
+
+	/* load BIOS settings from a Lenovo P620 running 6.3 */
+	test_dir =
+	    g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", "lenovo-p620-6.3", NULL);
+	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", test_dir, TRUE);
+
+	ret = fu_context_reload_bios_settings(ctx, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	p620_6_3_settings = fu_context_get_bios_settings(ctx);
+	p620_6_3_items = fu_bios_settings_get_all(p620_6_3_settings);
+	g_assert_cmpint(p620_6_3_items->len, ==, 5);
+
+	/* make sure nothing pending */
+	ret = fu_context_get_bios_setting_pending_reboot(ctx);
+	g_assert_false(ret);
+
+	/* check a BIOS setting reads from kernel 6.3 as expected by fwupd */
+	setting = fu_context_get_bios_setting(ctx, "com.thinklmi.AMDMemoryGuard");
+	g_assert_nonnull(setting);
+	tmp = fwupd_bios_setting_get_name(setting);
+	g_assert_cmpstr(tmp, ==, "AMDMemoryGuard");
+	tmp = fwupd_bios_setting_get_description(setting);
+	g_assert_cmpstr(tmp, ==, "AMDMemoryGuard");
+	tmp = fwupd_bios_setting_get_current_value(setting);
+	g_assert_cmpstr(tmp, ==, "Disable");
+	values = fwupd_bios_setting_get_possible_values(setting);
+	for (guint i = 0; i < values->len; i++) {
+		const gchar *possible = g_ptr_array_index(values, i);
+		if (i == 0)
+			g_assert_cmpstr(possible, ==, "Disable");
+		if (i == 1)
+			g_assert_cmpstr(possible, ==, "Enable");
+	}
+
+	/* try to read an BIOS setting known to have ][Status] to make sure we worked
+	 * around the thinklmi bug sufficiently
+	 */
+	setting = fu_context_get_bios_setting(ctx, "com.thinklmi.StartupSequence");
+	g_assert_nonnull(setting);
+	tmp = fwupd_bios_setting_get_current_value(setting);
+	g_assert_cmpstr(tmp, ==, "Primary");
+	values = fwupd_bios_setting_get_possible_values(setting);
+	for (guint i = 0; i < values->len; i++) {
+		const gchar *possible = g_ptr_array_index(values, i);
+		if (i == 0)
+			g_assert_cmpstr(possible, ==, "Primary");
+		if (i == 1)
+			g_assert_cmpstr(possible, ==, "Automatic");
+	}
+
+	/* check BIOS settings that should be read only */
+	for (guint i = 0; i < p620_6_3_items->len; i++) {
+		const gchar *name;
+		gboolean ro;
+
+		setting = g_ptr_array_index(p620_6_3_items, i);
+		ro = fwupd_bios_setting_get_read_only(setting);
+		tmp = fwupd_bios_setting_get_current_value(setting);
+		name = fwupd_bios_setting_get_name(setting);
+		g_debug("%s: %s", name, tmp);
+		if ((g_strcmp0(name, "pending_reboot") == 0) || (g_strrstr(tmp, "[Status") != NULL))
+			g_assert_true(ro);
+		else
+			g_assert_false(ro);
 	}
 
 	g_free(test_dir);
@@ -3207,12 +3307,13 @@ fu_bios_settings_load_func(void)
 	    g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", "lenovo-p14s-gen1", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", test_dir, TRUE);
 	ret = fu_context_reload_bios_settings(ctx, &error);
+#ifdef FU_THINKLMI_COMPAT
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	p14s_settings = fu_context_get_bios_settings(ctx);
 	p14s_items = fu_bios_settings_get_all(p14s_settings);
-	g_assert_cmpint(p14s_items->len, ==, 75);
+	g_assert_cmpint(p14s_items->len, ==, 3);
 
 	/* reboot should be pending on this one */
 	ret = fu_context_get_bios_setting_pending_reboot(ctx);
@@ -3239,7 +3340,11 @@ fu_bios_settings_load_func(void)
 	g_assert_nonnull(setting);
 	ret = fwupd_bios_setting_get_read_only(setting);
 	g_assert_true(ret);
-
+#else
+	g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
+	g_assert_false(ret);
+	g_clear_error(&error);
+#endif
 	g_free(test_dir);
 
 	/* load BIOS settings from a Dell XPS 9310 */
@@ -3771,11 +3876,62 @@ fu_progress_child_finished(void)
 	fu_progress_step_done(progress);
 }
 
+static void
+fu_plugin_struct_func(void)
+{
+	gboolean ret;
+	g_autoptr(GByteArray) st = fu_struct_self_test_new();
+	g_autoptr(GByteArray) st2 = NULL;
+	g_autoptr(GByteArray) st3 = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autofree gchar *str1 = NULL;
+	g_autofree gchar *oem_table_id = NULL;
+
+	/* size */
+	g_assert_cmpint(st->len, ==, 51);
+
+	/* getters and setters */
+	fu_struct_self_test_set_revision(st, 0xFF);
+	fu_struct_self_test_set_length(st, 0xDEAD);
+	ret = fu_struct_self_test_set_oem_table_id(st, "X", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(fu_struct_self_test_get_revision(st), ==, 0xFF);
+	g_assert_cmpint(fu_struct_self_test_get_length(st), ==, 0xDEAD);
+
+	/* pack */
+	str1 = fu_byte_array_to_string(st);
+	g_assert_cmpstr(str1,
+			==,
+			"12345678adde0000ff000000000000000000000000000000004142434445465800000000"
+			"00000000000000dfdfdfdf00000000");
+
+	/* parse */
+	st2 = fu_struct_self_test_parse(st->data, st->len, 0x0, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(st2);
+	g_assert_cmpint(fu_struct_self_test_get_revision(st2), ==, 0xFF);
+	g_assert_cmpint(fu_struct_self_test_get_length(st2), ==, 0xDEAD);
+	oem_table_id = fu_struct_self_test_get_oem_table_id(st2);
+	g_assert_cmpstr(oem_table_id, ==, "X");
+
+	/* parse failing signature */
+	st->data[0] = 0xFF;
+	st3 = fu_struct_self_test_parse(st->data, st->len, 0x0, &error);
+	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA);
+	g_assert_null(st3);
+	g_clear_error(&error);
+	ret = fu_struct_self_test_validate(st->data, st->len, 0x0, &error);
+	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA);
+	g_assert_false(ret);
+}
+
 int
 main(int argc, char **argv)
 {
 	g_autofree gchar *testdatadir = NULL;
 
+	(void)g_setenv("G_TEST_SRCDIR", SRCDIR, FALSE);
 	g_test_init(&argc, &argv, NULL);
 	g_type_ensure(FU_TYPE_IFD_BIOS);
 
@@ -3794,6 +3950,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_LOCALSTATEDIR", "/tmp/fwupd-self-test/var", TRUE);
 	(void)g_setenv("FWUPD_PROFILE", "1", TRUE);
 
+	g_test_add_func("/fwupd/struct", fu_plugin_struct_func);
 	g_test_add_func("/fwupd/plugin{quirks-append}", fu_plugin_quirks_append_func);
 	g_test_add_func("/fwupd/common{strnsplit}", fu_strsplit_func);
 	g_test_add_func("/fwupd/common{memmem}", fu_common_memmem_func);
@@ -3839,6 +3996,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/context{hwids-dmi}", fu_context_hwids_dmi_func);
 	g_test_add_func("/fwupd/smbios", fu_smbios_func);
 	g_test_add_func("/fwupd/smbios3", fu_smbios3_func);
+	g_test_add_func("/fwupd/kernel", fu_kernel_func);
 	g_test_add_func("/fwupd/firmware", fu_firmware_func);
 	g_test_add_func("/fwupd/firmware{common}", fu_firmware_common_func);
 	g_test_add_func("/fwupd/firmware{archive}", fu_firmware_archive_func);
@@ -3868,7 +4026,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/device{instance-ids}", fu_device_instance_ids_func);
 	g_test_add_func("/fwupd/device{composite-id}", fu_device_composite_id_func);
 	g_test_add_func("/fwupd/device{flags}", fu_device_flags_func);
-	g_test_add_func("/fwupd/device{custom-flags}", fu_device_private_flags_func);
+	g_test_add_func("/fwupd/device{private-flags}", fu_device_private_flags_func);
 	g_test_add_func("/fwupd/device{inhibit}", fu_device_inhibit_func);
 	g_test_add_func("/fwupd/device{inhibit-updateable}", fu_device_inhibit_updateable_func);
 	g_test_add_func("/fwupd/device{parent}", fu_device_parent_func);

@@ -11,6 +11,7 @@
 #include "fu-synaptics-rmi-common.h"
 #include "fu-synaptics-rmi-firmware.h"
 #include "fu-synaptics-rmi-ps2-device.h"
+#include "fu-synaptics-rmi-struct.h"
 #include "fu-synaptics-rmi-v5-device.h"
 #include "fu-synaptics-rmi-v6-device.h"
 #include "fu-synaptics-rmi-v7-device.h"
@@ -181,13 +182,6 @@ fu_synaptics_rmi_device_set_iepmode(FuSynapticsRmiDevice *self, gboolean iepmode
 }
 
 gboolean
-fu_synaptics_rmi_device_get_iepmode(FuSynapticsRmiDevice *self)
-{
-	FuSynapticsRmiDevicePrivate *priv = GET_PRIVATE(self);
-	return priv->in_iep_mode;
-}
-
-gboolean
 fu_synaptics_rmi_device_write_bus_select(FuSynapticsRmiDevice *self, guint8 bus, GError **error)
 {
 	FuSynapticsRmiDeviceClass *klass_rmi = FU_SYNAPTICS_RMI_DEVICE_GET_CLASS(self);
@@ -265,21 +259,19 @@ fu_synaptics_rmi_device_scan_pdt(FuSynapticsRmiDevice *self, GError **error)
 	}
 
 	/* for debug */
-	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-		for (guint i = 0; i < priv->functions->len; i++) {
-			FuSynapticsRmiFunction *func = g_ptr_array_index(priv->functions, i);
-			g_debug("PDT-%02u fn:0x%02x vr:%d sc:%d ms:0x%x "
-				"db:0x%02x cb:0x%02x cm:0x%02x qb:0x%02x",
-				i,
-				func->function_number,
-				func->function_version,
-				func->interrupt_source_count,
-				func->interrupt_mask,
-				func->data_base,
-				func->control_base,
-				func->command_base,
-				func->query_base);
-		}
+	for (guint i = 0; i < priv->functions->len; i++) {
+		FuSynapticsRmiFunction *func = g_ptr_array_index(priv->functions, i);
+		g_debug("PDT-%02u fn:0x%02x vr:%d sc:%d ms:0x%x "
+			"db:0x%02x cb:0x%02x cm:0x%02x qb:0x%02x",
+			i,
+			func->function_number,
+			func->function_version,
+			func->interrupt_source_count,
+			func->interrupt_mask,
+			func->data_base,
+			func->control_base,
+			func->command_base,
+			func->query_base);
 	}
 
 	/* success */
@@ -305,13 +297,6 @@ fu_synaptics_rmi_device_set_max_page(FuSynapticsRmiDevice *self, guint8 max_page
 {
 	FuSynapticsRmiDevicePrivate *priv = GET_PRIVATE(self);
 	priv->max_page = max_page;
-}
-
-guint8
-fu_synaptics_rmi_device_get_max_page(FuSynapticsRmiDevice *self)
-{
-	FuSynapticsRmiDevicePrivate *priv = GET_PRIVATE(self);
-	return priv->max_page;
 }
 
 static void

@@ -243,11 +243,9 @@ fu_logitech_scribe_device_query_data_size(FuLogitechScribeDevice *self,
 	size_query.size = kDefaultUvcGetLenQueryControlSize;
 	size_query.data = size_data;
 
-	if (g_getenv("FWUPD_LOGITECH_SCRIBE_VERBOSE") != NULL) {
-		g_debug("data size query request, unit: 0x%x selector: 0x%x",
-			(guchar)unit_id,
-			(guchar)control_selector);
-	}
+	g_debug("data size query request, unit: 0x%x selector: 0x%x",
+		(guchar)unit_id,
+		(guchar)control_selector);
 
 	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				  UVCIOC_CTRL_QUERY,
@@ -258,16 +256,11 @@ fu_logitech_scribe_device_query_data_size(FuLogitechScribeDevice *self,
 		return FALSE;
 	/* convert the data byte to int */
 	*data_size = size_data[1] << 8 | size_data[0];
-	if (g_getenv("FWUPD_LOGITECH_SCRIBE_VERBOSE") != NULL) {
-		g_debug("data size query response, size: %u unit: 0x%x selector: 0x%x",
-			*data_size,
-			(guchar)unit_id,
-			(guchar)control_selector);
-		fu_dump_raw(G_LOG_DOMAIN,
-			    "UVC_GET_LEN",
-			    size_data,
-			    kDefaultUvcGetLenQueryControlSize);
-	}
+	g_debug("data size query response, size: %u unit: 0x%x selector: 0x%x",
+		*data_size,
+		(guchar)unit_id,
+		(guchar)control_selector);
+	fu_dump_raw(G_LOG_DOMAIN, "UVC_GET_LEN", size_data, kDefaultUvcGetLenQueryControlSize);
 
 	/* success */
 	return TRUE;
@@ -283,13 +276,10 @@ fu_logitech_scribe_device_get_xu_control(FuLogitechScribeDevice *self,
 {
 	struct uvc_xu_control_query control_query;
 
-	if (g_getenv("FWUPD_LOGITECH_SCRIBE_VERBOSE") != NULL) {
-		g_debug("get xu control request, size: %" G_GUINT16_FORMAT
-			" unit: 0x%x selector: 0x%x",
-			data_size,
-			(guchar)unit_id,
-			(guchar)control_selector);
-	}
+	g_debug("get xu control request, size: %" G_GUINT16_FORMAT " unit: 0x%x selector: 0x%x",
+		data_size,
+		(guchar)unit_id,
+		(guchar)control_selector);
 	control_query.unit = unit_id;
 	control_query.selector = control_selector;
 	control_query.query = UVC_GET_CUR;
@@ -302,13 +292,12 @@ fu_logitech_scribe_device_get_xu_control(FuLogitechScribeDevice *self,
 				  FU_LOGITECH_SCRIBE_DEVICE_IOCTL_TIMEOUT,
 				  error))
 		return FALSE;
-	if (g_getenv("FWUPD_LOGITECH_SCRIBE_VERBOSE") != NULL) {
-		g_debug("received get xu control response, size: %u unit: 0x%x selector: 0x%x",
-			data_size,
-			(guchar)unit_id,
-			(guchar)control_selector);
-		fu_dump_raw(G_LOG_DOMAIN, "UVC_GET_CUR", data, data_size);
-	}
+	g_debug("received get xu control response, size: %u unit: 0x%x selector: 0x%x",
+		data_size,
+		(guchar)unit_id,
+		(guchar)control_selector);
+	fu_dump_raw(G_LOG_DOMAIN, "UVC_GET_CUR", data, data_size);
+
 	/* success */
 	return TRUE;
 }
@@ -326,6 +315,10 @@ static gboolean
 fu_logitech_scribe_device_probe(FuDevice *device, GError **error)
 {
 #if G_USB_CHECK_VERSION(0, 3, 3)
+	const gchar *id_v4l_capabilities;
+	const gchar *index;
+	GUdevDevice *udev_device = fu_udev_device_get_dev(FU_UDEV_DEVICE(device));
+
 	/* check is valid */
 	if (g_strcmp0(fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)), "video4linux") != 0) {
 		g_set_error(error,
@@ -336,14 +329,27 @@ fu_logitech_scribe_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 	}
 
-	/* only enumerate number 0. Ignore siblings like video1/video2/video3 etc */
-	if (fu_udev_device_get_number(FU_UDEV_DEVICE(device)) != 0) {
+	/* only interested in video capture device */
+	id_v4l_capabilities = g_udev_device_get_property(udev_device, "ID_V4L_CAPABILITIES");
+	if (g_strcmp0(id_v4l_capabilities, ":capture:") != 0) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "only device 0 supported on multi-device card");
+				    "only video capture device are supported");
 		return FALSE;
 	}
+
+	/* interested in lowest index only e,g, video0, ignore low format siblings like
+	 * video1/video2/video3 etc */
+	index = g_udev_device_get_sysfs_attr(udev_device, "index");
+	if (g_strcmp0(index, "0") != 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "only device with lower index supported");
+		return FALSE;
+	};
+
 	/* set the physical ID */
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "video4linux", error);
 #else

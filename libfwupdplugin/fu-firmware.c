@@ -27,7 +27,7 @@
 typedef struct {
 	FuFirmwareFlags flags;
 	FuFirmware *parent; /* noref */
-	GPtrArray *images; /* FuFirmware */
+	GPtrArray *images;  /* FuFirmware */
 	gchar *version;
 	guint64 version_raw;
 	GBytes *bytes;
@@ -46,8 +46,6 @@ G_DEFINE_TYPE_WITH_PRIVATE(FuFirmware, fu_firmware, G_TYPE_OBJECT)
 #define GET_PRIVATE(o) (fu_firmware_get_instance_private(o))
 
 enum { PROP_0, PROP_PARENT, PROP_LAST };
-
-#define FU_FIRMWARE_SEARCH_MAGIC_BUFSZ_MAX (32 * 1024 * 1024)
 
 /**
  * fu_firmware_flag_to_string:

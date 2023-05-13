@@ -493,6 +493,50 @@ typedef guint64 FuDeviceInternalFlags;
  */
 #define FU_DEVICE_INTERNAL_FLAG_NO_PROBE_COMPLETE (1ull << 27)
 
+/**
+ * FU_DEVICE_INTERNAL_FLAG_SAVE_INTO_BACKUP_REMOTE:
+ *
+ * Save the cabinet archive to persistent storage remote before starting the update process.
+ *
+ * This is useful when the network device is being updated, and different blobs inside the archive
+ * could be required in different scenarios. For instance, if the user installs a firmware update
+ * for a specific network device and then changes the SIM -- it might be they need the archive
+ * again and have no internet access.
+ *
+ * Since: 1.8.13
+ */
+#define FU_DEVICE_INTERNAL_FLAG_SAVE_INTO_BACKUP_REMOTE (1ull << 28)
+
+/**
+ * FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS:
+ *
+ * Set the device flags from the metadata if available.
+ *
+ * NOTE: These flags should only affect device update, and should never be used to affect
+ * enumeration.
+ *
+ * Since: 1.9.1
+ */
+#define FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS (1ull << 29)
+
+/**
+ * FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION:
+ *
+ * Set the device version from the metadata if available.
+ *
+ * Since: 1.9.1
+ */
+#define FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION (1ull << 30)
+
+/**
+ * FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM:
+ *
+ * Only use the metadata *checksum* to set device attributes.
+ *
+ * Since: 1.9.1
+ */
+#define FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM (1ull << 31)
+
 /* accessors */
 gchar *
 fu_device_to_string(FuDevice *self);
@@ -768,6 +812,8 @@ fu_device_emit_request(FuDevice *self, FwupdRequest *request);
 FwupdSecurityAttr *
 fu_device_security_attr_new(FuDevice *self, const gchar *appstream_id);
 
+const gchar *
+fu_device_get_instance_str(FuDevice *self, const gchar *key);
 void
 fu_device_add_instance_str(FuDevice *self, const gchar *key, const gchar *value);
 void

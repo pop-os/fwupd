@@ -648,6 +648,14 @@ typedef guint64 FwupdDeviceFlags;
  */
 #define FWUPD_DEVICE_PROBLEM_UPDATE_IN_PROGRESS (1llu << 9)
 /**
+ * FWUPD_DEVICE_PROBLEM_IN_USE:
+ *
+ * The device is in use and cannot be interrupted, for instance taking a phone call.
+ *
+ * Since 1.9.1
+ */
+#define FWUPD_DEVICE_PROBLEM_IN_USE (1llu << 10)
+/**
  * FWUPD_DEVICE_PROBLEM_UNKNOWN:
  *
  * This problem is not defined, this typically will happen from mismatched
@@ -737,6 +745,14 @@ typedef guint64 FwupdDeviceProblem;
  * Since: 1.7.5
  */
 #define FWUPD_RELEASE_FLAG_IS_COMMUNITY (1llu << 7)
+/**
+ * FWUPD_RELEASE_FLAG_TRUSTED_REPORT:
+ *
+ * The payload has been tested by a report we trust.
+ *
+ * Since: 1.9.1
+ */
+#define FWUPD_RELEASE_FLAG_TRUSTED_REPORT (1llu << 8)
 /**
  * FWUPD_RELEASE_FLAG_UNKNOWN:
  *

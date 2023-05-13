@@ -17,30 +17,31 @@ struct _FuThunderboltPlugin {
 
 G_DEFINE_TYPE(FuThunderboltPlugin, fu_thunderbolt_plugin, FU_TYPE_PLUGIN)
 
-/*5 seconds sleep until retimer is available                                       \
-				     after nvm update*/
+/* 5 seconds sleep until retimer is available after nvm update */
 #define FU_THUNDERBOLT_RETIMER_CLEANUP_DELAY 5000000
+
+/* defaults changed here will also be reflected in the fwupd.conf man page */
+#define FU_THUNDERBOLT_CONFIG_DEFAULT_MINIMUM_KERNEL_VERSION "4.13.0"
+#define FU_THUNDERBOLT_CONFIG_DEFAULT_DELAYED_ACTIVATION     FALSE
 
 static gboolean
 fu_thunderbolt_plugin_safe_kernel(FuPlugin *plugin, GError **error)
 {
-	g_autofree gchar *minimum_kernel = NULL;
-
-	minimum_kernel = fu_plugin_get_config_value(plugin, "MinimumKernelVersion");
-	if (minimum_kernel == NULL) {
-		g_debug("Ignoring kernel safety checks");
-		return TRUE;
-	}
-	return fu_kernel_check_version(minimum_kernel, error);
+	g_autofree gchar *min =
+	    fu_plugin_get_config_value(plugin,
+				       "MinimumKernelVersion",
+				       FU_THUNDERBOLT_CONFIG_DEFAULT_MINIMUM_KERNEL_VERSION);
+	return fu_kernel_check_version(min, error);
 }
 
 static gboolean
 fu_thunderbolt_plugin_device_created(FuPlugin *plugin, FuDevice *dev, GError **error)
 {
+	FuContext *ctx = fu_plugin_get_context(plugin);
 	fu_plugin_add_rule(plugin,
 			   FU_PLUGIN_RULE_INHIBITS_IDLE,
 			   "thunderbolt requires device wakeup");
-	if (fu_plugin_get_config_value_boolean(plugin, "RetimerOfflineMode"))
+	if (fu_context_has_hwid_flag(ctx, "retimer-offline-mode"))
 		fu_device_add_private_flag(dev, FU_THUNDERBOLT_DEVICE_FLAG_FORCE_ENUMERATION);
 	return TRUE;
 }
@@ -52,9 +53,11 @@ fu_thunderbolt_plugin_device_registered(FuPlugin *plugin, FuDevice *device)
 		return;
 
 	/* Operating system will handle finishing updates later */
-	if (fu_plugin_get_config_value_boolean(plugin, "DelayedActivation") &&
+	if (fu_plugin_get_config_value_boolean(plugin,
+					       "DelayedActivation",
+					       FU_THUNDERBOLT_CONFIG_DEFAULT_DELAYED_ACTIVATION) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE)) {
-		g_debug("Turning on delayed activation for %s", fu_device_get_name(device));
+		g_info("turning on delayed activation for %s", fu_device_get_name(device));
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SKIPS_RESTART);
 		fu_device_remove_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
@@ -114,9 +117,7 @@ static void
 fu_thunderbolt_plugin_class_init(FuThunderboltPluginClass *klass)
 {
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
-	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-
-	object_class->constructed = fu_thunderbolt_plugin_constructed;
+	plugin_class->constructed = fu_thunderbolt_plugin_constructed;
 	plugin_class->startup = fu_thunderbolt_plugin_startup;
 	plugin_class->device_registered = fu_thunderbolt_plugin_device_registered;
 	plugin_class->device_created = fu_thunderbolt_plugin_device_created;

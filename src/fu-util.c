@@ -37,8 +37,9 @@
 #include "fu-systemd.h"
 #endif
 
-/* custom return code */
+/* custom return codes */
 #define EXIT_NOTHING_TO_DO 2
+#define EXIT_NOT_FOUND	   3
 
 typedef enum {
 	FU_UTIL_OPERATION_UNKNOWN,
@@ -63,6 +64,7 @@ struct FuUtilPrivate {
 	gboolean no_unreported_check;
 	gboolean no_safety_check;
 	gboolean no_device_prompt;
+	gboolean no_emulation_check;
 	gboolean assume_yes;
 	gboolean sign;
 	gboolean show_all;
@@ -768,7 +770,7 @@ fu_util_device_test_component(FuUtilPrivate *priv,
 			return FALSE;
 		}
 		device_tmp = g_ptr_array_index(devices, 0);
-		if (protocol != NULL && !fu_device_has_protocol(device_tmp, protocol))
+		if (protocol != NULL && !fwupd_device_has_protocol(device_tmp, protocol))
 			continue;
 		device = g_object_ref(device_tmp);
 		json_builder_add_string_value(helper->builder, guid);
@@ -795,10 +797,10 @@ fu_util_device_test_component(FuUtilPrivate *priv,
 		const gchar *version = json_object_get_string_member(json_obj, "version");
 		json_builder_set_member_name(helper->builder, "version");
 		json_builder_add_string_value(helper->builder, version);
-		if (g_strcmp0(version, fu_device_get_version(device)) != 0) {
+		if (g_strcmp0(version, fwupd_device_get_version(device)) != 0) {
 			g_autofree gchar *str = NULL;
 			str = g_strdup_printf("version did not match: got %s, expected %s",
-					      fu_device_get_version(device),
+					      fwupd_device_get_version(device),
 					      version);
 			if (!priv->as_json) {
 				g_autofree gchar *msg = NULL;
@@ -807,7 +809,7 @@ fu_util_device_test_component(FuUtilPrivate *priv,
 				    /* TRANSLATORS: this is for the device tests, %1 is the device
 				     * version, %2 is what we expected */
 				    _("The device version did not match: got %s, expected %s"),
-				    fu_device_get_version(device),
+				    fwupd_device_get_version(device),
 				    version);
 				msg = fu_console_color_format(str2, FU_CONSOLE_COLOR_RED);
 				fu_console_print(priv->console, "%s: %s", name, msg);
@@ -839,7 +841,8 @@ fu_util_emulation_load_with_fallback(FuUtilPrivate *priv, GBytes *emulation_data
 					 emulation_data,
 					 priv->cancellable,
 					 &error_local)) {
-		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED) ||
+		    priv->no_emulation_check) {
 			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
 		}
@@ -1114,6 +1117,93 @@ fu_util_uninhibit(FuUtilPrivate *priv, gchar **values, GError **error)
 	return fwupd_client_uninhibit(priv->client, values[0], priv->cancellable, error);
 }
 
+typedef struct {
+	FuUtilPrivate *priv;
+	const gchar *value;
+	FwupdDevice *device; /* no-ref */
+} FuUtilWaitHelper;
+
+static void
+fu_util_device_wait_added_cb(FwupdClient *client, FwupdDevice *device, FuUtilWaitHelper *helper)
+{
+	FuUtilPrivate *priv = helper->priv;
+	if (g_strcmp0(fwupd_device_get_id(device), helper->value) == 0 ||
+	    fwupd_device_has_guid(device, helper->value)) {
+		helper->device = device;
+		g_main_loop_quit(priv->loop);
+		return;
+	}
+}
+
+static gboolean
+fu_util_device_wait_timeout_cb(gpointer user_data)
+{
+	FuUtilPrivate *priv = (FuUtilPrivate *)user_data;
+	g_main_loop_quit(priv->loop);
+	return G_SOURCE_REMOVE;
+}
+
+static gboolean
+fu_util_device_wait(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	g_autoptr(FwupdDevice) device = NULL;
+	g_autoptr(GPtrArray) devices = NULL;
+	g_autoptr(GSource) source = g_timeout_source_new_seconds(30);
+	g_autoptr(GTimer) timer = g_timer_new();
+	FuUtilWaitHelper helper = {.priv = priv, .value = values[0]};
+
+	/* one argument required */
+	if (g_strv_length(values) != 1) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_ARGS,
+				    "Invalid arguments, expected GUID|DEVICE-ID");
+		return FALSE;
+	}
+
+	/* check if the device already exists */
+	device = fwupd_client_get_device_by_id(priv->client, helper.value, NULL, NULL);
+	if (device != NULL) {
+		/* TRANSLATORS: the device is already connected */
+		fu_console_print_literal(priv->console, _("Device already exists"));
+		return TRUE;
+	}
+	devices = fwupd_client_get_devices_by_guid(priv->client, helper.value, NULL, NULL);
+	if (devices != NULL) {
+		/* TRANSLATORS: the device is already connected */
+		fu_console_print_literal(priv->console, _("Device already exists"));
+		return TRUE;
+	}
+
+	/* wait for device to show up */
+	fu_console_set_progress(priv->console, FWUPD_STATUS_IDLE, 0);
+	g_signal_connect(FWUPD_CLIENT(priv->client),
+			 "device-added",
+			 G_CALLBACK(fu_util_device_wait_added_cb),
+			 &helper);
+	g_source_set_callback(source, fu_util_device_wait_timeout_cb, priv, NULL);
+	g_source_attach(source, priv->main_ctx);
+	g_main_loop_run(priv->loop);
+
+	/* timed out */
+	if (helper.device == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_ARGS,
+			    "Stopped waiting for %s after %.0fms",
+			    helper.value,
+			    g_timer_elapsed(timer, NULL) * 1000.f);
+		return FALSE;
+	}
+
+	/* success */
+	fu_console_print(priv->console,
+			 /* TRANSLATORS: the device showed up in time */
+			 _("Successfully waited %.0fms for device"),
+			 g_timer_elapsed(timer, NULL) * 1000.f);
+	return TRUE;
+}
+
 static gboolean
 fu_util_quit(FuUtilPrivate *priv, gchar **values, GError **error)
 {
@@ -1260,10 +1350,10 @@ fu_util_local_install(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (g_strv_length(values) == 1) {
 		id = FWUPD_DEVICE_ID_ANY;
 	} else if (g_strv_length(values) == 2) {
-		id = values[1];
-		dev = fu_util_get_device_by_id(priv, id, error);
+		dev = fu_util_get_device_by_id(priv, values[1], error);
 		if (dev == NULL)
 			return FALSE;
+		id = fwupd_device_get_id(dev);
 	} else {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -1360,6 +1450,7 @@ fu_util_report_history_for_remote(FuUtilPrivate *priv,
 				  GError **error)
 {
 	g_autofree gchar *data = NULL;
+	g_autofree gchar *report_uri = NULL;
 	g_autofree gchar *sig = NULL;
 	g_autofree gchar *uri = NULL;
 	g_autoptr(FwupdRemote) remote = NULL;
@@ -1385,10 +1476,11 @@ fu_util_report_history_for_remote(FuUtilPrivate *priv,
 		return FALSE;
 
 	/* ask for permission */
+	report_uri = fwupd_remote_build_report_uri(remote, error);
+	if (report_uri == NULL)
+		return FALSE;
 	if (!priv->assume_yes && !fwupd_remote_get_automatic_reports(remote)) {
-		fu_console_print_kv(priv->console,
-				    _("Target"),
-				    fwupd_remote_get_report_uri(remote));
+		fu_console_print_kv(priv->console, _("Target"), report_uri);
 		fu_console_print_kv(priv->console, _("Payload"), data);
 		if (sig != NULL)
 			fu_console_print_kv(priv->console, _("Signature"), sig);
@@ -1402,12 +1494,7 @@ fu_util_report_history_for_remote(FuUtilPrivate *priv,
 	}
 
 	/* POST request and parse reply */
-	if (!fu_util_send_report(priv->client,
-				 fwupd_remote_get_report_uri(remote),
-				 data,
-				 sig,
-				 &uri,
-				 error))
+	if (!fu_util_send_report(priv->client, report_uri, data, sig, &uri, error))
 		return FALSE;
 
 	/* server wanted us to see a message */
@@ -1645,7 +1732,7 @@ fu_util_get_device_or_prompt(FuUtilPrivate *priv, gchar **values, GError **error
 	if (g_strv_length(values) >= 1) {
 		if (g_strv_length(values) > 1) {
 			for (guint i = 1; i < g_strv_length(values); i++)
-				g_debug("Ignoring extra input %s", values[i]);
+				g_debug("ignoring extra input %s", values[i]);
 		}
 		return fu_util_get_device_by_id(priv, values[0], error);
 	}
@@ -1689,7 +1776,7 @@ fu_util_get_release_for_device_version(FuUtilPrivate *priv,
 		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "Unable to locate release %s for %s",
 		    version,
-		    fu_device_get_name(device));
+		    fwupd_device_get_name(device));
 	return NULL;
 }
 
@@ -1722,7 +1809,7 @@ fu_util_verify_update(FuUtilPrivate *priv, gchar **values, GError **error)
 					fwupd_device_get_id(dev),
 					priv->cancellable,
 					error)) {
-		g_prefix_error(error, "failed to verify update %s: ", fu_device_get_name(dev));
+		g_prefix_error(error, "failed to verify update %s: ", fwupd_device_get_name(dev));
 		return FALSE;
 	}
 
@@ -1741,12 +1828,14 @@ fu_util_download_metadata_enable_lvfs(FuUtilPrivate *priv, GError **error)
 	remote = fwupd_client_get_remote_by_id(priv->client, "lvfs", priv->cancellable, error);
 	if (remote == NULL)
 		return TRUE;
-	fu_console_print(priv->console,
-			 /* TRANSLATORS: explain why no metadata available */
-			 _("No remotes are currently enabled so no metadata is available."));
-	fu_console_print(priv->console,
-			 /* TRANSLATORS: explain why no metadata available */
-			 _("Metadata can be obtained from the Linux Vendor Firmware Service."));
+	fu_console_print_literal(
+	    priv->console,
+	    /* TRANSLATORS: explain why no metadata available */
+	    _("No remotes are currently enabled so no metadata is available."));
+	fu_console_print_literal(
+	    priv->console,
+	    /* TRANSLATORS: explain why no metadata available */
+	    _("Metadata can be obtained from the Linux Vendor Firmware Service."));
 
 	/* TRANSLATORS: Turn on the remote */
 	if (!fu_console_input_bool(priv->console, TRUE, "%s", _("Enable this remote?")))
@@ -2047,7 +2136,7 @@ fu_util_verify(FuUtilPrivate *priv, gchar **values, GError **error)
 				 fwupd_device_get_id(dev),
 				 priv->cancellable,
 				 error)) {
-		g_prefix_error(error, "failed to verify %s: ", fu_device_get_name(dev));
+		g_prefix_error(error, "failed to verify %s: ", fwupd_device_get_name(dev));
 		return FALSE;
 	}
 
@@ -2603,7 +2692,7 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 	for (guint i = 0; i < devices->len; i++) {
 		FwupdDevice *dev = g_ptr_array_index(devices, i);
 		FwupdRelease *rel;
-		const gchar *device_id = fu_device_get_id(dev);
+		const gchar *device_id = fwupd_device_get_id(dev);
 		g_autoptr(GPtrArray) rels = NULL;
 		g_autoptr(GError) error_local = NULL;
 		gboolean dev_skip_byid = TRUE;
@@ -2869,7 +2958,8 @@ fu_util_reinstall(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* try to lookup/match release from client */
-	rel = fu_util_get_release_for_device_version(priv, dev, fu_device_get_version(dev), error);
+	rel =
+	    fu_util_get_release_for_device_version(priv, dev, fwupd_device_get_version(dev), error);
 	if (rel == NULL)
 		return FALSE;
 
@@ -3022,12 +3112,12 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	/* sanity check */
-	if (g_strcmp0(branch, fu_device_get_branch(dev)) == 0) {
+	if (g_strcmp0(branch, fwupd_device_get_branch(dev)) == 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "Device %s is already on branch %s",
-			    fu_device_get_name(dev),
+			    fwupd_device_get_name(dev),
 			    fu_util_branch_for_display(branch));
 		return FALSE;
 	}
@@ -3087,8 +3177,8 @@ fu_util_activate(FuUtilPrivate *priv, gchar **values, GError **error)
 		if (devices == NULL)
 			return FALSE;
 		for (guint i = 0; i < devices->len; i++) {
-			FuDevice *device = g_ptr_array_index(devices, i);
-			if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
+			FwupdDevice *device = g_ptr_array_index(devices, i);
+			if (fwupd_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
 				has_pending = TRUE;
 				break;
 			}
@@ -3125,7 +3215,7 @@ fu_util_activate(FuUtilPrivate *priv, gchar **values, GError **error)
 		FwupdDevice *device = g_ptr_array_index(devices, i);
 		if (!fu_util_filter_device(priv, device))
 			continue;
-		if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION))
+		if (!fwupd_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION))
 			continue;
 		fu_console_print(
 		    priv->console,
@@ -3310,7 +3400,6 @@ fu_util_upload_security(FuUtilPrivate *priv, GPtrArray *attrs, GError **error)
 		return TRUE;
 	}
 	if (!priv->assume_yes && !fwupd_remote_get_automatic_security_reports(remote)) {
-		g_autofree gchar *tmp = NULL;
 		if (!fu_console_input_bool(priv->console,
 					   FALSE,
 					   /* TRANSLATORS: ask the user to share, %s is something
@@ -3527,7 +3616,7 @@ fu_util_sync_bkc(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "No HostBkc set in daemon.conf");
+				    "No HostBkc set in fwupd.conf");
 		return FALSE;
 	}
 	devices = fwupd_client_get_devices(priv->client, NULL, error);
@@ -4564,7 +4653,7 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
 			      _("FILE [DEVICE-ID|GUID]"),
 			      /* TRANSLATORS: command description */
-			      _("Install a firmware file on this hardware"),
+			      _("Install a firmware file in cabinet format on this hardware"),
 			      fu_util_local_install);
 	fu_util_cmd_array_add(cmd_array,
 			      "get-details",
@@ -4695,7 +4784,7 @@ main(int argc, char *argv[])
 			      "modify-config",
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
 			      _("KEY,VALUE"),
-			      /* TRANSLATORS: sets something in daemon.conf */
+			      /* TRANSLATORS: sets something in the daemon configuration file */
 			      _("Modifies a daemon configuration value"),
 			      fu_util_modify_config);
 	fu_util_cmd_array_add(cmd_array,
@@ -4786,6 +4875,13 @@ main(int argc, char *argv[])
 			      _("Uninhibit the system to allow upgrades"),
 			      fu_util_uninhibit);
 	fu_util_cmd_array_add(cmd_array,
+			      "device-wait",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("GUID|DEVICE-ID"),
+			      /* TRANSLATORS: command description */
+			      _("Wait for a device to appear"),
+			      fu_util_device_wait);
+	fu_util_cmd_array_add(cmd_array,
 			      "quit",
 			      NULL,
 			      /* TRANSLATORS: command description */
@@ -4848,13 +4944,14 @@ main(int argc, char *argv[])
 
 	/* non-TTY consoles cannot answer questions */
 	if (!fu_util_setup_interactive(priv, &error_console)) {
-		g_debug("failed to initialize interactive console: %s", error_console->message);
+		g_info("failed to initialize interactive console: %s", error_console->message);
 		priv->no_unreported_check = TRUE;
 		priv->no_metadata_check = TRUE;
 		priv->no_reboot_check = TRUE;
 		priv->no_safety_check = TRUE;
 		priv->no_remote_check = TRUE;
 		priv->no_device_prompt = TRUE;
+		priv->no_emulation_check = TRUE;
 	} else {
 		is_interactive = TRUE;
 	}
@@ -5084,6 +5181,8 @@ main(int argc, char *argv[])
 			fu_console_print_literal(priv->console, str->str);
 		} else if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO))
 			return EXIT_NOTHING_TO_DO;
+		else if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND))
+			return EXIT_NOT_FOUND;
 		return EXIT_FAILURE;
 	}
 

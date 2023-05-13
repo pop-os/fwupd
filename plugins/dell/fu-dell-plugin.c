@@ -380,14 +380,12 @@ fu_dell_plugin_backend_device_added(FuPlugin *plugin,
 
 	dock_info = &buf.record->dock_info;
 
-	if (g_getenv("FWUPD_DELL_VERBOSE") != NULL) {
-		g_debug("Dock description: %s", dock_info->dock_description);
-		/* Note: fw package version is deprecated, look at components instead */
-		g_debug("Dock flash pkg ver: 0x%x", dock_info->flash_pkg_version);
-		g_debug("Dock cable type: %" G_GUINT32_FORMAT, dock_info->cable_type);
-		g_debug("Dock location: %d", dock_info->location);
-		g_debug("Dock component count: %d", dock_info->component_count);
-	}
+	g_debug("Dock description: %s", dock_info->dock_description);
+	/* Note: fw package version is deprecated, look at components instead */
+	g_debug("Dock flash pkg ver: 0x%x", dock_info->flash_pkg_version);
+	g_debug("Dock cable type: %" G_GUINT32_FORMAT, dock_info->cable_type);
+	g_debug("Dock location: %d", dock_info->location);
+	g_debug("Dock component count: %d", dock_info->component_count);
 	if (dock_info->flash_pkg_version == 0x00ffffff)
 		g_debug("WARNING: dock flash package version invalid");
 
@@ -1044,8 +1042,8 @@ fu_dell_plugin_class_init(FuDellPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->constructed = fu_dell_plugin_constructed;
 	object_class->finalize = fu_dell_finalize;
+	plugin_class->constructed = fu_dell_plugin_constructed;
 	plugin_class->to_string = fu_dell_plugin_to_string;
 	plugin_class->startup = fu_dell_plugin_startup;
 	plugin_class->coldplug = fu_dell_plugin_coldplug;

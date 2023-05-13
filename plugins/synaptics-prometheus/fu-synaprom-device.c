@@ -81,14 +81,12 @@ fu_synaprom_device_cmd_send(FuSynapromDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 25, NULL);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 75, NULL);
 
-	if (g_getenv("FWUPD_SYNAPROM_VERBOSE") != NULL) {
-		fu_dump_full(G_LOG_DOMAIN,
-			     "REQST",
-			     request->data,
-			     request->len,
-			     16,
-			     FU_DUMP_FLAGS_SHOW_ADDRESSES);
-	}
+	fu_dump_full(G_LOG_DOMAIN,
+		     "REQST",
+		     request->data,
+		     request->len,
+		     16,
+		     FU_DUMP_FLAGS_SHOW_ADDRESSES);
 	ret = g_usb_device_bulk_transfer(usb_device,
 					 FU_SYNAPROM_USB_REQUEST_EP,
 					 request->data,
@@ -124,14 +122,12 @@ fu_synaprom_device_cmd_send(FuSynapromDevice *device,
 		g_prefix_error(error, "failed to reply: ");
 		return FALSE;
 	}
-	if (g_getenv("FWUPD_SYNAPROM_VERBOSE") != NULL) {
-		fu_dump_full(G_LOG_DOMAIN,
-			     "REPLY",
-			     reply->data,
-			     actual_len,
-			     16,
-			     FU_DUMP_FLAGS_SHOW_ADDRESSES);
-	}
+	fu_dump_full(G_LOG_DOMAIN,
+		     "REPLY",
+		     reply->data,
+		     actual_len,
+		     16,
+		     FU_DUMP_FLAGS_SHOW_ADDRESSES);
 	fu_progress_step_done(progress);
 
 	/* parse as FuSynapromReplyGeneric */
@@ -201,12 +197,12 @@ fu_synaprom_device_setup(FuDevice *device, GError **error)
 	}
 	memcpy(&pkt, reply->data, sizeof(pkt));
 	product = GUINT32_FROM_LE(pkt.product);
-	g_debug("product ID is %u, version=%u.%u, buildnum=%u prod=%i",
-		product,
-		pkt.vmajor,
-		pkt.vminor,
-		GUINT32_FROM_LE(pkt.buildnum),
-		pkt.security[1] & FU_SYNAPROM_SECURITY1_PROD_SENSOR);
+	g_info("product ID is %u, version=%u.%u, buildnum=%u prod=%i",
+	       product,
+	       pkt.vmajor,
+	       pkt.vminor,
+	       GUINT32_FROM_LE(pkt.buildnum),
+	       pkt.security[1] & FU_SYNAPROM_SECURITY1_PROD_SENSOR);
 	fu_synaprom_device_set_version(self, pkt.vmajor, pkt.vminor, GUINT32_FROM_LE(pkt.buildnum));
 
 	/* get serial number */
@@ -243,33 +239,18 @@ fu_synaprom_device_setup(FuDevice *device, GError **error)
 FuFirmware *
 fu_synaprom_device_prepare_fw(FuDevice *device, GBytes *fw, FwupdInstallFlags flags, GError **error)
 {
-	FuSynapromFirmwareMfwHeader hdr;
-	guint32 product;
-	g_autoptr(GBytes) blob = NULL;
+	guint32 product_id;
 	g_autoptr(FuFirmware) firmware = fu_synaprom_firmware_new();
 
-	/* parse the firmware */
+	/* check the update header product and version */
 	if (!fu_firmware_parse(firmware, fw, flags, error))
 		return NULL;
-
-	/* check the update header product and version */
-	blob = fu_firmware_get_image_by_id_bytes(firmware, "mfw-update-header", error);
-	if (blob == NULL)
-		return NULL;
-	if (g_bytes_get_size(blob) != sizeof(hdr)) {
-		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
-				    "MFW metadata is invalid");
-		return NULL;
-	}
-	memcpy(&hdr, g_bytes_get_data(blob, NULL), sizeof(hdr));
-	product = GUINT32_FROM_LE(hdr.product);
-	if (product != FU_SYNAPROM_PRODUCT_PROMETHEUS) {
+	product_id = fu_synaprom_firmware_get_product_id(FU_SYNAPROM_FIRMWARE(firmware));
+	if (product_id != FU_SYNAPROM_PRODUCT_PROMETHEUS) {
 		if (flags & FWUPD_INSTALL_FLAG_IGNORE_VID_PID) {
 			g_warning("MFW metadata not compatible, "
 				  "got 0x%02x expected 0x%02x",
-				  product,
+				  product_id,
 				  (guint)FU_SYNAPROM_PRODUCT_PROMETHEUS);
 		} else {
 			g_set_error(error,
@@ -277,7 +258,7 @@ fu_synaprom_device_prepare_fw(FuDevice *device, GBytes *fw, FwupdInstallFlags fl
 				    G_IO_ERROR_NOT_SUPPORTED,
 				    "MFW metadata not compatible, "
 				    "got 0x%02x expected 0x%02x",
-				    product,
+				    product_id,
 				    (guint)FU_SYNAPROM_PRODUCT_PROMETHEUS);
 			return NULL;
 		}

@@ -350,9 +350,9 @@ fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 						       JCAT_VERIFY_FLAG_REQUIRE_SIGNATURE,
 						   &error_local);
 		if (results == NULL) {
-			g_debug("failed to verify payload %s: %s", basename, error_local->message);
+			g_info("failed to verify payload %s: %s", basename, error_local->message);
 		} else {
-			g_debug("verified payload %s: %u", basename, results->len);
+			g_info("verified payload %s: %u", basename, results->len);
 			release_flags |= FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD;
 		}
 
@@ -383,11 +383,11 @@ fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 							       JCAT_VERIFY_FLAG_REQUIRE_SIGNATURE,
 							       &error_local);
 			if (jcat_result == NULL) {
-				g_debug("failed to verify payload %s using detached: %s",
-					basename,
-					error_local->message);
+				g_info("failed to verify payload %s using detached: %s",
+				       basename,
+				       error_local->message);
 			} else {
-				g_debug("verified payload %s using detached", basename);
+				g_info("verified payload %s using detached", basename);
 				release_flags |= FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD;
 			}
 		}
@@ -602,7 +602,7 @@ fu_cabinet_build_silo_metainfo(FuCabinet *self, GCabFile *cabfile, GError **erro
 	/* validate against the Jcat file */
 	item = jcat_file_get_item_by_id(self->jcat_file, fn, NULL);
 	if (item == NULL) {
-		g_debug("failed to verify %s: no JcatItem", fn);
+		g_info("failed to verify %s: no JcatItem", fn);
 	} else {
 		g_autoptr(GError) error_local = NULL;
 		g_autoptr(GPtrArray) results = NULL;
@@ -613,15 +613,15 @@ fu_cabinet_build_silo_metainfo(FuCabinet *self, GCabFile *cabfile, GError **erro
 						       JCAT_VERIFY_FLAG_REQUIRE_SIGNATURE,
 						   &error_local);
 		if (results == NULL) {
-			g_debug("failed to verify %s: %s", fn, error_local->message);
+			g_info("failed to verify %s: %s", fn, error_local->message);
 		} else {
-			g_debug("verified metadata %s: %u", fn, results->len);
+			g_info("verified metadata %s: %u", fn, results->len);
 			release_flags |= FWUPD_RELEASE_FLAG_TRUSTED_METADATA;
 		}
 	}
 
 	/* actually parse the XML now */
-	g_debug("processing file: %s", fn);
+	g_info("processing file: %s", fn);
 	if (!fu_cabinet_build_silo_file(self, cabfile, release_flags, error)) {
 		g_prefix_error(error,
 			       "%s could not be loaded: ",
@@ -641,6 +641,13 @@ fu_cabinet_build_jcat_folder(FuCabinet *self, GCabFolder *cabfolder, GError **er
 	for (GSList *l = cabfiles; l != NULL; l = l->next) {
 		GCabFile *cabfile = GCAB_FILE(l->data);
 		const gchar *fn = gcab_file_get_extract_name(cabfile);
+		if (fn == NULL) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_FILE,
+					    "no extraction name set");
+			return FALSE;
+		}
 		if (g_str_has_suffix(fn, ".jcat")) {
 			GBytes *data_jcat = gcab_file_get_bytes(cabfile);
 			g_autoptr(GInputStream) istream = NULL;
@@ -664,6 +671,13 @@ fu_cabinet_build_silo_folder(FuCabinet *self, GCabFolder *cabfolder, GError **er
 	for (GSList *l = cabfiles; l != NULL; l = l->next) {
 		GCabFile *cabfile = GCAB_FILE(l->data);
 		const gchar *fn = gcab_file_get_extract_name(cabfile);
+		if (fn == NULL) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_FILE,
+					    "no extraction name set");
+			return FALSE;
+		}
 		if (!g_str_has_suffix(fn, ".metainfo.xml"))
 			continue;
 		if (!fu_cabinet_build_silo_metainfo(self, cabfile, error))
@@ -673,7 +687,7 @@ fu_cabinet_build_silo_folder(FuCabinet *self, GCabFolder *cabfolder, GError **er
 }
 
 static gboolean
-fu_cabinet_build_silo(FuCabinet *self, GBytes *data, GError **error)
+fu_cabinet_build_silo(FuCabinet *self, GError **error)
 {
 	GPtrArray *folders;
 	g_autoptr(XbBuilderFixup) fixup1 = NULL;
@@ -1056,7 +1070,7 @@ fu_cabinet_sign(FuCabinet *self,
 /**
  * fu_cabinet_parse:
  * @self: a #FuCabinet
- * @data: cabinet archive
+ * @data: (nullable): optional cabinet archive data
  * @flags: parse flags, e.g. %FU_CABINET_PARSE_FLAG_NONE
  * @error: (nullable): optional return location for an error
  *
@@ -1074,23 +1088,24 @@ fu_cabinet_parse(FuCabinet *self, GBytes *data, FuCabinetParseFlags flags, GErro
 	g_autoptr(XbQuery) query = NULL;
 
 	g_return_val_if_fail(FU_IS_CABINET(self), FALSE);
-	g_return_val_if_fail(data != NULL, FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 	g_return_val_if_fail(self->silo == NULL, FALSE);
 
-	/* decompress */
-	if (!fu_cabinet_decompress(self, data, error))
-		return FALSE;
+	/* decompress and calculate container hashes */
+	if (data != NULL) {
+		if (!fu_cabinet_decompress(self, data, error))
+			return FALSE;
+		self->container_checksum = g_compute_checksum_for_bytes(G_CHECKSUM_SHA1, data);
+		self->container_checksum_alt =
+		    g_compute_checksum_for_bytes(G_CHECKSUM_SHA256, data);
+	}
 
 	/* build xmlb silo */
-	self->container_checksum = g_compute_checksum_for_bytes(G_CHECKSUM_SHA1, data);
-	self->container_checksum_alt = g_compute_checksum_for_bytes(G_CHECKSUM_SHA256, data);
-	if (!fu_cabinet_build_silo(self, data, error))
+	if (!fu_cabinet_build_silo(self, error))
 		return FALSE;
 
 	/* sanity check */
-	components =
-	    xb_silo_query(self->silo, "components/component[@type='firmware']", 0, &error_local);
+	components = xb_silo_query(self->silo, "components/component", 0, &error_local);
 	if (components == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -1116,6 +1131,8 @@ fu_cabinet_parse(FuCabinet *self, GBytes *data, FuCabinetParseFlags flags, GErro
 	for (guint i = 0; i < components->len; i++) {
 		XbNode *component = g_ptr_array_index(components, i);
 		g_autoptr(GPtrArray) releases = NULL;
+		if (g_strcmp0(xb_node_get_attr(component, "type"), "generic") == 0)
+			continue;
 		releases = xb_node_query_full(component, query, &error_local);
 		if (releases == NULL) {
 			g_set_error(error,
@@ -1127,7 +1144,7 @@ fu_cabinet_parse(FuCabinet *self, GBytes *data, FuCabinetParseFlags flags, GErro
 		}
 		for (guint j = 0; j < releases->len; j++) {
 			XbNode *rel = g_ptr_array_index(releases, j);
-			g_debug("processing release: %s", xb_node_get_attr(rel, "version"));
+			g_info("processing release: %s", xb_node_get_attr(rel, "version"));
 			if (!fu_cabinet_parse_release(self, rel, error))
 				return FALSE;
 		}

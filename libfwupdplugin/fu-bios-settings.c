@@ -17,6 +17,8 @@
 #include "fu-path.h"
 #include "fu-string.h"
 
+#define LENOVO_READ_ONLY_NEEDLE "[Status:ShowOnly]"
+
 struct _FuBiosSettings {
 	GObject parent_instance;
 	GHashTable *descriptions;
@@ -171,20 +173,24 @@ fu_bios_setting_set_current_value(FwupdBiosSetting *attr, GError **error)
 	return TRUE;
 }
 
-#define LENOVO_POSSIBLE_NEEDLE	"[Optional:"
-#define LENOVO_READ_ONLY_NEEDLE "[Status:ShowOnly]"
-#define LENOVO_EXCLUDED		"[Excluded from boot order:"
-
 static void
 fu_bios_setting_set_read_only(FuBiosSettings *self, FwupdBiosSetting *attr)
 {
+	const gchar *tmp;
 	if (fwupd_bios_setting_get_kind(attr) == FWUPD_BIOS_SETTING_KIND_ENUMERATION) {
 		const gchar *value =
 		    g_hash_table_lookup(self->read_only, fwupd_bios_setting_get_id(attr));
 		if (g_strcmp0(value, fwupd_bios_setting_get_current_value(attr)) == 0)
 			fwupd_bios_setting_set_read_only(attr, TRUE);
 	}
+	tmp = g_strrstr(fwupd_bios_setting_get_current_value(attr), LENOVO_READ_ONLY_NEEDLE);
+	if (tmp != NULL)
+		fwupd_bios_setting_set_read_only(attr, TRUE);
 }
+
+#ifdef FU_THINKLMI_COMPAT
+#define LENOVO_POSSIBLE_NEEDLE "[Optional:"
+#define LENOVO_EXCLUDED	       "[Excluded from boot order:"
 
 static gboolean
 fu_bios_setting_fixup_lenovo_thinklmi_bug(FwupdBiosSetting *attr, GError **error)
@@ -195,20 +201,12 @@ fu_bios_setting_fixup_lenovo_thinklmi_bug(FwupdBiosSetting *attr, GError **error
 	g_autoptr(GString) right_str = NULL;
 	g_auto(GStrv) vals = NULL;
 
-	if (g_getenv("FWUPD_BIOS_SETTING_VERBOSE") != NULL) {
-		g_debug("Processing %s: (%s)",
-			fwupd_bios_setting_get_name(attr),
-			fwupd_bios_setting_get_current_value(attr));
-	}
+	/* debug */
+	g_debug("processing %s: (%s)",
+		fwupd_bios_setting_get_name(attr),
+		fwupd_bios_setting_get_current_value(attr));
 
-	/* We have read only */
-	tmp = g_strrstr(current_value, LENOVO_READ_ONLY_NEEDLE);
-	if (tmp != NULL) {
-		fwupd_bios_setting_set_read_only(attr, TRUE);
-		str = g_string_new_len(current_value, tmp - current_value);
-	} else {
-		str = g_string_new(current_value);
-	}
+	str = g_string_new(current_value);
 
 	/* empty string */
 	if (str->len == 0)
@@ -262,6 +260,7 @@ fu_bios_settings_run_folder_fixups(FwupdBiosSetting *attr, GError **error)
 		return fu_bios_setting_fixup_lenovo_thinklmi_bug(attr, error);
 	return TRUE;
 }
+#endif
 
 static gboolean
 fu_bios_setting_set_type(FuBiosSettings *self, FwupdBiosSetting *attr, GError **error)
@@ -276,31 +275,29 @@ fu_bios_setting_set_type(FuBiosSettings *self, FwupdBiosSetting *attr, GError **
 
 	/* lenovo thinklmi seems to be missing it even though it's mandatory :/ */
 	if (!fu_bios_setting_get_key(attr, "type", &data, &error_key)) {
-#if GLIB_CHECK_VERSION(2, 64, 0)
-		g_warning_once("KERNEL BUG: 'type' attribute not exported: (%s)",
-			       error_key->message);
-#else
-		g_debug("KERNEL BUG: 'type' attribute not exported: (%s)", error_key->message);
-#endif
+#ifdef FU_THINKLMI_COMPAT
+		static gboolean kernel_bug_notified = FALSE;
+		if (!kernel_bug_notified) {
+			g_info("using think-lmi compatibility for kernels less than 6.3");
+			kernel_bug_notified = TRUE;
+		}
 		kernel_bug = TRUE;
+#else
+		g_debug("%s", error_key->message);
+		g_propagate_error(error, g_steal_pointer(&error_key));
+		return FALSE;
+#endif
 	}
 
 	if (g_strcmp0(data, "enumeration") == 0 || kernel_bug) {
-		if (!fu_bios_setting_set_enumeration_attrs(attr, &error_local)) {
-			if (g_getenv("FWUPD_BIOS_SETTING_VERBOSE") != NULL)
-				g_debug("failed to add enumeration attrs: %s",
-					error_local->message);
-		}
+		if (!fu_bios_setting_set_enumeration_attrs(attr, &error_local))
+			g_debug("failed to add enumeration attrs: %s", error_local->message);
 	} else if (g_strcmp0(data, "integer") == 0) {
-		if (!fu_bios_setting_set_integer_attrs(attr, &error_local)) {
-			if (g_getenv("FWUPD_BIOS_SETTING_VERBOSE") != NULL)
-				g_debug("failed to add integer attrs: %s", error_local->message);
-		}
+		if (!fu_bios_setting_set_integer_attrs(attr, &error_local))
+			g_debug("failed to add integer attrs: %s", error_local->message);
 	} else if (g_strcmp0(data, "string") == 0) {
-		if (!fu_bios_setting_set_string_attrs(attr, &error_local)) {
-			if (g_getenv("FWUPD_BIOS_SETTING_VERBOSE") != NULL)
-				g_debug("failed to add string attrs: %s", error_local->message);
-		}
+		if (!fu_bios_setting_set_string_attrs(attr, &error_local))
+			g_debug("failed to add string attrs: %s", error_local->message);
 	}
 	return TRUE;
 }
@@ -342,8 +339,10 @@ fu_bios_settings_set_folder_attributes(FuBiosSettings *self, FwupdBiosSetting *a
 		return FALSE;
 	if (!fu_bios_setting_set_description(self, attr, &error_local))
 		g_debug("%s", error_local->message);
+#ifdef FU_THINKLMI_COMPAT
 	if (!fu_bios_settings_run_folder_fixups(attr, error))
 		return FALSE;
+#endif
 	fu_bios_setting_set_read_only(self, attr);
 	return TRUE;
 }
@@ -419,10 +418,10 @@ fu_bios_settings_combination_fixups(FuBiosSettings *self)
 	if (thinklmi_sb != NULL && thinklmi_3rd != NULL) {
 		const gchar *val = fwupd_bios_setting_get_current_value(thinklmi_3rd);
 		if (g_strcmp0(val, "Disable") == 0) {
-			g_debug("Disabling changing %s since %s is %s",
-				fwupd_bios_setting_get_name(thinklmi_sb),
-				fwupd_bios_setting_get_name(thinklmi_3rd),
-				val);
+			g_info("Disabling changing %s since %s is %s",
+			       fwupd_bios_setting_get_name(thinklmi_sb),
+			       fwupd_bios_setting_get_name(thinklmi_3rd),
+			       val);
 			fwupd_bios_setting_set_read_only(thinklmi_sb, TRUE);
 		}
 	}
@@ -499,7 +498,7 @@ fu_bios_settings_setup(FuBiosSettings *self, GError **error)
 			}
 		} while (++count);
 	} while (TRUE);
-	g_debug("loaded %u BIOS settings", count);
+	g_info("loaded %u BIOS settings", count);
 
 	fu_bios_settings_combination_fixups(self);
 

@@ -1,6 +1,6 @@
 # fwupd
 
-[![Build Status](https://github.com/fwupd/fwupd/actions/workflows/main.yml/badge.svg)](https://github.com/fwupd/fwupd/actions/workflows/main.yml)
+[![Build Status](https://github.com/fwupd/fwupd/actions/workflows/ci.yml/badge.svg)](https://github.com/fwupd/fwupd/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/fwupd/fwupd/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/fwupd/fwupd/actions/workflows/codeql-analysis.yml)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/10744/badge.svg)](https://scan.coverity.com/projects/10744)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/fwupd.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:fwupd)
@@ -98,7 +98,7 @@ to only firmware that have been tested specifically in your organization.
 
 The list of approved updates can be enabled by adding `ApprovalRequired=true`
 to the remote configuration file, e.g. `lvfs.conf`. Once enabled, the
-list of approved updates can be set in `daemon.conf` using a comma-delimited list.
+list of approved updates can be set in `fwupd.conf` using a comma-delimited list.
 
 For example:
 
@@ -109,59 +109,6 @@ to two updates in the metadata file.
 
 Additionally, the list of approved firmware can be supplemented using
 `fwupdmgr set-approved-firmware baz` or using the D-Bus interface.
-
-## Local metadata
-
-Local metadata can be saved in `/var/lib/fwupd/local.d` or `/usr/share/fwupd/local.d`
-which are scanned at daemon startup. This can be used to add site-specific BKC
-tags to existing metadata stores. For instance:
-
-    <?xml version='1.0' encoding='utf-8'?>
-    <components origin="mycompanyname">
-      <component merge="append">
-        <provides>
-          <firmware>3ef35d3b-ceeb-5e27-8c0a-ac25f90367ab</firmware>
-          <firmware>2ef35d3b-ceeb-5e27-8c0a-ac25f90367ac</firmware>
-          <firmware>1ef35d3b-ceeb-5e27-8c0a-ac25f90367ad</firmware>
-        </provides>
-        <releases>
-          <release version="225.53.1649"/>
-          <release version="224.48.1605"/>
-        </releases>
-        <tags>
-          <tag>mycompanyname-2022q1</tag>
-        </tags>
-      </component>
-    </components>
-
-This then appears when getting the releases for that specific GUID:
-
-    fwupdmgr get-releases --json 3ef35d3b-ceeb-5e27-8c0a-ac25f90367ab
-    {
-      "Releases" : [
-        {
-          ...
-          "Version" : "225.53.1649",
-          "Tags" : [
-            "mycompanyname-2022q1"
-          ],
-          ...
-        },
-        {
-          ...
-          "Version" : "224.48.1605",
-          "Tags" : [
-            "mycompanyname-2022q1"
-          ],
-          ...
-        },
-        {
-          ...
-          "Version" : "224.45.1389",
-          ...
-        }
-      ]
-    }
 
 ## Other frontends
 

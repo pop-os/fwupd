@@ -88,20 +88,23 @@ fu_ipmi_device_send(FuIpmiDevice *self,
 		    gsize bufsz,
 		    GError **error)
 {
-	g_autofree guint8 *buf2 = fu_memdup_safe(buf, bufsz, NULL);
 	struct ipmi_system_interface_addr addr = {.addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE,
 						  .channel = IPMI_BMC_CHANNEL};
 	struct ipmi_req req = {
 	    .addr = (guint8 *)&addr,
 	    .addr_len = sizeof(addr),
 	    .msgid = self->seq++,
-	    .msg.data = buf2,
 	    .msg.data_len = (guint16)bufsz,
 	    .msg.netfn = netfn,
 	    .msg.cmd = cmd,
 	};
-	if (g_getenv("FWUPD_REDFISH_VERBOSE") != NULL && buf2 != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "ipmi-send", buf2, bufsz);
+	g_autofree guint8 *buf2 = NULL;
+
+	buf2 = fu_memdup_safe(buf, bufsz, error);
+	if (buf2 == NULL)
+		return FALSE;
+	req.msg.data = buf2;
+	fu_dump_raw(G_LOG_DOMAIN, "ipmi-send", buf2, bufsz);
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    IPMICTL_SEND_COMMAND,
 				    (guint8 *)&req,
@@ -134,8 +137,7 @@ fu_ipmi_device_recv(FuIpmiDevice *self,
 				  FU_IPMI_DEVICE_IOCTL_TIMEOUT,
 				  error))
 		return FALSE;
-	if (g_getenv("FWUPD_REDFISH_VERBOSE") != NULL && buf != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "ipmi-recv", buf, bufsz);
+	fu_dump_raw(G_LOG_DOMAIN, "ipmi-recv", buf, bufsz);
 	if (netfn != NULL)
 		*netfn = recv.msg.netfn;
 	if (cmd != NULL)
@@ -373,13 +375,11 @@ fu_ipmi_device_transaction_cb(FuDevice *device, gpointer user_data, GError **err
 			}
 			if (helper->resp_len != NULL)
 				*helper->resp_len = resp_len2 - 1;
-			if (g_getenv("FWUPD_REDFISH_VERBOSE") != NULL) {
-				g_debug("IPMI netfn: %02x->%02x, cmd: %02x->%02x",
-					helper->netfn,
-					resp_netfn,
-					helper->cmd,
-					resp_cmd);
-			}
+			g_debug("IPMI netfn: %02x->%02x, cmd: %02x->%02x",
+				helper->netfn,
+				resp_netfn,
+				helper->cmd,
+				resp_cmd);
 			break;
 		}
 	}

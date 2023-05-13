@@ -10,6 +10,7 @@
 
 #include <fwupdplugin.h>
 
+#include "fu-synaptics-rmi-struct.h"
 #include "fu-synaptics-rmi-v7-device.h"
 
 #define RMI_F34_ERASE_WAIT_MS 10000 /* ms */
@@ -24,60 +25,6 @@ typedef enum {
 	RMI_FLASH_CMD_SENSOR_ID,
 	RMI_FLASH_CMD_SIGNATURE,
 } RmiFlashCommand;
-
-typedef enum {
-	RMI_PARTITION_ID_NONE = 0x00,
-	RMI_PARTITION_ID_BOOTLOADER = 0x01,
-	RMI_PARTITION_ID_DEVICE_CONFIG,
-	RMI_PARTITION_ID_FLASH_CONFIG,
-	RMI_PARTITION_ID_MANUFACTURING_BLOCK,
-	RMI_PARTITION_ID_GUEST_SERIALIZATION,
-	RMI_PARTITION_ID_GLOBAL_PARAMETERS,
-	RMI_PARTITION_ID_CORE_CODE,
-	RMI_PARTITION_ID_CORE_CONFIG,
-	RMI_PARTITION_ID_GUEST_CODE,
-	RMI_PARTITION_ID_DISPLAY_CONFIG,
-	RMI_PARTITION_ID_EXTERNAL_TOUCH_AFE_CONFIG,
-	RMI_PARTITION_ID_UTILITY_PARAMETER,
-	RMI_PARTITION_ID_PUBKEY,
-	RMI_PARTITION_ID_FIXED_LOCATION_DATA = 0x0E,
-} RmiPartitionId;
-
-static const gchar *
-rmi_firmware_partition_id_to_string(RmiPartitionId partition_id)
-{
-	if (partition_id == RMI_PARTITION_ID_NONE)
-		return "none";
-	if (partition_id == RMI_PARTITION_ID_BOOTLOADER)
-		return "bootloader";
-	if (partition_id == RMI_PARTITION_ID_DEVICE_CONFIG)
-		return "device-config";
-	if (partition_id == RMI_PARTITION_ID_FLASH_CONFIG)
-		return "flash-config";
-	if (partition_id == RMI_PARTITION_ID_MANUFACTURING_BLOCK)
-		return "manufacturing-block";
-	if (partition_id == RMI_PARTITION_ID_GUEST_SERIALIZATION)
-		return "guest-serialization";
-	if (partition_id == RMI_PARTITION_ID_GLOBAL_PARAMETERS)
-		return "global-parameters";
-	if (partition_id == RMI_PARTITION_ID_CORE_CODE)
-		return "core-code";
-	if (partition_id == RMI_PARTITION_ID_CORE_CONFIG)
-		return "core-config";
-	if (partition_id == RMI_PARTITION_ID_GUEST_CODE)
-		return "guest-code";
-	if (partition_id == RMI_PARTITION_ID_DISPLAY_CONFIG)
-		return "display-config";
-	if (partition_id == RMI_PARTITION_ID_EXTERNAL_TOUCH_AFE_CONFIG)
-		return "external-touch-afe-config";
-	if (partition_id == RMI_PARTITION_ID_UTILITY_PARAMETER)
-		return "utility-parameter";
-	if (partition_id == RMI_PARTITION_ID_PUBKEY)
-		return "pubkey";
-	if (partition_id == RMI_PARTITION_ID_FIXED_LOCATION_DATA)
-		return "fixed-location-data";
-	return NULL;
-}
 
 gboolean
 fu_synaptics_rmi_v7_device_detach(FuDevice *device, FuProgress *progress, GError **error)
@@ -97,7 +44,7 @@ fu_synaptics_rmi_v7_device_detach(FuDevice *device, FuProgress *progress, GError
 		return FALSE;
 
 	/* enter BL */
-	fu_byte_array_append_uint8(enable_req, RMI_PARTITION_ID_BOOTLOADER);
+	fu_byte_array_append_uint8(enable_req, FU_RMI_PARTITION_ID_BOOTLOADER);
 	fu_byte_array_append_uint32(enable_req, 0x0, G_LITTLE_ENDIAN);
 	fu_byte_array_append_uint8(enable_req, RMI_FLASH_CMD_ENTER_BL);
 	fu_byte_array_append_uint8(enable_req, flash->bootloader_id[0]);
@@ -182,7 +129,7 @@ fu_synaptics_rmi_v7_device_erase_all(FuSynapticsRmiDevice *self, GError **error)
 	if (f34 == NULL)
 		return FALSE;
 
-	fu_byte_array_append_uint8(erase_cmd, RMI_PARTITION_ID_CORE_CODE);
+	fu_byte_array_append_uint8(erase_cmd, FU_RMI_PARTITION_ID_CORE_CODE);
 	fu_byte_array_append_uint32(erase_cmd, 0x0, G_LITTLE_ENDIAN);
 	if (flash->bootloader_id[1] >= 8) {
 		/* For bootloader v8 */
@@ -225,7 +172,7 @@ fu_synaptics_rmi_v7_device_erase_all(FuSynapticsRmiDevice *self, GError **error)
 	if (flash->bootloader_id[1] == 7) {
 		g_autoptr(GByteArray) erase_config_cmd = g_byte_array_new();
 
-		fu_byte_array_append_uint8(erase_config_cmd, RMI_PARTITION_ID_CORE_CONFIG);
+		fu_byte_array_append_uint8(erase_config_cmd, FU_RMI_PARTITION_ID_CORE_CONFIG);
 		fu_byte_array_append_uint32(erase_config_cmd, 0x0, G_LITTLE_ENDIAN);
 		fu_byte_array_append_uint8(erase_config_cmd, RMI_FLASH_CMD_ERASE);
 
@@ -307,7 +254,7 @@ static gboolean
 fu_synaptics_rmi_v7_device_write_partition_signature(FuSynapticsRmiDevice *self,
 						     FuFirmware *firmware,
 						     const gchar *id,
-						     RmiPartitionId partition_id,
+						     FuRmiPartitionId partition_id,
 						     GError **error)
 {
 	FuSynapticsRmiFunction *f34;
@@ -329,8 +276,7 @@ fu_synaptics_rmi_v7_device_write_partition_signature(FuSynapticsRmiDevice *self,
 	}
 
 	/* write partition signature */
-	g_debug("writing partition signature %s…",
-		rmi_firmware_partition_id_to_string(partition_id));
+	g_info("writing partition signature %s…", fu_rmi_partition_id_to_string(partition_id));
 
 	fu_byte_array_append_uint16(req_offset, 0x0, G_LITTLE_ENDIAN);
 	if (!fu_synaptics_rmi_device_write(self,
@@ -385,7 +331,7 @@ static gboolean
 fu_synaptics_rmi_v7_device_write_partition(FuSynapticsRmiDevice *self,
 					   FuFirmware *firmware,
 					   const gchar *id,
-					   RmiPartitionId partition_id,
+					   FuRmiPartitionId partition_id,
 					   GBytes *bytes,
 					   FuProgress *progress,
 					   GError **error)
@@ -402,7 +348,7 @@ fu_synaptics_rmi_v7_device_write_partition(FuSynapticsRmiDevice *self,
 		return FALSE;
 
 	/* write partition id */
-	g_debug("writing partition %s…", rmi_firmware_partition_id_to_string(partition_id));
+	g_info("writing partition %s…", fu_rmi_partition_id_to_string(partition_id));
 	fu_byte_array_append_uint8(req_partition_id, partition_id);
 	if (!fu_synaptics_rmi_device_write(self,
 					   f34->data_base + 0x1,
@@ -472,7 +418,7 @@ fu_synaptics_rmi_v7_device_write_partition(FuSynapticsRmiDevice *self,
 	return TRUE;
 }
 
-GBytes *
+static GBytes *
 fu_synaptics_rmi_v7_device_get_pubkey(FuSynapticsRmiDevice *self, GError **error)
 {
 	FuSynapticsRmiFlash *flash = fu_synaptics_rmi_device_get_flash(self);
@@ -491,7 +437,7 @@ fu_synaptics_rmi_v7_device_get_pubkey(FuSynapticsRmiDevice *self, GError **error
 		return NULL;
 
 	/* set partition id for bootloader 7 */
-	fu_byte_array_append_uint8(req_partition_id, RMI_PARTITION_ID_PUBKEY);
+	fu_byte_array_append_uint8(req_partition_id, FU_RMI_PARTITION_ID_PUBKEY);
 	if (!fu_synaptics_rmi_device_write(self,
 					   f34->data_base + 0x1,
 					   req_partition_id,
@@ -552,7 +498,7 @@ fu_synaptics_rmi_v7_device_get_pubkey(FuSynapticsRmiDevice *self, GError **error
 	return g_byte_array_free_to_bytes(g_steal_pointer(&pubkey));
 }
 
-gboolean
+static gboolean
 fu_synaptics_rmi_v7_device_secure_check(FuSynapticsRmiDevice *self,
 					FuFirmware *firmware,
 					GError **error)
@@ -594,7 +540,7 @@ fu_synaptics_rmi_v7_device_secure_check(FuSynapticsRmiDevice *self,
 			g_prefix_error(error, "%s secure check failed: ", id);
 			return FALSE;
 		}
-		g_debug("%s signature verified successfully", id);
+		g_info("%s signature verified successfully", id);
 	}
 	return TRUE;
 }
@@ -705,7 +651,7 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 			self,
 			firmware,
 			"fixed-location-data",
-			RMI_PARTITION_ID_FIXED_LOCATION_DATA,
+			FU_RMI_PARTITION_ID_FIXED_LOCATION_DATA,
 			bytes_fld,
 			fu_progress_get_child(progress),
 			error))
@@ -716,13 +662,13 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 	/* write flash config for BL > v8 */
 	if (flash->bootloader_id[1] > 8) {
 		if (!fu_synaptics_rmi_v7_device_erase_partition(self,
-								RMI_PARTITION_ID_FLASH_CONFIG,
+								FU_RMI_PARTITION_ID_FLASH_CONFIG,
 								error))
 			return FALSE;
 		if (!fu_synaptics_rmi_v7_device_write_partition(self,
 								firmware,
 								"flash-config",
-								RMI_PARTITION_ID_FLASH_CONFIG,
+								FU_RMI_PARTITION_ID_FLASH_CONFIG,
 								bytes_flashcfg,
 								fu_progress_get_child(progress),
 								error))
@@ -742,7 +688,7 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 		if (!fu_synaptics_rmi_v7_device_write_partition(self,
 								firmware,
 								"flash-config",
-								RMI_PARTITION_ID_FLASH_CONFIG,
+								FU_RMI_PARTITION_ID_FLASH_CONFIG,
 								bytes_flashcfg,
 								fu_progress_get_child(progress),
 								error))
@@ -754,7 +700,7 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 	if (!fu_synaptics_rmi_v7_device_write_partition(self,
 							firmware,
 							"ui",
-							RMI_PARTITION_ID_CORE_CODE,
+							FU_RMI_PARTITION_ID_CORE_CODE,
 							bytes_bin,
 							fu_progress_get_child(progress),
 							error))
@@ -765,7 +711,7 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 	if (!fu_synaptics_rmi_v7_device_write_partition(self,
 							firmware,
 							"config",
-							RMI_PARTITION_ID_CORE_CONFIG,
+							FU_RMI_PARTITION_ID_CORE_CONFIG,
 							bytes_cfg,
 							fu_progress_get_child(progress),
 							error))
@@ -778,7 +724,7 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 			self,
 			firmware,
 			"afe-config",
-			RMI_PARTITION_ID_EXTERNAL_TOUCH_AFE_CONFIG,
+			FU_RMI_PARTITION_ID_EXTERNAL_TOUCH_AFE_CONFIG,
 			bytes_afe,
 			fu_progress_get_child(progress),
 			error))
@@ -791,7 +737,7 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 		if (!fu_synaptics_rmi_v7_device_write_partition(self,
 								firmware,
 								"display-config",
-								RMI_PARTITION_ID_DISPLAY_CONFIG,
+								FU_RMI_PARTITION_ID_DISPLAY_CONFIG,
 								bytes_displayconfig,
 								fu_progress_get_child(progress),
 								error))
@@ -803,15 +749,6 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 	return TRUE;
 }
 
-typedef struct __attribute__((packed)) {
-	guint16 partition_id;
-	guint16 partition_len;
-	guint16 partition_addr;
-	guint16 partition_prop;
-} RmiPartitionTbl;
-
-G_STATIC_ASSERT(sizeof(RmiPartitionTbl) == 8);
-
 static gboolean
 fu_synaptics_rmi_device_read_flash_config_v7(FuSynapticsRmiDevice *self, GError **error)
 {
@@ -822,7 +759,7 @@ fu_synaptics_rmi_device_read_flash_config_v7(FuSynapticsRmiDevice *self, GError 
 	g_autoptr(GByteArray) req_partition_id = g_byte_array_new();
 	g_autoptr(GByteArray) req_transfer_length = g_byte_array_new();
 	g_autoptr(GByteArray) res = NULL;
-	gsize partition_size = sizeof(RmiPartitionTbl);
+	gsize partition_size = FU_STRUCT_RMI_PARTITION_TBL_SIZE;
 
 	/* f34 */
 	f34 = fu_synaptics_rmi_device_get_function(self, 0x34, error);
@@ -830,7 +767,7 @@ fu_synaptics_rmi_device_read_flash_config_v7(FuSynapticsRmiDevice *self, GError 
 		return FALSE;
 
 	/* set partition id for bootloader 7 */
-	fu_byte_array_append_uint8(req_partition_id, RMI_PARTITION_ID_FLASH_CONFIG);
+	fu_byte_array_append_uint8(req_partition_id, FU_RMI_PARTITION_ID_FLASH_CONFIG);
 	if (!fu_synaptics_rmi_device_write(self,
 					   f34->data_base + 0x1,
 					   req_partition_id,
@@ -887,46 +824,37 @@ fu_synaptics_rmi_device_read_flash_config_v7(FuSynapticsRmiDevice *self, GError 
 	}
 
 	/* debugging */
-	if (g_getenv("FWUPD_SYNAPTICS_RMI_VERBOSE") != NULL) {
-		fu_dump_full(G_LOG_DOMAIN,
-			     "FlashConfig",
-			     res->data,
-			     res->len,
-			     80,
-			     FU_DUMP_FLAGS_NONE);
-	}
+	fu_dump_full(G_LOG_DOMAIN, "FlashConfig", res->data, res->len, 80, FU_DUMP_FLAGS_NONE);
 
 	if ((res->data[0] & 0x0f) == 1)
-		partition_size = sizeof(RmiPartitionTbl) + 2;
+		partition_size += 0x2;
 
 	/* parse the config length */
 	for (guint i = 0x2; i < res->len; i += partition_size) {
-		RmiPartitionTbl tbl;
-		if (!fu_memcpy_safe((guint8 *)&tbl,
-				    sizeof(tbl),
-				    0x0, /* dst */
-				    res->data,
-				    res->len,
-				    i, /* src */
-				    sizeof(tbl),
-				    error))
+		guint16 partition_id;
+		g_autoptr(GByteArray) st_prt = NULL;
+		st_prt = fu_struct_rmi_partition_tbl_parse(res->data, res->len, i, error);
+		if (st_prt == NULL)
 			return FALSE;
+		partition_id = fu_struct_rmi_partition_tbl_get_partition_id(st_prt);
 		g_debug("found partition %s (0x%02x)",
-			rmi_firmware_partition_id_to_string(tbl.partition_id),
-			tbl.partition_id);
-		if (tbl.partition_id == RMI_PARTITION_ID_CORE_CONFIG) {
-			flash->block_count_cfg = tbl.partition_len;
+			fu_rmi_partition_id_to_string(partition_id),
+			partition_id);
+		if (partition_id == FU_RMI_PARTITION_ID_CORE_CONFIG) {
+			flash->block_count_cfg =
+			    fu_struct_rmi_partition_tbl_get_partition_len(st_prt);
 			continue;
 		}
-		if (tbl.partition_id == RMI_PARTITION_ID_CORE_CODE) {
-			flash->block_count_fw = tbl.partition_len;
+		if (partition_id == FU_RMI_PARTITION_ID_CORE_CODE) {
+			flash->block_count_fw =
+			    fu_struct_rmi_partition_tbl_get_partition_len(st_prt);
 			continue;
 		}
-		if (tbl.partition_id == RMI_PARTITION_ID_PUBKEY) {
+		if (partition_id == FU_RMI_PARTITION_ID_PUBKEY) {
 			flash->has_pubkey = TRUE;
 			continue;
 		}
-		if (tbl.partition_id == RMI_PARTITION_ID_NONE)
+		if (partition_id == FU_RMI_PARTITION_ID_NONE)
 			break;
 	}
 

@@ -3,6 +3,7 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginLogitechHidPp"']
 
 plugin_quirks += files('logitech-hidpp.quirk')
 plugin_builtin_logitech_hidpp = static_library('fu_plugin_logitech_hidpp',
+  rustgen.process('fu-logitech-hidpp.rs'),
   sources: [
     'fu-logitech-hidpp-plugin.c',
     'fu-logitech-hidpp-bootloader.c',
@@ -39,7 +40,10 @@ if get_option('tests')
       plugin_libs,
       plugin_builtin_logitech_hidpp,
     ],
-    c_args: cargs,
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('logitech-hidpp-self-test', e, env: env)
 endif

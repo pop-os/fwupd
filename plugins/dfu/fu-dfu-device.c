@@ -44,6 +44,8 @@
 #include "fu-dfu-target-private.h" /* waive-pre-commit */
 #include "fu-dfu-target-stm.h"
 
+static gboolean
+fu_dfu_device_clear_status(FuDfuDevice *self, GError **error);
 static void
 fu_dfu_device_finalize(GObject *object);
 
@@ -149,6 +151,28 @@ fu_dfu_device_get_download_timeout(FuDfuDevice *self)
 	FuDfuDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_DFU_DEVICE(self), 0);
 	return priv->dnload_timeout;
+}
+
+static void
+fu_dfu_device_set_download_timeout(FuDfuDevice *self, guint dnload_timeout)
+{
+	FuDfuDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FU_IS_DFU_DEVICE(self));
+
+	/* quirked */
+	if (fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_IGNORE_POLLTIMEOUT)) {
+		g_debug("ignoring dnload-timeout, using default of %ums", priv->dnload_timeout);
+		return;
+	}
+	if (dnload_timeout == 0 &&
+	    !fu_device_has_private_flag(FU_DEVICE(self),
+					FU_DFU_DEVICE_FLAG_ALLOW_ZERO_POLLTIMEOUT)) {
+		g_debug("no dnload-timeout, using default of %ums", priv->dnload_timeout);
+		return;
+	}
+
+	/* use what the device says */
+	priv->dnload_timeout = dnload_timeout;
 }
 
 /**
@@ -308,14 +332,14 @@ fu_dfu_device_add_targets(FuDfuDevice *self, GError **error)
 			priv->version = priv->force_version;
 		if (priv->version == FU_DFU_FIRMARE_VERSION_DFU_1_0 ||
 		    priv->version == FU_DFU_FIRMARE_VERSION_DFU_1_1) {
-			g_debug("DFU v1.1");
+			g_info("DFU v1.1");
 		} else if (priv->version == FU_DFU_FIRMARE_VERSION_ATMEL_AVR) {
-			g_debug("AVR-DFU support");
+			g_info("AVR-DFU support");
 			priv->version = FU_DFU_FIRMARE_VERSION_ATMEL_AVR;
 		} else if (priv->version == FU_DFU_FIRMARE_VERSION_DFUSE) {
-			g_debug("STM-DFU support");
+			g_info("STM-DFU support");
 		} else if (priv->version == 0x0101) {
-			g_debug("DFU v1.1 assumed");
+			g_info("DFU v1.1 assumed");
 			priv->version = FU_DFU_FIRMARE_VERSION_DFU_1_1;
 		} else {
 			g_warning("DFU version 0x%04x invalid, v1.1 assumed", priv->version);
@@ -582,22 +606,6 @@ fu_dfu_device_get_runtime_pid(FuDfuDevice *self)
 	return priv->runtime_pid;
 }
 
-/**
- * fu_dfu_device_get_runtime_release:
- * @self: a #FuDfuDevice
- *
- * Gets the runtime release number in BCD format.
- *
- * Returns: release number, or 0xffff for unknown
- **/
-guint16
-fu_dfu_device_get_runtime_release(FuDfuDevice *self)
-{
-	FuDfuDevicePrivate *priv = GET_PRIVATE(self);
-	g_return_val_if_fail(FU_IS_DFU_DEVICE(self), 0xffff);
-	return priv->runtime_release;
-}
-
 const gchar *
 fu_dfu_device_get_chip_id(FuDfuDevice *self)
 {
@@ -606,7 +614,7 @@ fu_dfu_device_get_chip_id(FuDfuDevice *self)
 	return priv->chip_id;
 }
 
-void
+static void
 fu_dfu_device_set_chip_id(FuDfuDevice *self, const gchar *chip_id)
 {
 	FuDfuDevicePrivate *priv = GET_PRIVATE(self);
@@ -761,6 +769,15 @@ fu_dfu_device_refresh(FuDfuDevice *self, GError **error)
 					   priv->timeout_ms,
 					   NULL, /* cancellable */
 					   &error_local)) {
+		/* got STALL */
+		if (g_error_matches(error_local,
+				    G_USB_DEVICE_ERROR,
+				    G_USB_DEVICE_ERROR_NOT_SUPPORTED)) {
+			g_info("GetStatus not implemented, assuming appIDLE");
+			fu_dfu_device_set_status(self, FU_DFU_STATUS_OK);
+			fu_dfu_device_set_state(self, FU_DFU_STATE_APP_IDLE);
+			return TRUE;
+		}
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -780,7 +797,7 @@ fu_dfu_device_refresh(FuDfuDevice *self, GError **error)
 	/* some devices use the wrong state value */
 	if (fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_FORCE_DFU_MODE) &&
 	    fu_dfu_device_get_state(self) != FU_DFU_STATE_DFU_IDLE) {
-		g_debug("quirking device into DFU mode");
+		g_info("quirking device into DFU mode");
 		fu_dfu_device_set_state(self, FU_DFU_STATE_DFU_IDLE);
 	} else {
 		fu_dfu_device_set_state(self, buf[4]);
@@ -788,17 +805,7 @@ fu_dfu_device_refresh(FuDfuDevice *self, GError **error)
 
 	/* status or state changed */
 	fu_dfu_device_set_status(self, buf[0]);
-	if (fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_IGNORE_POLLTIMEOUT)) {
-		priv->dnload_timeout = DFU_DEVICE_DNLOAD_TIMEOUT_DEFAULT;
-	} else {
-		priv->dnload_timeout = fu_memread_uint24(&buf[1], G_LITTLE_ENDIAN);
-		if (priv->dnload_timeout == 0 &&
-		    !fu_device_has_private_flag(FU_DEVICE(self),
-						FU_DFU_DEVICE_FLAG_ALLOW_ZERO_POLLTIMEOUT)) {
-			priv->dnload_timeout = DFU_DEVICE_DNLOAD_TIMEOUT_DEFAULT;
-			g_debug("no dnload-timeout, using default of %ums", priv->dnload_timeout);
-		}
-	}
+	fu_dfu_device_set_download_timeout(self, fu_memread_uint24(&buf[1], G_LITTLE_ENDIAN));
 	g_debug("refreshed status=%s and state=%s (dnload=%u)",
 		fu_dfu_status_to_string(priv->status),
 		fu_dfu_state_to_string(priv->state),
@@ -888,7 +895,7 @@ fu_dfu_device_detach(FuDevice *device, FuProgress *progress, GError **error)
 
 	/* do a host reset */
 	if (!fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_WILL_DETACH)) {
-		g_debug("doing device reset as host will not self-reset");
+		g_info("doing device reset as host will not self-reset");
 		if (!fu_dfu_device_reset(self, progress, error))
 			return FALSE;
 	}
@@ -959,23 +966,11 @@ fu_dfu_device_abort(FuDfuDevice *self, GError **error)
 	return TRUE;
 }
 
-/**
- * fu_dfu_device_clear_status:
- * @self: a #FuDfuDevice
- * @error: (nullable): optional return location for an error
- *
- * Clears any error status on the DFU device.
- *
- * Returns: %TRUE for success
- **/
-gboolean
+static gboolean
 fu_dfu_device_clear_status(FuDfuDevice *self, GError **error)
 {
 	FuDfuDevicePrivate *priv = GET_PRIVATE(self);
 	g_autoptr(GError) error_local = NULL;
-
-	g_return_val_if_fail(FU_IS_DFU_DEVICE(self), FALSE);
-	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* the device has no DFU runtime, so cheat */
 	if (priv->state == FU_DFU_STATE_APP_IDLE &&
@@ -1075,8 +1070,7 @@ fu_dfu_device_open(FuDevice *device, GError **error)
 		    g_usb_device_get_string_descriptor_bytes(usb_device, idx, langid, error);
 		if (serial_blob == NULL)
 			return FALSE;
-		if (g_getenv("FWUPD_DFU_VERBOSE") != NULL)
-			fu_dump_bytes(G_LOG_DOMAIN, "GD32 serial", serial_blob);
+		fu_dump_bytes(G_LOG_DOMAIN, "GD32 serial", serial_blob);
 		buf = g_bytes_get_data(serial_blob, &bufsz);
 		if (bufsz < 2) {
 			g_set_error_literal(error,
@@ -1167,9 +1161,9 @@ fu_dfu_device_probe(FuDevice *device, GError **error)
 
 	/* check capabilities */
 	if (!fu_device_has_private_flag(device, FU_DFU_DEVICE_FLAG_CAN_DOWNLOAD)) {
-		g_debug("%04x:%04x is missing download capability",
-			g_usb_device_get_vid(usb_device),
-			g_usb_device_get_pid(usb_device));
+		g_info("%04x:%04x is missing download capability",
+		       g_usb_device_get_vid(usb_device),
+		       g_usb_device_get_pid(usb_device));
 	}
 
 	/* hardware from Jabra literally reboots if you try to retry a failed
@@ -1250,7 +1244,7 @@ fu_dfu_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 	/* normal DFU mode just needs a bus reset */
 	if (fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_NO_BUS_RESET_ATTACH) &&
 	    fu_device_has_private_flag(FU_DEVICE(self), FU_DFU_DEVICE_FLAG_WILL_DETACH)) {
-		g_debug("Bus reset is not required. Device will reboot to normal");
+		g_info("bus reset is not required; device will reboot to normal");
 	} else if (!fu_dfu_target_attach(target, progress, error)) {
 		g_prefix_error(error, "failed to attach target: ");
 		return FALSE;
@@ -1319,7 +1313,7 @@ fu_dfu_device_upload(FuDfuDevice *self,
 
 		/* ignore some target types */
 		if (g_strcmp0(fu_device_get_name(FU_DEVICE(target)), "Option Bytes") == 0) {
-			g_debug("ignoring target %s", fu_device_get_name(target));
+			g_debug("ignoring target %s", fu_device_get_name(FU_DEVICE(target)));
 			continue;
 		}
 		if (!fu_dfu_target_upload(target,
@@ -1686,10 +1680,12 @@ fu_dfu_device_init(FuDfuDevice *self)
 	priv->timeout_ms = 1500;
 	priv->transfer_size = 64;
 	priv->force_version = G_MAXUINT16;
+	priv->dnload_timeout = DFU_DEVICE_DNLOAD_TIMEOUT_DEFAULT;
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 
 	fu_device_register_private_flag(FU_DEVICE(self),

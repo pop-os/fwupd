@@ -3,6 +3,7 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginUefiDbx"']
 
 plugin_quirks += files('uefi-dbx.quirk')
 plugin_builtin_uefi_dbx = static_library('fu_plugin_uefi_dbx',
+  rustgen.process('fu-efi-image.rs'),
   sources: [
     'fu-uefi-dbx-plugin.c',
     'fu-uefi-dbx-common.c',
@@ -31,10 +32,13 @@ if get_option('tests')
       plugin_libs,
       plugin_builtin_uefi_dbx,
     ],
-    c_args: cargs,
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('uefi-dbx-self-test', e, env: env)  # added to installed-tests
 endif
@@ -56,19 +60,13 @@ dbxtool = executable(
   c_args: cargs,
 )
 
-if pandoc.found()
-  conf_man = configuration_data()
-  conf_man.set('PACKAGE_VERSION', fwupd_version)
-  dbxtool_md = configure_file(
-    input: 'dbxtool.md',
-    output: 'dbxtool.md',
-    configuration: conf_man,
-  )
+if get_option('man')
   custom_target('dbxtool.1',
-    input: dbxtool_md,
+    input: 'dbxtool.md',
     output: 'dbxtool.1',
     command: [
-      pandoc, '--standalone', '--to', 'man', '@INPUT@', '-o', '@OUTPUT@',
+      generate_man, '@INPUT@', '-o', '@OUTPUT@',
+      '--replace', 'PACKAGE_VERSION', fwupd_version,
     ],
     install: true,
     install_dir: join_paths(mandir, 'man1'),

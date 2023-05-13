@@ -27,6 +27,7 @@
 #include "fu-dfu-common.h"
 #include "fu-dfu-device.h"
 #include "fu-dfu-sector.h"
+#include "fu-dfu-struct.h"
 #include "fu-dfu-target-private.h" /* waive-pre-commit */
 
 #define DFU_TARGET_MANIFEST_MAX_POLLING_TRIES 200
@@ -654,33 +655,6 @@ fu_dfu_target_setup(FuDfuTarget *self, GError **error)
 	return TRUE;
 }
 
-/**
- * fu_dfu_target_mass_erase:
- * @self: a #FuDfuTarget
- * @error: (nullable): optional return location for an error
- *
- * Mass erases the device clearing all SRAM and EEPROM memory.
- *
- * IMPORTANT: This only works on STM32 devices from ST and AVR32 devices from Atmel.
- *
- * Returns: %TRUE for success
- **/
-gboolean
-fu_dfu_target_mass_erase(FuDfuTarget *self, FuProgress *progress, GError **error)
-{
-	FuDfuTargetClass *klass = FU_DFU_TARGET_GET_CLASS(self);
-	if (!fu_dfu_target_setup(self, error))
-		return FALSE;
-	if (klass->mass_erase == NULL) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "mass erase not supported");
-		return FALSE;
-	}
-	return klass->mass_erase(self, progress, error);
-}
-
 gboolean
 fu_dfu_target_download_chunk(FuDfuTarget *self,
 			     guint16 index,
@@ -694,9 +668,7 @@ fu_dfu_target_download_chunk(FuDfuTarget *self,
 	gsize actual_length;
 
 	/* low level packet debugging */
-	if (g_getenv("FWUPD_DFU_VERBOSE") != NULL)
-		fu_dump_bytes(G_LOG_DOMAIN, "Message", bytes);
-
+	fu_dump_bytes(G_LOG_DOMAIN, "Message", bytes);
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_CLASS,
@@ -786,8 +758,7 @@ fu_dfu_target_upload_chunk(FuDfuTarget *self,
 	}
 
 	/* low level packet debugging */
-	if (g_getenv("FWUPD_DFU_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "Message", buf, actual_length);
+	fu_dump_raw(G_LOG_DOMAIN, "Message", buf, actual_length);
 
 	return g_bytes_new_take(buf, actual_length);
 }

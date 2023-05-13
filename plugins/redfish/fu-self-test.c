@@ -18,6 +18,7 @@
 #include "fu-redfish-network.h"
 #include "fu-redfish-plugin.h"
 #include "fu-redfish-smc-device.h"
+#include "fu-redfish-struct.h"
 
 typedef struct {
 	FuPlugin *plugin;
@@ -467,6 +468,10 @@ fu_test_self_free(FuTest *self)
 {
 	if (self->plugin != NULL)
 		g_object_unref(self->plugin);
+	if (self->smc_plugin != NULL)
+		g_object_unref(self->smc_plugin);
+	if (self->unlicensed_plugin != NULL)
+		g_object_unref(self->unlicensed_plugin);
 	g_free(self);
 }
 
@@ -482,6 +487,7 @@ main(int argc, char **argv)
 	g_autofree gchar *smbios_data_fn = NULL;
 	g_autofree gchar *testdatadir = NULL;
 
+	(void)g_setenv("G_TEST_SRCDIR", SRCDIR, FALSE);
 	g_test_init(&argc, &argv, NULL);
 
 	(void)g_setenv("FWUPD_REDFISH_VERBOSE", "1", TRUE);

@@ -11,6 +11,7 @@
 #include <gusb.h>
 
 #include "fu-dfu-common.h"
+#include "fu-dfu-struct.h"
 #include "fu-dfu-target.h"
 
 #define FU_TYPE_DFU_DEVICE (fu_dfu_device_get_type())
@@ -28,14 +29,10 @@ FuDfuTarget *
 fu_dfu_device_get_target_by_alt_name(FuDfuDevice *self, const gchar *alt_name, GError **error);
 const gchar *
 fu_dfu_device_get_chip_id(FuDfuDevice *self);
-void
-fu_dfu_device_set_chip_id(FuDfuDevice *self, const gchar *chip_id);
 guint16
 fu_dfu_device_get_runtime_vid(FuDfuDevice *self);
 guint16
 fu_dfu_device_get_runtime_pid(FuDfuDevice *self);
-guint16
-fu_dfu_device_get_runtime_release(FuDfuDevice *self);
 gboolean
 fu_dfu_device_reset(FuDfuDevice *self, FuProgress *progress, GError **error);
 FuFirmware *
@@ -49,8 +46,6 @@ gboolean
 fu_dfu_device_refresh_and_clear(FuDfuDevice *self, GError **error);
 gboolean
 fu_dfu_device_abort(FuDfuDevice *self, GError **error);
-gboolean
-fu_dfu_device_clear_status(FuDfuDevice *self, GError **error);
 
 guint8
 fu_dfu_device_get_interface(FuDfuDevice *self);

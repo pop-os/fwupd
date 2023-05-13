@@ -659,15 +659,18 @@ fwupd_client_progress_callback_cb(void *clientp,
 				  curl_off_t ulnow)
 {
 	FwupdClient *self = FWUPD_CLIENT(clientp);
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
 
 	/* calculate percentage */
 	if (dltotal > 0 && dlnow >= 0 && dlnow <= dltotal) {
 		guint percentage = (guint)((100 * dlnow) / dltotal);
-		g_debug("download progress: %u%%", percentage);
+		if (priv->percentage != percentage)
+			g_info("download progress: %u%%", percentage);
 		fwupd_client_set_percentage(self, percentage);
 	} else if (ultotal > 0 && ulnow >= 0 && ulnow <= ultotal) {
 		guint percentage = (guint)((100 * ulnow) / ultotal);
-		g_debug("upload progress: %u%%", percentage);
+		if (priv->percentage != percentage)
+			g_info("upload progress: %u%%", percentage);
 		fwupd_client_set_percentage(self, percentage);
 	}
 
@@ -1102,6 +1105,8 @@ fwupd_client_fixup_dbus_error(GError *error)
 
 	/* parse the remote error */
 	name = g_dbus_error_get_remote_error(error);
+	if (name == NULL)
+		return;
 	if (g_str_has_prefix(name, FWUPD_DBUS_INTERFACE)) {
 		error->domain = FWUPD_ERROR;
 		error->code = fwupd_error_from_string(name);
@@ -3181,6 +3186,8 @@ fwupd_client_is_url_http(const gchar *perhaps_url)
 static gboolean
 fwupd_client_is_url_ipfs(const gchar *perhaps_url)
 {
+	if (perhaps_url == NULL)
+		return FALSE;
 	return g_str_has_prefix(perhaps_url, "ipfs://") || g_str_has_prefix(perhaps_url, "ipns://");
 }
 
@@ -3250,7 +3257,16 @@ fwupd_client_install_release_remote_cb(GObject *source, GAsyncResult *res, gpoin
 				return;
 			}
 			g_ptr_array_add(uris_built, g_steal_pointer(&uri_str));
+		} else {
+			g_debug("do not how to handle URI %s", uri_tmp);
 		}
+	}
+	if (uris_built->len == 0) {
+		g_task_return_new_error(task,
+					FWUPD_ERROR,
+					FWUPD_ERROR_INVALID_FILE,
+					"No URIs to download");
+		return;
 	}
 
 	/* download file */
@@ -4046,8 +4062,8 @@ fwupd_client_refresh_remote_signature_cb(GObject *source, GAsyncResult *res, gpo
 					(const guchar *)g_bytes_get_data(data->signature, NULL),
 					g_bytes_get_size(data->signature));
 	if (g_strcmp0(checksum, fwupd_remote_get_checksum(data->remote)) == 0) {
-		g_debug("metadata signature of %s is unchanged, skipping",
-			fwupd_remote_get_id(data->remote));
+		g_info("metadata signature of %s is unchanged, skipping",
+		       fwupd_remote_get_id(data->remote));
 		g_task_return_boolean(task, TRUE);
 		return;
 	}
@@ -5169,7 +5185,7 @@ fwupd_client_download_http(FwupdClient *self, CURL *curl, const gchar *url, GErr
 
 	/* check for server limit */
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-	g_debug("status-code was %ld", status_code);
+	g_info("status-code was %ld", status_code);
 	if (status_code == 429) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -5212,7 +5228,7 @@ fwupd_client_download_bytes_thread_cb(GTask *task,
 	for (guint i = 0; i < helper->urls->len; i++) {
 		const gchar *url = g_ptr_array_index(helper->urls, i);
 		g_autoptr(GError) error = NULL;
-		g_debug("downloading %s", url);
+		g_info("downloading %s", url);
 		fwupd_client_curl_helper_set_proxy(self, helper, url);
 		if (fwupd_client_is_url_http(url)) {
 			blob = fwupd_client_download_http(self, helper->curl, url, &error);
@@ -5235,7 +5251,7 @@ fwupd_client_download_bytes_thread_cb(GTask *task,
 		}
 		fwupd_client_set_percentage(self, 0);
 		fwupd_client_set_status(self, FWUPD_STATUS_IDLE);
-		g_debug("failed to download %s: %s, trying next URI…", url, error->message);
+		g_info("failed to download %s: %s, trying next URI…", url, error->message);
 	}
 	g_task_return_pointer(task, g_steal_pointer(&blob), (GDestroyNotify)g_bytes_unref);
 }
@@ -5368,7 +5384,7 @@ fwupd_client_upload_bytes_thread_cb(GTask *task,
 	if (res != CURLE_OK) {
 		glong status_code = 0;
 		curl_easy_getinfo(helper->curl, CURLINFO_RESPONSE_CODE, &status_code);
-		g_debug("status-code was %ld", status_code);
+		g_info("status-code was %ld", status_code);
 		if (errbuf[0] != '\0') {
 			g_task_return_new_error(task,
 						FWUPD_ERROR,
@@ -5468,7 +5484,7 @@ fwupd_client_upload_bytes_async(FwupdClient *self,
 	}
 
 	fwupd_client_set_status(self, FWUPD_STATUS_IDLE);
-	g_debug("uploading to %s", url);
+	g_info("uploading to %s", url);
 	(void)curl_easy_setopt(helper->curl, CURLOPT_URL, url);
 	g_task_set_task_data(task,
 			     g_steal_pointer(&helper),

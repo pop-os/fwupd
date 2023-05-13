@@ -16,6 +16,7 @@
 #include "fu-pxi-common.h"
 #include "fu-pxi-firmware.h"
 #include "fu-pxi-receiver-device.h"
+#include "fu-pxi-struct.h"
 #include "fu-pxi-wireless-device.h"
 
 #define FU_PXI_WIRELESS_DEV_DELAY_MS 50
@@ -43,8 +44,7 @@ static gboolean
 fu_pxi_wireless_device_set_feature(FuDevice *self, const guint8 *buf, guint bufsz, GError **error)
 {
 #ifdef HAVE_HIDRAW_H
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
+	fu_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    HIDIOCSFEATURE(bufsz),
 				    (guint8 *)buf,
@@ -72,8 +72,7 @@ fu_pxi_wireless_device_get_feature(FuDevice *self, guint8 *buf, guint bufsz, GEr
 				  error)) {
 		return FALSE;
 	}
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
+	fu_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
 	return TRUE;
 #else
 	g_set_error_literal(error,
@@ -140,9 +139,9 @@ fu_pxi_wireless_device_get_cmd_response(FuPxiWirelessDevice *device,
 		/*if wireless device not reply to receiver, keep to wait */
 		if (!fu_memread_uint8_safe(buf, bufsz, 0x5, &status, error))
 			return FALSE;
-		if (status == OTA_RSP_NOT_READY) {
+		if (status == FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_NOT_READY) {
 			retry = 0x0;
-			g_debug("OTA_RSP_NOT_READY");
+			g_debug("FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_NOT_READY");
 		}
 	}
 	return TRUE;
@@ -187,8 +186,7 @@ fu_pxi_wireless_device_check_crc(FuDevice *device, guint16 checksum, GError **er
 	if (!fu_pxi_wireless_device_get_cmd_response(self, buf, sizeof(buf), error))
 		return FALSE;
 
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "crc buf", buf, sizeof(buf));
+	fu_dump_raw(G_LOG_DOMAIN, "crc buf", buf, sizeof(buf));
 
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
@@ -199,7 +197,7 @@ fu_pxi_wireless_device_check_crc(FuDevice *device, guint16 checksum, GError **er
 				    G_LITTLE_ENDIAN,
 				    error))
 		return FALSE;
-	if (status == OTA_RSP_CODE_ERROR) {
+	if (status == FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_ERROR) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
@@ -208,12 +206,12 @@ fu_pxi_wireless_device_check_crc(FuDevice *device, guint16 checksum, GError **er
 			    checksum);
 		return FALSE;
 	}
-	if (status != OTA_RSP_OK) {
+	if (status != FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_OK) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
 			    "status:%s",
-			    fu_pxi_receiver_cmd_result_to_string(status));
+			    fu_pxi_wireless_module_ota_rsp_code_to_string(status));
 		return FALSE;
 	}
 
@@ -306,12 +304,12 @@ fu_pxi_wireless_device_write_payload(FuDevice *device, FuChunk *chk, GError **er
 		return FALSE;
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
-	if (status != OTA_RSP_OK) {
+	if (status != FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_OK) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
 			    "cmd rsp check fail: %s [0x%02x]",
-			    fu_pxi_receiver_cmd_result_to_string(status),
+			    fu_pxi_wireless_module_ota_rsp_code_to_string(status),
 			    status);
 		return FALSE;
 	}
@@ -380,9 +378,9 @@ fu_pxi_wireless_device_fw_ota_init_new(FuDevice *device, gsize bufsz, GError **e
 	fu_byte_array_append_uint8(ota_cmd, 0X06); /* ota init new command length */
 	fu_byte_array_append_uint8(ota_cmd,
 				   FU_PXI_DEVICE_CMD_FW_OTA_INIT_NEW); /* ota init new op code */
-	fu_byte_array_append_uint32(ota_cmd, bufsz, G_LITTLE_ENDIAN); /* fw size */
-	fu_byte_array_append_uint8(ota_cmd, 0x0);		      /* ota setting */
-	g_byte_array_append(ota_cmd, fw_version, sizeof(fw_version)); /* ota version */
+	fu_byte_array_append_uint32(ota_cmd, bufsz, G_LITTLE_ENDIAN);  /* fw size */
+	fu_byte_array_append_uint8(ota_cmd, 0x0);		       /* ota setting */
+	g_byte_array_append(ota_cmd, fw_version, sizeof(fw_version));  /* ota version */
 
 	/* increase the serial number */
 	self->sn++;
@@ -443,12 +441,12 @@ fu_pxi_wireless_device_fw_ota_ini_new_check(FuDevice *device, GError **error)
 		return FALSE;
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
-	if (status != OTA_RSP_OK) {
+	if (status != FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_OK) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
 			    "cmd rsp check fail: %s [0x%02x]",
-			    fu_pxi_receiver_cmd_result_to_string(status),
+			    fu_pxi_wireless_module_ota_rsp_code_to_string(status),
 			    status);
 		return FALSE;
 	}

@@ -102,6 +102,20 @@ DROM and exposed in the relevant sysfs attributes.
 If the controller is in native enumeration mode, the string "-native" is added
 at the end so the format is "TBT-vvvvdddd-native".
 
+## Quirk Use
+
+This plugin uses the following plugin-specific quirks:
+
+### Flags=retimer-offline-mode
+
+Use offline mode interface to update retimers.
+
+Since: 1.9.1
+
 ## External Interface Access
 
 This plugin requires read/write access to `/sys/bus/thunderbolt`.
+
+## Version Considerations
+
+This plugin has been available since fwupd version `0.8.0`.

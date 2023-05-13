@@ -15,6 +15,7 @@
 
 #include "fu-pxi-firmware.h"
 #include "fu-pxi-receiver-device.h"
+#include "fu-pxi-struct.h"
 #include "fu-pxi-wireless-device.h"
 
 struct _FuPxiReceiverDevice {
@@ -61,8 +62,7 @@ fu_pxi_receiver_device_set_feature(FuPxiReceiverDevice *self,
 				   GError **error)
 {
 #ifdef HAVE_HIDRAW_H
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
+	fu_dump_raw(G_LOG_DOMAIN, "SetFeature", buf, bufsz);
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    HIDIOCSFEATURE(bufsz),
 				    (guint8 *)buf,
@@ -93,8 +93,7 @@ fu_pxi_receiver_device_get_feature(FuPxiReceiverDevice *self,
 				  error)) {
 		return FALSE;
 	}
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
+	fu_dump_raw(G_LOG_DOMAIN, "GetFeature", buf, bufsz);
 	return TRUE;
 #else
 	g_set_error_literal(error,
@@ -116,9 +115,9 @@ fu_pxi_receiver_device_fw_ota_init_new(FuPxiReceiverDevice *device, gsize bufsz,
 	fu_byte_array_append_uint8(ota_cmd, 0X06); /* ota init new command length */
 	fu_byte_array_append_uint8(ota_cmd,
 				   FU_PXI_DEVICE_CMD_FW_OTA_INIT_NEW); /* ota init new op code */
-	fu_byte_array_append_uint32(ota_cmd, bufsz, G_LITTLE_ENDIAN); /* fw size */
-	fu_byte_array_append_uint8(ota_cmd, 0x0);		      /* ota setting */
-	g_byte_array_append(ota_cmd, fw_version, sizeof(fw_version)); /* ota version */
+	fu_byte_array_append_uint32(ota_cmd, bufsz, G_LITTLE_ENDIAN);  /* fw size */
+	fu_byte_array_append_uint8(ota_cmd, 0x0);		       /* ota setting */
+	g_byte_array_append(ota_cmd, fw_version, sizeof(fw_version));  /* ota version */
 
 	self->sn++;
 	if (!fu_pxi_composite_receiver_cmd(FU_PXI_DEVICE_CMD_FW_OTA_INIT_NEW,
@@ -254,7 +253,7 @@ fu_pxi_receiver_device_check_crc(FuDevice *device, guint16 checksum, GError **er
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 
-	if (status == OTA_RSP_CODE_ERROR) {
+	if (status == FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_ERROR) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
@@ -305,12 +304,12 @@ fu_pxi_receiver_device_fw_object_create(FuDevice *device, FuChunk *chk, GError *
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 
-	if (status != OTA_RSP_OK) {
+	if (status != FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_OK) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
 			    "cmd rsp check fail: %s [0x%02x]",
-			    fu_pxi_receiver_cmd_result_to_string(status),
+			    fu_pxi_wireless_module_ota_rsp_code_to_string(status),
 			    status);
 		return FALSE;
 	}
@@ -357,12 +356,12 @@ fu_pxi_receiver_device_write_payload(FuDevice *device, FuChunk *chk, GError **er
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x5, &status, error))
 		return FALSE;
 
-	if (status != OTA_RSP_OK) {
+	if (status != FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_OK) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
 			    "cmd rsp check fail: %s [0x%02x]",
-			    fu_pxi_receiver_cmd_result_to_string(status),
+			    fu_pxi_wireless_module_ota_rsp_code_to_string(status),
 			    status);
 		return FALSE;
 	}
@@ -461,8 +460,7 @@ fu_pxi_receiver_device_fw_upgrade(FuDevice *device,
 		return FALSE;
 
 	g_byte_array_append(ota_cmd, fw_version, sizeof(fw_version));
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "ota_cmd ", ota_cmd->data, ota_cmd->len);
+	fu_dump_raw(G_LOG_DOMAIN, "ota_cmd ", ota_cmd->data, ota_cmd->len);
 	self->sn++;
 
 	/* get pixart wireless module ota command */
@@ -490,12 +488,12 @@ fu_pxi_receiver_device_fw_upgrade(FuDevice *device,
 
 	if (!fu_memread_uint8_safe(res, sizeof(res), 0x5, &result, error))
 		return FALSE;
-	if (result != OTA_RSP_OK) {
+	if (result != FU_PXI_WIRELESS_MODULE_OTA_RSP_CODE_OK) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_READ,
 			    "cmd rsp check fail: %s [0x%02x]",
-			    fu_pxi_receiver_cmd_result_to_string(result),
+			    fu_pxi_wireless_module_ota_rsp_code_to_string(result),
 			    result);
 		return FALSE;
 	}
@@ -610,6 +608,7 @@ fu_pxi_receiver_device_get_peripheral_info(FuPxiReceiverDevice *device,
 {
 	guint8 buf[FU_PXI_RECEIVER_DEVICE_OTA_BUF_SZ] = {0x0};
 	guint16 checksum = 0;
+	g_autofree gchar *version_str = NULL;
 	g_autoptr(GByteArray) ota_cmd = g_byte_array_new();
 	g_autoptr(GByteArray) receiver_device_cmd = g_byte_array_new();
 
@@ -636,8 +635,7 @@ fu_pxi_receiver_device_get_peripheral_info(FuPxiReceiverDevice *device,
 	if (!fu_pxi_receiver_device_get_feature(device, buf, sizeof(buf), error))
 		return FALSE;
 
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "model_info", buf, sizeof(buf));
+	fu_dump_raw(G_LOG_DOMAIN, "model_info", buf, sizeof(buf));
 
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0x9, &model->status, error))
 		return FALSE;
@@ -668,16 +666,13 @@ fu_pxi_receiver_device_get_peripheral_info(FuPxiReceiverDevice *device,
 		return FALSE;
 
 	if (!fu_memread_uint16_safe(buf, sizeof(buf), 0x1D, &checksum, G_LITTLE_ENDIAN, error))
-
 		return FALSE;
 
 	/* set current version and model name */
 	model->checksum = checksum;
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL) {
-		g_autofree gchar *version_str = g_strndup((gchar *)model->version, 5);
-		g_debug("checksum %x", model->checksum);
-		g_debug("version_str %s", version_str);
-	}
+	g_debug("checksum %x", model->checksum);
+	version_str = g_strndup((gchar *)model->version, 5);
+	g_debug("version_str %s", version_str);
 
 	return TRUE;
 }
@@ -716,9 +711,7 @@ fu_pxi_receiver_device_get_peripheral_num(FuPxiReceiverDevice *device,
 	buf[0] = PXI_HID_WIRELESS_DEV_OTA_REPORT_ID;
 	if (!fu_pxi_receiver_device_get_feature(device, buf, sizeof(buf), error))
 		return FALSE;
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL) {
-		fu_dump_raw(G_LOG_DOMAIN, "buf from get model num", buf, sizeof(buf));
-	}
+	fu_dump_raw(G_LOG_DOMAIN, "buf from get model num", buf, sizeof(buf));
 	if (!fu_memread_uint8_safe(buf, sizeof(buf), 0xA, num_of_models, error))
 		return FALSE;
 
@@ -823,8 +816,7 @@ fu_pxi_receiver_device_check_peripherals(FuPxiReceiverDevice *device, GError **e
 	/* add wireless peripherals */
 	if (!fu_pxi_receiver_device_get_peripheral_num(device, &num, error))
 		return FALSE;
-	if (g_getenv("FWUPD_PIXART_RF_VERBOSE") != NULL)
-		g_debug("peripheral num: %u", num);
+	g_debug("peripheral num: %u", num);
 	for (guint8 idx = 0; idx < num; idx++) {
 		if (!fu_pxi_receiver_device_add_peripherals(device, idx, error))
 			return FALSE;

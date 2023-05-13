@@ -21,6 +21,7 @@
 #include "fu-ifd-device.h"
 #include "fu-intel-spi-common.h"
 #include "fu-intel-spi-device.h"
+#include "fu-intel-spi-struct.h"
 #include "fu-pci-device.h"
 
 struct _FuIntelSpiDevice {
@@ -311,11 +312,9 @@ fu_intel_spi_device_setup(FuDevice *device, GError **error)
 			      : PCH100_REG_FPR0;
 
 	/* dump everything */
-	if (g_getenv("FWUPD_INTEL_SPI_VERBOSE") != NULL) {
-		for (guint i = 0; i < 0xff; i += 4) {
-			guint32 tmp = fu_mmio_read32(self->spibar, i);
-			g_print("SPIBAR[0x%02x] = 0x%x\n", i, tmp);
-		}
+	for (guint i = 0; i < 0xff; i += 4) {
+		guint32 tmp = fu_mmio_read32(self->spibar, i);
+		g_print("SPIBAR[0x%02x] = 0x%x\n", i, tmp);
 	}
 
 	/* read from descriptor */

@@ -9,6 +9,7 @@
 
 #include <fwupdplugin.h>
 
+#include "fu-vli-struct.h"
 #include "fu-vli-usbhub-rtd21xx-device.h"
 
 struct _FuVliUsbhubRtd21xxDevice {
@@ -70,8 +71,7 @@ fu_vli_usbhub_device_i2c_write(FuVliUsbhubDevice *self,
 			    datasz,
 			    error))
 		return FALSE;
-	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, datasz + 2);
+	fu_dump_raw(G_LOG_DOMAIN, "I2cWriteData", buf, datasz + 2);
 	if (!g_usb_device_control_transfer(usb_device,
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
@@ -117,8 +117,7 @@ fu_vli_usbhub_device_i2c_read(FuVliUsbhubDevice *self,
 		g_prefix_error(error, "failed to read I2C: ");
 		return FALSE;
 	}
-	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "I2cReadData", data, datasz);
+	fu_dump_raw(G_LOG_DOMAIN, "I2cReadData", data, datasz);
 	return TRUE;
 }
 
@@ -511,11 +510,11 @@ fu_vli_usbhub_rtd21xx_device_probe(FuDevice *device, GError **error)
 	FuVliDeviceKind device_kind = FU_VLI_DEVICE_KIND_RTD21XX;
 	FuVliUsbhubDevice *parent = FU_VLI_USBHUB_DEVICE(fu_device_get_parent(device));
 
-	fu_device_set_name(device, fu_vli_common_device_kind_to_string(device_kind));
+	fu_device_set_name(device, fu_vli_device_kind_to_string(device_kind));
 	fu_device_set_physical_id(device, fu_device_get_physical_id(FU_DEVICE(parent)));
 
 	/* add instance ID */
-	fu_device_add_instance_str(device, "I2C", fu_vli_common_device_kind_to_string(device_kind));
+	fu_device_add_instance_str(device, "I2C", fu_vli_device_kind_to_string(device_kind));
 	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", "I2C", NULL);
 }
 

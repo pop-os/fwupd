@@ -51,6 +51,7 @@ if get_option('tests')
     ],
     c_args: [
       cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
     ],
   )
   test('dell-self-test', e, env: env)

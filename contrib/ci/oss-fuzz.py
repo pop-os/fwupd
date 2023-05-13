@@ -156,6 +156,28 @@ class Builder:
             sys.exit(1)
         return os.path.join(self.builddir, "{}".format(dst))
 
+    def rustgen(self, src: str) -> str:
+
+        fn_root = os.path.basename(src).replace(".rs", "")
+        fulldst_c = os.path.join(self.builddir, f"{fn_root}-struct.c")
+        fulldst_h = os.path.join(self.builddir, f"{fn_root}-struct.h")
+        try:
+            subprocess.run(
+                [
+                    "python",
+                    "fwupd/libfwupdplugin/rustgen.py",
+                    src,
+                    fulldst_c,
+                    fulldst_h,
+                ],
+                cwd=self.srcdir,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print(e)
+            sys.exit(1)
+        return fulldst_c
+
     def link(self, objs: List[str], dst: str) -> None:
         """link multiple objects into a binary"""
         argv = [self.cxx] + self.cxxflags
@@ -255,7 +277,9 @@ class Fuzzer:
 
     @property
     def new_gtype(self) -> str:
-        return "fu_{}_new".format(self.pattern).replace("-", "_")
+        return "g_object_new(FU_TYPE_{}, NULL)".format(
+            self.pattern.replace("-", "_").upper()
+        )
 
     @property
     def header(self) -> str:
@@ -345,7 +369,10 @@ def _build(bld: Builder) -> None:
     for path in ["fwupd/libfwupd", "fwupd/libfwupdplugin"]:
         bld.add_src_includedir(path)
         for src in bld.grep_meson(path):
-            built_objs.append(bld.compile(src))
+            if src.endswith(".c"):
+                built_objs.append(bld.compile(src))
+            elif src.endswith(".rs"):
+                built_objs.append(bld.compile(bld.rustgen(src)))
 
     # dummy binary entrypoint
     if "LIB_FUZZING_ENGINE" in os.environ:
@@ -415,7 +442,10 @@ def _build(bld: Builder) -> None:
     ]:
         fuzz_objs = []
         for obj in bld.grep_meson("fwupd/plugins/{}".format(fzr.srcdir)):
-            fuzz_objs.append(bld.compile(obj))
+            if obj.endswith(".c"):
+                fuzz_objs.append(bld.compile(obj))
+            elif obj.endswith(".rs"):
+                fuzz_objs.append(bld.compile(bld.rustgen(obj)))
         src = bld.substitute(
             "fwupd/libfwupdplugin/fu-fuzzer-firmware.c.in",
             {
@@ -446,7 +476,16 @@ if __name__ == "__main__":
     # install missing deps here rather than patching the Dockerfile in oss-fuzz
     try:
         subprocess.check_call(
-            ["apt-get", "install", "-y", "liblzma-dev", "libzstd-dev", "libcbor-dev"],
+            [
+                "apt-get",
+                "install",
+                "-y",
+                "liblzma-dev",
+                "libzstd-dev",
+                "libcbor-dev",
+                "python3",
+                "python3-jinja2",
+            ],
             stdout=open(os.devnull, "wb"),
         )
     except FileNotFoundError:

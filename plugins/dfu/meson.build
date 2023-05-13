@@ -3,7 +3,18 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginDfu"']
 
 plugin_quirks += files('dfu.quirk')
 
+# do not use structgen as these files are used in the dfu-csr plugin too...
+dfu_rs = custom_target('fu-dfu-rs',
+  input: 'fu-dfu.rs',
+  output: ['fu-dfu-struct.c', 'fu-dfu-struct.h'],
+  command: [
+    python3,
+    join_paths(meson.project_source_root(), 'libfwupdplugin', 'rustgen.py'),
+    '@INPUT@', '@OUTPUT0@', '@OUTPUT1@',
+  ],
+)
 plugin_builtin_dfu = static_library('fu_plugin_dfu',
+  dfu_rs,
   sources: [
     'fu-dfu-plugin.c',
     'fu-dfu-common.c',
@@ -26,6 +37,7 @@ plugin_builtins += plugin_builtin_dfu
 if get_option('compat_cli')
 fu_dfu_tool = executable(
   'dfu-tool',
+  dfu_rs,
   sources: [
     'fu-dfu-tool.c',
   ],
@@ -42,19 +54,13 @@ fu_dfu_tool = executable(
 )
 endif
 
-if get_option('compat_cli') and pandoc.found()
-  conf_man = configuration_data()
-  conf_man.set('PACKAGE_VERSION', fwupd_version)
-  dfu_tool_md = configure_file(
-    input: 'dfu-tool.md',
-    output: 'dfu-tool.md',
-    configuration: conf_man,
-  )
+if get_option('compat_cli') and get_option('man')
   custom_target('dfu-tool.1',
-    input: dfu_tool_md,
+    input: 'dfu-tool.md',
     output: 'dfu-tool.1',
     command: [
-      pandoc, '--standalone', '--to', 'man', '@INPUT@', '-o', '@OUTPUT@',
+      generate_man, '@INPUT@', '-o', '@OUTPUT@',
+      '--replace', 'PACKAGE_VERSION', fwupd_version,
     ],
     install: true,
     install_dir: join_paths(mandir, 'man1'),
@@ -67,6 +73,7 @@ if get_option('tests')
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
   e = executable(
     'fu-dfu-self-test',
+    dfu_rs,
     sources: [
       'fu-dfu-self-test.c'
     ],
@@ -82,6 +89,9 @@ if get_option('tests')
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('fu-dfu-self-test', e, env: env)  # added to installed-tests
 endif

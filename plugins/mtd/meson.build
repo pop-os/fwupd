@@ -24,7 +24,6 @@ if get_option('tests')
       'fu-self-test.c',
     ],
     include_directories: plugin_incdirs,
-    c_args: cargs,
     dependencies: plugin_deps,
     link_with: [
       plugin_libs,
@@ -33,6 +32,10 @@ if get_option('tests')
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('mtd-self-test', e, env: env)  # added to installed-tests
 endif

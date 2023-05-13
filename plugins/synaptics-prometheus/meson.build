@@ -3,6 +3,9 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginSynapticsPrometheus"']
 
 plugin_quirks += files('synaptics-prometheus.quirk')
 plugin_builtin_synaprom = static_library('fu_plugin_synaprom',
+  rustgen.process(
+    'fu-synaprom.rs',           # fuzzing
+  ),
   sources: [
     'fu-synaprom-plugin.c',
     'fu-synaprom-common.c',
@@ -34,10 +37,13 @@ if get_option('tests')
       plugin_libs,
       plugin_builtin_synaprom,
     ],
-    c_args: cargs,
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      cargs,
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('synaptics-prometheus-self-test', e, env: env)  # added to installed-tests
 endif

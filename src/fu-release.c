@@ -9,7 +9,6 @@
 #include "config.h"
 
 #include "fu-device-private.h"
-#include "fu-keyring-utils.h"
 #include "fu-release-common.h"
 #include "fu-release.h"
 
@@ -26,17 +25,55 @@ struct _FuRelease {
 	FuEngineRequest *request;
 	FuDevice *device;
 	FwupdRemote *remote;
-	FuConfig *config;
+	FuEngineConfig *config;
 	GBytes *blob_fw;
 	gchar *update_request_id;
-	FwupdReleaseFlags trust_flags;
-	gboolean is_downgrade;
 	GPtrArray *soft_reqs; /* nullable, element-type XbNode */
 	GPtrArray *hard_reqs; /* nullable, element-type XbNode */
 	guint64 priority;
 };
 
 G_DEFINE_TYPE(FuRelease, fu_release, FWUPD_TYPE_RELEASE)
+
+static gboolean
+fu_release_ensure_trust_flags(FuRelease *self, XbNode *rel, GError **error);
+
+gchar *
+fu_release_to_string(FuRelease *self)
+{
+	const guint idt = 1;
+	g_autofree gchar *tmp = NULL;
+	g_autoptr(GString) str = g_string_new(NULL);
+
+	g_return_val_if_fail(FU_IS_RELEASE(self), NULL);
+
+	/* parent */
+	tmp = fwupd_release_to_string(FWUPD_RELEASE(self));
+	if (tmp != NULL && tmp[0] != '\0')
+		g_string_append(str, tmp);
+
+	/* instance */
+	if (self->request != NULL) {
+		fu_string_append(str, idt, "Request", NULL);
+		fu_engine_request_add_string(self->request, idt + 1, str);
+	}
+	if (self->device != NULL)
+		fu_string_append(str, idt, "Device", fu_device_get_id(self->device));
+	if (self->remote != NULL)
+		fu_string_append(str, idt, "Remote", fwupd_remote_get_id(self->remote));
+	fu_string_append_kb(str, idt, "HasConfig", self->config != NULL);
+	if (self->blob_fw != NULL)
+		fu_string_append_kx(str, idt, "BlobFwSz", g_bytes_get_size(self->blob_fw));
+	if (self->update_request_id != NULL)
+		fu_string_append(str, idt, "UpdateRequestId", self->update_request_id);
+	if (self->soft_reqs != NULL)
+		fu_string_append_kx(str, idt, "SoftReqs", self->soft_reqs->len);
+	if (self->hard_reqs != NULL)
+		fu_string_append_kx(str, idt, "HardReqs", self->hard_reqs->len);
+	if (self->priority != 0)
+		fu_string_append_kx(str, idt, "Priority", self->priority);
+	return g_string_free(g_steal_pointer(&str), FALSE);
+}
 
 /**
  * fu_release_set_request:
@@ -188,13 +225,13 @@ fu_release_set_remote(FuRelease *self, FwupdRemote *remote)
 /**
  * fu_release_set_config:
  * @self: a #FuRelease
- * @config: (nullable): a #FuConfig
+ * @config: (nullable): a #FuEngineConfig
  *
  * Sets the config to use when loading. The config may be used for things like ordering attributes
  *like protocol priority.
  **/
 void
-fu_release_set_config(FuRelease *self, FuConfig *config)
+fu_release_set_config(FuRelease *self, FuEngineConfig *config)
 {
 	g_return_if_fail(FU_IS_RELEASE(self));
 	g_set_object(&self->config, config);
@@ -289,6 +326,16 @@ fu_release_load_test_result(FuRelease *self, XbNode *n, GError **error)
 	if (custom != NULL) {
 		for (guint i = 0; i < custom->len; i++) {
 			XbNode *c = g_ptr_array_index(custom, i);
+			if (g_strcmp0(xb_node_get_attr(c, "key"), "FromOEM") == 0) {
+				fwupd_report_add_flag(report, FWUPD_REPORT_FLAG_FROM_OEM);
+				continue;
+			}
+			if (xb_node_get_attr(c, "key") == NULL || xb_node_get_text(c) == NULL) {
+				g_debug("ignoring metadata: %s=%s",
+					xb_node_get_attr(c, "key"),
+					xb_node_get_text(c));
+				continue;
+			}
 			fwupd_report_add_metadata_item(report,
 						       xb_node_get_attr(c, "key"),
 						       xb_node_get_text(c));
@@ -330,7 +377,8 @@ fu_release_load_artifact(FuRelease *self, XbNode *artifact, GError **error)
 			/* check the scheme is allowed */
 			scheme = fu_release_uri_get_scheme(xb_node_get_text(n));
 			if (scheme != NULL) {
-				guint prio = fu_config_get_uri_scheme_prio(self->config, scheme);
+				guint prio =
+				    fu_engine_config_get_uri_scheme_prio(self->config, scheme);
 				if (prio == G_MAXUINT)
 					continue;
 			}
@@ -386,8 +434,8 @@ fu_release_scheme_compare_cb(gconstpointer a, gconstpointer b, gpointer user_dat
 	const gchar *location2 = *((const gchar **)b);
 	g_autofree gchar *scheme1 = fu_release_uri_get_scheme(location1);
 	g_autofree gchar *scheme2 = fu_release_uri_get_scheme(location2);
-	guint prio1 = fu_config_get_uri_scheme_prio(self->config, scheme1);
-	guint prio2 = fu_config_get_uri_scheme_prio(self->config, scheme2);
+	guint prio1 = fu_engine_config_get_uri_scheme_prio(self->config, scheme1);
+	guint prio2 = fu_engine_config_get_uri_scheme_prio(self->config, scheme2);
 	if (prio1 < prio2)
 		return -1;
 	if (prio1 > prio2)
@@ -659,8 +707,10 @@ fu_release_check_requirements(FuRelease *self,
 			    fu_release_get_version(self));
 		return FALSE;
 	}
-	self->is_downgrade = vercmp > 0;
-	if (self->is_downgrade && (install_flags & FWUPD_INSTALL_FLAG_ALLOW_OLDER) == 0 &&
+	if (vercmp > 0)
+		fu_release_add_flag(self, FWUPD_RELEASE_FLAG_IS_DOWNGRADE);
+	if (fu_release_has_flag(self, FWUPD_RELEASE_FLAG_IS_DOWNGRADE) &&
+	    (install_flags & FWUPD_INSTALL_FLAG_ALLOW_OLDER) == 0 &&
 	    (install_flags & FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH) == 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -671,17 +721,7 @@ fu_release_check_requirements(FuRelease *self,
 		return FALSE;
 	}
 
-	/* verify */
-	if (!fu_keyring_get_release_flags(rel, &self->trust_flags, &error_local)) {
-		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
-			g_warning("Ignoring verification for %s: %s",
-				  fu_device_get_name(self->device),
-				  error_local->message);
-		} else {
-			g_propagate_error(error, g_steal_pointer(&error_local));
-			return FALSE;
-		}
-	}
+	/* success */
 	return TRUE;
 }
 
@@ -690,6 +730,35 @@ fu_release_set_priority(FuRelease *self, guint64 priority)
 {
 	g_return_if_fail(FU_IS_RELEASE(self));
 	self->priority = priority;
+}
+
+static void
+fu_release_ensure_device_by_checksum(FuRelease *self, XbNode *component, XbNode *rel)
+{
+	g_autoptr(GPtrArray) device_checksums = NULL;
+
+	/* sanity check */
+	if (fu_device_get_checksums(self->device)->len == 0)
+		return;
+	device_checksums = xb_node_query(rel, "checksum[@target='device']", 0, NULL);
+	if (device_checksums == NULL)
+		return;
+	for (guint i = 0; i < device_checksums->len; i++) {
+		XbNode *device_checksum = g_ptr_array_index(device_checksums, i);
+		if (!fu_device_has_checksum(self->device, xb_node_get_text(device_checksum)))
+			continue;
+		fu_device_ensure_from_component(self->device, component);
+		if (fu_device_has_internal_flag(self->device,
+						FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION)) {
+			const gchar *rel_version = xb_node_get_attr(rel, "version");
+			if (rel_version == NULL)
+				continue;
+			fu_device_set_version(self->device, rel_version);
+			fu_device_remove_internal_flag(self->device,
+						       FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION);
+		}
+		break;
+	}
 }
 
 /**
@@ -794,6 +863,27 @@ fu_release_load(FuRelease *self,
 		rel = g_object_ref(rel_optional);
 	}
 
+	/* find the remote */
+	tmp = xb_node_query_text(component, "../custom/value[@key='fwupd::RemoteId']", NULL);
+	if (tmp != NULL)
+		fwupd_release_set_remote_id(FWUPD_RELEASE(self), tmp);
+	tmp = xb_node_query_text(component, "../custom/value[@key='LVFS::Distributor']", NULL);
+	if (g_strcmp0(tmp, "community") == 0)
+		fwupd_release_add_flag(FWUPD_RELEASE(self), FWUPD_RELEASE_FLAG_IS_COMMUNITY);
+
+	/* use the metadata to set the device attributes */
+	if (!fu_release_ensure_trust_flags(self, rel, error))
+		return FALSE;
+	if (self->device != NULL &&
+	    fu_release_has_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_METADATA)) {
+		if (fu_device_has_internal_flag(self->device,
+						FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM)) {
+			fu_release_ensure_device_by_checksum(self, component, rel);
+		} else {
+			fu_device_ensure_from_component(self->device, component);
+		}
+	}
+
 	/* the version is fixed up with the device format */
 	tmp = xb_node_get_attr(rel, "version");
 	if (tmp == NULL) {
@@ -812,14 +902,6 @@ fu_release_load(FuRelease *self,
 
 	/* optional release ID -- currently a integer but maybe namespaced in the future */
 	fwupd_release_set_id(FWUPD_RELEASE(self), xb_node_get_attr(rel, "id"));
-
-	/* find the remote */
-	tmp = xb_node_query_text(component, "../custom/value[@key='fwupd::RemoteId']", NULL);
-	if (tmp != NULL)
-		fwupd_release_set_remote_id(FWUPD_RELEASE(self), tmp);
-	tmp = xb_node_query_text(component, "../custom/value[@key='LVFS::Distributor']", NULL);
-	if (g_strcmp0(tmp, "community") == 0)
-		fwupd_release_add_flag(FWUPD_RELEASE(self), FWUPD_RELEASE_FLAG_IS_COMMUNITY);
 
 	/* this is the more modern way to do this */
 	artifact = xb_node_query_first(rel, "artifacts/artifact[@type='binary']", NULL);
@@ -1025,7 +1107,7 @@ fu_release_load(FuRelease *self,
 
 	/* check requirements for device */
 	if (self->device != NULL && self->request != NULL &&
-	    fu_engine_request_get_kind(self->request) == FU_ENGINE_REQUEST_KIND_ACTIVE) {
+	    !fu_engine_request_has_flag(self->request, FU_ENGINE_REQUEST_FLAG_NO_REQUIREMENTS)) {
 		if (!fu_release_check_requirements(self, component, rel, install_flags, error))
 			return FALSE;
 	}
@@ -1034,22 +1116,60 @@ fu_release_load(FuRelease *self,
 	return TRUE;
 }
 
-/**
- * fu_release_get_trust_flags:
- * @self: a #FuRelease
- *
- * Gets the trust flags for this task.
- *
- * NOTE: This is only set after fu_release_load() has been called successfully, and
- * is only valid when a request has been set.
- *
- * Returns: the #FwupdReleaseFlags, e.g. #FWUPD_TRUST_FLAG_PAYLOAD
- **/
-FwupdReleaseFlags
-fu_release_get_trust_flags(FuRelease *self)
+static gboolean
+fu_release_ensure_trust_flags(FuRelease *self, XbNode *rel, GError **error)
 {
+	GBytes *blob;
+
 	g_return_val_if_fail(FU_IS_RELEASE(self), FALSE);
-	return self->trust_flags;
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* in the self tests */
+	if (g_getenv("FWUPD_SELF_TEST") != NULL) {
+		fu_release_add_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD);
+		fu_release_add_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_METADATA);
+		return TRUE;
+	}
+
+	/* populated from an actual cab archive */
+	blob = g_object_get_data(G_OBJECT(rel), "fwupd::ReleaseFlags");
+	if (blob != NULL) {
+		FwupdReleaseFlags flags = FWUPD_RELEASE_FLAG_NONE;
+		if (!fu_memcpy_safe((guint8 *)&flags,
+				    sizeof(flags),
+				    0x0, /* dst */
+				    g_bytes_get_data(blob, NULL),
+				    g_bytes_get_size(blob),
+				    0x0, /* src */
+				    sizeof(flags),
+				    error))
+			return FALSE;
+		if (flags & FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD)
+			fu_release_add_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD);
+		if (flags & FWUPD_RELEASE_FLAG_TRUSTED_METADATA)
+			fu_release_add_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_METADATA);
+	}
+
+	/* do not require signatures for anything installed to the immutable datadir */
+	if (fu_release_get_flags(self) == FWUPD_RELEASE_FLAG_NONE && self->remote != NULL) {
+		if (fwupd_remote_get_keyring_kind(self->remote) == FWUPD_KEYRING_KIND_NONE &&
+		    (fwupd_remote_get_kind(self->remote) == FWUPD_REMOTE_KIND_LOCAL ||
+		     fwupd_remote_get_kind(self->remote) == FWUPD_REMOTE_KIND_DIRECTORY)) {
+			g_info("remote %s has kind=%s and Keyring=none and so marking as trusted",
+			       fwupd_remote_get_id(self->remote),
+			       fwupd_remote_kind_to_string(fwupd_remote_get_kind(self->remote)));
+			fu_release_add_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD);
+			fu_release_add_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_METADATA);
+		} else if (fwupd_remote_get_keyring_kind(self->remote) != FWUPD_KEYRING_KIND_NONE) {
+			g_info("remote %s has kind=%s and so marking as trusted",
+			       fwupd_remote_get_id(self->remote),
+			       fwupd_remote_kind_to_string(fwupd_remote_get_kind(self->remote)));
+			fu_release_add_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_METADATA);
+		}
+	}
+
+	/* success */
+	return TRUE;
 }
 
 /**
@@ -1065,23 +1185,23 @@ fu_release_get_action_id(FuRelease *self)
 {
 	/* relax authentication checks for removable devices */
 	if (!fu_device_has_flag(self->device, FWUPD_DEVICE_FLAG_INTERNAL)) {
-		if (self->is_downgrade) {
-			if (self->trust_flags & FWUPD_TRUST_FLAG_PAYLOAD)
+		if (fu_release_has_flag(self, FWUPD_RELEASE_FLAG_IS_DOWNGRADE)) {
+			if (fu_release_has_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD))
 				return "org.freedesktop.fwupd.downgrade-hotplug-trusted";
 			return "org.freedesktop.fwupd.downgrade-hotplug";
 		}
-		if (self->trust_flags & FWUPD_TRUST_FLAG_PAYLOAD)
+		if (fu_release_has_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD))
 			return "org.freedesktop.fwupd.update-hotplug-trusted";
 		return "org.freedesktop.fwupd.update-hotplug";
 	}
 
 	/* internal device */
-	if (self->is_downgrade) {
-		if (self->trust_flags & FWUPD_TRUST_FLAG_PAYLOAD)
+	if (fu_release_has_flag(self, FWUPD_RELEASE_FLAG_IS_DOWNGRADE)) {
+		if (fu_release_has_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD))
 			return "org.freedesktop.fwupd.downgrade-internal-trusted";
 		return "org.freedesktop.fwupd.downgrade-internal";
 	}
-	if (self->trust_flags & FWUPD_TRUST_FLAG_PAYLOAD)
+	if (fu_release_has_flag(self, FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD))
 		return "org.freedesktop.fwupd.update-internal-trusted";
 	return "org.freedesktop.fwupd.update-internal";
 }
@@ -1112,13 +1232,24 @@ fu_release_compare(FuRelease *release1, FuRelease *release2)
 		return -1;
 	if (release1->priority < release2->priority)
 		return 1;
+
+	/* remote priority, higher is better */
+	if (release1->remote != NULL && release2->remote) {
+		if (fwupd_remote_get_priority(release1->remote) >
+		    fwupd_remote_get_priority(release2->remote))
+			return -1;
+		if (fwupd_remote_get_priority(release1->remote) <
+		    fwupd_remote_get_priority(release2->remote))
+			return 1;
+	}
+
 	return 0;
 }
 
 static void
 fu_release_init(FuRelease *self)
 {
-	self->trust_flags = FWUPD_TRUST_FLAG_NONE;
+	fu_release_set_flags(self, FWUPD_RELEASE_FLAG_NONE);
 }
 
 static void

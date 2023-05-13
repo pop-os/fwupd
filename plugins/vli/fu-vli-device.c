@@ -10,6 +10,7 @@
 #include <fwupdplugin.h>
 
 #include "fu-vli-device.h"
+#include "fu-vli-struct.h"
 
 typedef struct {
 	FuVliDeviceKind kind;
@@ -257,8 +258,7 @@ fu_vli_device_spi_write_block(FuVliDevice *self,
 	}
 
 	/* write */
-	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		g_debug("writing 0x%x block @0x%x", (guint)bufsz, address);
+	g_debug("writing 0x%x block @0x%x", (guint)bufsz, address);
 	if (!fu_vli_device_spi_write_enable(self, error)) {
 		g_prefix_error(error, "enabling SPI write failed: ");
 		return FALSE;
@@ -390,8 +390,7 @@ fu_vli_device_spi_erase(FuVliDevice *self,
 	fu_progress_set_steps(progress, chunks->len);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
-		if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-			g_debug("erasing @0x%x", fu_chunk_get_address(chk));
+		g_debug("erasing @0x%x", fu_chunk_get_address(chk));
 		if (!fu_vli_device_spi_erase_sector(FU_VLI_DEVICE(self),
 						    fu_chunk_get_address(chk),
 						    error)) {
@@ -473,7 +472,7 @@ fu_vli_device_set_kind(FuVliDevice *self, FuVliDeviceKind device_kind)
 		break;
 	default:
 		g_warning("device kind %s [0x%02x] does not indicate unsigned/signed payload",
-			  fu_vli_common_device_kind_to_string(device_kind),
+			  fu_vli_device_kind_to_string(device_kind),
 			  device_kind);
 		break;
 	}
@@ -486,7 +485,7 @@ fu_vli_device_set_kind(FuVliDevice *self, FuVliDeviceKind device_kind)
 	/* add extra DEV GUID too */
 	fu_device_add_instance_str(FU_DEVICE(self),
 				   "DEV",
-				   fu_vli_common_device_kind_to_string(priv->kind));
+				   fu_vli_device_kind_to_string(priv->kind));
 	fu_device_build_instance_id(FU_DEVICE(self), NULL, "USB", "VID", "PID", "DEV", NULL);
 }
 
@@ -521,10 +520,7 @@ fu_vli_device_to_string(FuDevice *device, guint idt, GString *str)
 	FU_DEVICE_CLASS(fu_vli_device_parent_class)->to_string(device, idt, str);
 
 	if (priv->kind != FU_VLI_DEVICE_KIND_UNKNOWN) {
-		fu_string_append(str,
-				 idt,
-				 "DeviceKind",
-				 fu_vli_common_device_kind_to_string(priv->kind));
+		fu_string_append(str, idt, "DeviceKind", fu_vli_device_kind_to_string(priv->kind));
 	}
 	fu_string_append_kb(str, idt, "SpiAutoDetect", priv->spi_auto_detect);
 	if (priv->flash_id != 0x0) {
@@ -560,8 +556,7 @@ fu_vli_device_spi_read_flash_id(FuVliDevice *self, GError **error)
 		g_prefix_error(error, "failed to read chip ID: ");
 		return FALSE;
 	}
-	if (g_getenv("FWUPD_VLI_USBHUB_VERBOSE") != NULL)
-		fu_dump_raw(G_LOG_DOMAIN, "SpiCmdReadId", buf, sizeof(buf));
+	fu_dump_raw(G_LOG_DOMAIN, "SpiCmdReadId", buf, sizeof(buf));
 	if (priv->spi_cmd_read_id_sz == 4) {
 		if (!fu_memread_uint32_safe(buf,
 					    sizeof(buf),
@@ -654,7 +649,7 @@ fu_vli_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 	}
 	if (g_strcmp0(key, "VliDeviceKind") == 0) {
 		FuVliDeviceKind device_kind;
-		device_kind = fu_vli_common_device_kind_from_string(value);
+		device_kind = fu_vli_device_kind_from_string(value);
 		if (device_kind == FU_VLI_DEVICE_KIND_UNKNOWN) {
 			g_set_error(error,
 				    G_IO_ERROR,

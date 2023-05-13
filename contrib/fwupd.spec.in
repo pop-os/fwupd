@@ -77,7 +77,6 @@ BuildRequires: libarchive-devel
 BuildRequires: libcbor-devel
 BuildRequires: gobject-introspection-devel
 BuildRequires: gcab
-BuildRequires: pandoc
 %ifarch %{valgrind_arches}
 BuildRequires: valgrind
 BuildRequires: valgrind-devel
@@ -218,6 +217,8 @@ Summary: fwupd wrapper for Qubes OS - dom0 scripts
 Requires:   gcab
 Requires:   fwupd >= 1.5.7
 Requires:   libjcat >= 0.1.6
+Requires:   python3-packaging
+Requires:   sequoia-sqv
 
 %description qubes-dom0
 fwupd wrapper for Qubes OS
@@ -227,6 +228,7 @@ Summary: fwupd wrapper for Qubes OS - VM scripts
 Requires:   gcab
 Requires:   fwupd >= 1.5.7
 Requires:   libjcat >= 0.1.6
+Requires:   python3-packaging
 
 %description qubes-vm
 fwupd wrapper for Qubes OS
@@ -332,16 +334,9 @@ done
 %systemd_postun_with_restart fwupd.service
 
 %files -f %{name}.lang
-%doc README.md AUTHORS
+%doc README.md
 %license COPYING
-%config(noreplace)%{_sysconfdir}/fwupd/daemon.conf
-%if 0%{?have_uefi}
-%config(noreplace)%{_sysconfdir}/fwupd/uefi_capsule.conf
-%endif
-%config(noreplace)%{_sysconfdir}/fwupd/redfish.conf
-%if 0%{?have_thunderbolt}
-%config(noreplace)%{_sysconfdir}/fwupd/thunderbolt.conf
-%endif
+%config(noreplace)%{_sysconfdir}/fwupd/fwupd.conf
 %dir %{_libexecdir}/fwupd
 %{_libexecdir}/fwupd/fwupd
 %ifarch i686 x86_64
@@ -368,7 +363,6 @@ done
 %{_sysconfdir}/pki/fwupd-metadata
 %if 0%{?have_msr}
 /usr/lib/modules-load.d/fwupd-msr.conf
-%config(noreplace)%{_sysconfdir}/fwupd/msr.conf
 %endif
 %{_datadir}/dbus-1/system.d/org.freedesktop.fwupd.conf
 %{_datadir}/bash-completion/completions/fwupdmgr
@@ -388,6 +382,7 @@ done
 %{_mandir}/man1/dbxtool.*
 %endif
 %{_mandir}/man1/fwupdmgr.1*
+%{_mandir}/man5/*
 %{_datadir}/metainfo/org.freedesktop.fwupd.metainfo.xml
 %{_datadir}/icons/hicolor/scalable/apps/org.freedesktop.fwupd.svg
 %{_datadir}/fwupd/firmware_packager.py
@@ -406,7 +401,7 @@ done
 %{_datadir}/fwupd/quirks.d/builtin.quirk.gz
 %{_datadir}/doc/fwupd/*.html
 %if 0%{?have_uefi}
-%{_sysconfdir}/grub.d/35_fwupd
+%config(noreplace)%{_sysconfdir}/grub.d/35_fwupd
 %endif
 %{_libdir}/libfwupd.so.2*
 %{_libdir}/girepository-1.0/Fwupd-2.0.typelib
@@ -455,7 +450,9 @@ done
 %endif
 %{_datadir}/installed-tests/fwupd/chassis_type
 %{_datadir}/installed-tests/fwupd/sys_vendor
+%if 0%{?fedora} >= 37
 %{_datadir}/fwupd/device-tests/*.json
+%endif
 %{_libexecdir}/installed-tests/fwupd/*
 %dir %{_sysconfdir}/fwupd/remotes.d
 %config(noreplace)%{_sysconfdir}/fwupd/remotes.d/fwupd-tests.conf
@@ -465,11 +462,12 @@ done
 %files qubes-vm
 %{_libexecdir}/qubes-fwupd/fwupd_common_vm.py
 %{_libexecdir}/qubes-fwupd/fwupd_download_updates.py
-%{_libexecdir}/qubes-fwupd/fwupd_usbvm_validate.py
 
 %files qubes-dom0
 %{_datadir}/qubes-fwupd/src/fwupd_receive_updates.py
-/usr/sbin/qubes-fwupdmgr
+%{_sbindir}/qubes-fwupdmgr
+%{_datadir}/qubes-fwupd/src/qubes_fwupdmgr.py
+%{_datadir}/qubes-fwupd/src/qubes_fwupd_common.py
 %{_datadir}/qubes-fwupd/src/qubes_fwupd_heads.py
 %{_datadir}/qubes-fwupd/src/qubes_fwupd_update.py
 %{_datadir}/qubes-fwupd/src/__init__.py

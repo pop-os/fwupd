@@ -5,6 +5,9 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginUf2"']
 
 plugin_quirks += files('uf2.quirk')
 plugin_builtin_uf2 = static_library('fu_plugin_uf2',
+  rustgen.process(
+    'fu-uf2.rs',          # fuzzing
+  ),
   sources: [
     'fu-uf2-plugin.c',
     'fu-uf2-device.c',
@@ -37,6 +40,9 @@ if get_option('tests')
     install: true,
     install_rpath: libdir_pkg,
     install_dir: installed_test_bindir,
+    c_args: [
+      '-DSRCDIR="' + meson.current_source_dir() + '"',
+    ],
   )
   test('uf2-self-test', e, env: env)
 endif

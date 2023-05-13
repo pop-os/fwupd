@@ -11,6 +11,7 @@
 
 #include "fu-vli-pd-device.h"
 #include "fu-vli-pd-parade-device.h"
+#include "fu-vli-struct.h"
 
 struct _FuVliPdParadeDevice {
 	FuDevice parent_instance;
@@ -28,10 +29,7 @@ static void
 fu_vli_pd_parade_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuVliPdParadeDevice *self = FU_VLI_PD_PARADE_DEVICE(device);
-	fu_string_append(str,
-			 idt,
-			 "DeviceKind",
-			 fu_vli_common_device_kind_to_string(self->device_kind));
+	fu_string_append(str, idt, "DeviceKind", fu_vli_device_kind_to_string(self->device_kind));
 	fu_string_append_kx(str, idt, "Page2", self->page2);
 	fu_string_append_kx(str, idt, "Page7", self->page7);
 }
@@ -517,7 +515,7 @@ fu_vli_pd_parade_device_write_firmware(FuDevice *device,
 	if (!fu_vli_pd_parade_device_enable_mapping(self, error))
 		return FALSE;
 	if (!fu_vli_pd_parade_device_i2c_write(self, self->page2, 0x82, 0x20, error))
-		return FALSE; /* Reset_CLT2SPI_Interface */
+		return FALSE;	      /* Reset_CLT2SPI_Interface */
 	fu_device_sleep(device, 100); /* ms */
 	if (!fu_vli_pd_parade_device_i2c_write(self, self->page2, 0x82, 0x00, error))
 		return FALSE;
@@ -678,9 +676,7 @@ fu_vli_pd_parade_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* use header to populate device info */
-	fu_device_add_instance_str(device,
-				   "I2C",
-				   fu_vli_common_device_kind_to_string(self->device_kind));
+	fu_device_add_instance_str(device, "I2C", fu_vli_device_kind_to_string(self->device_kind));
 	return fu_device_build_instance_id(device, error, "USB", "VID", "PID", "I2C", NULL);
 }
 
