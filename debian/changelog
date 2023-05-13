@@ -1,3 +1,9 @@
+fwupd (1.9.1-1) experimental; urgency=medium
+
+  * New upstream version (1.9.1)
+
+ -- Mario Limonciello <superm1@gmail.com>  Sat, 13 May 2023 06:53:09 -0500
+
 fwupd (1.8.12-2) unstable; urgency=medium
 
   * Backport a series of patches to help with autopkgtest failing when
