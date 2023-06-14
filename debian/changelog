@@ -1,3 +1,9 @@
+fwupd (1.7.9-1~20.04.3ubuntu1pop1) focal; urgency=medium
+
+  * Pop!_OS Updates
+
+ -- Brock Szuszczewicz <brock@szu.email>  Wed, 14 Jun 2023 12:11:57 -0600
+
 fwupd (1.7.9-1~20.04.3) focal; urgency=medium
 
   * Hide inhibited usb4 device in dell-dock plugin (LP: #1983451)
