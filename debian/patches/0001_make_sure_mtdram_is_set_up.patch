@@ -1,0 +1,30 @@
+commit d6a455e8567feaea923b546624025b86e5b8dee1
+Author: Mario Limonciello <superm1@gmail.com>
+Date:   Wed Sep 7 08:08:26 2022 -0500
+
+    trivial: try harder to make sure mtdram is set up
+    
+    the autopkgtest environment in Ubuntu seems to not be preparing the mtdram
+    device properly. Sometimes the udev node "exists" but the /dev/mtd0 does not
+    exist.
+    
+    Look for this explicitly and skip the test if it happens.
+
+--- a/plugins/mtd/fu-self-test.c
++++ b/plugins/mtd/fu-self-test.c
+@@ -39,6 +39,15 @@
+ 		g_test_skip("could not find mtdram device");
+ 		return;
+ 	}
++	dev_name = g_udev_device_get_property(udev_device, "DEVNAME");
++	if (g_strcmp0(dev_name, "/dev/mtd0") != 0) {
++		g_test_skip("DEVNAME not /dev/mtd0");
++		return;
++	}
++	if (!g_file_test(dev_name, G_FILE_TEST_EXISTS)) {
++		g_test_skip("/dev/mtd0 doesn't exist");
++		return;
++	}
+ 
+ 	/* create device */
+ 	device = g_object_new(FU_TYPE_MTD_DEVICE, "context", ctx, "udev-device", udev_device, NULL);

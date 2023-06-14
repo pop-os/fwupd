@@ -1,0 +1,33 @@
+From 4bf53196fc1198a0688b49bcd16cd0126823f434 Mon Sep 17 00:00:00 2001
+From: hugh712 <hugh712@gmail.com>
+Date: Tue, 5 Jul 2022 11:18:23 +0800
+Subject: [PATCH]  trivial: don't show devices with inhibit id: hidden 
+ dell-dock: don't show thunderbolt's usb4 device, if inhibited
+
+---
+ plugins/dell-dock/fu-plugin-dell-dock.c | 2 +-
+ src/fu-device-list.c                    | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+--- a/plugins/dell-dock/fu-plugin-dell-dock.c
++++ b/plugins/dell-dock/fu-plugin-dell-dock.c
+@@ -233,7 +233,7 @@
+ 		g_autofree gchar *msg = NULL;
+ 		msg = g_strdup_printf("firmware update inhibited by [%s] plugin",
+ 				      fu_plugin_get_name(plugin));
+-		fu_device_inhibit(device, "usb4-blocked", msg);
++		fu_device_inhibit(device, "hidden", msg);
+ 		return;
+ 	}
+ 
+--- a/src/fu-device-list.c
++++ b/src/fu-device-list.c
+@@ -218,6 +218,8 @@
+ 		FuDeviceItem *item = g_ptr_array_index(self->devices, i);
+ 		if (fu_device_has_inhibit(item->device, "unconnected"))
+ 			continue;
++		if (fu_device_has_inhibit(item->device, "hidden"))
++			continue;
+ 		g_ptr_array_add(devices, g_object_ref(item->device));
+ 	}
+ 	g_rw_lock_reader_unlock(&self->devices_mutex);

@@ -1,0 +1,104 @@
+From 6b5d933e99dce7f2bf2b771176001191a3bab644 Mon Sep 17 00:00:00 2001
+From: Richard Hughes <richard@hughsie.com>
+Date: Tue, 15 Mar 2022 11:31:00 +0000
+Subject: [PATCH] Do not show unconnected or unreachable devices in the client
+ tools
+
+Fixes https://github.com/fwupd/fwupd/issues/4378
+---
+ libfwupdplugin/fu-device.c     | 24 ++++++++++++++++++++++++
+ libfwupdplugin/fu-device.h     |  2 ++
+ libfwupdplugin/fu-self-test.c  |  3 +++
+ libfwupdplugin/fwupdplugin.map |  6 ++++++
+ src/fu-device-list.c           |  2 ++
+ 5 files changed, 37 insertions(+)
+
+--- a/libfwupdplugin/fu-device.c
++++ b/libfwupdplugin/fu-device.c
+@@ -2659,6 +2659,30 @@
+ }
+ 
+ /**
++ * fu_device_has_inhibit:
++ * @self: a #FuDevice
++ * @inhibit_id: an ID used for inhibiting, e.g. `low-power`
++ *
++ * Check if the device already has an inhibit with a specific ID.
++ *
++ * Returns: %TRUE if added
++ *
++ * Since: 1.8.0
++ **/
++gboolean
++fu_device_has_inhibit(FuDevice *self, const gchar *inhibit_id)
++{
++	FuDevicePrivate *priv = GET_PRIVATE(self);
++
++	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
++	g_return_val_if_fail(inhibit_id != NULL, FALSE);
++
++	if (priv->inhibits == NULL)
++		return FALSE;
++	return g_hash_table_contains(priv->inhibits, inhibit_id);
++}
++
++/**
+  * fu_device_uninhibit:
+  * @self: a #FuDevice
+  * @inhibit_id: an ID used for uninhibiting, e.g. `low-power`
+--- a/libfwupdplugin/fu-device.h
++++ b/libfwupdplugin/fu-device.h
+@@ -524,6 +524,8 @@
+ fu_device_inhibit(FuDevice *self, const gchar *inhibit_id, const gchar *reason);
+ void
+ fu_device_uninhibit(FuDevice *self, const gchar *inhibit_id);
++gboolean
++fu_device_has_inhibit(FuDevice *self, const gchar *inhibit_id);
+ const gchar *
+ fu_device_get_physical_id(FuDevice *self);
+ void
+--- a/libfwupdplugin/fu-self-test.c
++++ b/libfwupdplugin/fu-self-test.c
+@@ -1785,9 +1785,11 @@
+ 
+ 	/* does not exist -> fine */
+ 	fu_device_uninhibit(device, "NOTGOINGTOEXIST");
++	g_assert_false(fu_device_has_inhibit(device, "NOTGOINGTOEXIST"));
+ 
+ 	/* first one */
+ 	fu_device_inhibit(device, "needs-activation", "Device is pending activation");
++	g_assert_true(fu_device_has_inhibit(device, "needs-activation"));
+ 	g_assert_true(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
+ 	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
+ 
+@@ -1798,6 +1800,7 @@
+ 
+ 	/* activated, power still too low */
+ 	fu_device_uninhibit(device, "needs-activation");
++	g_assert_false(fu_device_has_inhibit(device, "needs-activation"));
+ 	g_assert_true(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN));
+ 	g_assert_false(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE));
+ 
+--- a/libfwupdplugin/fwupdplugin.map
++++ b/libfwupdplugin/fwupdplugin.map
+@@ -1003,3 +1003,9 @@
+     fu_udev_device_get_parent_with_subsystem;
+   local: *;
+ } LIBFWUPDPLUGIN_1.7.4;
++
++LIBFWUPDPLUGIN_1.8.0 {
++  global:
++    fu_device_has_inhibit;
++  local: *;
++} LIBFWUPDPLUGIN_1.7.6;
+--- a/src/fu-device-list.c
++++ b/src/fu-device-list.c
+@@ -216,6 +216,8 @@
+ 	g_rw_lock_reader_lock(&self->devices_mutex);
+ 	for (guint i = 0; i < self->devices->len; i++) {
+ 		FuDeviceItem *item = g_ptr_array_index(self->devices, i);
++		if (fu_device_has_inhibit(item->device, "unconnected"))
++			continue;
+ 		g_ptr_array_add(devices, g_object_ref(item->device));
+ 	}
+ 	g_rw_lock_reader_unlock(&self->devices_mutex);
