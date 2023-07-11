@@ -8,9 +8,6 @@
 
 #include <locale.h>
 #include <string.h>
-#ifdef HAVE_FNMATCH_H
-#include <fnmatch.h>
-#endif
 
 #include "fwupd-bios-setting-private.h"
 #include "fwupd-client-sync.h"
@@ -35,14 +32,9 @@ fu_test_compare_lines(const gchar *txt1, const gchar *txt2, GError **error)
 	if (g_strcmp0(txt1, txt2) == 0)
 		return TRUE;
 
-		/* matches a pattern */
-#ifdef HAVE_FNMATCH_H
-	if (fnmatch(txt2, txt1, FNM_NOESCAPE) == 0)
+	/* matches a pattern */
+	if (g_pattern_match_simple(txt2, txt1))
 		return TRUE;
-#else
-	if (g_strcmp0(txt1, txt2) == 0)
-		return TRUE;
-#endif
 
 	/* save temp files and diff them */
 	if (!g_file_set_contents("/tmp/a", txt1, -1, error))
@@ -55,60 +47,6 @@ fu_test_compare_lines(const gchar *txt1, const gchar *txt2, GError **error)
 	/* just output the diff */
 	g_set_error_literal(error, 1, 0, output);
 	return FALSE;
-}
-
-/* https://gitlab.gnome.org/GNOME/glib/issues/225 */
-static guint
-_g_string_replace(GString *string, const gchar *search, const gchar *replace)
-{
-	gchar *tmp;
-	guint count = 0;
-	gsize search_idx = 0;
-	gsize replace_len;
-	gsize search_len;
-
-	g_return_val_if_fail(string != NULL, 0);
-	g_return_val_if_fail(search != NULL, 0);
-	g_return_val_if_fail(replace != NULL, 0);
-
-	/* nothing to do */
-	if (string->len == 0)
-		return 0;
-
-	search_len = strlen(search);
-	replace_len = strlen(replace);
-
-	do {
-		tmp = g_strstr_len(string->str + search_idx, -1, search);
-		if (tmp == NULL)
-			break;
-
-		/* advance the counter in case @replace contains @search */
-		search_idx = (gsize)(tmp - string->str);
-
-		/* reallocate the string if required */
-		if (search_len > replace_len) {
-			g_string_erase(string,
-				       (gssize)search_idx,
-				       (gssize)(search_len - replace_len));
-			memcpy(tmp, replace, replace_len);
-		} else if (search_len < replace_len) {
-			g_string_insert_len(string,
-					    (gssize)search_idx,
-					    replace,
-					    (gssize)(replace_len - search_len));
-			/* we have to treat this specially as it could have
-			 * been reallocated when the insertion happened */
-			memcpy(string->str + search_idx, replace, replace_len);
-		} else {
-			/* just memcmp in the new string */
-			memcpy(tmp, replace, replace_len);
-		}
-		search_idx += replace_len;
-		count++;
-	} while (TRUE);
-
-	return count;
 }
 
 static void
@@ -777,6 +715,7 @@ fwupd_report_func(void)
 	fwupd_report_set_device_name(report1, "name");
 	fwupd_report_set_distro_id(report1, "distro_id");
 	fwupd_report_set_distro_version(report1, "distro_version");
+	fwupd_report_set_remote_id(report1, "lvfs");
 	data = fwupd_report_to_variant(report1);
 	report2 = fwupd_report_from_variant(data);
 	g_assert_cmpstr(fwupd_report_get_metadata_item(report2, "foo"), ==, "bar");
@@ -809,6 +748,7 @@ fwupd_report_func(void)
 				    "  VersionOld:           1.2.3\n"
 				    "  Vendor:               acme\n"
 				    "  VendorId:             2468\n"
+				    "  RemoteId:             lvfs\n"
 				    "  Flags:                none\n"
 				    "  foo:                  bar\n"
 				    "  baz:                  bam\n",
@@ -897,6 +837,46 @@ fwupd_request_func(void)
 }
 
 static void
+fwupd_device_filter_func(void)
+{
+	g_autoptr(FwupdDevice) dev = fwupd_device_new();
+	fwupd_device_add_flag(dev, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
+	fwupd_device_add_flag(dev, FWUPD_DEVICE_FLAG_SUPPORTED);
+
+	/* none */
+	g_assert_true(
+	    fwupd_device_match_flags(dev, FWUPD_DEVICE_FLAG_NONE, FWUPD_DEVICE_FLAG_NONE));
+
+	/* include */
+	g_assert_true(fwupd_device_match_flags(dev,
+					       FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD,
+					       FWUPD_DEVICE_FLAG_NONE));
+	g_assert_true(
+	    fwupd_device_match_flags(dev, FWUPD_DEVICE_FLAG_SUPPORTED, FWUPD_DEVICE_FLAG_NONE));
+	g_assert_true(
+	    fwupd_device_match_flags(dev,
+				     FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD | FWUPD_DEVICE_FLAG_SUPPORTED,
+				     FWUPD_DEVICE_FLAG_NONE));
+	g_assert_false(fwupd_device_match_flags(dev,
+						FWUPD_DEVICE_FLAG_ANOTHER_WRITE_REQUIRED,
+						FWUPD_DEVICE_FLAG_NONE));
+
+	/* exclude, i.e. ~flag */
+	g_assert_false(fwupd_device_match_flags(dev,
+						FWUPD_DEVICE_FLAG_NONE,
+						FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD));
+	g_assert_false(
+	    fwupd_device_match_flags(dev, FWUPD_DEVICE_FLAG_NONE, FWUPD_DEVICE_FLAG_SUPPORTED));
+	g_assert_false(fwupd_device_match_flags(dev,
+						FWUPD_DEVICE_FLAG_NONE,
+						FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD |
+						    FWUPD_DEVICE_FLAG_SUPPORTED));
+	g_assert_true(fwupd_device_match_flags(dev,
+					       FWUPD_DEVICE_FLAG_NONE,
+					       FWUPD_DEVICE_FLAG_ANOTHER_WRITE_REQUIRED));
+}
+
+static void
 fwupd_device_func(void)
 {
 	gboolean ret;
@@ -956,7 +936,7 @@ fwupd_device_func(void)
 	/* convert the new non-breaking space back into a normal space:
 	 * https://gitlab.gnome.org/GNOME/glib/commit/76af5dabb4a25956a6c41a75c0c7feeee74496da */
 	str_ascii = g_string_new(str);
-	_g_string_replace(str_ascii, " ", " ");
+	g_string_replace(str_ascii, " ", " ", 0);
 	ret = fu_test_compare_lines(str_ascii->str,
 				    "FwupdDevice:\n"
 				    "  DeviceId:             USB:foo\n"
@@ -1655,6 +1635,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/plugin", fwupd_plugin_func);
 	g_test_add_func("/fwupd/request", fwupd_request_func);
 	g_test_add_func("/fwupd/device", fwupd_device_func);
+	g_test_add_func("/fwupd/device{filter}", fwupd_device_filter_func);
 	g_test_add_func("/fwupd/security-attr", fwupd_security_attr_func);
 	g_test_add_func("/fwupd/remote{download}", fwupd_remote_download_func);
 	g_test_add_func("/fwupd/remote{base-uri}", fwupd_remote_baseuri_func);

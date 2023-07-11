@@ -71,7 +71,7 @@ enum {
 G_DEFINE_TYPE_WITH_PRIVATE(FwupdRemote, fwupd_remote, G_TYPE_OBJECT)
 #define GET_PRIVATE(o) (fwupd_remote_get_instance_private(o))
 
-#ifdef HAVE_LIBCURL_7_62_0
+#ifdef HAVE_LIBCURL
 typedef gchar curlptr;
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(curlptr, curl_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(CURLU, curl_url_cleanup)
@@ -261,8 +261,18 @@ fwupd_remote_set_keyring_kind(FwupdRemote *self, FwupdKeyringKind keyring_kind)
 	priv->keyring_kind = keyring_kind;
 }
 
-/* note, this has to be set before url */
-static void
+/**
+ * fwupd_remote_set_id:
+ * @self: a #FwupdRemote
+ * @id: (nullable): remote ID, e.g. "lvfs"
+ *
+ * Sets the remote title.
+ *
+ * NOTE: the ID has to be set before the URL.
+ *
+ * Since: 1.9.3
+ **/
+void
 fwupd_remote_set_id(FwupdRemote *self, const gchar *id)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
@@ -315,7 +325,7 @@ fwupd_remote_build_uri(FwupdRemote *self,
 		       GError **error)
 {
 	FwupdRemotePrivate *priv = GET_PRIVATE(self);
-#ifdef HAVE_LIBCURL_7_62_0
+#ifdef HAVE_LIBCURL
 	g_autofree gchar *url = NULL;
 	g_autoptr(curlptr) tmp_uri = NULL;
 	g_autoptr(CURLU) uri = curl_url();

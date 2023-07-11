@@ -20,7 +20,6 @@
 #include "fu-context-private.h"
 #include "fu-device-private.h"
 #include "fu-kernel.h"
-#include "fu-mutex.h"
 #include "fu-path.h"
 #include "fu-plugin-private.h"
 #include "fu-security-attr.h"
@@ -1421,6 +1420,41 @@ fu_plugin_check_amdgpu_dpaux(FuPlugin *self, GError **error)
 }
 
 /**
+ * fu_plugin_add_device_udev_subsystem:
+ * @self: a #FuPlugin
+ * @subsystem: a subsystem name, e.g. `pciport`
+ *
+ * Add this plugin as a possible handler of devices with this udev subsystem.
+ * Use fu_plugin_add_udev_subsystem() if you just want to ensure the subsystem is watched.
+ *
+ * Plugins can use this method only in fu_plugin_init()
+ *
+ * Since: 1.9.3
+ **/
+void
+fu_plugin_add_device_udev_subsystem(FuPlugin *self, const gchar *subsystem)
+{
+	FuPluginPrivate *priv = GET_PRIVATE(self);
+
+	g_return_if_fail(FU_IS_PLUGIN(self));
+	g_return_if_fail(subsystem != NULL);
+
+	/* see https://github.com/fwupd/fwupd/issues/1121 for more details */
+	if (g_strcmp0(subsystem, "drm_dp_aux_dev") == 0) {
+		g_autoptr(GError) error = NULL;
+		if (!fu_plugin_check_amdgpu_dpaux(self, &error)) {
+			g_warning("failed to add subsystem: %s", error->message);
+			fu_plugin_add_flag(self, FWUPD_PLUGIN_FLAG_DISABLED);
+			fu_plugin_add_flag(self, FWUPD_PLUGIN_FLAG_KERNEL_TOO_OLD);
+			return;
+		}
+	}
+
+	/* proxy */
+	fu_context_add_udev_subsystem(priv->ctx, subsystem, fu_plugin_get_name(self));
+}
+
+/**
  * fu_plugin_add_udev_subsystem:
  * @self: a #FuPlugin
  * @subsystem: a subsystem name, e.g. `pciport`
@@ -1436,19 +1470,11 @@ fu_plugin_add_udev_subsystem(FuPlugin *self, const gchar *subsystem)
 {
 	FuPluginPrivate *priv = GET_PRIVATE(self);
 
-	/* see https://github.com/fwupd/fwupd/issues/1121 for more details */
-	if (g_strcmp0(subsystem, "drm_dp_aux_dev") == 0) {
-		g_autoptr(GError) error = NULL;
-		if (!fu_plugin_check_amdgpu_dpaux(self, &error)) {
-			g_warning("failed to add subsystem: %s", error->message);
-			fu_plugin_add_flag(self, FWUPD_PLUGIN_FLAG_DISABLED);
-			fu_plugin_add_flag(self, FWUPD_PLUGIN_FLAG_KERNEL_TOO_OLD);
-			return;
-		}
-	}
+	g_return_if_fail(FU_IS_PLUGIN(self));
+	g_return_if_fail(subsystem != NULL);
 
 	/* proxy */
-	fu_context_add_udev_subsystem(priv->ctx, subsystem);
+	fu_context_add_udev_subsystem(priv->ctx, subsystem, NULL);
 }
 
 /**
@@ -1475,7 +1501,7 @@ fu_plugin_add_firmware_gtype(FuPlugin *self, const gchar *id, GType gtype)
 		g_autoptr(GString) str = g_string_new(g_type_name(gtype));
 		if (g_str_has_prefix(str->str, "Fu"))
 			g_string_erase(str, 0, 2);
-		fu_string_replace(str, "Firmware", "");
+		g_string_replace(str, "Firmware", "", 1);
 		id_safe = fu_common_string_uncamelcase(str->str);
 	}
 	fu_context_add_firmware_gtype(priv->ctx, id_safe, gtype);
@@ -1516,10 +1542,18 @@ fu_plugin_backend_device_added(FuPlugin *self,
 	/* fall back to plugin default */
 	if (device_gtype == G_TYPE_INVALID) {
 		if (priv->device_gtypes->len > 1) {
-			g_set_error_literal(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_INTERNAL,
-					    "too many GTypes to choose a default");
+			g_autoptr(GString) str = g_string_new(NULL);
+			for (guint i = 0; i < priv->device_gtypes->len; i++) {
+				device_gtype = g_array_index(priv->device_gtypes, GType, i);
+				if (str->len > 0)
+					g_string_append(str, ",");
+				g_string_append(str, g_type_name(device_gtype));
+			}
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "too many GTypes to choose a default, got: %s",
+				    str->str);
 			return FALSE;
 		}
 		device_gtype = g_array_index(priv->device_gtypes, GType, 0);

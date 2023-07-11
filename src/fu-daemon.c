@@ -754,23 +754,6 @@ fu_daemon_authorize_install_queue(FuMainAuthHelper *helper_ref)
 }
 #endif /* HAVE_GIO_UNIX */
 
-#if !GLIB_CHECK_VERSION(2, 54, 0)
-static gboolean
-g_ptr_array_find(GPtrArray *haystack, gconstpointer needle, guint *index_)
-{
-	for (guint i = 0; i < haystack->len; i++) {
-		gconstpointer *tmp = g_ptr_array_index(haystack, i);
-		if (tmp == needle) {
-			if (index_ != NULL) {
-				*index_ = i;
-				return TRUE;
-			}
-		}
-	}
-	return FALSE;
-}
-#endif
-
 #ifdef HAVE_GIO_UNIX
 static gint
 fu_daemon_release_sort_cb(gconstpointer a, gconstpointer b)
@@ -828,13 +811,11 @@ fu_daemon_install_with_helper_device(FuMainAuthHelper *helper,
 	releases = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_INSTALL_ALL_RELEASES)) {
 		g_autoptr(GPtrArray) rels = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 		g_autoptr(XbQuery) query = NULL;
-#endif
+
 		/* we get this one "for free" */
 		g_ptr_array_add(releases, g_object_ref(release));
 
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 		query = xb_query_new_full(xb_node_get_silo(component),
 					  "releases/release",
 					  XB_QUERY_FLAG_FORCE_NODE_CACHE,
@@ -842,9 +823,6 @@ fu_daemon_install_with_helper_device(FuMainAuthHelper *helper,
 		if (query == NULL)
 			return FALSE;
 		rels = xb_node_query_full(component, query, NULL);
-#else
-		rels = xb_node_query(component, "releases/release", 0, NULL);
-#endif
 		/* add all but the first entry */
 		for (guint i = 1; i < rels->len; i++) {
 			XbNode *rel = g_ptr_array_index(rels, i);

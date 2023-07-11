@@ -16,7 +16,6 @@
 
 #include "fu-common.h"
 #include "fu-device-private.h"
-#include "fu-mutex.h"
 #include "fu-quirks.h"
 #include "fu-security-attr.h"
 #include "fu-string.h"
@@ -273,6 +272,8 @@ fu_device_internal_flag_to_string(FuDeviceInternalFlags flag)
 		return "md-set-version";
 	if (flag == FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM)
 		return "md-only-checksum";
+	if (flag == FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV)
+		return "add-instance-id-rev";
 	return NULL;
 }
 
@@ -353,6 +354,8 @@ fu_device_internal_flag_from_string(const gchar *flag)
 		return FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION;
 	if (g_strcmp0(flag, "md-only-checksum") == 0)
 		return FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM;
+	if (g_strcmp0(flag, "add-instance-id-rev") == 0)
+		return FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV;
 	return FU_DEVICE_INTERNAL_FLAG_UNKNOWN;
 }
 
@@ -614,10 +617,8 @@ fu_device_add_possible_plugin(FuDevice *self, const gchar *plugin)
 	g_return_if_fail(plugin != NULL);
 
 	/* add if it does not already exist */
-#if GLIB_CHECK_VERSION(2, 54, 3)
 	if (g_ptr_array_find_with_equal_func(priv->possible_plugins, plugin, g_str_equal, NULL))
 		return;
-#endif
 	g_ptr_array_add(priv->possible_plugins, g_strdup(plugin));
 }
 
@@ -2600,8 +2601,8 @@ fu_device_sanitize_name(const gchar *value)
 		}
 	}
 	g_string_truncate(new, last_non_space);
-	fu_string_replace(new, "(TM)", "™");
-	fu_string_replace(new, "(R)", "");
+	g_string_replace(new, "(TM)", "™", 0);
+	g_string_replace(new, "(R)", "", 0);
 	if (new->len == 0)
 		return NULL;
 	return g_string_free(g_steal_pointer(&new), FALSE);
@@ -5309,6 +5310,30 @@ fu_device_incorporate(FuDevice *self, FuDevice *donor)
 		g_autofree gchar *guid = fwupd_guid_hash_string(instance_id);
 		fu_device_add_guid_quirks(self, guid);
 	}
+}
+
+/**
+ * fu_device_replace:
+ * @self: a #FuDevice
+ * @donor: the old #FuDevice
+ *
+ * Copy properties from the old (no-longer-connected) device to the new (connected) device.
+ *
+ * This is typcically called from the daemon device list and should not be called from plugin code.
+ *
+ * Since: 1.9.2
+ **/
+void
+fu_device_replace(FuDevice *self, FuDevice *donor)
+{
+	FuDeviceClass *klass = FU_DEVICE_GET_CLASS(self);
+
+	g_return_if_fail(FU_IS_DEVICE(self));
+	g_return_if_fail(FU_IS_DEVICE(donor));
+
+	/* optional subclass */
+	if (klass->replace != NULL)
+		klass->replace(self, donor);
 }
 
 /**

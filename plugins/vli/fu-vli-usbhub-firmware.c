@@ -7,8 +7,6 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
 #include "fu-vli-struct.h"
 #include "fu-vli-usbhub-firmware.h"
 
@@ -255,6 +253,15 @@ fu_vli_usbhub_firmware_parse(FuFirmware *firmware,
 		break;
 	default:
 		break;
+	}
+
+	/* device not supported */
+	if (self->device_kind == FU_VLI_DEVICE_KIND_UNKNOWN) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "device kind unknown");
+		return FALSE;
 	}
 
 	/* success */

@@ -322,6 +322,8 @@ fu_release_load_test_result(FuRelease *self, XbNode *n, GError **error)
 			fwupd_report_set_distro_variant(report, tmp);
 		fwupd_report_set_distro_id(report, xb_node_get_text(os));
 	}
+	if (fu_release_get_remote_id(self) != NULL)
+		fwupd_report_set_remote_id(report, fu_release_get_remote_id(self));
 	custom = xb_node_query(n, "custom/value", 0, NULL);
 	if (custom != NULL) {
 		for (guint i = 0; i < custom->len; i++) {
@@ -839,7 +841,6 @@ fu_release_load(FuRelease *self,
 	/* use default release */
 	if (rel_optional == NULL) {
 		g_autoptr(GError) error_local = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 		g_autoptr(XbQuery) query = NULL;
 		query = xb_query_new_full(xb_node_get_silo(component),
 					  "releases/release",
@@ -848,9 +849,6 @@ fu_release_load(FuRelease *self,
 		if (query == NULL)
 			return FALSE;
 		rel = xb_node_query_first_full(component, query, &error_local);
-#else
-		rel = xb_node_query_first(component, "releases/release", &error_local);
-#endif
 		if (rel == NULL) {
 			g_set_error(error,
 				    FWUPD_ERROR,

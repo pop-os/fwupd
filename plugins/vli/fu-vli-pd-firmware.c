@@ -7,8 +7,6 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
 #include "fu-vli-pd-common.h"
 #include "fu-vli-pd-firmware.h"
 #include "fu-vli-struct.h"
@@ -39,6 +37,8 @@ fu_vli_pd_firmware_validate_header(FuVliPdFirmware *self)
 	if (self->vid == 0x2D01)
 		return TRUE;
 	if (self->vid == 0x06C4)
+		return TRUE;
+	if (self->vid == 0x0BF8)
 		return TRUE;
 	return FALSE;
 }

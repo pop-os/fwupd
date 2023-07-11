@@ -125,11 +125,9 @@ static guint signals[SIGNAL_LAST] = {0};
 G_DEFINE_TYPE_WITH_PRIVATE(FwupdClient, fwupd_client, G_TYPE_OBJECT)
 #define GET_PRIVATE(o) (fwupd_client_get_instance_private(o))
 
-#ifdef HAVE_LIBCURL_7_62_0
-G_DEFINE_AUTOPTR_CLEANUP_FUNC(CURLU, curl_url_cleanup)
-#endif
-
 #ifdef HAVE_LIBCURL
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(CURLU, curl_url_cleanup)
+
 static void
 fwupd_client_curl_helper_free(FwupdCurlHelper *helper)
 {
@@ -3174,7 +3172,7 @@ fwupd_client_install_release_download_cb(GObject *source, GAsyncResult *res, gpo
 static gboolean
 fwupd_client_is_url_http(const gchar *perhaps_url)
 {
-#ifdef HAVE_LIBCURL_7_62_0
+#ifdef HAVE_LIBCURL
 	g_autoptr(CURLU) h = curl_url();
 	return curl_url_set(h, CURLUPART_URL, perhaps_url, 0) == CURLUE_OK;
 #else
@@ -4113,6 +4111,15 @@ fwupd_client_refresh_remote_async(FwupdClient *self,
 	g_task_set_task_data(task,
 			     g_steal_pointer(&data),
 			     (GDestroyNotify)fwupd_client_refresh_remote_data_free);
+
+	/* nothing to do */
+	if (fwupd_remote_get_kind(remote) != FWUPD_REMOTE_KIND_DOWNLOAD) {
+		g_debug("ignoring %s as %s",
+			fwupd_remote_get_id(remote),
+			fwupd_remote_kind_to_string(fwupd_remote_get_kind(remote)));
+		g_task_return_boolean(task, TRUE);
+		return;
+	}
 
 	/* sanity check */
 	if (fwupd_remote_get_metadata_uri_sig(remote) == NULL ||
@@ -5212,7 +5219,7 @@ fwupd_client_download_http(FwupdClient *self, CURL *curl, const gchar *url, GErr
 		return NULL;
 	}
 
-	return g_byte_array_free_to_bytes(g_steal_pointer(&buf));
+	return g_bytes_new(buf->data, buf->len);
 }
 
 static void
@@ -5402,7 +5409,7 @@ fwupd_client_upload_bytes_thread_cb(GTask *task,
 		return;
 	}
 	g_task_return_pointer(task,
-			      g_byte_array_free_to_bytes(g_steal_pointer(&buf)),
+			      g_bytes_new(buf->data, buf->len),
 			      (GDestroyNotify)g_bytes_unref);
 }
 #endif

@@ -4,21 +4,32 @@
 #[derive(New, Parse)]
 struct SynapromMfwHdr {
     product: u32le,
-    id: u32le: default=0xFF,		// MFW unique id used for compat verification
-    buildtime: u32le: default=0xFF,	// unix-style
-    buildnum: u32le: default=0xFF,
-    vmajor: u8: default=10,			// major version
-    vminor: u8: default=1,			// minor version
+    id: u32le = 0xFF,		// MFW unique id used for compat verification
+    buildtime: u32le = 0xFF,	// unix-style
+    buildnum: u32le = 0xFF,
+    vmajor: u8 = 10,			// major version
+    vminor: u8 = 1,			// minor version
     unused: [u8; 6],
 }
+
+#[derive(ToString)]
+#[repr(u16le)]
+enum SynapromFirmwareTag {
+    MfwUpdateHeader  = 0x0001,
+    MfwUpdatePayload = 0x0002,
+    CfgUpdateHeader  = 0x0003,
+    CfgUpdatePayload = 0x0004,
+}
+
 #[derive(New, Parse)]
 struct SynapromHdr {
-    tag: u16le,
+    tag: SynapromFirmwareTag,
     bufsz: u32le,
 }
+
 #[derive(Parse)]
 struct SynapromCfgHdr {
-    product: u32le: default=65, // Prometheus (b1422)
+    product: u32le = 65, // Prometheus (b1422)
     id1: u32le,
     id2: u32le,
     version: u16le,
@@ -49,11 +60,4 @@ struct SynapromCmdIotaFind {
     _dummy: [u8; 2],
     offset: u32le,   // byte offset of data to return
     nbytes: u32le,   // maximum number of bytes to return
-}
-#[derive(ToString)]
-enum SynapromFirmwareTag {
-    MfwUpdateHeader  = 0x0001,
-    MfwUpdatePayload = 0x0002,
-    CfgUpdateHeader  = 0x0003,
-    CfgUpdatePayload = 0x0004,
 }

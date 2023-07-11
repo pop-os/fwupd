@@ -866,18 +866,23 @@ rustc*, so small differences may be noticeable.
     struct ExampleHdr {
         magic: Guid,
         hdrver: u8,
-        hdrsz: u16le: default=$struct_size,
+        hdrsz: u16le = $struct_size,
         payloadsz: u32le,
         flags: u8,
     }
 
     #[derive(ToString, FromString)]
+    #[repr(u8)] // optional, and only required if using the enum as a struct item type
     enum ExampleFamily {
         Unknown,
         Sps,
         Txe = 0x5,
         Me,
         Csme,
+    }
+    struct ExamplePacket {
+        family: ExampleFamily = Csme,
+        data: [u8; 254],
     }
 
 The struct types currently supported are:
@@ -889,12 +894,14 @@ The struct types currently supported are:
 - `u64be`:  big endian `guint64`
 - `char`: a `NUL`-terminated string
 - `Guid`: a GUID
+- Any `enum` created in the `.rs` file with `#[repr(type)]`
+- Any `struct` previously created in the `.rs` file
 
 Arrays of types are also allowed, with the format `[type; multiple]`, for example:
 
 - `buf: [u8; 12]` for a C array of `guint8 buf[12] = {0};`
 - `val: [u64be; 7]`  for a C array of `guint64 val[7] = {0};`
-- `str: [char; 4]: default="ABCD"` for a C array of `gchar buf[4] = {'A','B','C','D'};`
+- `str: [char; 4] = "ABCD"` for a C array of `gchar buf[4] = {'A','B','C','D'};`
   -- NOTE: `fu_struct_example_get_str()` would return a `NUL`-terminated string of `ABCD\0`.
 
 Additionally, default or constant values can be auto-populated:
@@ -903,12 +910,12 @@ Additionally, default or constant values can be auto-populated:
 - `$struct_offset`: the internal offset in the struct
 - string values, specified **without** double or single quotes
 - integer values, specified with a `0x` prefix for base-16 and with no prefix for base-10
+- previously specified `enum` values
 
 Per-field metadata can also be defined, such as:
 
-- `default`: set as the default value
-- `constant`: set as the default, and is **also** verified during unpacking.
-- `padding`: initialize with a padding byte, typically `0xFF`
+- ` = `: set as the default value, or for `u8` arrays initialize with a padding byte
+- ` == `: set as the default, and is **also** verified during unpacking.
 
 Default values and padding will be used when creating a new structure,
 for instance using `fu_struct_example_new()`.
@@ -950,7 +957,7 @@ Regardless of traits used, the header offset addresses are defined, for instance
     #define FU_STRUCT_EXAMPLE_OFFSET_PAYLOADSZ 0x13
     #define FU_STRUCT_EXAMPLE_OFFSET_FLAGS 0x17
 
-Any elements defined as a typed array (e.g. `8u16`) will also have the element
+Any elements defined as a typed array (e.g. `[u8; 16]`) will also have the element
 size defined in bytes:
 
     #define FU_STRUCT_EXAMPLE_SIZE_MAGIC 0x10
@@ -971,6 +978,7 @@ They are verified during `_validate()` and `_parse()` however.
 There are traits that control the generation of enum code. These include:
 
 - `ToString`: for `fu_example_family_to_string()`, needed to create output
+- `ToBitString`: for `fu_example_family_to_string()`, needed to create output for bitfields
 - `FromString`: for `fu_example_family_from_string()`, needed to parse input
 
 **NOTE:** Enums are defined as a native unsigned type, and should not be copied by

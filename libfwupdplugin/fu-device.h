@@ -50,6 +50,7 @@ struct _FuDeviceClass {
 				 GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	gboolean (*setup)(FuDevice *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	void (*incorporate)(FuDevice *self, FuDevice *donor);
+	void (*replace)(FuDevice *self, FuDevice *donor);
 	void (*probe_complete)(FuDevice *self);
 	gboolean (*poll)(FuDevice *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	gboolean (*activate)(FuDevice *self,
@@ -536,6 +537,15 @@ typedef guint64 FuDeviceInternalFlags;
  * Since: 1.9.1
  */
 #define FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM (1ull << 31)
+
+/**
+ * FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV:
+ *
+ * Add the `_REV` instance ID suffix.
+ *
+ * Since: 1.9.3
+ */
+#define FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV (1ull << 32)
 
 /* accessors */
 gchar *

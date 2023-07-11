@@ -80,7 +80,6 @@ fwupdutil = library(
   'fwupdutil',
   sources: [
     'fu-console.c',
-    'fu-security-attr-common.c',
     'fu-util-bios-setting.c',
     'fu-util-common.c',
     systemd_src,
@@ -102,10 +101,19 @@ fwupdutil = library(
   ],
 )
 
-if build_daemon
-install_data(['org.freedesktop.fwupd.xml'],
-  install_dir: join_paths(datadir, 'dbus-1', 'interfaces')
+dbus_interface = custom_target('fwupd-generate-dbus-interface',
+  input : 'org.freedesktop.fwupd.xml',
+  output : 'org.freedesktop.fwupd.xml',
+  command : [
+    generate_dbus_interface,
+    '@INPUT@',
+    '@OUTPUT@',
+  ],
+  install: build_daemon,
+  install_dir: join_paths(datadir, 'dbus-1', 'interfaces'),
 )
+
+if build_daemon
 fwupdmgr = executable(
   'fwupdmgr',
   sources: [
@@ -172,8 +180,8 @@ endif
 resources_src = gnome.compile_resources(
   'fwupd-resources',
   'fwupd.gresource.xml',
-  source_dir: '.',
-  c_name: 'fu'
+  c_name: 'fu',
+  dependencies: [dbus_interface],
 )
 
 # generate a header file that allows us to instantiate the plugins without copy-pasting or
@@ -185,7 +193,7 @@ endforeach
 plugins_hdr = custom_target('fwupd-generate-plugins-header',
   output : 'fu-plugin-builtin.h',
   command : [
-    join_paths(meson.project_source_root(), 'contrib', 'generate-plugins-header.py'),
+    generate_plugins_header,
     '@OUTPUT@',
     meson.project_source_root(),
     ','.join(plugin_names),
@@ -227,7 +235,6 @@ fwupdengine = library(
 fwupdtool = executable(
   'fwupdtool',
   fwupdengine_rs,
-  resources_src,
   plugins_hdr,
   export_dynamic: true,
   sources: [
@@ -306,7 +313,6 @@ endif
 executable(
   'fwupd',
   fwupdengine_rs,
-  resources_src,
   plugins_hdr,
   sources: [
     daemon_loader_src,
@@ -344,7 +350,6 @@ if get_option('tests')
   e = executable(
     'fu-self-test',
     fwupdengine_rs,
-    resources_src,
     colorhug_test_firmware,
     hwid_test_firmware,
     multiple_rels_test_firmware,

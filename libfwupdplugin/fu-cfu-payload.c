@@ -50,6 +50,13 @@ fu_cfu_payload_parse(FuFirmware *firmware,
 			return FALSE;
 		offset += st->len;
 		chunk_size = fu_struct_cfu_payload_get_size(st);
+		if (chunk_size == 0) {
+			g_set_error_literal(error,
+					    G_IO_ERROR,
+					    G_IO_ERROR_INVALID_DATA,
+					    "payload size was invalid");
+			return FALSE;
+		}
 		blob = fu_bytes_new_offset(fw, offset, chunk_size, error);
 		if (blob == NULL)
 			return FALSE;
@@ -65,7 +72,7 @@ fu_cfu_payload_parse(FuFirmware *firmware,
 	return TRUE;
 }
 
-static GBytes *
+static GByteArray *
 fu_cfu_payload_write(FuFirmware *firmware, GError **error)
 {
 	g_autoptr(GByteArray) buf = g_byte_array_new();
@@ -82,7 +89,7 @@ fu_cfu_payload_write(FuFirmware *firmware, GError **error)
 		g_byte_array_append(buf, st->data, st->len);
 		g_byte_array_append(buf, fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 	}
-	return g_byte_array_free_to_bytes(g_steal_pointer(&buf));
+	return g_steal_pointer(&buf);
 }
 
 static void

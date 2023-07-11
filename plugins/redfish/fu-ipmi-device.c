@@ -6,8 +6,6 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
 #include <fcntl.h>
 #include <glib/gstdio.h>
 #include <linux/ipmi.h>
@@ -524,7 +522,7 @@ fu_ipmi_device_get_user_password(FuIpmiDevice *self, guint8 user_id, GError **er
 	}
 
 	/* success */
-	return fu_strsafe((const gchar *)resp, resp_len);
+	return fu_memstrsafe(resp, sizeof(resp), 0x0, resp_len, error);
 }
 
 gboolean

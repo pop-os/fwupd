@@ -65,6 +65,7 @@ struct FuUtilPrivate {
 	gboolean no_safety_check;
 	gboolean no_device_prompt;
 	gboolean no_emulation_check;
+	gboolean no_security_fix;
 	gboolean assume_yes;
 	gboolean sign;
 	gboolean show_all;
@@ -75,8 +76,10 @@ struct FuUtilPrivate {
 	FwupdDevice *current_device;
 	GPtrArray *post_requests;
 	FwupdDeviceFlags completion_flags;
-	FwupdDeviceFlags filter_include;
-	FwupdDeviceFlags filter_exclude;
+	FwupdDeviceFlags filter_device_include;
+	FwupdDeviceFlags filter_device_exclude;
+	FwupdReleaseFlags filter_release_include;
+	FwupdReleaseFlags filter_release_exclude;
 };
 
 static gboolean
@@ -110,6 +113,7 @@ fu_util_update_device_request_cb(FwupdClient *client, FwupdRequest *request, FuU
 		fmt = fu_console_color_format(_("Action Required:"), FU_CONSOLE_COLOR_RED);
 		tmp = g_strdup_printf("%s %s", fmt, fwupd_request_get_message(request));
 		fu_console_set_progress_title(priv->console, tmp);
+		fu_console_beep(priv->console, 5);
 	}
 
 	/* save for later */
@@ -168,23 +172,6 @@ fu_util_update_device_changed_cb(FwupdClient *client, FwupdDevice *device, FuUti
 	g_set_object(&priv->current_device, device);
 }
 
-static gboolean
-fu_util_filter_device(FuUtilPrivate *priv, FwupdDevice *dev)
-{
-	for (guint i = 0; i < 64; i++) {
-		FwupdDeviceFlags flag = 1LLU << i;
-		if (priv->filter_include & flag) {
-			if (!fwupd_device_has_flag(dev, flag))
-				return FALSE;
-		}
-		if (priv->filter_exclude & flag) {
-			if (fwupd_device_has_flag(dev, flag))
-				return FALSE;
-		}
-	}
-	return TRUE;
-}
-
 static FwupdDevice *
 fu_util_prompt_for_device(FuUtilPrivate *priv, GPtrArray *devices, GError **error)
 {
@@ -193,22 +180,12 @@ fu_util_prompt_for_device(FuUtilPrivate *priv, GPtrArray *devices, GError **erro
 	g_autoptr(GPtrArray) devices_filtered = NULL;
 
 	/* filter results */
-	devices_filtered = g_ptr_array_new();
-	for (guint i = 0; i < devices->len; i++) {
-		dev = g_ptr_array_index(devices, i);
-		if (!fu_util_filter_device(priv, dev))
-			continue;
-		g_ptr_array_add(devices_filtered, dev);
-	}
-
-	/* nothing */
-	if (devices_filtered->len == 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOTHING_TO_DO,
-				    "No supported devices");
+	devices_filtered = fwupd_device_array_filter_flags(devices,
+							   priv->filter_device_include,
+							   priv->filter_device_exclude,
+							   error);
+	if (devices_filtered == NULL)
 		return NULL;
-	}
 
 	/* exactly one */
 	if (devices_filtered->len == 1) {
@@ -317,7 +294,9 @@ fu_util_perhaps_show_unreported(FuUtilPrivate *priv, GError **error)
 		const gchar *remote_id;
 		const gchar *remote_uri;
 
-		if (!fu_util_filter_device(priv, dev))
+		if (!fwupd_device_match_flags(dev,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
 			continue;
 		if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_REPORTED))
 			continue;
@@ -504,7 +483,9 @@ fu_util_build_device_tree(FuUtilPrivate *priv, GNode *root, GPtrArray *devs, Fwu
 {
 	for (guint i = 0; i < devs->len; i++) {
 		FwupdDevice *dev_tmp = g_ptr_array_index(devs, i);
-		if (!fu_util_filter_device(priv, dev_tmp))
+		if (!fwupd_device_match_flags(dev_tmp,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
 			continue;
 		if (!priv->show_all && !fu_util_is_interesting_device(dev_tmp))
 			continue;
@@ -527,6 +508,10 @@ fu_util_get_releases_as_json(FuUtilPrivate *priv, GPtrArray *rels, GError **erro
 	json_builder_begin_array(builder);
 	for (guint i = 0; i < rels->len; i++) {
 		FwupdRelease *rel = g_ptr_array_index(rels, i);
+		if (!fwupd_release_match_flags(rel,
+					       priv->filter_release_include,
+					       priv->filter_release_exclude))
+			continue;
 		json_builder_begin_object(builder);
 		fwupd_release_to_json(rel, builder);
 		json_builder_end_object(builder);
@@ -558,6 +543,10 @@ fu_util_get_devices_as_json(FuUtilPrivate *priv, GPtrArray *devs, GError **error
 		} else {
 			for (guint j = 0; j < rels->len; j++) {
 				FwupdRelease *rel = g_ptr_array_index(rels, j);
+				if (!fwupd_release_match_flags(rel,
+							       priv->filter_release_include,
+							       priv->filter_release_exclude))
+					continue;
 				fwupd_device_add_release(dev, rel);
 			}
 		}
@@ -1536,7 +1525,9 @@ fu_util_report_history(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_autoptr(FwupdRemote) remote = NULL;
 
 		/* filter, if not forcing */
-		if (!fu_util_filter_device(priv, dev))
+		if (!fwupd_device_match_flags(dev,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
 			continue;
 		if ((priv->flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
 			if (fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_REPORTED))
@@ -1646,7 +1637,9 @@ fu_util_get_history(FuUtilPrivate *priv, gchar **values, GError **error)
 		GNode *child;
 		g_autoptr(GError) error_local = NULL;
 
-		if (!fu_util_filter_device(priv, dev))
+		if (!fwupd_device_match_flags(dev,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
 			continue;
 		child = g_node_append_data(root, dev);
 
@@ -1677,6 +1670,10 @@ fu_util_get_history(FuUtilPrivate *priv, gchar **values, GError **error)
 		/* map to a release in client */
 		for (guint j = 0; j < rels->len; j++) {
 			FwupdRelease *rel2 = g_ptr_array_index(rels, j);
+			if (!fwupd_release_match_flags(rel2,
+						       priv->filter_release_include,
+						       priv->filter_release_exclude))
+				continue;
 			if (g_strcmp0(remote, fwupd_release_get_remote_id(rel2)) != 0)
 				continue;
 			if (g_strcmp0(fwupd_release_get_version(rel),
@@ -1800,7 +1797,7 @@ fu_util_verify_update(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FwupdDevice) dev = NULL;
 
-	priv->filter_include |= FWUPD_DEVICE_FLAG_CAN_VERIFY;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_CAN_VERIFY;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -2039,7 +2036,7 @@ fu_util_get_releases(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FwupdDevice) dev = NULL;
 	g_autoptr(GPtrArray) rels = NULL;
 
-	priv->filter_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -2064,13 +2061,22 @@ fu_util_get_releases(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (g_getenv("FWUPD_VERBOSE") != NULL) {
 		for (guint i = 0; i < rels->len; i++) {
 			FwupdRelease *rel = g_ptr_array_index(rels, i);
-			g_autofree gchar *tmp = fwupd_release_to_string(rel);
+			g_autofree gchar *tmp = NULL;
+			if (!fwupd_release_match_flags(rel,
+						       priv->filter_release_include,
+						       priv->filter_release_exclude))
+				continue;
+			tmp = fwupd_release_to_string(rel);
 			fu_console_print_literal(priv->console, tmp);
 		}
 	} else {
 		g_autoptr(GNode) root = g_node_new(NULL);
 		for (guint i = 0; i < rels->len; i++) {
 			FwupdRelease *rel = g_ptr_array_index(rels, i);
+			if (!fwupd_release_match_flags(rel,
+						       priv->filter_release_include,
+						       priv->filter_release_exclude))
+				continue;
 			g_node_append_data(root, rel);
 		}
 		fu_util_print_tree(priv->console, priv->client, root);
@@ -2080,19 +2086,19 @@ fu_util_get_releases(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static FwupdRelease *
-fu_util_prompt_for_release(FuUtilPrivate *priv, GPtrArray *rels, GError **error)
+fu_util_prompt_for_release(FuUtilPrivate *priv, GPtrArray *rels_unfiltered, GError **error)
 {
 	FwupdRelease *rel;
 	guint idx;
+	g_autoptr(GPtrArray) rels = NULL;
 
-	/* nothing */
-	if (rels->len == 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOTHING_TO_DO,
-				    "No supported releases");
+	/* filter */
+	rels = fwupd_release_array_filter_flags(rels_unfiltered,
+						priv->filter_release_include,
+						priv->filter_release_exclude,
+						error);
+	if (rels == NULL)
 		return NULL;
-	}
 
 	/* exactly one */
 	if (rels->len == 1) {
@@ -2127,7 +2133,7 @@ fu_util_verify(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FwupdDevice) dev = NULL;
 
-	priv->filter_include |= FWUPD_DEVICE_FLAG_CAN_VERIFY;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_CAN_VERIFY;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -2151,7 +2157,7 @@ fu_util_unlock(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FwupdDevice) dev = NULL;
 
-	priv->filter_include |= FWUPD_DEVICE_FLAG_LOCKED;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_LOCKED;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -2239,6 +2245,10 @@ fu_util_get_updates_as_json(FuUtilPrivate *priv, GPtrArray *devices, GError **er
 		}
 		for (guint j = 0; j < rels->len; j++) {
 			FwupdRelease *rel = g_ptr_array_index(rels, j);
+			if (!fwupd_release_match_flags(rel,
+						       priv->filter_release_include,
+						       priv->filter_release_exclude))
+				continue;
 			fwupd_device_add_release(dev, rel);
 		}
 
@@ -2299,7 +2309,9 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE) &&
 		    !fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN))
 			continue;
-		if (!fu_util_filter_device(priv, dev))
+		if (!fwupd_device_match_flags(dev,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
 			continue;
 		if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_SUPPORTED)) {
 			g_ptr_array_add(devices_no_support, dev);
@@ -2323,6 +2335,10 @@ fu_util_get_updates(FuUtilPrivate *priv, gchar **values, GError **error)
 		/* add all releases */
 		for (guint j = 0; j < rels->len; j++) {
 			FwupdRelease *rel = g_ptr_array_index(rels, j);
+			if (!fwupd_release_match_flags(rel,
+						       priv->filter_release_include,
+						       priv->filter_release_exclude))
+				continue;
 			g_node_append_data(child, g_object_ref(rel));
 		}
 	}
@@ -2440,6 +2456,10 @@ fu_util_get_release_with_tag(FuUtilPrivate *priv,
 		return NULL;
 	for (guint i = 0; i < rels->len; i++) {
 		FwupdRelease *rel = g_ptr_array_index(rels, i);
+		if (!fwupd_release_match_flags(rel,
+					       priv->filter_release_include,
+					       priv->filter_release_exclude))
+			continue;
 		if (fwupd_release_has_tag(rel, tag))
 			return g_object_ref(rel);
 	}
@@ -2691,8 +2711,8 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_ptr_array_sort(devices, fu_util_sort_devices_by_flags_cb);
 	for (guint i = 0; i < devices->len; i++) {
 		FwupdDevice *dev = g_ptr_array_index(devices, i);
-		FwupdRelease *rel;
 		const gchar *device_id = fwupd_device_get_id(dev);
+		g_autoptr(FwupdRelease) rel = NULL;
 		g_autoptr(GPtrArray) rels = NULL;
 		g_autoptr(GError) error_local = NULL;
 		gboolean dev_skip_byid = TRUE;
@@ -2724,7 +2744,9 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 		}
 		if (g_strv_length(values) > 0 && dev_skip_byid)
 			continue;
-		if (!fu_util_filter_device(priv, dev))
+		if (!fwupd_device_match_flags(dev,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
 			continue;
 		supported = TRUE;
 
@@ -2747,7 +2769,15 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 			g_debug("%s", error_local->message);
 			continue;
 		}
-		rel = g_ptr_array_index(rels, 0);
+		for (guint j = 0; j < rels->len; j++) {
+			FwupdRelease *rel_tmp = g_ptr_array_index(rels, j);
+			if (!fwupd_release_match_flags(rel_tmp,
+						       priv->filter_release_include,
+						       priv->filter_release_exclude))
+				continue;
+			rel = g_object_ref(rel_tmp);
+			break;
+		}
 		if (!fu_util_update_device_with_release(priv, dev, rel, error))
 			return FALSE;
 
@@ -2901,7 +2931,7 @@ fu_util_downgrade(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 	}
 
-	priv->filter_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -2952,7 +2982,7 @@ fu_util_reinstall(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FwupdRelease) rel = NULL;
 	g_autoptr(FwupdDevice) dev = NULL;
 
-	priv->filter_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -2996,7 +3026,7 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	/* find device */
-	priv->filter_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_SUPPORTED;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -3056,8 +3086,8 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FwupdDevice) dev = NULL;
 
 	/* find the device and check it has multiple branches */
-	priv->filter_include |= FWUPD_DEVICE_FLAG_HAS_MULTIPLE_BRANCHES;
-	priv->filter_include |= FWUPD_DEVICE_FLAG_UPDATABLE;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_HAS_MULTIPLE_BRANCHES;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_UPDATABLE;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -3074,10 +3104,12 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 	for (guint i = 0; i < rels->len; i++) {
 		FwupdRelease *rel_tmp = g_ptr_array_index(rels, i);
 		const gchar *branch_tmp = fwupd_release_get_branch(rel_tmp);
-#if GLIB_CHECK_VERSION(2, 54, 3)
+		if (!fwupd_release_match_flags(rel_tmp,
+					       priv->filter_release_include,
+					       priv->filter_release_exclude))
+			continue;
 		if (g_ptr_array_find_with_equal_func(branches, branch_tmp, _g_str_equal0, NULL))
 			continue;
-#endif
 		g_ptr_array_add(branches, g_strdup(branch_tmp));
 	}
 
@@ -3213,7 +3245,9 @@ fu_util_activate(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_ptr_array_sort(devices, fu_util_device_order_sort_cb);
 	for (guint i = 0; i < devices->len; i++) {
 		FwupdDevice *device = g_ptr_array_index(devices, i);
-		if (!fu_util_filter_device(priv, device))
+		if (!fwupd_device_match_flags(device,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
 			continue;
 		if (!fwupd_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION))
 			continue;
@@ -3755,15 +3789,15 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 
 		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA))
 			continue;
+#ifndef SUPPORTED_BUILD
 		if (priv->flags & FWUPD_INSTALL_FLAG_FORCE)
 			continue;
+#endif
 		err_str = g_strdup_printf(
-		    "\n%s\n » %s\n%s",
+		    "\n%s\n » %s",
 		    /* TRANSLATORS: error message to tell someone they can't use this feature */
-		    _("Not enough data was provided to make an HSI calculation."),
-		    "https://fwupd.github.io/hsi.html#not-enough-info",
-		    /* TRANSLATORS: message to tell someone how to ignore error */
-		    _("To ignore this warning, use --force"));
+		    _("Not enough data was provided by the platform to make an HSI calculation."),
+		    "https://fwupd.github.io/hsi.html#not-enough-info");
 		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, err_str);
 		return FALSE;
 	}
@@ -3834,14 +3868,16 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	/* any things we can fix? */
-	for (guint j = 0; j < attrs->len; j++) {
-		FwupdSecurityAttr *attr = g_ptr_array_index(attrs, j);
-		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS) &&
-		    fwupd_security_attr_get_bios_setting_id(attr) != NULL &&
-		    fwupd_security_attr_get_bios_setting_current_value(attr) != NULL &&
-		    fwupd_security_attr_get_bios_setting_target_value(attr) != NULL) {
-			if (!fu_util_security_modify_bios_setting(priv, attr, error))
-				return FALSE;
+	if (!priv->no_security_fix) {
+		for (guint j = 0; j < attrs->len; j++) {
+			FwupdSecurityAttr *attr = g_ptr_array_index(attrs, j);
+			if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS) &&
+			    fwupd_security_attr_get_bios_setting_id(attr) != NULL &&
+			    fwupd_security_attr_get_bios_setting_current_value(attr) != NULL &&
+			    fwupd_security_attr_get_bios_setting_target_value(attr) != NULL) {
+				if (!fu_util_security_modify_bios_setting(priv, attr, error))
+					return FALSE;
+			}
 		}
 	}
 
@@ -4147,6 +4183,7 @@ fu_util_show_plugin_warnings(FuUtilPrivate *priv)
 	flags &= ~FWUPD_PLUGIN_FLAG_DISABLED;
 	flags &= ~FWUPD_PLUGIN_FLAG_NO_HARDWARE;
 	flags &= ~FWUPD_PLUGIN_FLAG_REQUIRE_HWID;
+	flags &= ~FWUPD_PLUGIN_FLAG_MEASURE_SYSTEM_INTEGRITY;
 
 	/* print */
 	for (guint i = 0; i < 64; i++) {
@@ -4271,7 +4308,7 @@ fu_util_emulation_untag(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FwupdDevice) dev = NULL;
 
 	/* set the flag */
-	priv->filter_include |= FWUPD_DEVICE_FLAG_EMULATION_TAG;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_EMULATION_TAG;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -4403,7 +4440,8 @@ main(int argc, char *argv[])
 	g_autoptr(GError) error_console = NULL;
 	g_autoptr(GPtrArray) cmd_array = fu_util_cmd_array_new();
 	g_autofree gchar *cmd_descriptions = NULL;
-	g_autofree gchar *filter = NULL;
+	g_autofree gchar *filter_device = NULL;
+	g_autofree gchar *filter_release = NULL;
 	const GOptionEntry options[] = {
 	    {"verbose",
 	     'v',
@@ -4569,10 +4607,19 @@ main(int argc, char *argv[])
 	     '\0',
 	     0,
 	     G_OPTION_ARG_STRING,
-	     &filter,
+	     &filter_device,
 	     /* TRANSLATORS: command line option */
 	     N_("Filter with a set of device flags using a ~ prefix to "
 		"exclude, e.g. 'internal,~needs-reboot'"),
+	     NULL},
+	    {"filter-release",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_STRING,
+	     &filter_release,
+	     /* TRANSLATORS: command line option */
+	     N_("Filter with a set of release flags using a ~ prefix to "
+		"exclude, e.g. 'trusted-release,~trusted-metadata'"),
 	     NULL},
 	    {"json",
 	     '\0',
@@ -4581,6 +4628,14 @@ main(int argc, char *argv[])
 	     &priv->as_json,
 	     /* TRANSLATORS: command line option */
 	     N_("Output in JSON format"),
+	     NULL},
+	    {"no-security-fix",
+	     '\0',
+	     0,
+	     G_OPTION_ARG_NONE,
+	     &priv->no_security_fix,
+	     /* TRANSLATORS: command line option */
+	     N_("Do not prompt to fix security issues"),
 	     NULL},
 	    {"no-authenticate",
 	     '\0',
@@ -4952,6 +5007,7 @@ main(int argc, char *argv[])
 		priv->no_remote_check = TRUE;
 		priv->no_device_prompt = TRUE;
 		priv->no_emulation_check = TRUE;
+		priv->no_security_fix = TRUE;
 	} else {
 		is_interactive = TRUE;
 	}
@@ -5006,13 +5062,26 @@ main(int argc, char *argv[])
 	}
 
 	/* parse filter flags */
-	if (filter != NULL) {
-		if (!fu_util_parse_filter_flags(filter,
-						&priv->filter_include,
-						&priv->filter_exclude,
-						&error)) {
+	if (filter_device != NULL) {
+		if (!fu_util_parse_filter_device_flags(filter_device,
+						       &priv->filter_device_include,
+						       &priv->filter_device_exclude,
+						       &error)) {
 			/* TRANSLATORS: the user didn't read the man page */
 			g_prefix_error(&error, "%s: ", _("Failed to parse flags for --filter"));
+			fu_util_print_error(priv, error);
+			return EXIT_FAILURE;
+		}
+	}
+	if (filter_release != NULL) {
+		if (!fu_util_parse_filter_release_flags(filter_release,
+							&priv->filter_release_include,
+							&priv->filter_release_exclude,
+							&error)) {
+			/* TRANSLATORS: the user didn't read the man page */
+			g_prefix_error(&error,
+				       "%s: ",
+				       _("Failed to parse flags for --filter-release"));
 			fu_util_print_error(priv, error);
 			return EXIT_FAILURE;
 		}

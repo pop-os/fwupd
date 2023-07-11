@@ -8,6 +8,14 @@ struct IgscOpromVersion {
     hotfix: u16le,
     build: u16le,
 }
+
+#[derive(New, Getters)]
+struct IgscFwVersion {
+    project: [char; 4], // project code name
+    hotfix: u16le,
+    build: u16le,
+}
+
 #[derive(Parse)]
 struct IgscOpromSubsystemDeviceId {
     subsys_vendor_id: u16le,
@@ -22,7 +30,7 @@ struct IgscOpromSubsystemDevice4Id {
 }
 #[derive(Parse)]
 struct IgscFwuGwsImageInfo {
-    format_version: u32le: const=0x1,
+    format_version: u32le == 0x1,
     instance_id: u32le,
     _reserved: [u32; 14],
 }
@@ -50,11 +58,11 @@ struct IgscFwuIupData {
 }
 #[derive(Getters)]
 struct IgscFwuHeciImageMetadata {
-    version_format: u32le: default=0x1,
+    version_format: u32le = 0x1,
 }
 #[derive(Parse)]
 struct IgscFwuImageMetadataV1 {
-    version_format: u32le: default=0x1,  // struct IgscFwuHeciImageMetadata
+    version_format: u32le = 0x1,  // struct IgscFwuHeciImageMetadata
     project: [char; 4],
     version_hotfix: u16,         // version of the overall IFWI image, i.e. the combination of IPs
     version_build: u16,

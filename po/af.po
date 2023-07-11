@@ -133,9 +133,9 @@ msgstr "Gradeer tans %s af…"
 msgid "Downloading…"
 msgstr "Laai tans af…"
 
-#. TRANSLATORS: Suffix: the HSI result
 #. TRANSLATORS: Plugin is active and in use
 #. TRANSLATORS: if the remote is enabled
+#. TRANSLATORS: Suffix: the HSI result
 msgid "Enabled"
 msgstr "Geaktiveer"
 
@@ -157,6 +157,11 @@ msgstr "Gevind"
 
 #. TRANSLATORS: command argument: uppercase, spaces->dashes
 msgctxt "A single GUID"
+msgid "GUID"
+msgstr "GUID"
+
+#. TRANSLATORS: command argument: uppercase, spaces->dashes
+msgctxt "command-argument"
 msgid "GUID"
 msgstr "GUID"
 

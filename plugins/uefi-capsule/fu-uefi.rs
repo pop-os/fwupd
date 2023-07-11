@@ -3,7 +3,7 @@
 
 #[derive(New, Getters)]
 struct EfiUxCapsuleHeader {
-    version: u8: const=0x01,
+    version: u8 == 0x01,
     checksum: u8,
     image_type: u8,
     _reserved: u8,
@@ -14,18 +14,27 @@ struct EfiUxCapsuleHeader {
 #[derive(New, Getters)]
 struct EfiCapsuleHeader {
     guid: Guid,
-    header_size: u32le: default=$struct_size,
+    header_size: u32le = $struct_size,
     flags: u32le,
     image_size: u32le,
 }
+
+#[derive(ToString)]
+#[repr(u32le)]
+enum UefiUpdateInfoStatus {
+    Unknown,
+    AttemptUpdate,
+    Attempted,
+}
+
 #[derive(New, Parse)]
 struct EfiUpdateInfo {
-    version: u32le: default=0x7,
+    version: u32le = 0x7,
     guid: Guid,
     flags: u32le,
     hw_inst: u64le,
     time_attempted: [u8; 16], // a EFI_TIME_T
-    status: u32le,
+    status: UefiUpdateInfoStatus,
     // EFI_DEVICE_PATH goes here
 }
 #[derive(Parse)]
@@ -33,12 +42,6 @@ struct AcpiInsydeQuirk {
     signature: [char; 6],
     size: u32le,
     flags: u32le,
-}
-#[derive(ToString)]
-enum UefiUpdateInfoStatus {
-    Unknown,
-    AttemptUpdate,
-    Attempted,
 }
 #[derive(ToString, FromString)]
 enum UefiDeviceKind {

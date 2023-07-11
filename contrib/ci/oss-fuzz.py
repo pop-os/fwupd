@@ -382,6 +382,7 @@ def _build(bld: Builder) -> None:
 
     # built in formats
     for fzr in [
+        Fuzzer("csv"),
         Fuzzer("dfuse"),
         Fuzzer("fdt"),
         Fuzzer("fit"),
@@ -395,6 +396,7 @@ def _build(bld: Builder) -> None:
         Fuzzer("uswid"),
         Fuzzer("efi-firmware-filesystem", pattern="efi-firmware-filesystem"),
         Fuzzer("efi-firmware-volume", pattern="efi-firmware-volume"),
+        Fuzzer("efi-load-option", pattern="efi-load-option"),
         Fuzzer("ifd"),
     ]:
         src = bld.substitute(
@@ -423,8 +425,8 @@ def _build(bld: Builder) -> None:
     for fzr in [
         Fuzzer("acpi-phat", pattern="acpi-phat"),
         Fuzzer("bcm57xx"),
-        Fuzzer("ccgx-dmc", srcdir="ccgx", globstr="ccgx-dmc*.bin"),
         Fuzzer("ccgx"),
+        Fuzzer("ccgx-dmc"),
         Fuzzer("cros-ec"),
         Fuzzer("ebitdo"),
         Fuzzer("elanfp"),

@@ -7,8 +7,6 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
 #include "fu-vli-device.h"
 #include "fu-vli-struct.h"
 
@@ -274,7 +272,7 @@ fu_vli_device_spi_write_block(FuVliDevice *self,
 		g_prefix_error(error, "SPI data read failed: ");
 		return FALSE;
 	}
-	return fu_memcmp_safe(buf, bufsz, buf_tmp, bufsz, error);
+	return fu_memcmp_safe(buf, bufsz, 0, buf_tmp, bufsz, 0, bufsz, error);
 }
 
 gboolean
@@ -720,6 +718,7 @@ fu_vli_device_init(FuVliDevice *self)
 	priv->spi_auto_detect = TRUE;
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NO_SERIAL_NUMBER);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV);
 }
 
 static void

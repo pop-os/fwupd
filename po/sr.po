@@ -160,9 +160,9 @@ msgstr "Преузимам…"
 msgid "Dump SMBIOS data from a file"
 msgstr "Ишчитај SMBIOS податке из датотеке"
 
-#. TRANSLATORS: Suffix: the HSI result
 #. TRANSLATORS: Plugin is active and in use
 #. TRANSLATORS: if the remote is enabled
+#. TRANSLATORS: Suffix: the HSI result
 msgid "Enabled"
 msgstr "Омогућено"
 
@@ -228,6 +228,11 @@ msgstr "Нашао"
 
 #. TRANSLATORS: command argument: uppercase, spaces->dashes
 msgctxt "A single GUID"
+msgid "GUID"
+msgstr "ГУИД"
+
+#. TRANSLATORS: command argument: uppercase, spaces->dashes
+msgctxt "command-argument"
 msgid "GUID"
 msgstr "ГУИД"
 

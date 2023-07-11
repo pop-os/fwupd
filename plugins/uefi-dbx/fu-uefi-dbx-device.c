@@ -6,8 +6,6 @@
 
 #include "config.h"
 
-#include <fwupdplugin.h>
-
 #include "fu-uefi-dbx-common.h"
 #include "fu-uefi-dbx-device.h"
 
@@ -102,6 +100,7 @@ fu_uefi_dbx_prepare_firmware(FuDevice *device, GBytes *fw, FwupdInstallFlags fla
 		//		fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_VERIFY);
 		if (!fu_uefi_dbx_signature_list_validate(ctx,
 							 FU_EFI_SIGNATURE_LIST(siglist),
+							 flags,
 							 error)) {
 			g_prefix_error(error,
 				       "Blocked executable in the ESP, "
@@ -145,14 +144,24 @@ fu_uefi_dbx_device_probe(FuDevice *device, GError **error)
 }
 
 static void
+fu_uefi_dbx_device_report_metadata_pre(FuDevice *device, GHashTable *metadata)
+{
+	guint64 nvram_total = fu_efivar_space_used(NULL);
+	if (nvram_total != G_MAXUINT64) {
+		g_hash_table_insert(metadata,
+				    g_strdup("EfivarNvramUsed"),
+				    g_strdup_printf("%" G_GUINT64_FORMAT, nvram_total));
+	}
+}
+
+static void
 fu_uefi_dbx_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
 }
 
 static void
@@ -190,6 +199,7 @@ fu_uefi_dbx_device_class_init(FuUefiDbxDeviceClass *klass)
 	klass_device->write_firmware = fu_uefi_dbx_device_write_firmware;
 	klass_device->prepare_firmware = fu_uefi_dbx_prepare_firmware;
 	klass_device->set_progress = fu_uefi_dbx_device_set_progress;
+	klass_device->report_metadata_pre = fu_uefi_dbx_device_report_metadata_pre;
 }
 
 FuUefiDbxDevice *

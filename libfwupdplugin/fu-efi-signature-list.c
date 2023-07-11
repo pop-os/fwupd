@@ -91,8 +91,7 @@ fu_efi_signature_list_parse_item(FuEfiSignatureList *self,
 	data = g_bytes_new(sig_data, sig_datasz);
 	sig = fu_efi_signature_new(sig_kind, sig_owner);
 	fu_firmware_set_bytes(FU_FIRMWARE(sig), data);
-	fu_firmware_add_image(FU_FIRMWARE(self), FU_FIRMWARE(sig));
-	return TRUE;
+	return fu_firmware_add_image_full(FU_FIRMWARE(self), FU_FIRMWARE(sig), error);
 }
 
 static gboolean
@@ -247,7 +246,7 @@ fu_efi_signature_list_parse(FuFirmware *firmware,
 	return TRUE;
 }
 
-static GBytes *
+static GByteArray *
 fu_efi_signature_list_write(FuFirmware *firmware, GError **error)
 {
 	g_autoptr(GByteArray) buf = fu_struct_efi_signature_list_new();
@@ -263,7 +262,7 @@ fu_efi_signature_list_write(FuFirmware *firmware, GError **error)
 	for (guint i = 0; i < 16; i++)
 		fu_byte_array_append_uint8(buf, '2');
 
-	return g_byte_array_free_to_bytes(g_steal_pointer(&buf));
+	return g_steal_pointer(&buf);
 }
 
 /**
@@ -292,4 +291,5 @@ static void
 fu_efi_signature_list_init(FuEfiSignatureList *self)
 {
 	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_ALWAYS_SEARCH);
+	fu_firmware_set_images_max(FU_FIRMWARE(self), 2000);
 }

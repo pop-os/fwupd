@@ -53,7 +53,6 @@
 #include "fu-history.h"
 #include "fu-idle.h"
 #include "fu-kenv.h"
-#include "fu-mutex.h"
 #include "fu-plugin-builtin.h"
 #include "fu-plugin-list.h"
 #include "fu-plugin-private.h"
@@ -599,12 +598,9 @@ fu_engine_add_local_release_metadata(FuEngine *self, FuRelease *release, GError 
 		const gchar *guid = g_ptr_array_index(guids, i);
 		g_autoptr(GError) error_local = NULL;
 		g_autoptr(GPtrArray) tags = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 		g_auto(XbQueryContext) context = XB_QUERY_CONTEXT_INIT();
-#endif
 
 		/* bind GUID and then query */
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 		xb_value_bindings_bind_str(xb_query_context_get_bindings(&context), 0, guid, NULL);
 		xb_value_bindings_bind_str(xb_query_context_get_bindings(&context),
 					   1,
@@ -614,21 +610,6 @@ fu_engine_add_local_release_metadata(FuEngine *self, FuRelease *release, GError 
 						  self->query_tag_by_guid_version,
 						  &context,
 						  &error_local);
-#else
-		if (!xb_query_bind_str(self->query_tag_by_guid_version, 0, guid, error)) {
-			g_prefix_error(error, "failed to bind GUID: ");
-			return FALSE;
-		}
-		if (!xb_query_bind_str(self->query_tag_by_guid_version,
-				       1,
-				       fu_release_get_version(release),
-				       error)) {
-			g_prefix_error(error, "failed to bind version: ");
-			return FALSE;
-		}
-		tags =
-		    xb_silo_query_full(self->silo, self->query_tag_by_guid_version, &error_local);
-#endif
 		if (tags == NULL) {
 			if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_FOUND) ||
 			    g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT))
@@ -644,6 +625,15 @@ fu_engine_add_local_release_metadata(FuEngine *self, FuRelease *release, GError 
 
 	/* success */
 	return TRUE;
+}
+
+/* private, for self tests */
+void
+fu_engine_add_remote(FuEngine *self, FwupdRemote *remote)
+{
+	g_return_if_fail(FU_IS_ENGINE(self));
+	g_return_if_fail(FWUPD_IS_REMOTE(remote));
+	fu_remote_list_add_remote(self->remote_list, remote);
 }
 
 static void
@@ -673,19 +663,24 @@ fu_engine_compare_report_trusted(FwupdReport *report_trusted, FwupdReport *repor
 		    fwupd_report_get_vendor_id(report))
 			return FALSE;
 	}
-	if (fwupd_report_get_distro_id(report_trusted) != 0) {
+	if (fwupd_report_get_distro_id(report_trusted) != NULL) {
 		if (g_strcmp0(fwupd_report_get_distro_id(report_trusted),
 			      fwupd_report_get_distro_id(report)) != 0)
 			return FALSE;
 	}
-	if (fwupd_report_get_distro_version(report_trusted) != 0) {
+	if (fwupd_report_get_distro_version(report_trusted) != NULL) {
 		if (g_strcmp0(fwupd_report_get_distro_version(report_trusted),
 			      fwupd_report_get_distro_version(report)) != 0)
 			return FALSE;
 	}
-	if (fwupd_report_get_distro_variant(report_trusted) != 0) {
+	if (fwupd_report_get_distro_variant(report_trusted) != NULL) {
 		if (g_strcmp0(fwupd_report_get_distro_variant(report_trusted),
 			      fwupd_report_get_distro_variant(report)) != 0)
+			return FALSE;
+	}
+	if (fwupd_report_get_remote_id(report_trusted) != NULL) {
+		if (g_strcmp0(fwupd_report_get_remote_id(report_trusted),
+			      fwupd_report_get_remote_id(report)) != 0)
 			return FALSE;
 	}
 	return TRUE;
@@ -700,7 +695,7 @@ fu_engine_add_trusted_report(FuEngine *self, FuRelease *release)
 	for (guint i = 0; i < reports->len; i++) {
 		FwupdReport *report = g_ptr_array_index(reports, i);
 		for (guint j = 0; j < trusted_reports->len; j++) {
-			FwupdReport *trusted_report = g_ptr_array_index(reports, j);
+			FwupdReport *trusted_report = g_ptr_array_index(trusted_reports, j);
 			if (fu_engine_compare_report_trusted(trusted_report, report)) {
 				g_autofree gchar *str = fwupd_report_to_string(trusted_report);
 				g_debug("add trusted-report to %s:%s as trusted: %s",
@@ -755,7 +750,6 @@ fu_engine_load_release(FuEngine *self,
 static const gchar *
 fu_engine_get_remote_id_for_checksum(FuEngine *self, const gchar *csum)
 {
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 	g_auto(XbQueryContext) context = XB_QUERY_CONTEXT_INIT();
 	xb_query_context_set_flags(&context, XB_QUERY_FLAG_USE_INDEXES);
 	xb_value_bindings_bind_str(xb_query_context_get_bindings(&context), 0, csum, NULL);
@@ -777,22 +771,6 @@ fu_engine_get_remote_id_for_checksum(FuEngine *self, const gchar *csum)
 		if (key != NULL)
 			return xb_node_get_text(key);
 	}
-#else
-	if (self->query_container_checksum1 != NULL) {
-		g_autoptr(XbNode) key = NULL;
-		xb_query_bind_str(self->query_container_checksum1, 0, csum, NULL);
-		key = xb_silo_query_first_full(self->silo, self->query_container_checksum1, NULL);
-		if (key != NULL)
-			return xb_node_get_text(key);
-	}
-	if (self->query_container_checksum2 != NULL) {
-		g_autoptr(XbNode) key = NULL;
-		xb_query_bind_str(self->query_container_checksum2, 0, csum, NULL);
-		key = xb_silo_query_first_full(self->silo, self->query_container_checksum2, NULL);
-		if (key != NULL)
-			return xb_node_get_text(key);
-	}
-#endif
 
 	/* failed */
 	return NULL;
@@ -1446,29 +1424,18 @@ fu_engine_get_component_by_guid(FuEngine *self, const gchar *guid)
 {
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(XbNode) component = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 	g_auto(XbQueryContext) context = XB_QUERY_CONTEXT_INIT();
-#endif
 
 	/* no components in silo */
 	if (self->query_component_by_guid == NULL)
 		return NULL;
 
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 	xb_query_context_set_flags(&context, XB_QUERY_FLAG_USE_INDEXES);
 	xb_value_bindings_bind_str(xb_query_context_get_bindings(&context), 0, guid, NULL);
 	component = xb_silo_query_first_with_context(self->silo,
 						     self->query_component_by_guid,
 						     &context,
 						     &error_local);
-#else
-	if (!xb_query_bind_str(self->query_component_by_guid, 0, guid, &error_local)) {
-		g_warning("failed to bind 0: %s", error_local->message);
-		return NULL;
-	}
-	component =
-	    xb_silo_query_first_full(self->silo, self->query_component_by_guid, &error_local);
-#endif
 	if (component == NULL) {
 		if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_FOUND) &&
 		    !g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT))
@@ -1554,21 +1521,11 @@ fu_engine_verify_from_system_metadata(FuEngine *self, FuDevice *device, GError *
 		const gchar *guid = g_ptr_array_index(guids, i);
 		g_autoptr(GError) error_local = NULL;
 		g_autoptr(GPtrArray) releases = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 		g_auto(XbQueryContext) context = XB_QUERY_CONTEXT_INIT();
-#endif
 
 		/* bind GUID and then query */
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 		xb_value_bindings_bind_str(xb_query_context_get_bindings(&context), 0, guid, NULL);
 		releases = xb_silo_query_with_context(self->silo, query, &context, &error_local);
-#else
-		if (!xb_query_bind_str(query, 0, guid, error)) {
-			g_prefix_error(error, "failed to bind string: ");
-			return NULL;
-		}
-		releases = xb_silo_query_full(self->silo, query, &error_local);
-#endif
 		if (releases == NULL) {
 			if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_FOUND) ||
 			    g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT)) {
@@ -1760,7 +1717,7 @@ fu_engine_require_vercmp(XbNode *req, const gchar *version, FwupdVersionFormat f
 		rc = fu_version_compare(version, version_req, fmt);
 		ret = rc >= 0;
 	} else if (g_strcmp0(tmp, "glob") == 0) {
-		ret = fu_path_fnmatch(version_req, version);
+		ret = g_pattern_match_simple(version_req, version);
 	} else if (g_strcmp0(tmp, "regex") == 0) {
 		ret = g_regex_match_simple(version_req, version, 0, 0);
 	} else {
@@ -3448,7 +3405,7 @@ GBytes *
 fu_engine_emulation_save(FuEngine *self, GError **error)
 {
 	gboolean got_json = FALSE;
-	g_autoptr(GBytes) bytes = NULL;
+	g_autoptr(GByteArray) buf = NULL;
 	g_autoptr(FuArchive) archive = fu_archive_new(NULL, FU_ARCHIVE_FLAG_NONE, NULL);
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), NULL);
@@ -3488,14 +3445,13 @@ fu_engine_emulation_save(FuEngine *self, GError **error)
 	}
 
 	/* write  */
-	bytes =
-	    fu_archive_write(archive, FU_ARCHIVE_FORMAT_ZIP, FU_ARCHIVE_COMPRESSION_GZIP, error);
-	if (bytes == NULL)
+	buf = fu_archive_write(archive, FU_ARCHIVE_FORMAT_ZIP, FU_ARCHIVE_COMPRESSION_GZIP, error);
+	if (buf == NULL)
 		return NULL;
 
 	/* success */
 	g_hash_table_remove_all(self->emulation_phases);
-	return g_steal_pointer(&bytes);
+	return g_bytes_new(buf->data, buf->len);
 }
 
 static gboolean
@@ -3577,7 +3533,7 @@ fu_engine_get_device(FuEngine *self, const gchar *device_id, GError **error)
 
 	/* wait for any device to disconnect and reconnect */
 	if (!fu_device_list_wait_for_replug(self->device_list, error)) {
-		g_prefix_error(error, "failed to wait for detach replug: ");
+		g_prefix_error(error, "failed to wait for device: ");
 		return NULL;
 	}
 
@@ -3660,6 +3616,7 @@ fu_engine_device_check_power(FuEngine *self,
 
 	/* not charging */
 	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_REQUIRE_AC) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) &&
 	    !fu_power_state_is_ac(fu_context_get_power_state(self->ctx))) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -3754,6 +3711,12 @@ fu_engine_cleanup(FuEngine *self,
 		FuPlugin *plugin_tmp = g_ptr_array_index(plugins, j);
 		if (!fu_plugin_runner_cleanup(plugin_tmp, device, progress, flags, error))
 			return FALSE;
+	}
+
+	/* wait for any device to disconnect and reconnect */
+	if (!fu_device_list_wait_for_replug(self->device_list, error)) {
+		g_prefix_error(error, "failed to wait for cleanup replug: ");
+		return FALSE;
 	}
 
 	/* save to emulated phase */
@@ -5131,9 +5094,7 @@ fu_engine_get_result_from_component(FuEngine *self,
 	g_autoptr(GPtrArray) tags = NULL;
 	g_autoptr(XbNode) description = NULL;
 	g_autoptr(XbNode) rel = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	g_autoptr(XbQuery) query = NULL;
-#endif
 
 	dev = fu_device_new(self->ctx);
 	provides = xb_node_query(component, "provides/firmware[@type=$'flashed']", 0, &error_local);
@@ -5189,7 +5150,6 @@ fu_engine_get_result_from_component(FuEngine *self,
 	release = fu_release_new();
 	fu_release_set_device(release, dev);
 	fu_release_set_request(release, request);
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	query = xb_query_new_full(xb_node_get_silo(component),
 				  "releases/release",
 				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
@@ -5197,9 +5157,6 @@ fu_engine_get_result_from_component(FuEngine *self,
 	if (query == NULL)
 		return NULL;
 	rel = xb_node_query_first_full(component, query, &error_local);
-#else
-	rel = xb_node_query_first(component, "releases/release", &error_local);
-#endif
 	if (rel == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -5606,19 +5563,6 @@ fu_engine_get_history(FuEngine *self, GError **error)
 	return g_steal_pointer(&devices);
 }
 
-#if !GLIB_CHECK_VERSION(2, 62, 0)
-static GPtrArray *
-g_ptr_array_copy(GPtrArray *array, GCopyFunc func, gpointer user_data)
-{
-	GPtrArray *new = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
-	for (guint i = 0; i < array->len; i++) {
-		GObject *obj = g_ptr_array_index(array, i);
-		g_ptr_array_add(new, g_object_ref(obj));
-	}
-	return new;
-}
-#endif
-
 /**
  * fu_engine_get_remotes:
  * @self: a #FuEngine
@@ -5927,7 +5871,6 @@ fu_engine_get_releases_for_device(FuEngine *self,
 		const gchar *guid = g_ptr_array_index(device_guids, j);
 		g_autoptr(GError) error_local = NULL;
 		g_autoptr(GPtrArray) components = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 3, 0)
 		g_auto(XbQueryContext) context = XB_QUERY_CONTEXT_INIT();
 
 		xb_query_context_set_flags(&context, XB_QUERY_FLAG_USE_INDEXES);
@@ -5936,16 +5879,6 @@ fu_engine_get_releases_for_device(FuEngine *self,
 							self->query_component_by_guid,
 							&context,
 							&error_local);
-#else
-		if (!xb_query_bind_str(self->query_component_by_guid, 0, guid, &error_local)) {
-			g_warning("failed to bind 0: %s", error_local->message);
-			return NULL;
-		}
-		components =
-		    xb_silo_query_full(self->silo, self->query_component_by_guid, &error_local);
-#endif
-
-		/* nothing found */
 		if (components == NULL) {
 			g_debug("%s was not found: %s", guid, error_local->message);
 			continue;
@@ -5982,10 +5915,8 @@ fu_engine_get_releases_for_device(FuEngine *self,
 		FwupdRelease *rel_tmp = FWUPD_RELEASE(g_ptr_array_index(releases, i));
 		const gchar *branch_tmp =
 		    fu_engine_get_branch_fallback(fwupd_release_get_branch(rel_tmp));
-#if GLIB_CHECK_VERSION(2, 54, 3)
 		if (g_ptr_array_find_with_equal_func(branches, branch_tmp, g_str_equal, NULL))
 			continue;
-#endif
 		g_ptr_array_add(branches, g_strdup(branch_tmp));
 	}
 	if (branches->len > 1)
@@ -6312,11 +6243,21 @@ fu_engine_get_upgrades(FuEngine *self,
 		return NULL;
 
 	/* there is no point checking each release */
-	if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE)) {
+	if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOTHING_TO_DO,
 				    "Device is not updatable");
+		return NULL;
+	}
+
+	/* stay on one firmware version unless the new version is explicitly specified */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_ONLY_EXPLICIT_UPDATES)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    "Installing a specific release is explicitly required");
 		return NULL;
 	}
 
@@ -7000,7 +6941,7 @@ fu_engine_is_plugin_name_enabled(FuEngine *self, const gchar *name)
 		return TRUE;
 	for (guint i = 0; i < self->plugin_filter->len; i++) {
 		const gchar *name_tmp = g_ptr_array_index(self->plugin_filter, i);
-		if (fu_path_fnmatch(name_tmp, name))
+		if (g_pattern_match_simple(name_tmp, name))
 			return TRUE;
 	}
 	return FALSE;
@@ -7013,7 +6954,7 @@ fu_engine_add_plugin_filter(FuEngine *self, const gchar *plugin_glob)
 	g_return_if_fail(FU_IS_ENGINE(self));
 	g_return_if_fail(plugin_glob != NULL);
 	str = g_string_new(plugin_glob);
-	fu_string_replace(str, "-", "_");
+	g_string_replace(str, "-", "_", 0);
 	g_ptr_array_add(self->plugin_filter, g_string_free(str, FALSE));
 }
 
@@ -7083,6 +7024,7 @@ fu_engine_ensure_security_attrs_tainted(FuEngine *self)
 	g_autoptr(FwupdSecurityAttr) attr =
 	    fwupd_security_attr_new(FWUPD_SECURITY_ATTR_ID_FWUPD_PLUGINS);
 	fwupd_security_attr_set_plugin(attr, "core");
+	fwupd_security_attr_set_result_success(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_TAINTED);
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 
 	fu_security_attrs_append(self->host_security_attrs, attr);
@@ -7101,7 +7043,6 @@ fu_engine_ensure_security_attrs_tainted(FuEngine *self)
 
 	/* success */
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
-	fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_TAINTED);
 }
 
 /*
@@ -7154,7 +7095,6 @@ fu_engine_attrs_calculate_hsi_for_chassis(FuEngine *self)
 static gboolean
 fu_engine_record_security_attrs(FuEngine *self, GError **error)
 {
-#if JSON_CHECK_VERSION(1, 6, 0)
 	g_autoptr(GPtrArray) attrs_array = NULL;
 	g_autofree gchar *json = NULL;
 
@@ -7187,7 +7127,6 @@ fu_engine_record_security_attrs(FuEngine *self, GError **error)
 		g_prefix_error(error, "failed to write to DB: ");
 		return FALSE;
 	}
-#endif
 
 	/* success */
 	return TRUE;
@@ -7337,6 +7276,7 @@ fu_engine_ensure_security_attrs(FuEngine *self)
 #ifdef HAVE_HSI
 	GPtrArray *plugins = fu_plugin_list_get_all(self->plugin_list);
 	g_autoptr(GPtrArray) devices = fu_device_list_get_all(self->device_list);
+	g_autoptr(GPtrArray) vals = NULL;
 	g_autoptr(GError) error = NULL;
 
 	/* already valid */
@@ -7359,6 +7299,17 @@ fu_engine_ensure_security_attrs(FuEngine *self)
 	for (guint j = 0; j < plugins->len; j++) {
 		FuPlugin *plugin_tmp = g_ptr_array_index(plugins, j);
 		fu_plugin_runner_add_security_attrs(plugin_tmp, self->host_security_attrs);
+	}
+
+	/* sanity check */
+	vals = fu_security_attrs_get_all(self->host_security_attrs);
+	for (guint i = 0; i < vals->len; i++) {
+		FwupdSecurityAttr *attr = g_ptr_array_index(vals, i);
+		if (fwupd_security_attr_get_result(attr) == FWUPD_SECURITY_ATTR_RESULT_UNKNOWN) {
+			g_critical("HSI attribute %s (from %s) had unknown result",
+				   fwupd_security_attr_get_appstream_id(attr),
+				   fwupd_security_attr_get_plugin(attr));
+		}
 	}
 
 	/* depsolve */
@@ -7390,7 +7341,6 @@ FuSecurityAttrs *
 fu_engine_get_host_security_events(FuEngine *self, guint limit, GError **error)
 {
 	g_autoptr(FuSecurityAttrs) events = fu_security_attrs_new();
-#if JSON_CHECK_VERSION(1, 6, 0)
 	g_autoptr(GPtrArray) attrs_array = NULL;
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), NULL);
@@ -7416,7 +7366,6 @@ fu_engine_get_host_security_events(FuEngine *self, guint limit, GError **error)
 			fu_security_attrs_append_internal(events, attr);
 		}
 	}
-#endif
 
 	/* success */
 	return g_steal_pointer(&events);
@@ -8508,6 +8457,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "raw", FU_TYPE_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "dfu", FU_TYPE_DFU_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "fdt", FU_TYPE_FDT_FIRMWARE);
+	fu_context_add_firmware_gtype(self->ctx, "csv", FU_TYPE_CSV_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "fit", FU_TYPE_FIT_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "dfuse", FU_TYPE_DFUSE_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "ifwi-cpd", FU_TYPE_IFWI_CPD_FIRMWARE);
@@ -8520,6 +8470,10 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "smbios", FU_TYPE_SMBIOS);
 	fu_context_add_firmware_gtype(self->ctx, "acpi-table", FU_TYPE_ACPI_TABLE);
 	fu_context_add_firmware_gtype(self->ctx, "efi-firmware-file", FU_TYPE_EFI_FIRMWARE_FILE);
+	fu_context_add_firmware_gtype(self->ctx, "efi-load-option", FU_TYPE_EFI_LOAD_OPTION);
+	fu_context_add_firmware_gtype(self->ctx,
+				      "efi-device-path-list",
+				      FU_TYPE_EFI_DEVICE_PATH_LIST);
 	fu_context_add_firmware_gtype(self->ctx,
 				      "efi-firmware-filesystem",
 				      FU_TYPE_EFI_FIRMWARE_FILESYSTEM);
@@ -8536,6 +8490,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "uswid", FU_TYPE_USWID_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "coswid", FU_TYPE_COSWID_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "pefile", FU_TYPE_PEFILE_FIRMWARE);
+	fu_context_add_firmware_gtype(self->ctx, "elf", FU_TYPE_ELF_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx,
 				      "intel-thunderbolt",
 				      FU_TYPE_INTEL_THUNDERBOLT_FIRMWARE);
@@ -8917,7 +8872,7 @@ fu_engine_init(FuEngine *self)
 
 	/* add some runtime versions of things the daemon depends on */
 	fu_engine_add_runtime_version(self, "org.freedesktop.fwupd", VERSION);
-#if G_USB_CHECK_VERSION(0, 3, 1)
+#ifdef HAVE_GUSB
 	fu_engine_add_runtime_version(self, "org.freedesktop.gusb", g_usb_version_string());
 #endif
 #if LIBJCAT_CHECK_VERSION(0, 1, 11)

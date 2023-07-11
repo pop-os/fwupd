@@ -93,7 +93,7 @@ fu_test_compare_lines(const gchar *txt1, const gchar *txt2, GError **error)
 	g_autofree gchar *output = NULL;
 	if (g_strcmp0(txt1, txt2) == 0)
 		return TRUE;
-	if (fu_path_fnmatch(txt2, txt1))
+	if (g_pattern_match_simple(txt2, txt1))
 		return TRUE;
 	if (!g_file_set_contents("/tmp/a", txt1, -1, error))
 		return FALSE;
@@ -1721,6 +1721,7 @@ fu_engine_downgrade_func(gconstpointer user_data)
 	g_autoptr(GPtrArray) releases_dg = NULL;
 	g_autoptr(GPtrArray) releases = NULL;
 	g_autoptr(GPtrArray) releases_up = NULL;
+	g_autoptr(GPtrArray) releases_up2 = NULL;
 	g_autoptr(GPtrArray) remotes = NULL;
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
 
@@ -1888,6 +1889,12 @@ fu_engine_downgrade_func(gconstpointer user_data)
 	g_assert_cmpint(releases_dg->len, ==, 1);
 	rel = FWUPD_RELEASE(g_ptr_array_index(releases_dg, 0));
 	g_assert_cmpstr(fwupd_release_get_version(rel), ==, "1.2.2");
+
+	/* enforce that updates have to be explicit */
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_ONLY_EXPLICIT_UPDATES);
+	releases_up2 = fu_engine_get_upgrades(engine, request, fu_device_get_id(device), &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO);
+	g_assert_null(releases_up2);
 }
 
 static void
@@ -2351,9 +2358,7 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new();
 	g_autoptr(GPtrArray) releases = NULL;
 	g_autoptr(GPtrArray) rels = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	g_autoptr(XbQuery) query = NULL;
-#endif
 
 #ifndef HAVE_LIBARCHIVE
 	g_test_skip("no libarchive support");
@@ -2413,7 +2418,6 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	fu_device_set_metadata_integer(device, "nr-update", 0);
 
 	/* get all */
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	query = xb_query_new_full(xb_node_get_silo(component),
 				  "releases/release",
 				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
@@ -2421,9 +2425,6 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_nonnull(query);
 	rels = xb_node_query_full(component, query, &error);
-#else
-	rels = xb_node_query(component, "releases/release", 0, &error);
-#endif
 	g_assert_no_error(error);
 	g_assert_nonnull(rels);
 
@@ -3536,7 +3537,7 @@ fu_backend_usb_func(gconstpointer user_data)
 
 	/* check the device was processed correctly by FuUsbDevice */
 	g_assert_cmpstr(fu_device_get_name(device_tmp), ==, "ColorHug2");
-	g_assert_true(fu_device_has_instance_id(device_tmp, "USB\\VID_273F&PID_1004&REV_0002"));
+	g_assert_true(fu_device_has_instance_id(device_tmp, "USB\\VID_273F&PID_1004"));
 	g_assert_true(fu_device_has_vendor_id(device_tmp, "USB:0x273F"));
 
 	/* check the fwupd DS20 descriptor was parsed */
@@ -3622,7 +3623,7 @@ fu_backend_usb_invalid_func(gconstpointer user_data)
 
 	/* check the device was processed correctly by FuUsbDevice */
 	g_assert_cmpstr(fu_device_get_name(device_tmp), ==, "ColorHug2");
-	g_assert_true(fu_device_has_instance_id(device_tmp, "USB\\VID_273F&PID_1004&REV_0002"));
+	g_assert_true(fu_device_has_instance_id(device_tmp, "USB\\VID_273F&PID_1004"));
 	g_assert_true(fu_device_has_vendor_id(device_tmp, "USB:0x273F"));
 
 	/* check the fwupd DS20 descriptor was *not* parsed */
@@ -4151,70 +4152,6 @@ fu_plugin_composite_func(gconstpointer user_data)
 }
 
 static void
-fu_security_attrs_func(gconstpointer user_data)
-{
-	FwupdSecurityAttr *attr_tmp;
-	g_autoptr(FuSecurityAttrs) attrs1 = fu_security_attrs_new();
-	g_autoptr(FuSecurityAttrs) attrs2 = fu_security_attrs_new();
-	g_autoptr(FwupdSecurityAttr) attr1 = fwupd_security_attr_new("org.fwupd.hsi.foo");
-	g_autoptr(FwupdSecurityAttr) attr2 = fwupd_security_attr_new("org.fwupd.hsi.bar");
-	g_autoptr(FwupdSecurityAttr) attr3 = fwupd_security_attr_new("org.fwupd.hsi.baz");
-	g_autoptr(FwupdSecurityAttr) attr4 = fwupd_security_attr_new("org.fwupd.hsi.baz");
-	g_autoptr(GPtrArray) results = NULL;
-
-	/* attrs1 has foo and baz(enabled) */
-	fwupd_security_attr_set_plugin(attr1, "foo");
-	fwupd_security_attr_set_created(attr1, 0);
-	fwupd_security_attr_set_result(attr1, FWUPD_SECURITY_ATTR_RESULT_ENCRYPTED);
-	fu_security_attrs_append(attrs1, attr1);
-	fwupd_security_attr_set_plugin(attr3, "baz");
-	fwupd_security_attr_set_created(attr3, 0);
-	fwupd_security_attr_set_result(attr3, FWUPD_SECURITY_ATTR_RESULT_ENABLED);
-	fu_security_attrs_append(attrs1, attr3);
-
-	/* attrs2 has bar and baz(~enabled) */
-	fwupd_security_attr_set_plugin(attr2, "bar");
-	fwupd_security_attr_set_created(attr2, 0);
-	fwupd_security_attr_set_result(attr2, FWUPD_SECURITY_ATTR_RESULT_LOCKED);
-	fu_security_attrs_append(attrs2, attr2);
-	fwupd_security_attr_set_plugin(attr4, "baz");
-	fwupd_security_attr_set_created(attr4, 0);
-	fwupd_security_attr_set_result(attr4, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
-	fu_security_attrs_append(attrs2, attr4);
-
-	results = fu_security_attrs_compare(attrs1, attrs2);
-	g_assert_cmpint(results->len, ==, 3);
-	attr_tmp = g_ptr_array_index(results, 0);
-	g_assert_cmpstr(fwupd_security_attr_get_appstream_id(attr_tmp), ==, "org.fwupd.hsi.bar");
-	g_assert_cmpint(fwupd_security_attr_get_result_fallback(attr_tmp),
-			==,
-			FWUPD_SECURITY_ATTR_RESULT_UNKNOWN);
-	g_assert_cmpint(fwupd_security_attr_get_result(attr_tmp),
-			==,
-			FWUPD_SECURITY_ATTR_RESULT_LOCKED);
-	attr_tmp = g_ptr_array_index(results, 1);
-	g_assert_cmpstr(fwupd_security_attr_get_appstream_id(attr_tmp), ==, "org.fwupd.hsi.foo");
-	g_assert_cmpint(fwupd_security_attr_get_result_fallback(attr_tmp),
-			==,
-			FWUPD_SECURITY_ATTR_RESULT_ENCRYPTED);
-	g_assert_cmpint(fwupd_security_attr_get_result(attr_tmp),
-			==,
-			FWUPD_SECURITY_ATTR_RESULT_UNKNOWN);
-	attr_tmp = g_ptr_array_index(results, 2);
-	g_assert_cmpstr(fwupd_security_attr_get_appstream_id(attr_tmp), ==, "org.fwupd.hsi.baz");
-	g_assert_cmpint(fwupd_security_attr_get_result_fallback(attr_tmp),
-			==,
-			FWUPD_SECURITY_ATTR_RESULT_ENABLED);
-	g_assert_cmpint(fwupd_security_attr_get_result(attr_tmp),
-			==,
-			FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
-
-	g_assert_true(fu_security_attrs_equal(attrs1, attrs1));
-	g_assert_false(fu_security_attrs_equal(attrs1, attrs2));
-	g_assert_false(fu_security_attrs_equal(attrs2, attrs1));
-}
-
-static void
 fu_security_attr_func(gconstpointer user_data)
 {
 	gboolean ret;
@@ -4490,14 +4427,20 @@ fu_release_trusted_report_func(gconstpointer user_data)
 	g_autofree gchar *filename = NULL;
 	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
 	g_autoptr(FuEngine) engine = fu_engine_new();
+	g_autoptr(FwupdRemote) remote = fwupd_remote_new();
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GFile) file = NULL;
 	g_autoptr(XbBuilder) builder = xb_builder_new();
+	g_autoptr(XbBuilderNode) custom = xb_builder_node_new("custom");
 	g_autoptr(XbBuilderSource) source = xb_builder_source_new();
 	g_autoptr(XbSilo) silo = NULL;
 	g_autoptr(GPtrArray) releases = NULL;
 	g_autoptr(FuEngineRequest) request = fu_engine_request_new();
+
+	/* add fake LVFS remote */
+	fwupd_remote_set_id(remote, "lvfs");
+	fu_engine_add_remote(engine, remote);
 
 	/* load engine to get FuConfig set up */
 	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
@@ -4510,6 +4453,8 @@ fu_release_trusted_report_func(gconstpointer user_data)
 	ret = xb_builder_source_load_file(source, file, XB_BUILDER_SOURCE_FLAG_NONE, NULL, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+	xb_builder_node_insert_text(custom, "value", "lvfs", "key", "fwupd::RemoteId", NULL);
+	xb_builder_source_set_info(source, custom);
 	xb_builder_import_source(builder, source);
 	silo = xb_builder_compile(builder, XB_BUILDER_COMPILE_FLAG_NONE, NULL, &error);
 	g_assert_no_error(error);
@@ -4602,9 +4547,7 @@ fu_common_store_cab_func(void)
 	g_autoptr(XbNode) rel = NULL;
 	g_autoptr(XbNode) req = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	g_autoptr(XbQuery) query = NULL;
-#endif
 
 	/* create silo */
 	blob = _build_cab(
@@ -4644,7 +4587,6 @@ fu_common_store_cab_func(void)
 				&error);
 	g_assert_no_error(error);
 	g_assert_nonnull(component);
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	query = xb_query_new_full(xb_node_get_silo(component),
 				  "releases/release",
 				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
@@ -4652,9 +4594,6 @@ fu_common_store_cab_func(void)
 	g_assert_no_error(error);
 	g_assert_nonnull(query);
 	rel = xb_node_query_first_full(component, query, &error);
-#else
-	rel = xb_node_query_first(component, "releases/release", &error);
-#endif
 	g_assert_no_error(error);
 	g_assert_nonnull(rel);
 	g_assert_cmpstr(xb_node_get_attr(rel, "version"), ==, "1.2.3");
@@ -4801,9 +4740,7 @@ fu_common_store_cab_unsigned_func(void)
 	g_autoptr(XbNode) csum = NULL;
 	g_autoptr(XbNode) rel = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	g_autoptr(XbQuery) query = NULL;
-#endif
 
 	/* create silo */
 	blob = _build_cab(GCAB_COMPRESSION_NONE,
@@ -4828,7 +4765,6 @@ fu_common_store_cab_unsigned_func(void)
 				&error);
 	g_assert_no_error(error);
 	g_assert_nonnull(component);
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	query = xb_query_new_full(xb_node_get_silo(component),
 				  "releases/release",
 				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
@@ -4836,9 +4772,6 @@ fu_common_store_cab_unsigned_func(void)
 	g_assert_no_error(error);
 	g_assert_nonnull(query);
 	rel = xb_node_query_first_full(component, query, &error);
-#else
-	rel = xb_node_query_first(component, "releases/release", &error);
-#endif
 	g_assert_no_error(error);
 	g_assert_nonnull(rel);
 	g_assert_cmpstr(xb_node_get_attr(rel, "version"), ==, "1.2.3");
@@ -4886,9 +4819,7 @@ fu_common_store_cab_folder_func(void)
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbNode) rel = NULL;
 	g_autoptr(XbSilo) silo = NULL;
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	g_autoptr(XbQuery) query = NULL;
-#endif
 
 	/* create silo */
 	blob = _build_cab(GCAB_COMPRESSION_NONE,
@@ -4913,7 +4844,6 @@ fu_common_store_cab_folder_func(void)
 				&error);
 	g_assert_no_error(error);
 	g_assert_nonnull(component);
-#if LIBXMLB_CHECK_VERSION(0, 2, 0)
 	query = xb_query_new_full(xb_node_get_silo(component),
 				  "releases/release",
 				  XB_QUERY_FLAG_FORCE_NODE_CACHE,
@@ -4921,9 +4851,6 @@ fu_common_store_cab_folder_func(void)
 	g_assert_no_error(error);
 	g_assert_nonnull(query);
 	rel = xb_node_query_first_full(component, query, &error);
-#else
-	rel = xb_node_query_first(component, "releases/release", &error);
-#endif
 	g_assert_no_error(error);
 	g_assert_nonnull(rel);
 	g_assert_cmpstr(xb_node_get_attr(rel, "version"), ==, "1.2.3");
@@ -5255,7 +5182,6 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/plugin{module}", self, fu_plugin_module_func);
 	g_test_add_data_func("/fwupd/memcpy", self, fu_memcpy_func);
 	g_test_add_data_func("/fwupd/security-attr", self, fu_security_attr_func);
-	g_test_add_data_func("/fwupd/security-attrs", self, fu_security_attrs_func);
 	g_test_add_data_func("/fwupd/device-list", self, fu_device_list_func);
 	g_test_add_data_func("/fwupd/device-list{delay}", self, fu_device_list_delay_func);
 	g_test_add_data_func("/fwupd/device-list{no-auto-remove-children}",
