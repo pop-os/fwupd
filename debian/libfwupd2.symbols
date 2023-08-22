@@ -68,6 +68,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.8.8@LIBFWUPD_1.8.8 1.8.8
  LIBFWUPD_1.9.1@LIBFWUPD_1.9.1 1.9.1
  LIBFWUPD_1.9.3@LIBFWUPD_1.9.3 1.9.3
+ LIBFWUPD_1.9.4@LIBFWUPD_1.9.4 1.9.4
  fwupd_bios_setting_add_possible_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_array_from_variant@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_from_json@LIBFWUPD_1.8.4 1.8.4
@@ -100,6 +101,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_bios_setting_to_json@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_to_string@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_to_variant@LIBFWUPD_1.8.4 1.8.4
+ fwupd_bios_setting_write_value@LIBFWUPD_1.9.4 1.9.4
  fwupd_build_history_report_json@LIBFWUPD_1.0.4 1.0.4
  fwupd_build_machine_id@LIBFWUPD_1.0.4 1.0.4
  fwupd_build_user_agent@LIBFWUPD_1.0.3 1.0.3
@@ -230,6 +232,8 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_quit@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_quit_async@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_quit_finish@LIBFWUPD_1.8.11 1.8.11
+ fwupd_client_refresh_remote2@LIBFWUPD_1.9.4 1.9.4
+ fwupd_client_refresh_remote2_async@LIBFWUPD_1.9.4 1.9.4
  fwupd_client_refresh_remote@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_refresh_remote_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_refresh_remote_finish@LIBFWUPD_1.5.0 1.5.0
@@ -512,9 +516,12 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_release_to_variant@LIBFWUPD_1.0.0 1.0.0
  fwupd_release_urgency_from_string@LIBFWUPD_1.4.0 1.4.0
  fwupd_release_urgency_to_string@LIBFWUPD_1.4.0 1.4.0
+ fwupd_remote_add_flag@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_array_from_variant@LIBFWUPD_1.2.10 1.2.10
  fwupd_remote_build_firmware_uri@LIBFWUPD_0.9.7 1.0.0
  fwupd_remote_build_report_uri@LIBFWUPD_1.9.1 1.9.1
+ fwupd_remote_flag_from_string@LIBFWUPD_1.9.4 1.9.4
+ fwupd_remote_flag_to_string@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_from_variant@LIBFWUPD_1.0.0 1.0.0
  fwupd_remote_get_age@LIBFWUPD_0.9.5 1.0.0
  fwupd_remote_get_agreement@LIBFWUPD_1.0.7 1.0.7
@@ -522,11 +529,13 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_remote_get_automatic_reports@LIBFWUPD_1.3.3 1.3.3
  fwupd_remote_get_automatic_security_reports@LIBFWUPD_1.5.0 1.5.0
  fwupd_remote_get_checksum@LIBFWUPD_1.0.0 1.0.0
+ fwupd_remote_get_checksum_metadata@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_get_enabled@LIBFWUPD_0.9.3 1.0.0
  fwupd_remote_get_filename_cache@LIBFWUPD_0.9.6 1.0.0
  fwupd_remote_get_filename_cache_sig@LIBFWUPD_0.9.7 1.0.0
  fwupd_remote_get_filename_source@LIBFWUPD_0.9.8 1.0.0
  fwupd_remote_get_firmware_base_uri@LIBFWUPD_0.9.7 1.0.0
+ fwupd_remote_get_flags@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_get_id@LIBFWUPD_0.9.3 1.0.0
  fwupd_remote_get_keyring_kind@LIBFWUPD_0.9.7 1.0.0
  fwupd_remote_get_kind@LIBFWUPD_0.9.6 1.0.0
@@ -536,24 +545,29 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_remote_get_order_before@LIBFWUPD_0.9.5 1.0.0
  fwupd_remote_get_password@LIBFWUPD_0.9.5 1.0.0
  fwupd_remote_get_priority@LIBFWUPD_0.9.5 1.0.0
+ fwupd_remote_get_refresh_interval@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_get_remotes_dir@LIBFWUPD_1.3.1 1.3.1
  fwupd_remote_get_report_uri@LIBFWUPD_1.0.4 1.0.4
  fwupd_remote_get_security_report_uri@LIBFWUPD_1.5.0 1.5.0
  fwupd_remote_get_title@LIBFWUPD_0.9.8 1.0.0
  fwupd_remote_get_type@LIBFWUPD_0.9.3 1.0.0
  fwupd_remote_get_username@LIBFWUPD_0.9.5 1.0.0
+ fwupd_remote_has_flag@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_kind_from_string@LIBFWUPD_0.9.6 1.0.0
  fwupd_remote_kind_to_string@LIBFWUPD_0.9.6 1.0.0
  fwupd_remote_load_from_filename@LIBFWUPD_0.9.3 1.0.0
  fwupd_remote_load_signature@LIBFWUPD_1.4.0 1.4.0
  fwupd_remote_load_signature_bytes@LIBFWUPD_1.4.5 1.4.5
+ fwupd_remote_needs_refresh@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_new@LIBFWUPD_0.9.3 1.0.0
+ fwupd_remote_remove_flag@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_save_to_filename@LIBFWUPD_1.8.13 1.8.13
  fwupd_remote_set_agreement@LIBFWUPD_1.0.7 1.0.7
  fwupd_remote_set_checksum@LIBFWUPD_1.8.2 1.8.2
  fwupd_remote_set_enabled@LIBFWUPD_1.8.13 1.8.13
  fwupd_remote_set_filename_cache@LIBFWUPD_1.8.2 1.8.2
  fwupd_remote_set_filename_source@LIBFWUPD_1.6.1 1.6.1
+ fwupd_remote_set_flags@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_set_id@LIBFWUPD_1.9.3 1.9.3
  fwupd_remote_set_keyring_kind@LIBFWUPD_1.5.3 1.5.3
  fwupd_remote_set_metadata_uri@LIBFWUPD_1.8.13 1.8.13
