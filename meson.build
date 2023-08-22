@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.9.3',
+  version: '1.9.4',
   license: 'LGPL-2.1+',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -395,11 +395,19 @@ endif
 if cc.has_function('pwrite', args: '-D_XOPEN_SOURCE')
   conf.set('HAVE_PWRITE', '1')
 endif
+if cc.has_header_symbol('sys/mount.h', 'BLKSSZGET')
+  conf.set('HAVE_BLKSSZGET', '1')
+endif
 
 if host_machine.system() == 'freebsd'
   if cc.has_type('struct efi_esrt_entry_v1', prefix: '#include <sys/types.h>\n#include <sys/efiio.h>')
     conf.set('HAVE_FREEBSD_ESRT', '1')
   endif
+endif
+
+# this is way less hassle than including TargetConditionals.h and looking for TARGET_OS_MAC=1
+if host_machine.system() == 'darwin'
+  conf.set('HOST_MACHINE_SYSTEM_DARWIN', '1')
 endif
 
 # EFI
@@ -418,10 +426,6 @@ if build_standalone
     EFI_MACHINE_TYPE_NAME = ''
   endif
   conf.set_quoted('EFI_MACHINE_TYPE_NAME', EFI_MACHINE_TYPE_NAME)
-endif
-
-if get_option('soup_session_compat')
-    conf.set('SOUP_SESSION_COMPAT', '1')
 endif
 
 umockdev = dependency('umockdev-1.0', required: false)

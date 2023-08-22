@@ -421,7 +421,9 @@ fu_path_from_kind(FuPathKind path_kind)
 		tmp = g_getenv("FWUPD_LOCKDIR");
 		if (tmp != NULL)
 			return g_strdup(tmp);
-		return g_strdup("/run/lock");
+		if (g_file_test("/run/lock", G_FILE_TEST_EXISTS))
+			return g_strdup("/run/lock");
+		return g_strdup("/var/run");
 	/* /sys/class/firmware-attributes */
 	case FU_PATH_KIND_SYSFSDIR_FW_ATTRIB:
 		tmp = g_getenv("FWUPD_SYSFSFWATTRIBDIR");
@@ -442,6 +444,13 @@ fu_path_from_kind(FuPathKind path_kind)
 	/* C:\Program Files (x86)\fwupd\ */
 	case FU_PATH_KIND_WIN32_BASEDIR:
 		return fu_path_get_win32_basedir();
+	/* / */
+	case FU_PATH_KIND_HOSTFS_ROOT:
+		tmp = g_getenv("FWUPD_HOSTFS_ROOT");
+		if (tmp != NULL)
+			return g_strdup(tmp);
+		return g_strdup("/");
+
 	/* this shouldn't happen */
 	default:
 		g_warning("cannot build path for unknown kind %u", path_kind);

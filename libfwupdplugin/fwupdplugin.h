@@ -18,7 +18,6 @@
 #include <libfwupdplugin/fu-byte-array.h>
 #include <libfwupdplugin/fu-bytes.h>
 #include <libfwupdplugin/fu-cfi-device.h>
-#include <libfwupdplugin/fu-cfu-common.h>
 #include <libfwupdplugin/fu-cfu-offer.h>
 #include <libfwupdplugin/fu-cfu-payload.h>
 #include <libfwupdplugin/fu-chunk.h>
@@ -54,7 +53,10 @@
 #include <libfwupdplugin/fu-firmware.h>
 #include <libfwupdplugin/fu-fit-firmware.h>
 #include <libfwupdplugin/fu-fmap-firmware.h>
+#include <libfwupdplugin/fu-hid-descriptor.h>
 #include <libfwupdplugin/fu-hid-device.h>
+#include <libfwupdplugin/fu-hid-report-item.h>
+#include <libfwupdplugin/fu-hid-report.h>
 #include <libfwupdplugin/fu-hwids.h>
 #include <libfwupdplugin/fu-i2c-device.h>
 #include <libfwupdplugin/fu-ifd-bios.h>

@@ -705,6 +705,11 @@
       <package variant="x86_64" />
     </distro>
   </dependency>
+  <dependency id="libzstd-dev">
+    <distro id="fedora">
+      <package variant="mingw64">mingw64-zstd</package>
+    </distro>
+  </dependency>
   <dependency id="libarchive-dev">
     <distro id="centos">
       <package variant="x86_64">libarchive-devel</package>
@@ -912,15 +917,6 @@
         <inclusive>amd64</inclusive>
       </control>
       <package variant="x86_64" />
-    </distro>
-  </dependency>
-  <dependency id="libsoup2.4-dev">
-    <distro id="ubuntu">
-      <control />
-      <package variant="x86_64" />
-    </distro>
-    <distro id="void">
-      <package variant="x86_64">libsoup-devel</package>
     </distro>
   </dependency>
   <dependency id="libcurl4-gnutls-dev">

@@ -271,7 +271,7 @@ fu_remote_list_add_for_file(FuRemoteList *self,
 	}
 
 	/* delete the obsolete .gz files if the remote is now set up to use .xz */
-	if (fwupd_remote_get_enabled(remote) &&
+	if (fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_ENABLED) &&
 	    fwupd_remote_get_kind(remote) == FWUPD_REMOTE_KIND_DOWNLOAD) {
 		if (!fu_remote_list_cleanup_remote(remote, error))
 			return FALSE;
@@ -359,7 +359,9 @@ fu_remote_list_set_key_value(FuRemoteList *self,
 {
 	FwupdRemote *remote;
 	const gchar *filename;
+	g_autofree gchar *filename_new = NULL;
 	g_autofree gchar *value_old = NULL;
+	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GKeyFile) keyfile = g_key_file_new();
 
 	/* check remote is valid */
@@ -383,12 +385,32 @@ fu_remote_list_set_key_value(FuRemoteList *self,
 	if (g_strcmp0(value_old, value) == 0)
 		return TRUE;
 	g_key_file_set_string(keyfile, "fwupd Remote", key, value);
-	if (!g_key_file_save_to_file(keyfile, filename, error))
-		return FALSE;
+
+	/* try existing file first, then call back to the mutable location */
+	if (!g_key_file_save_to_file(keyfile, filename, &error_local)) {
+		if (g_error_matches(error_local, G_FILE_ERROR, G_FILE_ERROR_PERM)) {
+			g_autofree gchar *basename = g_path_get_basename(filename);
+			g_autofree gchar *remotesdir_mut =
+			    fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
+
+			filename_new =
+			    g_build_filename(remotesdir_mut, "remotes.d", basename, NULL);
+			if (!fu_path_mkdir_parent(filename_new, error))
+				return FALSE;
+			g_info("falling back from %s to %s", filename, filename_new);
+			if (!g_key_file_save_to_file(keyfile, filename_new, error))
+				return FALSE;
+		} else {
+			g_propagate_error(error, g_steal_pointer(&error_local));
+			return FALSE;
+		}
+	} else {
+		filename_new = g_strdup(filename);
+	}
 
 	/* reload values */
-	if (!fwupd_remote_load_from_filename(remote, filename, NULL, error)) {
-		g_prefix_error(error, "failed to load %s: ", filename);
+	if (!fwupd_remote_load_from_filename(remote, filename_new, NULL, error)) {
+		g_prefix_error(error, "failed to load %s: ", filename_new);
 		return FALSE;
 	}
 	fu_remote_list_emit_changed(self);
@@ -519,7 +541,7 @@ fu_remote_list_reload(FuRemoteList *self, GError **error)
 	/* print to the console */
 	for (guint i = 0; i < self->array->len; i++) {
 		FwupdRemote *remote = g_ptr_array_index(self->array, i);
-		if (!fwupd_remote_get_enabled(remote))
+		if (!fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_ENABLED))
 			continue;
 		if (str->len > 0)
 			g_string_append(str, ", ");

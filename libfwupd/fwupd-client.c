@@ -7,7 +7,6 @@
 #include "config.h"
 
 #include <gio/gio.h>
-#include <gmodule.h>
 #ifdef HAVE_LIBCURL
 #include <curl/curl.h>
 #endif
@@ -76,10 +75,6 @@ typedef struct {
 	gchar *package_version;
 	gchar *user_agent;
 	GHashTable *hints; /* str:str */
-#ifdef SOUP_SESSION_COMPAT
-	GObject *soup_session;
-	GModule *soup_module; /* we leak this */
-#endif
 } FwupdClientPrivate;
 
 #ifdef HAVE_LIBCURL
@@ -107,7 +102,7 @@ enum {
 	PROP_PERCENTAGE,
 	PROP_DAEMON_VERSION,
 	PROP_TAINTED,
-	PROP_SOUP_SESSION, /* compat ABI, do not use! */
+	PROP_SOUP_SESSION, /* not set, do not use! */
 	PROP_HOST_PRODUCT,
 	PROP_HOST_VENDOR,
 	PROP_HOST_MACHINE_ID,
@@ -640,11 +635,6 @@ fwupd_client_ensure_networking(FwupdClient *self, GError **error)
 				    "user agent unsuitable; fwupd version required");
 		return FALSE;
 	}
-#ifdef SOUP_SESSION_COMPAT
-	if (priv->soup_session != NULL) {
-		g_object_set(priv->soup_session, "user-agent", priv->user_agent, NULL);
-	}
-#endif
 	return TRUE;
 }
 
@@ -3289,7 +3279,7 @@ fwupd_client_filter_locations(GPtrArray *locations,
 
 	for (guint i = 0; i < locations->len; i++) {
 		const gchar *uri = g_ptr_array_index(locations, i);
-		if ((download_flags & FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_IPFS) > 0 &&
+		if ((download_flags & FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_P2P) > 0 &&
 		    !fwupd_client_is_url_ipfs(uri))
 			continue;
 		g_ptr_array_add(uris_filtered, g_strdup(uri));
@@ -3311,7 +3301,7 @@ fwupd_client_filter_locations(GPtrArray *locations,
  * @device: (not nullable): a device
  * @release: (not nullable): a release
  * @install_flags: install flags, e.g. %FWUPD_INSTALL_FLAG_ALLOW_REINSTALL
- * @download_flags: download flags, e.g. %FWUPD_CLIENT_DOWNLOAD_FLAG_DISABLE_IPFS
+ * @download_flags: download flags, e.g. %FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_P2P
  * @cancellable: (nullable): optional #GCancellable
  * @callback: (scope async) (closure callback_data): the function to run on completion
  * @callback_data: the data to pass to @callback
@@ -3967,6 +3957,7 @@ fwupd_client_update_metadata_bytes_finish(FwupdClient *self, GAsyncResult *res, 
 
 typedef struct {
 	FwupdRemote *remote;
+	FwupdClientDownloadFlags download_flags;
 	GBytes *signature;
 	GBytes *metadata;
 } FwupdClientRefreshRemoteData;
@@ -4076,9 +4067,10 @@ fwupd_client_refresh_remote_signature_cb(GObject *source, GAsyncResult *res, gpo
 }
 
 /**
- * fwupd_client_refresh_remote_async:
+ * fwupd_client_refresh_remote2_async:
  * @self: a #FwupdClient
  * @remote: a #FwupdRemote
+ * @download_flags: download flags, e.g. %FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_P2P
  * @cancellable: (nullable): optional #GCancellable
  * @callback: (scope async) (closure callback_data): the function to run on completion
  * @callback_data: the data to pass to @callback
@@ -4089,14 +4081,15 @@ fwupd_client_refresh_remote_signature_cb(GObject *source, GAsyncResult *res, gpo
  * emitted in the global default main context, if not explicitly set with
  * [method@Client.set_main_context].
  *
- * Since: 1.5.0
+ * Since: 1.9.4
  **/
 void
-fwupd_client_refresh_remote_async(FwupdClient *self,
-				  FwupdRemote *remote,
-				  GCancellable *cancellable,
-				  GAsyncReadyCallback callback,
-				  gpointer callback_data)
+fwupd_client_refresh_remote2_async(FwupdClient *self,
+				   FwupdRemote *remote,
+				   FwupdClientDownloadFlags download_flags,
+				   GCancellable *cancellable,
+				   GAsyncReadyCallback callback,
+				   gpointer callback_data)
 {
 	FwupdClientRefreshRemoteData *data;
 	g_autoptr(GTask) task = NULL;
@@ -4107,6 +4100,7 @@ fwupd_client_refresh_remote_async(FwupdClient *self,
 
 	task = g_task_new(self, cancellable, callback, callback_data);
 	data = g_new0(FwupdClientRefreshRemoteData, 1);
+	data->download_flags = download_flags;
 	data->remote = g_object_ref(remote);
 	g_task_set_task_data(task,
 			     g_steal_pointer(&data),
@@ -4135,10 +4129,44 @@ fwupd_client_refresh_remote_async(FwupdClient *self,
 	/* download signature */
 	fwupd_client_download_bytes_async(self,
 					  fwupd_remote_get_metadata_uri_sig(remote),
-					  FWUPD_CLIENT_DOWNLOAD_FLAG_NONE,
+					  download_flags,
 					  cancellable,
 					  fwupd_client_refresh_remote_signature_cb,
 					  g_steal_pointer(&task));
+}
+
+/**
+ * fwupd_client_refresh_remote_async:
+ * @self: a #FwupdClient
+ * @remote: a #FwupdRemote
+ * @cancellable: (nullable): optional #GCancellable
+ * @callback: (scope async) (closure callback_data): the function to run on completion
+ * @callback_data: the data to pass to @callback
+ *
+ * Refreshes a remote by downloading new metadata.
+ *
+ * NOTE: This method is thread-safe, but progress signals will be
+ * emitted in the global default main context, if not explicitly set with
+ * [method@Client.set_main_context].
+ *
+ * Since: 1.5.0
+ **/
+void
+fwupd_client_refresh_remote_async(FwupdClient *self,
+				  FwupdRemote *remote,
+				  GCancellable *cancellable,
+				  GAsyncReadyCallback callback,
+				  gpointer callback_data)
+{
+	g_return_if_fail(FWUPD_IS_CLIENT(self));
+	g_return_if_fail(FWUPD_IS_REMOTE(remote));
+	g_return_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable));
+	return fwupd_client_refresh_remote2_async(self,
+						  remote,
+						  FWUPD_CLIENT_DOWNLOAD_FLAG_NONE,
+						  cancellable,
+						  callback,
+						  callback_data);
 }
 
 /**
@@ -5875,48 +5903,6 @@ fwupd_client_emulation_save_finish(FwupdClient *self, GAsyncResult *res, GError 
 	return g_task_propagate_pointer(G_TASK(res), error);
 }
 
-#ifdef SOUP_SESSION_COMPAT
-/* this is bad; we dlopen libsoup-2.4.so.1 and get the gtype manually
- * to avoid deps on both libcurl and libsoup whilst preserving ABI */
-static void
-fwupd_client_ensure_soup_session(FwupdClient *self)
-{
-	FwupdClientObjectNewFunc func = NULL;
-	FwupdClientPrivate *priv = GET_PRIVATE(self);
-	GType soup_gtype;
-
-	/* already set up */
-	if (priv->soup_session != NULL)
-		return;
-
-	/* known GType, just create */
-	soup_gtype = g_type_from_name("SoupSession");
-	if (soup_gtype != 0) {
-		priv->soup_session = g_object_new(soup_gtype, NULL);
-		return;
-	}
-
-	/* load the library at runtime, leaking the module */
-	if (priv->soup_module == NULL) {
-		g_autofree gchar *fn = NULL;
-		fn = g_build_filename(FWUPD_LIBDIR, "libsoup-2.4.so.1", NULL);
-		priv->soup_module = g_module_open(fn, G_MODULE_BIND_LAZY);
-		if (priv->soup_module == NULL) {
-			g_warning("failed to find libsoup library");
-			return;
-		}
-	}
-	if (!g_module_symbol(priv->soup_module, "soup_session_new", (gpointer *)&func)) {
-		g_warning("failed to find soup_session_get_type()");
-		g_module_close(priv->soup_module);
-		priv->soup_module = NULL;
-		return;
-	}
-	priv->soup_session = func();
-	g_object_set(priv->soup_session, "timeout", (guint)60, NULL);
-}
-#endif
-
 static void
 fwupd_client_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
 {
@@ -5931,12 +5917,7 @@ fwupd_client_get_property(GObject *object, guint prop_id, GValue *value, GParamS
 		g_value_set_boolean(value, priv->tainted);
 		break;
 	case PROP_SOUP_SESSION:
-#ifdef SOUP_SESSION_COMPAT
-		fwupd_client_ensure_soup_session(self);
-		g_value_set_object(value, priv->soup_session);
-#else
 		g_value_set_object(value, NULL);
-#endif
 		break;
 	case PROP_PERCENTAGE:
 		g_value_set_uint(value, priv->percentage);
@@ -6400,10 +6381,6 @@ fwupd_client_finalize(GObject *object)
 	g_mutex_clear(&priv->proxy_mutex);
 	if (priv->proxy != NULL)
 		g_object_unref(priv->proxy);
-#ifdef SOUP_SESSION_COMPAT
-	if (priv->soup_session != NULL)
-		g_object_unref(priv->soup_session);
-#endif
 
 	G_OBJECT_CLASS(fwupd_client_parent_class)->finalize(object);
 }

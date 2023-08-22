@@ -166,9 +166,9 @@ fu_console_input_uint(FuConsole *self, guint maxnum, const gchar *format, ...)
 		if (retval == 1 && answer <= maxnum)
 			break;
 
-		/* TRANSLATORS: the user isn't reading the question */
 		fu_console_print_full(self,
 				      FU_CONSOLE_PRINT_FLAG_NONE,
+				      /* TRANSLATORS: the user isn't reading the question */
 				      _("Please enter a number from 0 to %u: "),
 				      maxnum);
 	} while (TRUE);
@@ -203,6 +203,10 @@ fu_console_input_bool(FuConsole *self, gboolean def, const gchar *format, ...)
 			return TRUE;
 		if (g_strcmp0(buffer, "N\n") == 0)
 			return FALSE;
+
+		/* TRANSLATORS: the user isn't reading the question -- please don't translate
+		 * 'Y' or 'N' as these are hardcoded */
+		fu_console_print_literal(self, _("Please enter either Y or N: "));
 	} while (TRUE);
 	return FALSE;
 }

@@ -102,14 +102,16 @@ fu_pefile_firmware_parse_section(FuFirmware *firmware,
 	fu_firmware_set_offset(img, sect_offset);
 	blob = fu_bytes_new_offset(fw,
 				   sect_offset,
-				   fu_struct_pe_coff_section_get_size_of_raw_data(st),
+				   fu_struct_pe_coff_section_get_virtual_size(st),
 				   error);
 	if (blob == NULL) {
 		g_prefix_error(error, "failed to get raw data for %s: ", sect_id);
 		return FALSE;
 	}
-	if (!fu_firmware_parse(img, blob, flags, error))
+	if (!fu_firmware_parse(img, blob, flags, error)) {
+		g_prefix_error(error, "failed to parse %s: ", sect_id);
 		return FALSE;
+	}
 	return fu_firmware_add_image_full(firmware, img, error);
 }
 

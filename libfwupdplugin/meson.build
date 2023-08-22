@@ -8,14 +8,17 @@ fwupdplugin_version_h = configure_file(
   configuration: conf
 )
 
-fwupdplugin_structs = rustgen.process(
+fwupdplugin_structs = [
   'fu-acpi-table.rs', # fuzzing
-  'fu-cfu.rs', # fuzzing
-  'fu-dfu.rs', # fuzzing
+  'fu-cfu-firmware.rs', # fuzzing
+  'fu-coswid.rs', # fuzzing
+  'fu-dfu-firmware.rs', # fuzzing
   'fu-efi.rs', # fuzzing
   'fu-elf.rs', # fuzzing
   'fu-fdt.rs', # fuzzing
   'fu-fmap.rs', # fuzzing
+  'fu-hid.rs', # fuzzing
+  'fu-ifd.rs', # fuzzing
   'fu-ifwi.rs', # fuzzing
   'fu-intel-thunderbolt.rs', # fuzzing
   'fu-oprom.rs', # fuzzing
@@ -24,20 +27,37 @@ fwupdplugin_structs = rustgen.process(
   'fu-smbios.rs', # fuzzing
   'fu-usb-device-ds20.rs', # fuzzing
   'fu-uswid.rs', # fuzzing
-)
+]
+
+# do not use structgen as these are referenced in headers too...
+fwupdplugin_struct_targets = []
+foreach fwupdplugin_struct: fwupdplugin_structs
+  fwupdplugin_struct_targets += custom_target('lib' + fwupdplugin_struct,
+    input: fwupdplugin_struct,
+    output: [
+      fwupdplugin_struct.replace('.rs', '-struct.c'),
+      fwupdplugin_struct.replace('.rs', '-struct.h'),
+    ],
+    command: [
+      python3,
+      join_paths(meson.project_source_root(), 'libfwupdplugin', 'rustgen.py'),
+      '@INPUT@', '@OUTPUT0@', '@OUTPUT1@',
+    ],
+  )
+endforeach
 
 fwupdplugin_src = [
   'fu-acpi-table.c', # fuzzing
   'fu-archive.c',
   'fu-archive-firmware.c',
   'fu-backend.c',
+  'fu-bios-setting.c', # fuzzing
   'fu-bios-settings.c', # fuzzing
   'fu-bluez-device.c',
   'fu-byte-array.c', # fuzzing
   'fu-bytes.c', # fuzzing
   'fu-cabinet.c',
   'fu-cfi-device.c',
-  'fu-cfu-common.c', # fuzzing
   'fu-cfu-offer.c', # fuzzing
   'fu-cfu-payload.c', # fuzzing
   'fu-chunk.c', # fuzzing
@@ -45,7 +65,6 @@ fwupdplugin_src = [
   'fu-common-guid.c',
   'fu-config.c', # fuzzing
   'fu-context.c', # fuzzing
-  'fu-coswid-common.c', # fuzzing
   'fu-coswid-firmware.c', # fuzzing
   'fu-crc.c', # fuzzing
   'fu-csv-entry.c', # fuzzing
@@ -77,12 +96,16 @@ fwupdplugin_src = [
   'fu-firmware-common.c', # fuzzing
   'fu-fit-firmware.c', # fuzzing
   'fu-fmap-firmware.c', # fuzzing
+  'fu-hid-descriptor.c', # fuzzing
   'fu-hid-device.c',
+  'fu-hid-report-item.c', # fuzzing
+  'fu-hid-report.c', # fuzzing
   'fu-hwids.c', # fuzzing
   'fu-hwids-config.c', # fuzzing
   'fu-hwids-dmi.c', # fuzzing
   'fu-hwids-fdt.c', # fuzzing
   'fu-hwids-kenv.c', # fuzzing
+  'fu-hwids-darwin.c', # fuzzing
   'fu-hwids-smbios.c', # fuzzing
   'fu-i2c-device.c',
   'fu-ifd-bios.c', # fuzzing
@@ -153,7 +176,6 @@ fwupdplugin_headers = [
   'fu-bytes.h',
   'fu-cabinet.h',
   'fu-cfi-device.h',
-  'fu-cfu-common.h',
   'fu-cfu-offer.h',
   'fu-cfu-payload.h',
   'fu-chunk.h',
@@ -191,7 +213,9 @@ fwupdplugin_headers = [
   'fu-firmware.h',
   'fu-fit-firmware.h',
   'fu-fmap-firmware.h',
+  'fu-hid-descriptor.h',
   'fu-hid-device.h',
+  'fu-hid-report.h',
   'fu-hwids.h',
   'fu-i2c-device.h',
   'fu-ifd-bios.h',
@@ -274,7 +298,7 @@ library_deps = [
 
 fwupdplugin = library(
   'fwupdplugin',
-  fwupdplugin_structs,
+  fwupdplugin_struct_targets,
   sources: [
     fwupdplugin_src,
     fwupdplugin_headers,
@@ -314,6 +338,7 @@ if introspection.allowed()
     sources: [
       fwupdplugin_src,
       fwupdplugin_headers,
+      fwupdplugin_struct_targets,
     ],
     nsversion: '1.0',
     namespace: 'FwupdPlugin',

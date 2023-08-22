@@ -457,6 +457,63 @@ fu_genesys_gl32xx_device_verify_chip_id(FuGenesysGl32xxDevice *self, GError **er
 }
 
 static gboolean
+fu_genesys_gl32xx_device_ensure_cid(FuGenesysGl32xxDevice *self, GError **error)
+{
+	const guint8 cmd_gl3224_cid[] = {0xE4, 0x01, 0xBF, 0x80, 0x04, 0x00};
+	const guint8 cmd_gl323x_cid[] = {0xE4, 0x01, 0x35, 0x00, 0x04, 0x00};
+	const guint8 *cmd = NULL;
+	const guint16 model = fu_udev_device_get_model(FU_UDEV_DEVICE(self));
+	guint8 data[4] = {0};
+	guint32 cid = 0;
+
+	switch (model) {
+	case 0x0749:
+		cmd = cmd_gl3224_cid;
+		break;
+	case 0x0764:
+		cmd = cmd_gl323x_cid;
+		break;
+	default:
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "unsupported model [0x%04X]",
+			    model);
+		return FALSE;
+	}
+
+	if (!fu_genesys_gl32xx_device_cmd_in(self,
+					     cmd,
+					     sizeof(cmd_gl323x_cid),
+					     data,
+					     sizeof(data),
+					     error))
+		return FALSE;
+
+	cid = fu_memread_uint32(data, G_BIG_ENDIAN);
+	fu_device_add_instance_u32(FU_DEVICE(self), "CID", cid);
+
+	/* additional GUIDs with customer ID suffix */
+	if (!fu_device_build_instance_id(FU_DEVICE(self),
+					 error,
+					 "BLOCK",
+					 "VEN",
+					 "DEV",
+					 "CID",
+					 NULL))
+		return FALSE;
+
+	return fu_device_build_instance_id(FU_DEVICE(self),
+					   error,
+					   "BLOCK",
+					   "VEN",
+					   "DEV",
+					   "VER",
+					   "CID",
+					   NULL);
+}
+
+static gboolean
 fu_genesys_gl32xx_device_get_usb_mode(FuGenesysGl32xxDevice *self, GError **error)
 {
 	guint8 mode = 0;
@@ -574,15 +631,25 @@ fu_genesys_gl32xx_device_attach(FuDevice *device, FuProgress *progress, GError *
 static gboolean
 fu_genesys_gl32xx_device_probe(FuDevice *device, GError **error)
 {
+	FuUdevDevice *udev_device = FU_UDEV_DEVICE(device);
 	const gchar *device_bus = NULL;
 
 	/* UdevDevice->probe */
 	if (!FU_DEVICE_CLASS(fu_genesys_gl32xx_device_parent_class)->probe(device, error))
 		return FALSE;
 
+	if (g_strcmp0(fu_udev_device_get_devtype(udev_device), "disk") != 0) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "is not correct devtype=%s, expected disk",
+			    fu_udev_device_get_devtype(udev_device));
+		return FALSE;
+	}
+
 	/* success */
-	device_bus = fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device));
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), device_bus, error);
+	device_bus = fu_udev_device_get_subsystem(udev_device);
+	return fu_udev_device_set_physical_id(udev_device, device_bus, error);
 }
 
 static gboolean
@@ -606,6 +673,9 @@ fu_genesys_gl32xx_device_setup(FuDevice *device, GError **error)
 			       self->chip_name,
 			       fu_udev_device_get_model(FU_UDEV_DEVICE(device)));
 	fu_device_set_name(device, name);
+
+	if (!fu_genesys_gl32xx_device_ensure_cid(self, error))
+		return FALSE;
 
 	/* success */
 	return TRUE;
