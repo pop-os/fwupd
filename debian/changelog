@@ -1,3 +1,9 @@
+fwupd (1.9.4-2pop0) jammy; urgency=medium
+
+  * Backport to Pop
+
+ -- Jeremy Soller <jeremy@system76.com>  Fri, 25 Aug 2023 07:03:02 -0600
+
 fwupd (1.9.4-2) unstable; urgency=medium
 
   * Fix a FTBFS for package arch-ind builds without systemd directory.
