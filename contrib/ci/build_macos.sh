@@ -4,7 +4,8 @@ set -x
 
 mkdir -p build-macos && cd build-macos
 meson setup .. \
-    -Dbuild=standalone \
+    -Dbuild=all \
+    -Ddbus_socket_address="unix:path=/var/run/fwupd.socket" \
     -Dman=false \
     -Dgusb:docs=false \
     -Dlibjcat:gpg=false \

@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.9.4',
+  version: '1.9.5',
   license: 'LGPL-2.1+',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -222,6 +222,10 @@ sqlite = dependency('sqlite3', required: get_option('sqlite'))
 if sqlite.found()
   conf.set('HAVE_SQLITE', '1')
 endif
+passim = dependency('passim', required: get_option('passim'), fallback: ['passim', 'passim_dep'])
+if passim.found()
+  conf.set('HAVE_PASSIM', '1')
+endif
 libarchive = dependency('libarchive', required: get_option('libarchive'))
 if libarchive.found()
   conf.set('HAVE_LIBARCHIVE', '1')
@@ -268,7 +272,12 @@ if libgcab.type_name() == 'pkgconfig'
 endif
 
 bashcomp = dependency('bash-completion', required: false)
-python3 = import('python').find_installation('python3')
+python3path = get_option('python')
+if python3path == ''
+  python3 = import('python').find_installation('python3')
+else
+  python3 = find_program(python3path)
+endif
 
 gnutls = dependency('gnutls', version: '>= 3.6.0', required: get_option('gnutls'))
 if gnutls.found()
@@ -443,12 +452,10 @@ if libsystemd.found()
   systemd_root_prefix = get_option('systemd_root_prefix')
   if systemd_root_prefix == ''
     systemdunitdir = systemd.get_variable(pkgconfig: 'systemdsystemunitdir')
-    systemdsystempresetdir = systemd.get_variable(pkgconfig: 'systemdsystempresetdir')
     systemd_shutdown_dir = systemd.get_variable(pkgconfig: 'systemdshutdowndir')
     systemd_modules_load_dir = systemd.get_variable(pkgconfig: 'modulesloaddir')
   else
     systemdunitdir = systemd.get_variable(pkgconfig: 'systemdsystemunitdir', pkgconfig_define: ['rootprefix', systemd_root_prefix])
-    systemdsystempresetdir = systemd.get_variable(pkgconfig: 'systemdsystempresetdir', pkgconfig_define: ['rootprefix', systemd_root_prefix])
     systemd_root_prefix_varname = 'root_prefix'
     if systemd.version().version_compare('< 246')
       systemd_root_prefix_varname = 'rootprefix'
@@ -505,6 +512,10 @@ endif
 conf.set_quoted('GETTEXT_PACKAGE', meson.project_name())
 conf.set_quoted('PACKAGE_NAME', meson.project_name())
 conf.set_quoted('VERSION', meson.project_version())
+
+if get_option('dbus_socket_address') != ''
+  conf.set_quoted('FWUPD_DBUS_SOCKET_ADDRESS', get_option('dbus_socket_address'))
+endif
 
 motd_file = '85-fwupd'
 motd_dir = 'motd.d'

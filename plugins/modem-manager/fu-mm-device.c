@@ -265,7 +265,9 @@ fu_mm_device_probe_default(FuDevice *device, GError **error)
 	}
 	if (self->update_methods & MM_MODEM_FIRMWARE_UPDATE_METHOD_FIREHOSE) {
 		for (guint i = 0; i < n_ports; i++) {
-			if (ports[i].type == MM_MODEM_PORT_TYPE_QCDM)
+			if ((ports[i].type == MM_MODEM_PORT_TYPE_QCDM) ||
+			    (ports[i].type == MM_MODEM_PORT_TYPE_IGNORED &&
+			     g_strstr_len(ports[i].name, -1, "qcdm") != NULL))
 				self->port_qcdm = g_strdup_printf("/dev/%s", ports[i].name);
 			else if (ports[i].type == MM_MODEM_PORT_TYPE_MBIM)
 				self->port_mbim = g_strdup_printf("/dev/%s", ports[i].name);
@@ -625,6 +627,25 @@ fu_mm_device_at_cmd_cb(FuDevice *device, gpointer user_data, GError **error)
 	}
 	fu_dump_bytes(G_LOG_DOMAIN, "read", at_res);
 	buf = g_bytes_get_data(at_res, &bufsz);
+
+	/*
+	 * the first time the modem returns may be the command itself with one \n missing.
+	 * this is because the modem AT has enabled echo
+	 */
+	if (g_strrstr(buf, helper->cmd) != NULL && bufsz == strlen(helper->cmd) + 1) {
+		g_bytes_unref(at_res);
+		at_res = fu_io_channel_read_bytes(self->io_channel,
+						  -1,
+						  1500,
+						  FU_IO_CHANNEL_FLAG_SINGLE_SHOT,
+						  error);
+		if (at_res == NULL) {
+			g_prefix_error(error, "failed to read response for %s: ", helper->cmd);
+			return FALSE;
+		}
+		buf = g_bytes_get_data(at_res, &bufsz);
+	}
+
 	if (bufsz < 6) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -1201,7 +1222,7 @@ fu_mm_device_write_firmware_mbim_qdu(FuDevice *device,
 	fu_mm_utils_get_port_info(self->port_mbim, NULL, &device_sysfs_path, NULL, NULL);
 	autosuspend_delay_filename =
 	    g_build_filename(device_sysfs_path, "/power/autosuspend_delay_ms", NULL);
-	if (!fu_mm_device_writeln(autosuspend_delay_filename, "10000", error))
+	if (!fu_mm_device_writeln(autosuspend_delay_filename, "20000", error))
 		return FALSE;
 
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
@@ -1811,6 +1832,11 @@ fu_mm_device_setup_secboot_status(FuDevice *device)
 	if (fu_device_has_vendor_id(device, "USB:0x2C7C") ||
 	    fu_device_has_vendor_id(device, "PCI:0x1EAC"))
 		fu_mm_device_setup_secboot_status_quectel(self);
+	else if (fu_device_has_vendor_id(device, "USB:0x2CB7")) {
+		fu_device_add_internal_flag(FU_DEVICE(self),
+					    FU_DEVICE_INTERNAL_FLAG_SAVE_INTO_BACKUP_REMOTE);
+		fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	}
 }
 
 static gboolean
@@ -1869,6 +1895,9 @@ fu_mm_device_init(FuMmDevice *self)
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_MM_DEVICE_FLAG_DETACH_AT_FASTBOOT_HAS_NO_RESPONSE,
 					"detach-at-fastboot-has-no-response");
+	fu_device_register_private_flag(FU_DEVICE(self),
+					FU_MM_DEVICE_FLAG_UNINHIBIT_MM_AFTER_FASTBOOT_REBOOT,
+					"uninhibit-modemmanager-after-fastboot-reboot");
 }
 
 static void

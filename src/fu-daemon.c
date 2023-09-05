@@ -1352,7 +1352,9 @@ fu_daemon_daemon_method_call(GDBusConnection *connection,
 	}
 	if (g_strcmp0(method_name, "GetHostSecurityEvents") == 0) {
 		guint limit = 0;
+#ifdef HAVE_HSI
 		g_autoptr(FuSecurityAttrs) attrs = NULL;
+#endif
 		g_variant_get(parameters, "(u)", &limit);
 		g_debug("Called %s(%u)", method_name, limit);
 #ifndef HAVE_HSI
@@ -2112,9 +2114,8 @@ fu_daemon_dbus_connection_closed_cb(GDBusConnection *connection,
 				    GError *error,
 				    gpointer user_data)
 {
-	FuDaemon *self = FU_DAEMON(user_data);
-	g_info("client connection closed: %s", error != NULL ? error->message : "unknown");
-	g_clear_object(&self->connection);
+	if (remote_peer_vanished)
+		g_info("client connection closed: %s", error != NULL ? error->message : "unknown");
 }
 
 static gboolean

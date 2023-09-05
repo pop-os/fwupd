@@ -30,9 +30,9 @@ fwupdplugin_structs = [
 ]
 
 # do not use structgen as these are referenced in headers too...
-fwupdplugin_struct_targets = []
+fwupdplugin_rs_targets = []
 foreach fwupdplugin_struct: fwupdplugin_structs
-  fwupdplugin_struct_targets += custom_target('lib' + fwupdplugin_struct,
+  fwupdplugin_rs_targets += custom_target('lib' + fwupdplugin_struct,
     input: fwupdplugin_struct,
     output: [
       fwupdplugin_struct.replace('.rs', '-struct.c'),
@@ -298,7 +298,7 @@ library_deps = [
 
 fwupdplugin = library(
   'fwupdplugin',
-  fwupdplugin_struct_targets,
+  fwupdplugin_rs_targets,
   sources: [
     fwupdplugin_src,
     fwupdplugin_headers,
@@ -316,6 +316,13 @@ fwupdplugin = library(
   install_dir: libdir_pkg,
   install: true
 )
+
+# see https://mesonbuild.com/FAQ.html#how-do-i-tell-meson-that-my-sources-use-generated-headers
+fwupdplugin_rs_headers = []
+foreach fwupdplugin_rs_target: fwupdplugin_rs_targets
+  fwupdplugin_rs_headers += fwupdplugin_rs_target[1]
+endforeach
+fwupdplugin_rs_dep = declare_dependency(link_with: fwupdplugin, sources: fwupdplugin_rs_headers)
 
 if introspection.allowed()
   gir_dep = declare_dependency(sources: fwupd_gir)
@@ -338,7 +345,7 @@ if introspection.allowed()
     sources: [
       fwupdplugin_src,
       fwupdplugin_headers,
-      fwupdplugin_struct_targets,
+      fwupdplugin_rs_targets,
     ],
     nsversion: '1.0',
     namespace: 'FwupdPlugin',

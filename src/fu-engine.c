@@ -13,6 +13,9 @@
 #ifdef HAVE_GIO_UNIX
 #include <gio/gunixinputstream.h>
 #endif
+#ifdef HAVE_PASSIM
+#include <passim.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 #ifdef HAVE_UTSNAME_H
@@ -144,6 +147,9 @@ struct _FuEngine {
 	guint acquiesce_delay;
 	guint update_motd_id;
 	FuEngineInstallPhase install_phase;
+#ifdef HAVE_PASSIM
+	PassimClient *passim_client;
+#endif
 };
 
 enum {
@@ -2415,14 +2421,23 @@ fu_engine_composite_cleanup(FuEngine *self, GPtrArray *devices, GError **error)
 }
 
 static gint
-fu_engine_sort_release_versions_cb(gconstpointer a, gconstpointer b)
+fu_engine_sort_release_device_order_release_version_cb(gconstpointer a, gconstpointer b)
 {
 	FuRelease *na = *((FuRelease **)a);
 	FuRelease *nb = *((FuRelease **)b);
-	FuDevice *device = fu_release_get_device(na);
+	FuDevice *device1 = fu_release_get_device(na);
+	FuDevice *device2 = fu_release_get_device(nb);
 	const gchar *va = fu_release_get_version(na);
 	const gchar *vb = fu_release_get_version(nb);
-	return fu_version_compare(va, vb, fu_device_get_version_format(device));
+
+	/* FWUPD_DEVICE_FLAG_INSTALL_PARENT_FIRST takes precedence */
+	if (fu_device_get_order(device1) < fu_device_get_order(device2))
+		return -1;
+	if (fu_device_get_order(device1) > fu_device_get_order(device2))
+		return 1;
+
+	/* FWUPD_DEVICE_FLAG_INSTALL_ALL_RELEASES has to be from oldest to newest */
+	return fu_version_compare(va, vb, fu_device_get_version_format(device1));
 }
 
 /**
@@ -2460,16 +2475,20 @@ fu_engine_install_releases(FuEngine *self,
 	g_assert(locker != NULL);
 
 	/* install these in the right order */
-	g_ptr_array_sort(releases, fu_engine_sort_release_versions_cb);
+	g_ptr_array_sort(releases, fu_engine_sort_release_device_order_release_version_cb);
 
 	/* notify the plugins about the composite action */
 	devices = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	for (guint i = 0; i < releases->len; i++) {
 		FuRelease *release = g_ptr_array_index(releases, i);
-		g_info("composite update %u: %s",
+		FuDevice *device = fu_release_get_device(release);
+		const gchar *logical_id = fu_device_get_logical_id(device);
+		g_info("composite update %u: %s (%s: %i)",
 		       i + 1,
-		       fu_device_get_id(fu_release_get_device(release)));
-		g_ptr_array_add(devices, g_object_ref(fu_release_get_device(release)));
+		       fu_device_get_id(device),
+		       logical_id != NULL ? logical_id : "n/a",
+		       fu_device_get_order(device));
+		g_ptr_array_add(devices, g_object_ref(device));
 	}
 	if (!fu_engine_composite_prepare(self, devices, error)) {
 		g_prefix_error(error, "failed to prepare composite action: ");
@@ -3027,6 +3046,24 @@ fu_engine_install_release(FuEngine *self,
 
 	/* allow capturing setup again */
 	fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_SETUP);
+
+#ifdef HAVE_PASSIM
+	/* send to passimd, if enabled and running */
+	if (passim_client_get_version(self->passim_client) != NULL &&
+	    fu_engine_config_get_p2p_policy(self->config) & FU_P2P_POLICY_FIRMWARE) {
+		g_autofree gchar *basename = g_path_get_basename(fu_release_get_filename(release));
+		g_autoptr(GError) error_passim = NULL;
+		g_autoptr(PassimItem) passim_item = passim_item_new();
+		if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT))
+			passim_item_add_flag(passim_item, PASSIM_ITEM_FLAG_NEXT_REBOOT);
+		passim_item_set_max_age(passim_item, 30 * 24 * 60 * 60);
+		passim_item_set_share_limit(passim_item, 50);
+		passim_item_set_basename(passim_item, basename);
+		passim_item_set_bytes(passim_item, blob_cab);
+		if (!passim_client_publish(self->passim_client, passim_item, &error_passim))
+			g_warning("failed to publish to Passim: %s", error_passim->message);
+	}
+#endif
 
 	/* make the UI update */
 	fu_engine_emit_changed(self);
@@ -3678,7 +3715,6 @@ fu_engine_write_firmware(FuEngine *self,
 	FuPlugin *plugin;
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
-	g_autoptr(FuDevice) device_pending = NULL;
 	g_autoptr(FuDeviceLocker) poll_locker = NULL;
 
 	/* cancel the pending action */
@@ -3697,7 +3733,6 @@ fu_engine_write_firmware(FuEngine *self,
 	if (poll_locker == NULL)
 		return FALSE;
 
-	device_pending = fu_history_get_device_by_id(self->history, device_id, NULL);
 	str = fu_device_to_string(device);
 	g_info("update -> %s", str);
 	plugin =
@@ -3722,35 +3757,6 @@ fu_engine_write_firmware(FuEngine *self,
 				  error_cleanup->message);
 		}
 		return FALSE;
-	}
-
-	/* cleanup */
-	if (device_pending != NULL) {
-		const gchar *tmp;
-		FwupdRelease *release;
-
-		/* update history database */
-		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_SUCCESS);
-		if (!fu_history_modify_device(self->history, device, error))
-			return FALSE;
-
-		/* delete cab file */
-		release = fu_device_get_release_default(device_pending);
-		tmp = fwupd_release_get_filename(release);
-		if (tmp != NULL && g_str_has_prefix(tmp, FWUPD_LIBEXECDIR)) {
-			g_autoptr(GError) error_delete = NULL;
-			g_autoptr(GFile) file = NULL;
-			file = g_file_new_for_path(tmp);
-			if (!g_file_delete(file, NULL, &error_delete)) {
-				g_set_error(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_INVALID_FILE,
-					    "Failed to delete %s: %s",
-					    tmp,
-					    error_delete->message);
-				return FALSE;
-			}
-		}
 	}
 
 	/* save to emulated phase */
@@ -3823,6 +3829,7 @@ fu_engine_install_blob(FuEngine *self,
 {
 	guint retries = 0;
 	g_autofree gchar *device_id = NULL;
+	g_autofree gchar *filename_to_delete = NULL;
 	g_autoptr(GTimer) timer = g_timer_new();
 	g_autoptr(FuDeviceProgress) device_progress = fu_device_progress_new(device, progress);
 
@@ -3853,6 +3860,16 @@ fu_engine_install_blob(FuEngine *self,
 	if (!fu_engine_prepare(self, device_id, fu_progress_get_child(progress), flags, error))
 		return FALSE;
 	fu_progress_step_done(progress);
+
+	/* we saved this so we could do the offline update */
+	if (fu_device_get_update_state(device) == FWUPD_UPDATE_STATE_PENDING) {
+		g_autoptr(FuDevice) device_pending =
+		    fu_history_get_device_by_id(self->history, device_id, NULL);
+		if (device_pending != NULL) {
+			FwupdRelease *release = fu_device_get_release_default(device_pending);
+			filename_to_delete = g_strdup(fwupd_release_get_filename(release));
+		}
+	}
 
 	/* plugins can set FWUPD_DEVICE_FLAG_ANOTHER_WRITE_REQUIRED to run again, but they
 	 * must return TRUE rather than an error */
@@ -3939,6 +3956,24 @@ fu_engine_install_blob(FuEngine *self,
 
 	} while (TRUE);
 	fu_progress_step_done(progress);
+
+	/* delete offline-update cab archive */
+	if (filename_to_delete != NULL) {
+		g_autoptr(GFile) file = g_file_new_for_path(filename_to_delete);
+		if (!g_file_delete(file, NULL, error)) {
+			g_prefix_error(error, "failed to delete %s: ", filename_to_delete);
+			return FALSE;
+		}
+	}
+
+	/* update history database */
+	fu_device_set_update_state(device, FWUPD_UPDATE_STATE_SUCCESS);
+	if ((flags & FWUPD_INSTALL_FLAG_NO_HISTORY) == 0) {
+		if (!fu_history_modify_device(self->history, device, error)) {
+			g_prefix_error(error, "failed to set success: ");
+			return FALSE;
+		}
+	}
 
 	/* signal to all the plugins the update has happened */
 	fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_CLEANUP);
@@ -4446,8 +4481,26 @@ fu_engine_load_metadata_store(FuEngine *self, FuEngineLoadFlags flags, GError **
 }
 
 static void
+fu_engine_remote_list_ensure_p2p_policy_remote(FuEngine *self, FwupdRemote *remote)
+{
+	if (fwupd_remote_get_kind(remote) == FWUPD_REMOTE_KIND_DOWNLOAD) {
+		FuP2pPolicy p2p_policy = fu_engine_config_get_p2p_policy(self->config);
+		if (p2p_policy & FU_P2P_POLICY_METADATA)
+			fwupd_remote_add_flag(remote, FWUPD_REMOTE_FLAG_ALLOW_P2P_METADATA);
+		else
+			fwupd_remote_remove_flag(remote, FWUPD_REMOTE_FLAG_ALLOW_P2P_METADATA);
+		if (p2p_policy & FU_P2P_POLICY_FIRMWARE)
+			fwupd_remote_add_flag(remote, FWUPD_REMOTE_FLAG_ALLOW_P2P_FIRMWARE);
+		else
+			fwupd_remote_remove_flag(remote, FWUPD_REMOTE_FLAG_ALLOW_P2P_FIRMWARE);
+	}
+}
+
+static void
 fu_engine_config_changed_cb(FuEngineConfig *config, FuEngine *self)
 {
+	GPtrArray *remotes = fu_remote_list_get_all(self->remote_list);
+
 	fu_idle_set_timeout(self->idle, fu_engine_config_get_idle_timeout(config));
 
 	/* allow changing the hardcoded ESP location */
@@ -4460,6 +4513,12 @@ fu_engine_config_changed_cb(FuEngineConfig *config, FuEngine *self)
 		} else {
 			fu_context_add_esp_volume(self->ctx, vol);
 		}
+	}
+
+	/* amend P2P policy */
+	for (guint i = 0; i < remotes->len; i++) {
+		FwupdRemote *remote = g_ptr_array_index(remotes, i);
+		fu_engine_remote_list_ensure_p2p_policy_remote(self, remote);
 	}
 }
 
@@ -4501,6 +4560,9 @@ fu_engine_remote_list_added_cb(FuRemoteList *remote_list, FwupdRemote *remote, F
 			fwupd_remote_get_id(remote));
 		fwupd_remote_set_priority(remote, fwupd_remote_get_priority(remote) + 1000);
 	}
+
+	/* set the p2p policy */
+	fu_engine_remote_list_ensure_p2p_policy_remote(self, remote);
 }
 
 static gint
@@ -4723,6 +4785,25 @@ fu_engine_update_metadata_bytes(FuEngine *self,
 	/* save XML and signature to remotes.d */
 	if (!fu_bytes_set_contents(fwupd_remote_get_filename_cache(remote), bytes_raw, error))
 		return FALSE;
+
+#ifdef HAVE_PASSIM
+	/* send to passimd, if enabled and running */
+	if (passim_client_get_version(self->passim_client) != NULL &&
+	    fu_engine_config_get_p2p_policy(self->config) & FU_P2P_POLICY_METADATA) {
+		g_autofree gchar *basename =
+		    g_path_get_basename(fwupd_remote_get_filename_cache(remote));
+		g_autoptr(GError) error_passim = NULL;
+		g_autoptr(PassimItem) passim_item = passim_item_new();
+		passim_item_set_basename(passim_item, basename);
+		passim_item_set_bytes(passim_item, bytes_raw);
+		passim_item_set_max_age(passim_item, fwupd_remote_get_refresh_interval(remote));
+		passim_item_set_share_limit(passim_item, 50);
+		if (!passim_client_publish(self->passim_client, passim_item, &error_passim))
+			g_warning("failed to publish to Passim: %s", error_passim->message);
+	}
+#endif
+
+	/* save signature to remotes.d */
 	if (keyring_kind != FWUPD_KEYRING_KIND_NONE) {
 		if (!fu_bytes_set_contents(fwupd_remote_get_filename_cache_sig(remote),
 					   bytes_sig,
@@ -6184,6 +6265,7 @@ fu_engine_clear_results(FuEngine *self, const gchar *device_id, GError **error)
 FwupdDevice *
 fu_engine_get_results(FuEngine *self, const gchar *device_id, GError **error)
 {
+	FwupdRelease *rel;
 	g_autoptr(FuDevice) device = NULL;
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), NULL);
@@ -6208,6 +6290,17 @@ fu_engine_get_results(FuEngine *self, const gchar *device_id, GError **error)
 
 	/* try to set some release properties for the UI */
 	fu_engine_fixup_history_device(self, device);
+
+	/* we did not either record or find the AppStream ID */
+	rel = fu_device_get_release_default(device);
+	if (rel == NULL || fwupd_release_get_appstream_id(rel) == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "device %s appstream id was not found",
+			    fu_device_get_id(device));
+		return NULL;
+	}
 
 	/* success */
 	return g_object_ref(FWUPD_DEVICE(device));
@@ -8042,6 +8135,9 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	g_autoptr(GError) error_quirks = NULL;
 	g_autoptr(GError) error_json_devices = NULL;
 	g_autoptr(GError) error_local = NULL;
+#ifdef HAVE_PASSIM
+	g_autoptr(GError) error_passim = NULL;
+#endif
 	g_autoptr(GString) str = g_string_new(NULL);
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
@@ -8396,6 +8492,17 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	if (!fu_engine_update_devices_file(self, &error_json_devices))
 		g_info("failed to update list of devices: %s", error_json_devices->message);
 
+#ifdef HAVE_PASSIM
+	/* connect to passimd */
+	if (!passim_client_load(self->passim_client, &error_passim))
+		g_debug("failed to load Passim: %s", error_passim->message);
+	if (passim_client_get_version(self->passim_client) != NULL) {
+		fu_engine_add_runtime_version(self,
+					      "org.freedesktop.Passim",
+					      passim_client_get_version(self->passim_client));
+	}
+#endif
+
 	fu_engine_set_status(self, FWUPD_STATUS_IDLE);
 	self->loaded = TRUE;
 
@@ -8571,6 +8678,9 @@ fu_engine_init(FuEngine *self)
 	self->acquiesce_loop = g_main_loop_new(NULL, FALSE);
 	self->emulation_phases = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
 	self->emulation_backend_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+#ifdef HAVE_PASSIM
+	self->passim_client = passim_client_new();
+#endif
 
 	fu_context_set_runtime_versions(self->ctx, self->runtime_versions);
 	fu_context_set_compile_versions(self->ctx, self->compile_versions);
@@ -8675,6 +8785,14 @@ fu_engine_init(FuEngine *self)
 					    G_USB_MINOR_VERSION,
 					    G_USB_MICRO_VERSION));
 #endif
+#ifdef HAVE_PASSIM
+	g_hash_table_insert(self->compile_versions,
+			    g_strdup("org.freedesktop.Passim"),
+			    g_strdup_printf("%i.%i.%i",
+					    PASSIM_MAJOR_VERSION,
+					    PASSIM_MINOR_VERSION,
+					    PASSIM_MICRO_VERSION));
+#endif
 	g_hash_table_insert(self->compile_versions,
 			    g_strdup("com.hughsie.libjcat"),
 			    g_strdup_printf("%i.%i.%i",
@@ -8728,6 +8846,10 @@ fu_engine_finalize(GObject *obj)
 		g_source_remove(self->acquiesce_id);
 	if (self->update_motd_id != 0)
 		g_source_remove(self->update_motd_id);
+#ifdef HAVE_PASSIM
+	if (self->passim_client != NULL)
+		g_object_unref(self->passim_client);
+#endif
 	g_main_loop_unref(self->acquiesce_loop);
 
 	g_free(self->host_machine_id);

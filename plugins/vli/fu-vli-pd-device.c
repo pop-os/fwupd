@@ -707,7 +707,10 @@ fu_vli_pd_device_detach(FuDevice *device, FuProgress *progress, GError **error)
 					   FU_VLI_DEVICE_TIMEOUT,
 					   NULL,
 					   &error_local)) {
-		if (g_error_matches(error_local, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_FAILED)) {
+		if (g_error_matches(error_local, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_FAILED) ||
+		    g_error_matches(error_local,
+				    G_USB_DEVICE_ERROR,
+				    G_USB_DEVICE_ERROR_NOT_SUPPORTED)) {
 			g_debug("ignoring %s", error_local->message);
 		} else {
 			g_propagate_prefixed_error(error,
@@ -765,6 +768,9 @@ fu_vli_pd_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 				    G_USB_DEVICE_ERROR_NO_DEVICE) ||
 		    g_error_matches(error_local,
 				    G_USB_DEVICE_ERROR,
+				    G_USB_DEVICE_ERROR_NOT_SUPPORTED) ||
+		    g_error_matches(error_local,
+				    G_USB_DEVICE_ERROR,
 				    G_USB_DEVICE_ERROR_TIMED_OUT) ||
 		    g_error_matches(error_local, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_FAILED)) {
 			g_debug("ignoring %s", error_local->message);
@@ -794,11 +800,10 @@ static void
 fu_vli_pd_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 72, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 28, "reload");
 }
 
 static void

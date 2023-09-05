@@ -19,6 +19,10 @@ engine_dep = [
   cbor,
 ]
 
+if get_option('passim').allowed()
+  engine_dep += passim
+endif
+
 client_dep = [
   gudev,
   gusb,
@@ -26,6 +30,7 @@ client_dep = [
   libjsonglib,
   libxmlb,
   sqlite,
+  fwupdplugin_rs_dep,
 ]
 if libsystemd.found()
   systemd_src += 'fu-systemd.c'
