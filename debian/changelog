@@ -1,3 +1,9 @@
+fwupd (1.9.5-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.9.5)
+
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 04 Sep 2023 19:58:44 -0500
+
 fwupd (1.9.4-2) unstable; urgency=medium
 
   * Fix a FTBFS for package arch-ind builds without systemd directory.
