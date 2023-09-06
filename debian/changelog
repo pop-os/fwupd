@@ -1,9 +1,9 @@
-fwupd (1.9.5-1) UNRELEASED; urgency=medium
+fwupd (1.9.5-1) unstable; urgency=medium
 
   * New upstream version (1.9.5)
   * Add libzstd-dev to build-depends.
 
- -- Mario Limonciello <superm1@gmail.com>  Mon, 04 Sep 2023 19:58:44 -0500
+ -- Mario Limonciello <superm1@gmail.com>  Tue, 05 Sep 2023 20:36:39 -0500
 
 fwupd (1.9.4-2) unstable; urgency=medium
 
