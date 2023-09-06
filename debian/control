@@ -36,6 +36,7 @@ Build-Depends:
 	libgusb-dev (>= 0.3.5),
 	libjcat-dev,
 	libjson-glib-dev (>= 1.1.1),
+	libzstd-dev,
 	liblzma-dev,
 	libmbim-glib-dev,
 	libmm-glib-dev,
