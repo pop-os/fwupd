@@ -1,3 +1,10 @@
+fwupd (1.9.6-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.9.6)
+  * Drop unneeded libsmbios-dev and libefiboot-dev build-depends
+
+ -- Mario Limonciello <superm1@gmail.com>  Fri, 06 Oct 2023 11:38:45 -0500
+
 fwupd (1.9.5-1) unstable; urgency=medium
 
   * New upstream version (1.9.5)
