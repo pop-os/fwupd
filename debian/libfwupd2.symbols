@@ -69,6 +69,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.9.1@LIBFWUPD_1.9.1 1.9.1
  LIBFWUPD_1.9.3@LIBFWUPD_1.9.3 1.9.3
  LIBFWUPD_1.9.4@LIBFWUPD_1.9.4 1.9.4
+ LIBFWUPD_1.9.6@LIBFWUPD_1.9.6 1.9.6
  fwupd_bios_setting_add_possible_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_array_from_variant@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_from_json@LIBFWUPD_1.8.4 1.8.4
@@ -109,6 +110,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_checksum_get_best@LIBFWUPD_0.9.4 1.0.0
  fwupd_checksum_get_by_kind@LIBFWUPD_0.9.4 1.0.0
  fwupd_checksum_guess_kind@LIBFWUPD_0.9.3 1.0.0
+ fwupd_checksum_type_to_string_display@LIBFWUPD_1.9.6 1.9.6
  fwupd_client_activate@LIBFWUPD_1.2.6 1.2.6
  fwupd_client_activate_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_activate_finish@LIBFWUPD_1.5.0 1.5.0
@@ -131,6 +133,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_emulation_save_async@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_emulation_save_finish@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_ensure_networking@LIBFWUPD_1.4.5 1.4.5
+ fwupd_client_fix_host_security_attr@LIBFWUPD_1.9.6 1.9.6
+ fwupd_client_fix_host_security_attr_async@LIBFWUPD_1.9.6 1.9.6
+ fwupd_client_fix_host_security_attr_finish@LIBFWUPD_1.9.6 1.9.6
  fwupd_client_get_approved_firmware@LIBFWUPD_1.2.6 1.2.6
  fwupd_client_get_approved_firmware_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_approved_firmware_finish@LIBFWUPD_1.5.0 1.5.0
@@ -253,6 +258,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_set_main_context@LIBFWUPD_1.5.3 1.5.3
  fwupd_client_set_user_agent@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_set_user_agent_for_package@LIBFWUPD_1.4.5 1.4.5
+ fwupd_client_undo_host_security_attr@LIBFWUPD_1.9.6 1.9.6
+ fwupd_client_undo_host_security_attr_async@LIBFWUPD_1.9.6 1.9.6
+ fwupd_client_undo_host_security_attr_finish@LIBFWUPD_1.9.6 1.9.6
  fwupd_client_uninhibit@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_uninhibit_async@LIBFWUPD_1.8.11 1.8.11
  fwupd_client_uninhibit_finish@LIBFWUPD_1.8.11 1.8.11
@@ -658,6 +666,8 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_security_attr_get_description@LIBFWUPD_1.8.2 1.8.2
  fwupd_security_attr_get_flags@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_get_guids@LIBFWUPD_1.7.0 1.7.0
+ fwupd_security_attr_get_kernel_current_value@LIBFWUPD_1.9.6 1.9.6
+ fwupd_security_attr_get_kernel_target_value@LIBFWUPD_1.9.6 1.9.6
  fwupd_security_attr_get_level@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_get_metadata@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_get_name@LIBFWUPD_1.5.0 1.5.0
@@ -683,6 +693,8 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_security_attr_set_created@LIBFWUPD_1.7.1 1.7.1
  fwupd_security_attr_set_description@LIBFWUPD_1.8.2 1.8.2
  fwupd_security_attr_set_flags@LIBFWUPD_1.5.0 1.5.0
+ fwupd_security_attr_set_kernel_current_value@LIBFWUPD_1.9.6 1.9.6
+ fwupd_security_attr_set_kernel_target_value@LIBFWUPD_1.9.6 1.9.6
  fwupd_security_attr_set_level@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_set_name@LIBFWUPD_1.5.0 1.5.0
  fwupd_security_attr_set_plugin@LIBFWUPD_1.5.0 1.5.0
