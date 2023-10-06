@@ -377,9 +377,11 @@ fwupd_device_problem_to_string(FwupdDeviceProblem device_problem)
 	if (device_problem == FWUPD_DEVICE_PROBLEM_SYSTEM_INHIBIT)
 		return "system-inhibit";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_UPDATE_IN_PROGRESS)
-		return "update-in-process";
+		return "update-in-progress";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_IN_USE)
 		return "in-use";
+	if (device_problem == FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED)
+		return "display-required";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_UNKNOWN)
 		return "unknown";
 	return NULL;
@@ -418,10 +420,12 @@ fwupd_device_problem_from_string(const gchar *device_problem)
 		return FWUPD_DEVICE_PROBLEM_MISSING_LICENSE;
 	if (g_strcmp0(device_problem, "system-inhibit") == 0)
 		return FWUPD_DEVICE_PROBLEM_SYSTEM_INHIBIT;
-	if (g_strcmp0(device_problem, "update-in-process") == 0)
+	if (g_strcmp0(device_problem, "update-in-progress") == 0)
 		return FWUPD_DEVICE_PROBLEM_UPDATE_IN_PROGRESS;
 	if (g_strcmp0(device_problem, "in-use") == 0)
 		return FWUPD_DEVICE_PROBLEM_IN_USE;
+	if (g_strcmp0(device_problem, "display-required") == 0)
+		return FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED;
 	return FWUPD_DEVICE_PROBLEM_UNKNOWN;
 }
 
@@ -476,6 +480,8 @@ fwupd_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		return "modular";
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_MEASURE_SYSTEM_INTEGRITY)
 		return "measure-system-integrity";
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_READY)
+		return "ready";
 	return NULL;
 }
 
@@ -528,6 +534,8 @@ fwupd_plugin_flag_from_string(const gchar *plugin_flag)
 		return FWUPD_PLUGIN_FLAG_MODULAR;
 	if (g_strcmp0(plugin_flag, "measure-system-integrity") == 0)
 		return FWUPD_PLUGIN_FLAG_MEASURE_SYSTEM_INTEGRITY;
+	if (g_strcmp0(plugin_flag, "ready") == 0)
+		return FWUPD_PLUGIN_FLAG_READY;
 	return FWUPD_DEVICE_FLAG_UNKNOWN;
 }
 

@@ -318,6 +318,7 @@ gboolean
 fwupd_client_install_bytes_finish(FwupdClient *self,
 				  GAsyncResult *res,
 				  GError **error) G_GNUC_WARN_UNUSED_RESULT;
+G_DEPRECATED_FOR(fwupd_client_install_release2_async)
 void
 fwupd_client_install_release_async(FwupdClient *self,
 				   FwupdDevice *device,
@@ -325,8 +326,7 @@ fwupd_client_install_release_async(FwupdClient *self,
 				   FwupdInstallFlags install_flags,
 				   GCancellable *cancellable,
 				   GAsyncReadyCallback callback,
-				   gpointer callback_data)
-    G_DEPRECATED_FOR(fwupd_client_install_release2_async);
+				   gpointer callback_data);
 void
 fwupd_client_install_release2_async(FwupdClient *self,
 				    FwupdDevice *device,
@@ -352,13 +352,13 @@ gboolean
 fwupd_client_update_metadata_bytes_finish(FwupdClient *self,
 					  GAsyncResult *res,
 					  GError **error) G_GNUC_WARN_UNUSED_RESULT;
+G_DEPRECATED_FOR(fwupd_client_refresh_remote2_async)
 void
 fwupd_client_refresh_remote_async(FwupdClient *self,
 				  FwupdRemote *remote,
 				  GCancellable *cancellable,
 				  GAsyncReadyCallback callback,
-				  gpointer callback_data)
-    G_DEPRECATED_FOR(fwupd_client_refresh_remote2_async);
+				  gpointer callback_data);
 void
 fwupd_client_refresh_remote2_async(FwupdClient *self,
 				   FwupdRemote *remote,
@@ -440,6 +440,22 @@ GBytes *
 fwupd_client_emulation_save_finish(FwupdClient *self,
 				   GAsyncResult *res,
 				   GError **error) G_GNUC_WARN_UNUSED_RESULT;
+void
+fwupd_client_fix_host_security_attr_async(FwupdClient *self,
+					  const gchar *appstream_id,
+					  GCancellable *cancellable,
+					  GAsyncReadyCallback callback,
+					  gpointer callback_data);
+gboolean
+fwupd_client_fix_host_security_attr_finish(FwupdClient *self, GAsyncResult *res, GError **error);
+void
+fwupd_client_undo_host_security_attr_async(FwupdClient *self,
+					   const gchar *appstream_id,
+					   GCancellable *cancellable,
+					   GAsyncReadyCallback callback,
+					   gpointer callback_data);
+gboolean
+fwupd_client_undo_host_security_attr_finish(FwupdClient *self, GAsyncResult *res, GError **error);
 
 FwupdStatus
 fwupd_client_get_status(FwupdClient *self);

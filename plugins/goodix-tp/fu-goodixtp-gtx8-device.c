@@ -69,12 +69,13 @@ fu_goodixtp_gtx8_device_hid_read(FuGoodixtpGtx8Device *self,
 				 guint32 bufsz,
 				 GError **error)
 {
-	g_autoptr(GPtrArray) chunks = fu_chunk_array_new(buf, bufsz, addr, 0, PACKAGE_LEN - 10);
+	g_autoptr(GPtrArray) chunks =
+	    fu_chunk_array_mutable_new(buf, bufsz, addr, 0, PACKAGE_LEN - 10);
 	for (guint i = 0; i < chunks->len; i++) {
 		FuChunk *chk = g_ptr_array_index(chunks, i);
 		if (!fu_goodixtp_gtx8_device_read_pkg(self,
 						      fu_chunk_get_address(chk),
-						      (guint8 *)fu_chunk_get_data(chk),
+						      fu_chunk_get_data_out(chk),
 						      fu_chunk_get_data_sz(chk),
 						      error))
 			return FALSE;
@@ -463,13 +464,13 @@ fu_goodixtp_gtx8_device_write_image(FuGoodixtpGtx8Device *self,
 				    GError **error)
 {
 	g_autoptr(GBytes) blob = fu_firmware_get_bytes(img, NULL);
-	g_autoptr(GPtrArray) chunks =
-	    fu_chunk_array_new_from_bytes(blob, fu_firmware_get_addr(img), 0x0, RAM_BUFFER_SIZE);
+	g_autoptr(FuChunkArray) chunks =
+	    fu_chunk_array_new_from_bytes(blob, fu_firmware_get_addr(img), RAM_BUFFER_SIZE);
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_set_steps(progress, chunks->len);
-	for (guint i = 0; i < chunks->len; i++) {
-		FuChunk *chk = g_ptr_array_index(chunks, i);
+	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
+	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
+		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
 		if (!fu_goodixtp_gtx8_device_update_process(self, chk, error))
 			return FALSE;
 		fu_device_sleep(FU_DEVICE(self), 20);

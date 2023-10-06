@@ -14,6 +14,7 @@
 #include <sys/utsname.h>
 #endif
 
+#include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-kernel.h"
 #include "fu-path.h"
@@ -230,6 +231,166 @@ fu_kernel_reset_firmware_search_path(GError **error)
 	return fu_kernel_set_firmware_search_path(contents, error);
 }
 
+typedef struct {
+	GHashTable *hash;
+	GHashTable *values;
+} FuKernelConfigHelper;
+
+static gboolean
+fu_kernel_parse_config_line_cb(GString *token, guint token_idx, gpointer user_data, GError **error)
+{
+	g_auto(GStrv) kv = NULL;
+	FuKernelConfigHelper *helper = (FuKernelConfigHelper *)user_data;
+	GRefString *value;
+
+	if (token->len == 0)
+		return TRUE;
+	if (token->str[0] == '#')
+		return TRUE;
+
+	kv = g_strsplit(token->str, "=", 2);
+	if (g_strv_length(kv) != 2) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_INVALID_DATA,
+			    "invalid format for '%s'",
+			    token->str);
+		return FALSE;
+	}
+	value = g_hash_table_lookup(helper->values, kv[1]);
+	if (value != NULL) {
+		g_hash_table_insert(helper->hash, g_strdup(kv[0]), g_ref_string_acquire(value));
+	} else {
+		g_hash_table_insert(helper->hash, g_strdup(kv[0]), g_ref_string_new(kv[1]));
+	}
+	return TRUE;
+}
+
+/**
+ * fu_kernel_parse_config:
+ * @buf: (not nullable): cmdline to parse
+ * @bufsz: size of @bufsz
+ *
+ * Parses all the kernel options into a hash table. Commented out options are not included.
+ *
+ * Returns: (transfer container) (element-type utf8 utf8): config keys
+ *
+ * Since: 1.9.6
+ **/
+GHashTable *
+fu_kernel_parse_config(const gchar *buf, gsize bufsz, GError **error)
+{
+	g_autoptr(GHashTable) hash = g_hash_table_new_full(g_str_hash,
+							   g_str_equal,
+							   g_free,
+							   (GDestroyNotify)g_ref_string_release);
+	g_autoptr(GHashTable) values = g_hash_table_new_full(g_str_hash,
+							     g_str_equal,
+							     NULL,
+							     (GDestroyNotify)g_ref_string_release);
+	FuKernelConfigHelper helper = {.hash = hash, .values = values};
+	const gchar *value_keys[] = {"y", "m", "0", NULL};
+
+	g_return_val_if_fail(buf != NULL, NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	/* add 99.9% of the most common keys to avoid thousands of small allocations */
+	for (guint i = 0; value_keys[i] != NULL; i++) {
+		g_hash_table_insert(values,
+				    (gpointer)value_keys[i],
+				    g_ref_string_new(value_keys[i]));
+	}
+	if (!fu_strsplit_full(buf, bufsz, "\n", fu_kernel_parse_config_line_cb, &helper, error))
+		return NULL;
+	return g_steal_pointer(&hash);
+}
+
+static gchar *
+fu_kernel_get_config_path(GError **error)
+{
+#ifdef HAVE_UTSNAME_H
+	struct utsname name_tmp;
+	g_autofree gchar *config_fn = NULL;
+	g_autofree gchar *bootdir = fu_path_from_kind(FU_PATH_KIND_HOSTFS_BOOT);
+
+	memset(&name_tmp, 0, sizeof(struct utsname));
+	if (uname(&name_tmp) < 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "failed to read kernel version");
+		return NULL;
+	}
+	config_fn = g_strdup_printf("config-%s", name_tmp.release);
+	return g_build_filename(bootdir, config_fn, NULL);
+#else
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "platform does not support uname");
+	return NULL;
+#endif
+}
+
+/**
+ * fu_kernel_get_config:
+ * @error: (nullable): optional return location for an error
+ *
+ * Loads all the kernel options into a hash table. Commented out options are not included.
+ *
+ * Returns: (transfer container) (element-type utf8 utf8): options from the kernel
+ *
+ * Since: 1.8.5
+ **/
+GHashTable *
+fu_kernel_get_config(GError **error)
+{
+#ifdef __linux__
+	gsize bufsz = 0;
+	g_autofree gchar *buf = NULL;
+	g_autofree gchar *fn = NULL;
+	g_autofree gchar *procdir = fu_path_from_kind(FU_PATH_KIND_PROCFS);
+	g_autofree gchar *config_fngz = g_build_filename(procdir, "config.gz", NULL);
+
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	/* try /proc/config.gz -- which will only work with CONFIG_IKCONFIG */
+	if (g_file_test(config_fngz, G_FILE_TEST_EXISTS)) {
+		g_autoptr(GBytes) payload = NULL;
+		g_autoptr(GConverter) conv = NULL;
+		g_autoptr(GFile) file = g_file_new_for_path(config_fngz);
+		g_autoptr(GInputStream) istream1 = NULL;
+		g_autoptr(GInputStream) istream2 = NULL;
+
+		istream1 = G_INPUT_STREAM(g_file_read(file, NULL, error));
+		if (istream1 == NULL)
+			return NULL;
+		conv = G_CONVERTER(g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_GZIP));
+		istream2 = g_converter_input_stream_new(istream1, conv);
+		payload = fu_bytes_get_contents_stream(istream2, G_MAXSIZE, error);
+		if (payload == NULL)
+			return NULL;
+		return fu_kernel_parse_config(g_bytes_get_data(payload, NULL),
+					      g_bytes_get_size(payload),
+					      error);
+	}
+
+	/* fall back to /boot/config-$(uname -r) */
+	fn = fu_kernel_get_config_path(error);
+	if (fn == NULL)
+		return NULL;
+	if (!g_file_get_contents(fn, &buf, &bufsz, error))
+		return NULL;
+	return fu_kernel_parse_config(buf, bufsz, error);
+#else
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "platform does not support getting the kernel config");
+	return NULL;
+#endif
+}
+
 /**
  * fu_kernel_parse_cmdline:
  * @buf: (not nullable): cmdline to parse
@@ -304,4 +465,118 @@ fu_kernel_get_cmdline(GError **error)
 			    "platform does not support getting the kernel cmdline");
 	return NULL;
 #endif
+}
+
+gboolean
+fu_kernel_check_cmdline_mutable(GError **error)
+{
+	g_autofree gchar *bootdir = fu_path_from_kind(FU_PATH_KIND_HOSTFS_BOOT);
+	g_autofree gchar *grubby_path = NULL;
+	g_autofree gchar *sysconfdir = fu_path_from_kind(FU_PATH_KIND_SYSCONFDIR);
+	g_auto(GStrv) config_files = g_new0(gchar *, 3);
+
+	/* not found */
+	grubby_path = fu_path_find_program("grubby", error);
+	if (grubby_path == NULL)
+		return FALSE;
+
+	/* check all the config files are writable */
+	config_files[0] = g_build_filename(bootdir, "grub2", "grub.cfg", NULL);
+	config_files[1] = g_build_filename(sysconfdir, "grub.cfg", NULL);
+	for (guint i = 0; config_files[i] != NULL; i++) {
+		g_autoptr(GFile) file = g_file_new_for_path(config_files[i]);
+		g_autoptr(GFileInfo) info = NULL;
+		g_autoptr(GError) error_local = NULL;
+
+		if (!g_file_query_exists(file, NULL))
+			continue;
+		info = g_file_query_info(file,
+					 G_FILE_ATTRIBUTE_ACCESS_CAN_WRITE,
+					 G_FILE_QUERY_INFO_NONE,
+					 NULL,
+					 &error_local);
+		if (info == NULL) {
+			g_warning("failed to get info for %s: %s",
+				  config_files[i],
+				  error_local->message);
+			continue;
+		}
+		if (!g_file_info_get_attribute_boolean(info, G_FILE_ATTRIBUTE_ACCESS_CAN_WRITE)) {
+			g_set_error(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "%s is not writable",
+				    config_files[i]);
+			return FALSE;
+		}
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_kernel_set_commandline(const gchar *arg, gboolean enable, GError **error)
+{
+	g_autofree gchar *output = NULL;
+	g_autofree gchar *arg_string = NULL;
+	g_autofree gchar *grubby_path = NULL;
+	const gchar *argv_grubby[] = {"", "--update-kernel=DEFAULT", "", NULL};
+
+	grubby_path = fu_path_find_program("grubby", error);
+	if (grubby_path == NULL) {
+		g_prefix_error(error, "failed to find grubby: ");
+		return FALSE;
+	}
+	if (enable)
+		arg_string = g_strdup_printf("--args=%s", arg);
+	else
+		arg_string = g_strdup_printf("--remove-args=%s", arg);
+
+	argv_grubby[0] = grubby_path;
+	argv_grubby[2] = arg_string;
+	return g_spawn_sync(NULL,
+			    (gchar **)argv_grubby,
+			    NULL,
+			    G_SPAWN_DEFAULT,
+			    NULL,
+			    NULL,
+			    &output,
+			    NULL,
+			    NULL,
+			    error);
+}
+
+/**
+ * fu_kernel_add_cmdline_arg:
+ * @arg: (not nullable): key to set
+ * @error: (nullable): optional return location for an error
+ *
+ * Add a kernel command line argument.
+ *
+ * Returns: %TRUE if successful
+ *
+ * Since: 1.9.5
+ **/
+gboolean
+fu_kernel_add_cmdline_arg(const gchar *arg, GError **error)
+{
+	return fu_kernel_set_commandline(arg, TRUE, error);
+}
+
+/**
+ * fu_kernel_remove_cmdline_arg:
+ * @arg: (not nullable): key to set
+ * @error: (nullable): optional return location for an error
+ *
+ * Remove a kernel command line argument.
+ *
+ * Returns: %TRUE if successful
+ *
+ * Since: 1.9.5
+ **/
+gboolean
+fu_kernel_remove_cmdline_arg(const gchar *arg, GError **error)
+{
+	return fu_kernel_set_commandline(arg, FALSE, error);
 }

@@ -20,6 +20,7 @@
 #include <libfwupdplugin/fu-cfi-device.h>
 #include <libfwupdplugin/fu-cfu-offer.h>
 #include <libfwupdplugin/fu-cfu-payload.h>
+#include <libfwupdplugin/fu-chunk-array.h>
 #include <libfwupdplugin/fu-chunk.h>
 #include <libfwupdplugin/fu-common-guid.h>
 #include <libfwupdplugin/fu-common.h>
@@ -34,6 +35,7 @@
 #include <libfwupdplugin/fu-dfu-firmware.h>
 #include <libfwupdplugin/fu-dfuse-firmware.h>
 #include <libfwupdplugin/fu-dump.h>
+#include <libfwupdplugin/fu-edid.h>
 #include <libfwupdplugin/fu-efi-device-path-list.h>
 #include <libfwupdplugin/fu-efi-device-path.h>
 #include <libfwupdplugin/fu-efi-file-path-device-path.h>

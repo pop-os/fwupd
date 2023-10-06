@@ -1,6 +1,6 @@
 project('fwupd', 'c',
-  version: '1.9.5',
-  license: 'LGPL-2.1+',
+  version: '1.9.6',
+  license: 'LGPL-2.1-or-later',
   meson_version: '>=0.61.0',
   default_options: ['warning_level=2', 'c_std=c11'],
 )
@@ -120,6 +120,10 @@ if not meson.is_cross_build()
   add_project_arguments('-fstack-protector-strong', language: 'c')
 endif
 
+if cc.get_id() == 'msvc'
+  error('MSVC is not supported as it does not support __attribute__((cleanup))')
+endif
+
 # enable full RELRO where possible
 # FIXME: until https://github.com/mesonbuild/meson/issues/1140 is fixed
 global_link_args = []
@@ -222,7 +226,7 @@ sqlite = dependency('sqlite3', required: get_option('sqlite'))
 if sqlite.found()
   conf.set('HAVE_SQLITE', '1')
 endif
-passim = dependency('passim', required: get_option('passim'), fallback: ['passim', 'passim_dep'])
+passim = dependency('passim', version: '>= 0.1.2', required: get_option('passim'), fallback: ['passim', 'passim_dep'])
 if passim.found()
   conf.set('HAVE_PASSIM', '1')
 endif
@@ -454,6 +458,7 @@ if libsystemd.found()
     systemdunitdir = systemd.get_variable(pkgconfig: 'systemdsystemunitdir')
     systemd_shutdown_dir = systemd.get_variable(pkgconfig: 'systemdshutdowndir')
     systemd_modules_load_dir = systemd.get_variable(pkgconfig: 'modulesloaddir')
+    systemd_sysusers_dir = systemd.get_variable(pkgconfig: 'sysusersdir')
   else
     systemdunitdir = systemd.get_variable(pkgconfig: 'systemdsystemunitdir', pkgconfig_define: ['rootprefix', systemd_root_prefix])
     systemd_root_prefix_varname = 'root_prefix'
@@ -462,6 +467,7 @@ if libsystemd.found()
     endif
     systemd_shutdown_dir = systemd.get_variable(pkgconfig: 'systemdshutdowndir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
     systemd_modules_load_dir = systemd.get_variable(pkgconfig: 'modulesloaddir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
+    systemd_sysusers_dir = systemd.get_variable(pkgconfig: 'sysusersdir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
   endif
 endif
 
@@ -469,6 +475,10 @@ elogind = dependency('systemd', 'libelogind', required: get_option('elogind'))
 if elogind.found()
   conf.set('HAVE_LOGIND' , '1')
 endif
+
+launchctl = find_program('launchctl',
+    required: get_option('launchd').disable_auto_if(host_machine.system() != 'darwin').allowed(),
+)
 
 if get_option('consolekit').disable_auto_if(host_machine.system() != 'linux').allowed()
   conf.set('HAVE_CONSOLEKIT' , '1')
@@ -527,6 +537,7 @@ configure_file(
   configuration: conf
 )
 
+amdgpu = cc.has_header('drm/amdgpu_drm.h', required: get_option('plugin_amdgpu'))
 protobufc = dependency('libprotobuf-c', required: get_option('plugin_logitech_bulkcontroller'))
 protoc = find_program('protoc', 'protoc-c', required: get_option('plugin_logitech_bulkcontroller'))
 

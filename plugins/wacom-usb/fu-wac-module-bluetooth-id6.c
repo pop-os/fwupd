@@ -25,7 +25,8 @@ G_DEFINE_TYPE(FuWacModuleBluetoothId6, fu_wac_module_bluetooth_id6, FU_TYPE_WAC_
 #define FU_WAC_MODULE_BLUETOOTH_ID6_START_NORMAL    0x00
 #define FU_WAC_MODULE_BLUETOOTH_ID6_START_FULLERASE 0xFE
 
-#define FU_WAC_MODULE_BLUETOOTH_ID6_WRITE_TIMEOUT 8000 /* ms */
+#define FU_WAC_MODULE_BLUETOOTH_ID6_START_TIMEOUT 60000 /* ms */
+#define FU_WAC_MODULE_BLUETOOTH_ID6_END_TIMEOUT	  60000 /* ms */
 
 static guint8
 fu_wac_module_bluetooth_id6_reverse_bits(guint8 value)
@@ -53,14 +54,14 @@ fu_wac_module_bluetooth_id6_write_blob(FuWacModule *self,
 				       FuProgress *progress,
 				       GError **error)
 {
-	g_autoptr(GPtrArray) chunks =
-	    fu_chunk_array_new_from_bytes(fw, 0x0, 0x0, FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ);
+	g_autoptr(FuChunkArray) chunks =
+	    fu_chunk_array_new_from_bytes(fw, 0x0, FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ);
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_set_steps(progress, chunks->len);
-	for (guint i = 0; i < chunks->len; i++) {
-		FuChunk *chk = g_ptr_array_index(chunks, i);
+	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
+	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
+		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
 		guint8 buf[FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ + 7] = {0x00, 0x01, 0xFF};
 		g_autoptr(GBytes) blob_chunk = NULL;
 
@@ -72,14 +73,18 @@ fu_wac_module_bluetooth_id6_write_blob(FuWacModule *self,
 		    FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ); /* include 0xFF for the possibly
 								incomplete last chunk */
 		blob_chunk = g_bytes_new(buf, sizeof(buf));
-		g_debug("writing block %u of %u", i, chunks->len - 1);
+		g_debug("writing block %u of %u", i, fu_chunk_array_length(chunks) - 1);
 		if (!fu_wac_module_set_feature(self,
 					       FU_WAC_MODULE_COMMAND_DATA,
 					       blob_chunk,
 					       fu_progress_get_child(progress),
-					       FU_WAC_MODULE_BLUETOOTH_ID6_WRITE_TIMEOUT,
+					       FU_WAC_MODULE_POLL_INTERVAL,
+					       FU_WAC_MODULE_DATA_TIMEOUT,
 					       error)) {
-			g_prefix_error(error, "failed to write block %u of %u: ", i, chunks->len);
+			g_prefix_error(error,
+				       "failed to write block %u of %u: ",
+				       i,
+				       fu_chunk_array_length(chunks) - 1);
 			return FALSE;
 		}
 		fu_progress_step_done(progress);
@@ -119,7 +124,8 @@ fu_wac_module_bluetooth_id6_write_firmware(FuDevice *device,
 				       FU_WAC_MODULE_COMMAND_START,
 				       blob_start,
 				       fu_progress_get_child(progress),
-				       FU_WAC_MODULE_ERASE_TIMEOUT,
+				       FU_WAC_MODULE_POLL_INTERVAL,
+				       FU_WAC_MODULE_BLUETOOTH_ID6_START_TIMEOUT,
 				       error)) {
 		g_prefix_error(error, "wacom bluetooth-id6 module failed to erase: ");
 		return FALSE;
@@ -141,7 +147,8 @@ fu_wac_module_bluetooth_id6_write_firmware(FuDevice *device,
 				       FU_WAC_MODULE_COMMAND_END,
 				       NULL,
 				       fu_progress_get_child(progress),
-				       0,
+				       FU_WAC_MODULE_POLL_INTERVAL,
+				       FU_WAC_MODULE_BLUETOOTH_ID6_END_TIMEOUT,
 				       error)) {
 		g_prefix_error(error, "wacom bluetooth-id6 module failed to end: ");
 		return FALSE;
@@ -149,7 +156,6 @@ fu_wac_module_bluetooth_id6_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* success */
-	fu_device_add_flag(fu_device_get_proxy(device), FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 	return TRUE;
 }
 

@@ -29,6 +29,11 @@ G_DEFINE_TYPE(FuWacModuleBluetoothId9, fu_wac_module_bluetooth_id9, FU_TYPE_WAC_
 #define FU_WAC_MODULE_BLUETOOTH_ID9_LOADER_DATA	   0x04
 #define FU_WAC_MODULE_BLUETOOTH_ID9_CRC_POLYNOMIAL 0xEDB88320
 
+#define FU_WAC_MODULE_BLUETOOTH_ID9_POLL_INTERVAL 5	/* ms */
+#define FU_WAC_MODULE_BLUETOOTH_ID9_START_TIMEOUT 75000 /* ms */
+#define FU_WAC_MODULE_BLUETOOTH_ID9_DATA_TIMEOUT  10000 /* ms */
+#define FU_WAC_MODULE_BLUETOOTH_ID9_END_TIMEOUT	  10000 /* ms */
+
 static FuChunk *
 fu_wac_module_bluetooth_id9_get_startcmd(GBytes *data, gboolean full_erase, GError **error)
 {
@@ -83,7 +88,8 @@ fu_wac_module_bluetooth_id9_write_block(FuWacModule *self,
 					 FU_WAC_MODULE_COMMAND_DATA,
 					 blob_chunk,
 					 fu_progress_get_child(progress),
-					 FU_WAC_MODULE_WRITE_TIMEOUT,
+					 FU_WAC_MODULE_BLUETOOTH_ID9_POLL_INTERVAL,
+					 FU_WAC_MODULE_BLUETOOTH_ID9_DATA_TIMEOUT,
 					 error);
 }
 
@@ -95,16 +101,13 @@ fu_wac_module_bluetooth_id9_write_blocks(FuWacModule *self,
 					 FuProgress *progress,
 					 GError **error)
 {
-	g_autoptr(GPtrArray) chunks = fu_chunk_array_new_from_bytes(data, 0, 0, block_len);
+	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(data, 0, block_len);
 
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_set_steps(progress, chunks->len);
-	for (guint i = 0; i < chunks->len; i++) {
-		if (!fu_wac_module_bluetooth_id9_write_block(self,
-							     phase,
-							     g_ptr_array_index(chunks, i),
-							     progress,
-							     error))
+	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
+	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
+		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		if (!fu_wac_module_bluetooth_id9_write_block(self, phase, chk, progress, error))
 			return FALSE;
 
 		fu_progress_step_done(progress);
@@ -203,7 +206,8 @@ fu_wac_module_bluetooth_id9_write_firmware(FuDevice *device,
 				       FU_WAC_MODULE_COMMAND_START,
 				       blob_start,
 				       fu_progress_get_child(progress),
-				       FU_WAC_MODULE_ERASE_TIMEOUT,
+				       FU_WAC_MODULE_BLUETOOTH_ID9_POLL_INTERVAL,
+				       FU_WAC_MODULE_BLUETOOTH_ID9_START_TIMEOUT,
 				       error))
 		return FALSE;
 	fu_progress_step_done(progress);
@@ -241,7 +245,8 @@ fu_wac_module_bluetooth_id9_write_firmware(FuDevice *device,
 				       FU_WAC_MODULE_COMMAND_END,
 				       NULL,
 				       fu_progress_get_child(progress),
-				       FU_WAC_MODULE_COMMIT_TIMEOUT,
+				       FU_WAC_MODULE_BLUETOOTH_ID9_POLL_INTERVAL,
+				       FU_WAC_MODULE_BLUETOOTH_ID9_END_TIMEOUT,
 				       error))
 		return FALSE;
 	fu_progress_step_done(progress);

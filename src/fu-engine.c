@@ -484,6 +484,17 @@ fu_engine_ensure_device_lid_inhibit(FuEngine *self, FuDevice *device)
 }
 
 static void
+fu_engine_ensure_device_display_required_inhibit(FuEngine *self, FuDevice *device)
+{
+	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_DISPLAY_REQUIRED) &&
+	    fu_context_get_display_state(self->ctx) == FU_DISPLAY_STATE_DISCONNECTED) {
+		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED);
+		return;
+	}
+	fu_device_remove_problem(device, FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED);
+}
+
+static void
 fu_engine_ensure_device_system_inhibit(FuEngine *self, FuDevice *device)
 {
 	if (fu_context_has_flag(self->ctx, FU_CONTEXT_FLAG_SYSTEM_INHIBIT)) {
@@ -531,6 +542,7 @@ fu_engine_device_added_cb(FuDeviceList *device_list, FuDevice *device, FuEngine 
 	fu_engine_watch_device(self, device);
 	fu_engine_ensure_device_power_inhibit(self, device);
 	fu_engine_ensure_device_lid_inhibit(self, device);
+	fu_engine_ensure_device_display_required_inhibit(self, device);
 	fu_engine_ensure_device_system_inhibit(self, device);
 	fu_engine_acquiesce_reset(self);
 	g_signal_emit(self, signals[SIGNAL_DEVICE_ADDED], 0, device);
@@ -2371,6 +2383,25 @@ fu_engine_get_report_metadata(FuEngine *self, GError **error)
 	if (btime != NULL)
 		g_hash_table_insert(hash, g_strdup("BootTime"), btime);
 
+	/* add context information */
+	g_hash_table_insert(
+	    hash,
+	    g_strdup("PowerState"),
+	    g_strdup(fu_power_state_to_string(fu_context_get_power_state(self->ctx))));
+	g_hash_table_insert(
+	    hash,
+	    g_strdup("DisplayState"),
+	    g_strdup(fu_display_state_to_string(fu_context_get_display_state(self->ctx))));
+	g_hash_table_insert(hash,
+			    g_strdup("LidState"),
+			    g_strdup(fu_lid_state_to_string(fu_context_get_lid_state(self->ctx))));
+	g_hash_table_insert(hash,
+			    g_strdup("BatteryLevel"),
+			    g_strdup_printf("%u", fu_context_get_battery_level(self->ctx)));
+	g_hash_table_insert(hash,
+			    g_strdup("BatteryThreshold"),
+			    g_strdup_printf("%u", fu_context_get_battery_threshold(self->ctx)));
+
 	return g_steal_pointer(&hash);
 }
 
@@ -2543,6 +2574,12 @@ fu_engine_install_releases(FuEngine *self,
 	/* notify the plugins about the composite action */
 	if (!fu_engine_composite_cleanup(self, devices_new, error)) {
 		g_prefix_error(error, "failed to cleanup composite action: ");
+		return FALSE;
+	}
+
+	/* wait for any device to disconnect and reconnect */
+	if (!fu_device_list_wait_for_replug(self->device_list, error)) {
+		g_prefix_error(error, "failed to wait for device: ");
 		return FALSE;
 	}
 
@@ -3060,8 +3097,12 @@ fu_engine_install_release(FuEngine *self,
 		passim_item_set_share_limit(passim_item, 50);
 		passim_item_set_basename(passim_item, basename);
 		passim_item_set_bytes(passim_item, blob_cab);
-		if (!passim_client_publish(self->passim_client, passim_item, &error_passim))
-			g_warning("failed to publish to Passim: %s", error_passim->message);
+		if (!passim_client_publish(self->passim_client, passim_item, &error_passim)) {
+			if (!g_error_matches(error_passim, G_IO_ERROR, G_IO_ERROR_EXISTS)) {
+				g_warning("failed to publish firmware to Passim: %s",
+					  error_passim->message);
+			}
+		}
 	}
 #endif
 
@@ -4798,8 +4839,12 @@ fu_engine_update_metadata_bytes(FuEngine *self,
 		passim_item_set_bytes(passim_item, bytes_raw);
 		passim_item_set_max_age(passim_item, fwupd_remote_get_refresh_interval(remote));
 		passim_item_set_share_limit(passim_item, 50);
-		if (!passim_client_publish(self->passim_client, passim_item, &error_passim))
-			g_warning("failed to publish to Passim: %s", error_passim->message);
+		if (!passim_client_publish(self->passim_client, passim_item, &error_passim)) {
+			if (!g_error_matches(error_passim, G_IO_ERROR, G_IO_ERROR_EXISTS)) {
+				g_warning("failed to publish metadata to Passim: %s",
+					  error_passim->message);
+			}
+		}
 	}
 #endif
 
@@ -6328,6 +6373,26 @@ fu_engine_plugins_startup(FuEngine *self, FuProgress *progress)
 }
 
 static void
+fu_engine_plugins_ready(FuEngine *self, FuProgress *progress)
+{
+	GPtrArray *plugins = fu_plugin_list_get_all(self->plugin_list);
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_set_steps(progress, plugins->len);
+	for (guint i = 0; i < plugins->len; i++) {
+		g_autoptr(GError) error = NULL;
+		FuPlugin *plugin = g_ptr_array_index(plugins, i);
+		if (!fu_plugin_runner_ready(plugin, fu_progress_get_child(progress), &error)) {
+			if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+				fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_NO_HARDWARE);
+			}
+			g_info("disabling plugin because: %s", error->message);
+			fu_progress_add_flag(progress, FU_PROGRESS_FLAG_CHILD_FINISHED);
+		}
+		fu_progress_step_done(progress);
+	}
+}
+
+static void
 fu_engine_plugins_coldplug(FuEngine *self, FuProgress *progress)
 {
 	GPtrArray *plugins;
@@ -6424,6 +6489,7 @@ fu_engine_adopt_children(FuEngine *self, FuDevice *device)
 				device,
 				fu_device_get_physical_id(device_tmp))) {
 				fu_device_set_parent(device, device_tmp);
+				fu_engine_ensure_device_supported(self, device_tmp);
 				break;
 			}
 		}
@@ -6436,6 +6502,7 @@ fu_engine_adopt_children(FuEngine *self, FuDevice *device)
 				FuDevice *device_tmp = g_ptr_array_index(devices, i);
 				if (fu_device_has_guid(device_tmp, guid)) {
 					fu_device_set_parent(device, device_tmp);
+					fu_engine_ensure_device_supported(self, device_tmp);
 					break;
 				}
 			}
@@ -7036,6 +7103,214 @@ fu_engine_security_attrs_depsolve(FuEngine *self)
 	self->host_security_id = fu_engine_attrs_calculate_hsi_for_chassis(self);
 }
 #endif
+
+/**
+ * fu_history_get_previous_security_attr:
+ * @self: a #FuHistory
+ * @appstream_id: maximum number of attributes to return, or 0 for no limit
+ * @current_setting: (nullable): current value
+ * @error: return location for a #GError, or %NULL
+ *
+ * Gets the security attributes of the previous BIOS setting for the given
+ * appstream ID and current BIOS config.
+ *
+ * Returns: (element-type #FuSecurityAttr) (transfer full): attr, or %NULL
+ **/
+static FwupdSecurityAttr *
+fu_engine_get_previous_bios_security_attr(FuEngine *self,
+					  const gchar *appstream_id,
+					  const gchar *current_setting,
+					  GError **error)
+{
+	g_autoptr(GPtrArray) attrs_array = NULL;
+
+	attrs_array = fu_history_get_security_attrs(self->history, 20, error);
+	if (attrs_array == NULL)
+		return NULL;
+	for (guint i = 0; i < attrs_array->len; i++) {
+		FuSecurityAttrs *attrs = g_ptr_array_index(attrs_array, i);
+		g_autoptr(GPtrArray) attr_items = fu_security_attrs_get_all(attrs);
+		for (guint j = 0; j < attr_items->len; j++) {
+			FwupdSecurityAttr *attr = g_ptr_array_index(attr_items, j);
+			if (g_strcmp0(appstream_id, fwupd_security_attr_get_appstream_id(attr)) ==
+				0 &&
+			    g_strcmp0(current_setting,
+				      fwupd_security_attr_get_bios_setting_current_value(attr)) !=
+				0) {
+				g_debug("found previous BIOS setting for %s: %s",
+					appstream_id,
+					fwupd_security_attr_get_bios_setting_id(attr));
+				return g_object_ref(attr);
+			}
+		}
+	}
+
+	/* failed */
+	g_set_error_literal(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_NOT_SUPPORTED,
+			    "cannot find previous BIOS value");
+	return NULL;
+}
+
+/**
+ * fu_engine_fix_host_security_attr:
+ * @self: a #FuEngine
+ * @appstream_id: the Appstream ID
+ * @error: (nullable): optional return location for an error
+ *
+ * Fix one specific security attribute.
+ *
+ * Returns: %TRUE for success
+ **/
+gboolean
+fu_engine_fix_host_security_attr(FuEngine *self, const gchar *appstream_id, GError **error)
+{
+	FuPlugin *plugin;
+	FwupdBiosSetting *bios_attr;
+	g_autoptr(FwupdSecurityAttr) hsi_attr = NULL;
+	g_autoptr(GError) error_local = NULL;
+
+	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
+
+	fu_engine_ensure_security_attrs(self);
+	hsi_attr =
+	    fu_security_attrs_get_by_appstream_id(self->host_security_attrs, appstream_id, error);
+	if (hsi_attr == NULL)
+		return FALSE;
+	if (!fwupd_security_attr_has_flag(hsi_attr, FWUPD_SECURITY_ATTR_FLAG_CAN_FIX)) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "cannot auto-fix attribute");
+		return FALSE;
+	}
+	plugin = fu_plugin_list_find_by_name(self->plugin_list,
+					     fwupd_security_attr_get_plugin(hsi_attr),
+					     error);
+	if (plugin == NULL)
+		return FALSE;
+
+	/* first try the per-plugin vfunc */
+	if (!fu_plugin_runner_fix_host_security_attr(plugin, hsi_attr, &error_local)) {
+		if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+			g_propagate_error(error, g_steal_pointer(&error_local));
+			return FALSE;
+		}
+		g_debug("ignoring %s", error_local->message);
+	} else {
+		g_info("fixed %s", fwupd_security_attr_get_appstream_id(hsi_attr));
+		return TRUE;
+	}
+
+	/* fall back to setting the BIOS attribute */
+	if (fwupd_security_attr_get_bios_setting_id(hsi_attr) == NULL) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "no BIOS setting ID set");
+		return FALSE;
+	}
+	bios_attr = fu_context_get_bios_setting(self->ctx,
+						fwupd_security_attr_get_bios_setting_id(hsi_attr));
+	if (bios_attr == NULL) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_NOT_SUPPORTED,
+			    "cannot get BIOS setting %s",
+			    fwupd_security_attr_get_bios_setting_id(hsi_attr));
+		return FALSE;
+	}
+	return fwupd_bios_setting_write_value(
+	    bios_attr,
+	    fwupd_security_attr_get_bios_setting_target_value(hsi_attr),
+	    error);
+}
+
+/**
+ * fu_engine_fix_host_security_attr:
+ * @self: a #FuEngine
+ * @appstream_id: the Appstream ID
+ * @error: (nullable): optional return location for an error
+ *
+ * Revert the fix for one specific security attribute.
+ *
+ * Returns: %TRUE for success
+ **/
+gboolean
+fu_engine_undo_host_security_attr(FuEngine *self, const gchar *appstream_id, GError **error)
+{
+	FuPlugin *plugin;
+	FwupdBiosSetting *bios_attr;
+	g_autoptr(FwupdSecurityAttr) hsi_attr = NULL;
+	g_autoptr(FwupdSecurityAttr) hsi_attr_old = NULL;
+	g_autoptr(GError) error_local = NULL;
+
+	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
+
+	fu_engine_ensure_security_attrs(self);
+	hsi_attr =
+	    fu_security_attrs_get_by_appstream_id(self->host_security_attrs, appstream_id, error);
+	if (hsi_attr == NULL)
+		return FALSE;
+	if (!fwupd_security_attr_has_flag(hsi_attr, FWUPD_SECURITY_ATTR_FLAG_CAN_UNDO)) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "cannot auto-undo attribute");
+		return FALSE;
+	}
+	plugin = fu_plugin_list_find_by_name(self->plugin_list,
+					     fwupd_security_attr_get_plugin(hsi_attr),
+					     error);
+	if (plugin == NULL)
+		return FALSE;
+
+	/* first try the per-plugin vfunc */
+	if (!fu_plugin_runner_undo_host_security_attr(plugin, hsi_attr, &error_local)) {
+		if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+			g_propagate_error(error, g_steal_pointer(&error_local));
+			return FALSE;
+		}
+	}
+
+	/* fall back to setting the BIOS attribute */
+	if (fwupd_security_attr_get_bios_setting_id(hsi_attr) == NULL) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "no BIOS setting ID");
+		return FALSE;
+	}
+	bios_attr = fu_context_get_bios_setting(self->ctx,
+						fwupd_security_attr_get_bios_setting_id(hsi_attr));
+	if (bios_attr == NULL) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_NOT_SUPPORTED,
+			    "cannot get BIOS setting %s",
+			    fwupd_security_attr_get_bios_setting_id(hsi_attr));
+		return FALSE;
+	}
+	if (fwupd_security_attr_get_bios_setting_current_value(hsi_attr) == NULL) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_NOT_SUPPORTED,
+				    "no BIOS setting current value");
+		return FALSE;
+	}
+	hsi_attr_old = fu_engine_get_previous_bios_security_attr(
+	    self,
+	    appstream_id,
+	    fwupd_security_attr_get_bios_setting_current_value(hsi_attr),
+	    error);
+	if (hsi_attr_old == NULL)
+		return FALSE;
+	return fwupd_bios_setting_write_value(
+	    bios_attr,
+	    fwupd_security_attr_get_bios_setting_current_value(hsi_attr_old),
+	    error);
+}
 
 static gboolean
 fu_engine_security_attrs_from_json(FuEngine *self, JsonNode *json_node, GError **error)
@@ -8164,6 +8439,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 1, "plugins-setup");
 	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 3, "plugins-coldplug");
 	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 90, "backend-coldplug");
+	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 1, "plugins-ready");
 	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 1, "update-history-db");
 
 	/* sanity check libraries are in sync with daemon */
@@ -8343,6 +8619,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "archive", FU_TYPE_ARCHIVE_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "smbios", FU_TYPE_SMBIOS);
 	fu_context_add_firmware_gtype(self->ctx, "acpi-table", FU_TYPE_ACPI_TABLE);
+	fu_context_add_firmware_gtype(self->ctx, "edid", FU_TYPE_EDID);
 	fu_context_add_firmware_gtype(self->ctx, "efi-firmware-file", FU_TYPE_EFI_FIRMWARE_FILE);
 	fu_context_add_firmware_gtype(self->ctx, "efi-load-option", FU_TYPE_EFI_LOAD_OPTION);
 	fu_context_add_firmware_gtype(self->ctx,
@@ -8469,6 +8746,14 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	if (flags & FU_ENGINE_LOAD_FLAG_COLDPLUG)
 		fu_engine_backends_coldplug(self, fu_progress_get_child(progress));
 	fu_progress_step_done(progress);
+
+	/* coldplug done, so plugin is ready */
+	if (flags & FU_ENGINE_LOAD_FLAG_COLDPLUG) {
+		fu_engine_plugins_ready(self, fu_progress_get_child(progress));
+		fu_progress_step_done(progress);
+	} else {
+		fu_progress_step_done(progress);
+	}
 
 	/* dump plugin information to the console */
 	for (guint i = 0; i < self->backends->len; i++) {
@@ -8639,6 +8924,7 @@ fu_engine_context_power_changed_cb(FuContext *ctx, GParamSpec *pspec, FuEngine *
 		FuDevice *device = g_ptr_array_index(devices, i);
 		fu_engine_ensure_device_power_inhibit(self, device);
 		fu_engine_ensure_device_lid_inhibit(self, device);
+		fu_engine_ensure_device_display_required_inhibit(self, device);
 		fu_engine_ensure_device_system_inhibit(self, device);
 	}
 }
@@ -8698,6 +8984,10 @@ fu_engine_init(FuEngine *self)
 			 self);
 	g_signal_connect(FU_CONTEXT(self->ctx),
 			 "notify::lid-state",
+			 G_CALLBACK(fu_engine_context_power_changed_cb),
+			 self);
+	g_signal_connect(FU_CONTEXT(self->ctx),
+			 "notify::display-state",
 			 G_CALLBACK(fu_engine_context_power_changed_cb),
 			 self);
 	g_signal_connect(FU_CONTEXT(self->ctx),

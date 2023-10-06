@@ -276,6 +276,8 @@ fu_device_internal_flag_to_string(FuDeviceInternalFlags flag)
 		return "add-instance-id-rev";
 	if (flag == FU_DEVICE_INTERNAL_FLAG_UNCONNECTED)
 		return "unconnected";
+	if (flag == FU_DEVICE_INTERNAL_FLAG_DISPLAY_REQUIRED)
+		return "display-required";
 	return NULL;
 }
 
@@ -360,6 +362,8 @@ fu_device_internal_flag_from_string(const gchar *flag)
 		return FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV;
 	if (g_strcmp0(flag, "unconnected") == 0)
 		return FU_DEVICE_INTERNAL_FLAG_UNCONNECTED;
+	if (g_strcmp0(flag, "display-required") == 0)
+		return FU_DEVICE_INTERNAL_FLAG_DISPLAY_REQUIRED;
 	return FU_DEVICE_INTERNAL_FLAG_UNKNOWN;
 }
 
@@ -1867,6 +1871,12 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 			fu_device_add_guid(self, sections[i]);
 		return TRUE;
 	}
+	if (g_strcmp0(key, FU_QUIRKS_GUID_QUIRK) == 0) {
+		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		for (guint i = 0; sections[i] != NULL; i++)
+			fu_device_add_guid_full(self, sections[i], FU_DEVICE_INSTANCE_FLAG_QUIRKS);
+		return TRUE;
+	}
 	if (g_strcmp0(key, FU_QUIRKS_COUNTERPART_GUID) == 0) {
 		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
 		for (guint i = 0; sections[i] != NULL; i++)
@@ -2997,6 +3007,8 @@ fu_device_problem_to_inhibit_reason(FuDevice *self, guint64 device_problem)
 		return g_strdup("An update is in progress");
 	if (device_problem == FWUPD_DEVICE_PROBLEM_IN_USE)
 		return g_strdup("Device is in use");
+	if (device_problem == FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED)
+		return g_strdup("Device requires a display to be plugged in");
 	if (device_problem == FWUPD_DEVICE_PROBLEM_MISSING_LICENSE)
 		return g_strdup("Device does not have the necessary license installed");
 	if (device_problem == FWUPD_DEVICE_PROBLEM_SYSTEM_POWER_TOO_LOW) {
@@ -3987,7 +3999,7 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 		const gchar *instance_id = g_ptr_array_index(priv->instance_id_quirks, i);
 		g_autofree gchar *guid = fwupd_guid_hash_string(instance_id);
 		g_autofree gchar *tmp2 = g_strdup_printf("%s ← %s", guid, instance_id);
-		fu_string_append(str, idt + 1, "Guid[quirks]", tmp2);
+		fu_string_append(str, idt + 1, "Guid[quirk]", tmp2);
 	}
 	if (priv->alternate_id != NULL)
 		fu_string_append(str, idt + 1, "AlternateId", priv->alternate_id);

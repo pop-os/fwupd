@@ -22,12 +22,6 @@ else
 	CONFARGS += -Dplugin_flashrom=disabled
 endif
 
-ifeq (yes,$(shell pkg-config --exists libsmbios_c && echo yes))
-	CONFARGS += -Dplugin_dell=enabled
-else
-	CONFARGS += -Dplugin_dell=disabled
-endif
-
 ifneq ($(filter $(DEB_HOST_ARCH_CPU),i386 amd64),)
 	CONFARGS += -Dplugin_msr=enabled
 else
@@ -42,7 +36,7 @@ ifneq ($(filter nodoc,$(DEB_BUILD_PROFILES)),)
 	CONFARGS += -Ddocs=disabled
 endif
 
-CONFARGS += -Dplugin_dummy=true -Dplugin_powerd=disabled -Dsupported_build=enabled -Dplugin_modem_manager=enabled -Dsystemd_unit_user=fwupd-refresh -Defi_binary=false
+CONFARGS += -Dplugin_dummy=true -Dplugin_powerd=disabled -Dsupported_build=enabled -Dplugin_modem_manager=enabled -Defi_binary=false
 
 %:
 	dh $@ --with gir

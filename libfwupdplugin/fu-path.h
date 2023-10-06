@@ -46,6 +46,8 @@
  * @FU_PATH_KIND_LOCALCONFDIR_PKG:	The package configuration override (IE /var/etc/fwupd)
  * @FU_PATH_KIND_SYSFSDIR_DMI:	The sysfs DMI location, (IE /sys/class/dmi/id)
  * @FU_PATH_KIND_HOSTFS_ROOT:		The root of the host filesystem (IE /)
+ * @FU_PATH_KIND_HOSTFS_BOOT:		The host boot directory, (IE /boot)
+ * @FU_PATH_KIND_DEVFS: 		The host dev directory, (IE /dev)
  *
  * Path types to use when dynamically determining a path at runtime
  **/
@@ -77,6 +79,8 @@ typedef enum {
 	FU_PATH_KIND_LOCALCONFDIR_PKG,
 	FU_PATH_KIND_SYSFSDIR_DMI,
 	FU_PATH_KIND_HOSTFS_ROOT,
+	FU_PATH_KIND_HOSTFS_BOOT,
+	FU_PATH_KIND_DEVFS,
 	/*< private >*/
 	FU_PATH_KIND_LAST
 } FuPathKind;

@@ -3,14 +3,16 @@ cargs = ['-DG_LOG_DOMAIN="FuPluginPixartRf"']
 
 plugin_quirks += files('pixart-rf.quirk')
 plugin_builtin_pxi = static_library('fu_plugin_pxi',
-  rustgen.process('fu-pxi.rs'),
+  rustgen.process(
+    'fu-pxi.rs', # fuzzing
+  ),
   sources: [
     'fu-pxi-plugin.c',
-    'fu-pxi-common.c',
+    'fu-pxi-common.c', # fuzzing
     'fu-pxi-ble-device.c',
     'fu-pxi-receiver-device.c',
     'fu-pxi-wireless-device.c',
-    'fu-pxi-firmware.c',      # fuzzing
+    'fu-pxi-firmware.c', # fuzzing
   ],
   include_directories: plugin_incdirs,
   c_args: cargs,

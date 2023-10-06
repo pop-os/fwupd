@@ -162,6 +162,9 @@ fu_common_byte_array_func(void)
 {
 	g_autofree gchar *str = NULL;
 	g_autoptr(GByteArray) array = g_byte_array_new();
+	g_autoptr(GByteArray) array2 = NULL;
+	g_autoptr(GByteArray) array3 = NULL;
+	g_autoptr(GError) error = NULL;
 
 	fu_byte_array_append_uint8(array, (guint8)'h');
 	fu_byte_array_append_uint8(array, (guint8)'e');
@@ -177,6 +180,16 @@ fu_common_byte_array_func(void)
 
 	str = fu_byte_array_to_string(array);
 	g_assert_cmpstr(str, ==, "68656c6c6f0000000000");
+
+	array2 = fu_byte_array_from_string(str, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(array2);
+	g_assert_cmpint(array2->len, ==, 10);
+	g_assert_cmpint(memcmp(array2->data, "hello\0\0\0\0\0", array2->len), ==, 0);
+
+	array3 = fu_byte_array_from_string("ZZZ", &error);
+	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA);
+	g_assert_null(array3);
 }
 
 static void
@@ -422,7 +435,7 @@ fu_smbios_func(void)
 }
 
 static void
-fu_kernel_func(void)
+fu_kernel_cmdline_func(void)
 {
 	const gchar *buf = "key=val foo bar=\"baz baz baz\" tail\n";
 	g_autoptr(GHashTable) hash = NULL;
@@ -437,6 +450,22 @@ fu_kernel_func(void)
 	g_assert_cmpstr(g_hash_table_lookup(hash, "bar"), ==, "baz baz baz");
 	g_assert_true(g_hash_table_contains(hash, "tail"));
 	g_assert_false(g_hash_table_contains(hash, ""));
+}
+
+static void
+fu_kernel_config_func(void)
+{
+	const gchar *buf = "CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE=y\n\n"
+			   "# CONFIG_LOCK_DOWN_KERNEL_FORCE_INTEGRITY is not set\n";
+	g_autoptr(GHashTable) hash = NULL;
+	g_autoptr(GError) error = NULL;
+
+	hash = fu_kernel_parse_config(buf, strlen(buf), &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(hash);
+	g_assert_true(g_hash_table_contains(hash, "CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE"));
+	g_assert_cmpstr(g_hash_table_lookup(hash, "CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE"), ==, "y");
+	g_assert_false(g_hash_table_contains(hash, "CONFIG_LOCK_DOWN_KERNEL_FORCE_INTEGRITY"));
 }
 
 static void
@@ -1686,6 +1715,45 @@ fu_backend_func(void)
 	dev = g_ptr_array_index(devices, 0);
 	g_assert_nonnull(dev);
 	g_assert_true(dev == dev1);
+}
+
+static void
+fu_chunk_array_func(void)
+{
+	g_autoptr(FuChunk) chk1 = NULL;
+	g_autoptr(FuChunk) chk2 = NULL;
+	g_autoptr(FuChunk) chk3 = NULL;
+	g_autoptr(FuChunk) chk4 = NULL;
+	g_autoptr(GBytes) fw = g_bytes_new_static("hello world", 11);
+	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(fw, 100, 5);
+
+	g_assert_cmpint(fu_chunk_array_length(chunks), ==, 3);
+
+	chk1 = fu_chunk_array_index(chunks, 0);
+	g_assert_nonnull(chk1);
+	g_assert_cmpint(fu_chunk_get_idx(chk1), ==, 0x0);
+	g_assert_cmpint(fu_chunk_get_address(chk1), ==, 100);
+	g_assert_cmpint(fu_chunk_get_data_sz(chk1), ==, 0x5);
+	g_assert_cmpint(strncmp((const gchar *)fu_chunk_get_data(chk1), "hello", 5), ==, 0);
+
+	chk2 = fu_chunk_array_index(chunks, 1);
+	g_assert_nonnull(chk2);
+	g_assert_cmpint(fu_chunk_get_idx(chk2), ==, 0x1);
+	g_assert_cmpint(fu_chunk_get_address(chk2), ==, 105);
+	g_assert_cmpint(fu_chunk_get_data_sz(chk2), ==, 0x5);
+	g_assert_cmpint(strncmp((const gchar *)fu_chunk_get_data(chk2), " world", 5), ==, 0);
+
+	chk3 = fu_chunk_array_index(chunks, 2);
+	g_assert_nonnull(chk3);
+	g_assert_cmpint(fu_chunk_get_idx(chk3), ==, 0x2);
+	g_assert_cmpint(fu_chunk_get_address(chk3), ==, 110);
+	g_assert_cmpint(fu_chunk_get_data_sz(chk3), ==, 0x1);
+	g_assert_cmpint(strncmp((const gchar *)fu_chunk_get_data(chk3), "d", 1), ==, 0);
+
+	chk4 = fu_chunk_array_index(chunks, 3);
+	g_assert_null(chk4);
+	chk4 = fu_chunk_array_index(chunks, 1024);
+	g_assert_null(chk4);
 }
 
 static void
@@ -3825,6 +3893,7 @@ fu_firmware_builder_round_trip_func(void)
 	    {FU_TYPE_EFI_LOAD_OPTION,
 	     "efi-load-option.builder.xml",
 	     "7ef696d22902ae97ef5f73ad9c85a28095ad56f1"},
+	    {FU_TYPE_EDID, "edid.builder.xml", "64cef10b75ccce684a483d576dd4a4ce6bef8165"},
 	    {FU_TYPE_EFI_FIRMWARE_SECTION,
 	     "efi-firmware-section.builder.xml",
 	     "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"},
@@ -3862,7 +3931,7 @@ fu_firmware_builder_round_trip_func(void)
 #ifdef HAVE_CBOR
 	    {FU_TYPE_USWID_FIRMWARE,
 	     "uswid.builder.xml",
-	     "b4631ebb64931da604500b9a7263225708195f54"},
+	     "b473fbdbe00f860c4da43f9499569394bac81f14"},
 #endif
 	    {G_TYPE_INVALID, NULL, NULL}};
 	g_type_ensure(FU_TYPE_COSWID_FIRMWARE);
@@ -4010,6 +4079,25 @@ fu_progress_child_func(void)
 	/* ensure we ignored the duplicate */
 	g_assert_cmpint(helper.updates, ==, 3);
 	g_assert_cmpint(helper.last_percentage, ==, 100);
+}
+
+static void
+fu_progress_scaling_func(void)
+{
+	const guint insane_steps = 1000 * 1000;
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+
+	fu_progress_set_steps(progress, insane_steps);
+	for (guint i = 0; i < insane_steps / 2; i++)
+		fu_progress_step_done(progress);
+	g_assert_cmpint(fu_progress_get_percentage(progress), ==, 50);
+	for (guint i = 0; i < insane_steps / 2; i++) {
+		FuProgress *progress_child = fu_progress_get_child(progress);
+		fu_progress_set_percentage(progress_child, 0);
+		fu_progress_set_percentage(progress_child, 100);
+		fu_progress_step_done(progress);
+	}
+	g_assert_cmpint(fu_progress_get_percentage(progress), ==, 100);
 }
 
 static void
@@ -4363,6 +4451,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{memmem}", fu_common_memmem_func);
 	if (g_test_slow())
 		g_test_add_func("/fwupd/progress", fu_progress_func);
+	g_test_add_func("/fwupd/progress{scaling}", fu_progress_scaling_func);
 	g_test_add_func("/fwupd/progress{child}", fu_progress_child_func);
 	g_test_add_func("/fwupd/progress{child-finished}", fu_progress_child_finished);
 	g_test_add_func("/fwupd/progress{parent-1-step}", fu_progress_parent_one_step_proxy_func);
@@ -4382,6 +4471,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/plugin{quirks-device}", fu_plugin_quirks_device_func);
 	g_test_add_func("/fwupd/backend", fu_backend_func);
 	g_test_add_func("/fwupd/chunk", fu_chunk_func);
+	g_test_add_func("/fwupd/chunks", fu_chunk_array_func);
 	g_test_add_func("/fwupd/common{align-up}", fu_common_align_up_func);
 	g_test_add_func("/fwupd/volume{gpt-type}", fu_volume_gpt_type_func);
 	g_test_add_func("/fwupd/common{byte-array}", fu_common_byte_array_func);
@@ -4406,7 +4496,8 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/string{utf16}", fu_string_utf16_func);
 	g_test_add_func("/fwupd/smbios", fu_smbios_func);
 	g_test_add_func("/fwupd/smbios3", fu_smbios3_func);
-	g_test_add_func("/fwupd/kernel", fu_kernel_func);
+	g_test_add_func("/fwupd/kernel{cmdline}", fu_kernel_cmdline_func);
+	g_test_add_func("/fwupd/kernel{config}", fu_kernel_config_func);
 	g_test_add_func("/fwupd/hid{descriptor}", fu_hid_descriptor_func);
 	g_test_add_func("/fwupd/hid{descriptor-container}", fu_hid_descriptor_container_func);
 	g_test_add_func("/fwupd/firmware", fu_firmware_func);

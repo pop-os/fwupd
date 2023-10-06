@@ -101,6 +101,23 @@ struct _FuPluginClass {
 	 **/
 	gboolean (*startup)(FuPlugin *self, FuProgress *progress, GError **error);
 	/**
+	 * ready:
+	 * @self: a #FuPlugin
+	 * @progress: a #FuProgress
+	 * @error: (nullable): optional return location for an error
+	 *
+	 * Tells the plugin that all devices have been coldplugged and the plugin is
+	 * ready to be used.
+	 *
+	 * Returns: TRUE for success or FALSE for failure.
+	 *
+	 * NOTE: Any plugins not intended for the system or that have failure communicating
+	 * with the device should return %FALSE and set @error.
+	 *
+	 * Since: 1.9.6
+	 **/
+	gboolean (*ready)(FuPlugin *self, FuProgress *progress, GError **error);
+	/**
 	 * coldplug:
 	 * @self: a #FuPlugin
 	 * @progress: a #FuProgress
@@ -372,6 +389,30 @@ struct _FuPluginClass {
 	 * Since: 1.8.4
 	 **/
 	void (*to_string)(FuPlugin *self, guint idt, GString *str);
+	/**
+	 * fix_host_security_attr:
+	 * @self: a #FuPlugin
+	 * @attr: a #FwupdSecurityAttr
+	 * @error: (nullable): optional return location for an error
+	 *
+	 * Fix a host security issue.
+	 *
+	 * Since: 1.9.6
+	 **/
+	gboolean (*fix_host_security_attr)(FuPlugin *self, FwupdSecurityAttr *attr, GError **error);
+	/**
+	 * undo_host_security_attr:
+	 * @self: a #FuPlugin
+	 * @attr: a #FwupdSecurityAttr
+	 * @error: (nullable): optional return location for an error
+	 *
+	 * Undo the fix for a host security issue.
+	 *
+	 * Since: 1.9.6
+	 **/
+	gboolean (*undo_host_security_attr)(FuPlugin *self,
+					    FwupdSecurityAttr *attr,
+					    GError **error);
 };
 
 /**

@@ -153,7 +153,8 @@ fu_wac_module_bluetooth_write_firmware(FuDevice *device,
 				       FU_WAC_MODULE_COMMAND_START,
 				       blob_start,
 				       fu_progress_get_child(progress),
-				       FU_WAC_MODULE_ERASE_TIMEOUT,
+				       FU_WAC_MODULE_POLL_INTERVAL,
+				       FU_WAC_MODULE_START_TIMEOUT,
 				       error)) {
 		g_prefix_error(error, "wacom bluetooth module failed to erase: ");
 		return FALSE;
@@ -177,7 +178,8 @@ fu_wac_module_bluetooth_write_firmware(FuDevice *device,
 					       FU_WAC_MODULE_COMMAND_DATA,
 					       blob_chunk,
 					       fu_progress_get_child(progress),
-					       FU_WAC_MODULE_WRITE_TIMEOUT,
+					       FU_WAC_MODULE_POLL_INTERVAL,
+					       FU_WAC_MODULE_DATA_TIMEOUT,
 					       error)) {
 			g_prefix_error(error, "wacom bluetooth module failed to write: ");
 			return FALSE;
@@ -195,7 +197,8 @@ fu_wac_module_bluetooth_write_firmware(FuDevice *device,
 				       FU_WAC_MODULE_COMMAND_END,
 				       NULL,
 				       fu_progress_get_child(progress),
-				       FU_WAC_MODULE_FINISH_TIMEOUT,
+				       FU_WAC_MODULE_POLL_INTERVAL,
+				       FU_WAC_MODULE_END_TIMEOUT,
 				       error)) {
 		g_prefix_error(error, "wacom bluetooth module failed to end: ");
 		return FALSE;
