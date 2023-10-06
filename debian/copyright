@@ -7,16 +7,24 @@ Copyright:
 	    Norbert Kaminski  <norbert.kaminski@3mdeb.com>
 	    Norbert Kamiński  <norbert.kaminski@3mdeb.com>
 	    Rafal Wojtczuk  <rafal@invisiblethingslab.com>
+	   1999 Free Software Foundation, Inc.
 	   3mdeb Embedded Systems Consulting
 	   9elements Agency GmbH <patrick.rudolph@9elements.com>
+	   Aaron Skomra <aaron.skomra@wacom.com>
+	   Adam.Chen <Adam.Chen@genesyslogic.com.tw>
 	   Advanced Micro Devices Inc.
 	   Aleix Pol <aleixpol@kde.org>
 	   Aleksander Morgado <aleksander@aleksander.es>
 	   Andrew Duggan
 	   Andrii Dushko <andrii.dushko@developex.net>
 	   Apollo Ling <apollo.ling@synaptics.com>
+	   Ben Chuang <benchuanggli@gmail.com>
 	   Benson Leung <bleung@chromium.org>
+	   Canonical Ltd
+	   Canonical Ltd.
 	   Christian J. Kellner <christian@kellner.me>
+	   Collabora Ltd
+	   Crag Wang <crag.wang@dell.com>
 	   Cypress Semiconductor Corporation.
 	   Daniel Campello <campello@chromium.org>
 	   Dell Inc.
@@ -25,21 +33,28 @@ Copyright:
 	   Dylan Van Assche <me@dylanvanassche.be>
 	   Evan Lojewski
 	   Fresco Logic
+	   GN Audio
+	   GN Audio A/S
 	   Gaël PORTAY <gael.portay@collabora.com>
 	   George Popoola <gpopoola@google.com>
+	   Goodix.inc <xulinkun@goodix.com>
 	   Google LLC
 	   Google, Inc.
 	   H.J. Lu <hjl.tools@gmail.com>
 	   Haowei Lo <haowei.lo@fingerprints.com>
 	   Intel
 	   Intel Corporation.
+	   Intel, Inc
 	   Intel, Inc.
 	   Ivan Mikhanchuk <ivan.mikhanchuk@quectel.com>
 	   Jarvis Jiang <jarvis.w.jiang@gmail.com>
+	   Jason Gerecke <jason.gerecke@wacom.com>
 	   Jason Gerecke <killertofu@gmail.com>
 	   Jeremy Soller <jeremy@system76.com>
 	   Jimmy Yu <Jimmy_yu@pixart.com>
-	   Kalev Lember <klember@redhat.com>
+	   Jingle Wu <jingle.wu@emc.com.tw>
+	   Joshua Dickens <joshua.dickens@wacom.com>
+	   Kevin Chen <hsinfu.chen@qsitw.com>
 	   Lennart Poettering <lennart@poettering.net>
 	   Mario Limonciello
 	   Mario Limonciello <mario.limonciello@amd.com>
@@ -47,6 +62,7 @@ Copyright:
 	   Mario Limonciello <superm1@gmail.com>
 	   Matthias Klumpp <matthias@tenstral.net>
 	   Max Ehrlich maxehr@gmail.com
+	   Mediatek Inc.
 	   Michael Cheng <michael.cheng@emc.com.tw>
 	   Michał Kopeć <michal.kopec@3mdeb.com>
 	   Norbert Kamiński <norbert.kaminski@3mdeb.com>
@@ -71,9 +87,11 @@ Copyright:
 	   Synaptics Incorporated
 	   Synaptics Incorporated <simon.ho@synaptics.com>
 	   TUXEDO Computers GmbH
+	   Texas Instruments Incorporated
 	   Twain Byrnes <binarynewts@google.com>
 	   VIA Corporation
 	   Victor Cheng <victor_cheng@usiglobal.com>
+	   Wistron <Felix_F_Chen@wistron.com>
 	   Xiaotian Cui <xtcui@analogixsemi.com>
 	   boger wang <boger@goodix.com>
 License: LGPL-2.1+
