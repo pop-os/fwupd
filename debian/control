@@ -23,6 +23,7 @@ Build-Depends:
 	libcairo-gobject2,
 	libcbor-dev,
 	libcurl4-gnutls-dev,
+	libdrm-dev,
 	libflashrom-dev [!ia64],
 	libfreetype6-dev,
 	libftdi1-dev,
