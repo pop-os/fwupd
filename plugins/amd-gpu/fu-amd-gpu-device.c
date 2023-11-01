@@ -11,9 +11,9 @@
 
 #include "config.h"
 
-#include <drm/amdgpu_drm.h>
 #include <fcntl.h>
 #include <glib/gstdio.h>
+#include <libdrm/amdgpu_drm.h>
 
 #include "fu-amd-gpu-atom-firmware.h"
 #include "fu-amd-gpu-device.h"
@@ -100,6 +100,8 @@ fu_amd_gpu_device_probe(FuDevice *device, GError **error)
 		fu_device_set_install_duration(device, 70);
 		fu_device_add_protocol(device, "com.amd.pspvbflash");
 	}
+
+	fu_device_add_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_AUTO_PARENT_CHILDREN);
 
 	return TRUE;
 }

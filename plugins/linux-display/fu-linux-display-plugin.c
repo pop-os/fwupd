@@ -10,7 +10,6 @@
 
 struct _FuLinuxDisplayPlugin {
 	FuPlugin parent_instance;
-	GPtrArray *devices;
 };
 
 G_DEFINE_TYPE(FuLinuxDisplayPlugin, fu_linux_display_plugin, FU_TYPE_PLUGIN)
@@ -19,17 +18,16 @@ static FuDisplayState
 fu_linux_display_plugin_get_display_state(FuLinuxDisplayPlugin *self)
 {
 	FuDisplayState display_state = FU_DISPLAY_STATE_DISCONNECTED;
+	GPtrArray *devices = fu_plugin_get_devices(FU_PLUGIN(self));
 
 	/* no devices detected */
-	if (self->devices->len == 0)
+	if (devices->len == 0)
 		return FU_DISPLAY_STATE_UNKNOWN;
 
 	/* any connected display is good enough */
-	for (guint i = 0; i < self->devices->len; i++) {
-		FuDevice *device = g_ptr_array_index(self->devices, i);
-		const gchar *status =
-		    fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(device), "status", NULL);
-		if (g_strcmp0(status, "connected") == 0) {
+	for (guint i = 0; i < devices->len; i++) {
+		FuDrmDevice *drm_device = g_ptr_array_index(devices, i);
+		if (fu_drm_device_get_state(drm_device) == FU_DISPLAY_STATE_CONNECTED) {
 			display_state = FU_DISPLAY_STATE_CONNECTED;
 			break;
 		}
@@ -53,7 +51,11 @@ fu_linux_display_plugin_plugin_backend_device_added(FuPlugin *plugin,
 						    GError **error)
 {
 	FuLinuxDisplayPlugin *self = FU_LINUX_DISPLAY_PLUGIN(plugin);
-	g_ptr_array_add(self->devices, g_object_ref(device));
+	if (fu_drm_device_get_edid(FU_DRM_DEVICE(device)) != NULL) {
+		if (!fu_device_setup(device, error))
+			return FALSE;
+		fu_plugin_device_add(plugin, device);
+	}
 	fu_linux_display_plugin_ensure_display_state(self);
 	return TRUE;
 }
@@ -72,7 +74,7 @@ fu_linux_display_plugin_plugin_backend_device_removed(FuPlugin *plugin,
 						      GError **error)
 {
 	FuLinuxDisplayPlugin *self = FU_LINUX_DISPLAY_PLUGIN(plugin);
-	g_ptr_array_remove(self->devices, device);
+	fu_plugin_device_remove(plugin, device);
 	fu_linux_display_plugin_ensure_display_state(self);
 	return TRUE;
 }
@@ -83,9 +85,7 @@ fu_linux_display_plugin_plugin_backend_device_changed(FuPlugin *plugin,
 						      GError **error)
 {
 	FuLinuxDisplayPlugin *self = FU_LINUX_DISPLAY_PLUGIN(plugin);
-	if (!FU_IS_UDEV_DEVICE(device))
-		return TRUE;
-	if (g_strcmp0(fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)), "drm") != 0)
+	if (!FU_IS_DRM_DEVICE(device))
 		return TRUE;
 	fu_linux_display_plugin_ensure_display_state(self);
 	return TRUE;
@@ -94,15 +94,6 @@ fu_linux_display_plugin_plugin_backend_device_changed(FuPlugin *plugin,
 static void
 fu_linux_display_plugin_init(FuLinuxDisplayPlugin *self)
 {
-	self->devices = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
-}
-
-static void
-fu_linux_display_plugin_finalize(GObject *obj)
-{
-	FuLinuxDisplayPlugin *self = FU_LINUX_DISPLAY_PLUGIN(obj);
-	g_ptr_array_unref(self->devices);
-	G_OBJECT_CLASS(fu_linux_display_plugin_parent_class)->finalize(obj);
 }
 
 static void
@@ -115,9 +106,7 @@ fu_ata_plugin_constructed(GObject *obj)
 static void
 fu_linux_display_plugin_class_init(FuLinuxDisplayPluginClass *klass)
 {
-	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
-	object_class->finalize = fu_linux_display_plugin_finalize;
 	plugin_class->constructed = fu_ata_plugin_constructed;
 	plugin_class->ready = fu_linux_display_plugin_plugin_ready;
 	plugin_class->backend_device_added = fu_linux_display_plugin_plugin_backend_device_added;

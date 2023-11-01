@@ -81,10 +81,12 @@ parts:
     plugin: meson
     meson-parameters: [--prefix=/,
                        -Defi_binary=false,
+                       -Ddocs=disabled,
                        -Dtests=false,
                        -Dbuild=all,
                        -Dintrospection=disabled,
                        -Dman=false,
+                       -Dpython=/usr/bin/python3,
                        -Dplugin_flashrom=disabled,
                        -Dplugin_powerd=disabled,
                        -Dudevdir=$CRAFT_STAGE/lib/udev,
@@ -102,6 +104,7 @@ parts:
     source: .
     source-type: git
     override-build: |
+      ${CRAFT_PART_SRC}/contrib/ci/fwupd_setup_helpers.py test-meson
       craftctl default
       for name in ${CRAFT_PART_INSTALL}/lib/*/fwupd-*/libfwupd*; do
         mv ${name} `dirname ${name}`/.. ;\
@@ -128,7 +131,6 @@ parts:
       - fwupd-unsigned
       - git
       - gettext
-      - gcab
       - gnu-efi
       - fwupd-unsigned-dev
       - libcurl4-openssl-dev
@@ -136,7 +138,6 @@ parts:
       - libcbor-dev
       - libcairo-dev
       - libgudev-1.0-dev
-      - libgcab-dev
       - libglib2.0-dev
       - libgnutls28-dev
       - libgpgme11-dev
@@ -158,6 +159,7 @@ parts:
       - meson
       - modemmanager
       - pkg-config
+      - python3-pip
       - python3-cairo
       - python3-gi
       - python3-jinja2
@@ -171,7 +173,6 @@ parts:
       - libnghttp2-14
       - libpsl5
       - librtmp1
-      - libgcab-1.0-0
       - libarchive13
       - libcurl4
       - libcbor0.8

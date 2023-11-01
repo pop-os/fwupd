@@ -43,6 +43,8 @@ proto_manager_generate_get_device_info_request(void)
 
 	fu_byte_array_set_size(buf, logi__device__proto__usb_msg__get_packed_size(&usb_msg), 0x00);
 	logi__device__proto__usb_msg__pack(&usb_msg, (unsigned char *)buf->data);
+	g_free(header_msg.id);
+	g_free(header_msg.timestamp);
 	return buf;
 }
 
@@ -66,25 +68,32 @@ proto_manager_generate_transition_to_device_mode_request(void)
 
 	fu_byte_array_set_size(buf, logi__device__proto__usb_msg__get_packed_size(&usb_msg), 0x00);
 	logi__device__proto__usb_msg__pack(&usb_msg, (unsigned char *)buf->data);
+	g_free(header_msg.id);
+	g_free(header_msg.timestamp);
 	return buf;
 }
 
 GByteArray *
-proto_manager_generate_set_device_time_request(void)
+proto_manager_generate_set_device_time_request(GError **error)
 {
-	GByteArray *buf = g_byte_array_new();
-	g_autoptr(GTimeZone) tz = g_time_zone_new_local();
-
+	g_autofree gchar *olson_location = NULL;
+	g_autoptr(GByteArray) buf = g_byte_array_new();
 	Logi__Device__Proto__Header header_msg = LOGI__DEVICE__PROTO__HEADER__INIT;
 	Logi__Device__Proto__SetDeviceTimeRequest set_devicetime_msg =
 	    LOGI__DEVICE__PROTO__SET_DEVICE_TIME_REQUEST__INIT;
 	Logi__Device__Proto__UsbMsg usb_msg = LOGI__DEVICE__PROTO__USB_MSG__INIT;
 	Logi__Device__Proto__Request request_msg = LOGI__DEVICE__PROTO__REQUEST__INIT;
+
+	/* the device expects an olson_location, not a timezone */
+	olson_location = fu_common_get_olson_timezone_id(error);
+	if (olson_location == NULL)
+		return NULL;
+
 	request_msg.payload_case = LOGI__DEVICE__PROTO__REQUEST__PAYLOAD_SET_DEVICE_TIME_REQUEST;
 	request_msg.set_device_time_request = &set_devicetime_msg;
 
 	set_devicetime_msg.ts = (g_get_real_time() / 1000) + SET_TIME_DELAY_MS;
-	set_devicetime_msg.time_zone = g_strdup_printf("%s", g_time_zone_get_identifier(tz));
+	set_devicetime_msg.time_zone = olson_location;
 	proto_manager_set_header(&header_msg);
 	usb_msg.header = &header_msg;
 	usb_msg.message_case = LOGI__DEVICE__PROTO__USB_MSG__MESSAGE_REQUEST;
@@ -92,7 +101,9 @@ proto_manager_generate_set_device_time_request(void)
 
 	fu_byte_array_set_size(buf, logi__device__proto__usb_msg__get_packed_size(&usb_msg), 0x00);
 	logi__device__proto__usb_msg__pack(&usb_msg, (unsigned char *)buf->data);
-	return buf;
+	g_free(header_msg.id);
+	g_free(header_msg.timestamp);
+	return g_steal_pointer(&buf);
 }
 
 GByteArray *
@@ -102,8 +113,6 @@ proto_manager_decode_message(const guint8 *data,
 			     GError **error)
 {
 	g_autoptr(GByteArray) buf_decoded = g_byte_array_new();
-	guint32 success = 0;
-	guint32 error_code = 0;
 	Logi__Device__Proto__UsbMsg *usb_msg =
 	    logi__device__proto__usb_msg__unpack(NULL, len, (const unsigned char *)data);
 	if (usb_msg == NULL) {
@@ -141,16 +150,16 @@ proto_manager_decode_message(const guint8 *data,
 		case LOGI__DEVICE__PROTO__RESPONSE__PAYLOAD_TRANSITION_TO_DEVICEMODE_RESPONSE:
 			if (usb_msg->response->transition_to_devicemode_response) {
 				*proto_id = kProtoId_TransitionToDeviceModeResponse;
-				success =
-				    usb_msg->response->transition_to_devicemode_response->success
-					? 1
-					: 0;
-				error_code =
-				    usb_msg->response->transition_to_devicemode_response->error;
-				fu_byte_array_append_uint32(buf_decoded, success, G_LITTLE_ENDIAN);
-				fu_byte_array_append_uint32(buf_decoded,
-							    error_code,
-							    G_LITTLE_ENDIAN);
+				if (!usb_msg->response->transition_to_devicemode_response
+					 ->success) {
+					g_set_error(error,
+						    G_IO_ERROR,
+						    G_IO_ERROR_FAILED,
+						    "transition mode request failed. error: %u",
+						    (guint)usb_msg->response
+							->transition_to_devicemode_response->error);
+					return NULL;
+				}
 			}
 			break;
 		default:

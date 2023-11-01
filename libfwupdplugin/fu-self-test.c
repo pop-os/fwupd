@@ -9,14 +9,12 @@
 #include <fwupdplugin.h>
 
 #include <glib/gstdio.h>
-#include <libgcab.h>
 #include <string.h>
 
 #include "fwupd-bios-setting-private.h"
 #include "fwupd-security-attr-private.h"
 
 #include "fu-bios-settings-private.h"
-#include "fu-cabinet.h"
 #include "fu-common-private.h"
 #include "fu-context-private.h"
 #include "fu-coswid-firmware.h"
@@ -598,6 +596,22 @@ fu_strsplit_func(void)
 }
 
 static void
+fu_common_olson_timezone_id_func(void)
+{
+	g_autofree gchar *timezone_id = NULL;
+	g_autoptr(GError) error = NULL;
+
+	timezone_id = fu_common_get_olson_timezone_id(&error);
+	g_assert_no_error(error);
+#ifdef _WIN32
+	/* we do not emulate this on Windows, so just check for anything */
+	g_assert_nonnull(timezone_id);
+#else
+	g_assert_cmpstr(timezone_id, ==, "America/New_York");
+#endif
+}
+
+static void
 fu_strsafe_func(void)
 {
 	struct {
@@ -730,6 +744,12 @@ fu_plugin_config_func(void)
 	g_autoptr(FuPlugin) plugin = fu_plugin_new(ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
+
+#ifdef _WIN32
+	/* the Windows file permission model is different than a simple octal value */
+	g_test_skip("chmod not supported on Windows");
+	return;
+#endif
 
 	/* this is a build file */
 	testdatadir = g_test_build_filename(G_TEST_BUILT, "tests", NULL);
@@ -1216,34 +1236,6 @@ fu_common_endian_func(void)
 	g_assert_cmpint(buf[1], ==, 0x34);
 	g_assert_cmpint(buf[2], ==, 0x56);
 	g_assert_cmpint(fu_memread_uint24(buf, G_BIG_ENDIAN), ==, 0x123456);
-}
-
-static void
-fu_common_cabinet_func(void)
-{
-	g_autoptr(FuCabinet) cabinet = fu_cabinet_new();
-	g_autoptr(GBytes) blob1 = NULL;
-	g_autoptr(GBytes) blob2 = NULL;
-	g_autoptr(GBytes) jcat_blob1 = g_bytes_new_static("hello", 6);
-	g_autoptr(GBytes) jcat_blob2 = g_bytes_new_static("hellX", 6);
-	g_autoptr(GError) error = NULL;
-
-	/* add */
-	fu_cabinet_add_file(cabinet, "firmware.jcat", jcat_blob1);
-
-	/* replace */
-	fu_cabinet_add_file(cabinet, "firmware.jcat", jcat_blob2);
-
-	/* get data */
-	blob1 = fu_cabinet_get_file(cabinet, "firmware.jcat", &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(blob1);
-	g_assert_cmpstr(g_bytes_get_data(blob1, NULL), ==, "hellX");
-
-	/* get data that does not exist */
-	blob2 = fu_cabinet_get_file(cabinet, "foo.jcat", &error);
-	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
-	g_assert_null(blob2);
 }
 
 static void
@@ -1942,6 +1934,38 @@ fu_strtoull_func(void)
 	ret = fu_strtoull("124", &val, 120, 123, NULL);
 	g_assert_false(ret);
 	ret = fu_strtoull("119", &val, 120, 123, NULL);
+	g_assert_false(ret);
+}
+
+static void
+fu_strtoll_func(void)
+{
+	gboolean ret;
+	gint64 val = 0;
+	g_autoptr(GError) error = NULL;
+
+	ret = fu_strtoll("123", &val, 123, 200, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(val, ==, 123);
+
+	ret = fu_strtoll("-123\n", &val, -123, 200, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(val, ==, -123);
+
+	ret = fu_strtoll("0x123", &val, 0, 0x123, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(val, ==, 0x123);
+
+	ret = fu_strtoll(NULL, &val, 0, G_MAXINT32, NULL);
+	g_assert_false(ret);
+	ret = fu_strtoll("", &val, 120, 123, NULL);
+	g_assert_false(ret);
+	ret = fu_strtoll("124", &val, 120, 123, NULL);
+	g_assert_false(ret);
+	ret = fu_strtoll("-124", &val, -123, 123, NULL);
 	g_assert_false(ret);
 }
 
@@ -3443,6 +3467,12 @@ fu_bios_settings_load_func(void)
 	g_autoptr(GPtrArray) p620_6_3_items = NULL;
 	g_autoptr(GPtrArray) xps9310_items = NULL;
 
+#ifdef _WIN32
+	/* the "AlarmDate(MM\DD\YYYY)" setting really confuses wine for obvious reasons */
+	g_test_skip("BIOS settings not supported on Windows");
+	return;
+#endif
+
 	/* load BIOS settings from a Lenovo P620 (with thinklmi driver problems) */
 	test_dir = g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", "lenovo-p620", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", test_dir, TRUE);
@@ -3875,6 +3905,8 @@ fu_firmware_builder_round_trip_func(void)
 		const gchar *xml_fn;
 		const gchar *checksum;
 	} map[] = {
+	    {FU_TYPE_CAB_FIRMWARE, "cab.builder.xml", "a708f47b1a46377f1ea420597641ffe9a40abd75"},
+	    {FU_TYPE_CAB_FIRMWARE, "cab-compressed.builder.xml", NULL}, /* not byte-identical */
 	    {FU_TYPE_DFUSE_FIRMWARE,
 	     "dfuse.builder.xml",
 	     "c1ff429f0e381c8fe8e1b2ee41a5a9a79e2f2ff7"},
@@ -3958,7 +3990,9 @@ fu_firmware_builder_round_trip_func(void)
 		g_assert_true(ret);
 		csum1 = fu_firmware_get_checksum(firmware1, G_CHECKSUM_SHA1, &error);
 		g_assert_no_error(error);
-		g_assert_cmpstr(csum1, ==, map[i].checksum);
+		g_assert_nonnull(csum1);
+		if (map[i].checksum != NULL)
+			g_assert_cmpstr(csum1, ==, map[i].checksum);
 
 		/* ensure we can write and then parse what we just wrote */
 		blob = fu_firmware_write(firmware1, &error);
@@ -3977,8 +4011,10 @@ fu_firmware_builder_round_trip_func(void)
 		g_assert_no_error(error);
 		g_assert_true(ret);
 		csum2 = fu_firmware_get_checksum(firmware2, G_CHECKSUM_SHA1, &error);
+		g_assert_nonnull(csum2);
 		g_assert_no_error(error);
-		g_assert_cmpstr(csum2, ==, map[i].checksum);
+		if (map[i].checksum != NULL)
+			g_assert_cmpstr(csum2, ==, map[i].checksum);
 	}
 }
 
@@ -4373,9 +4409,8 @@ fu_plugin_struct_wrapped_func(void)
 			"  less: 0x99\n"
 			"  base: SelfTest:\n"
 			"  length: 0x33\n"
-			"  revision: 0xfe [(null)]\n"
+			"  revision: 0xfe\n"
 			"  owner: 00000000-0000-0000-0000-000000000000\n"
-			"  oem_table_id: (null)\n"
 			"  oem_revision: 0x0\n"
 			"  asl_compiler_id: 0xDFDFDFDF\n"
 			"  asl_compiler_revision: 0x0\n"
@@ -4448,6 +4483,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/struct{wrapped}", fu_plugin_struct_wrapped_func);
 	g_test_add_func("/fwupd/plugin{quirks-append}", fu_plugin_quirks_append_func);
 	g_test_add_func("/fwupd/common{strnsplit}", fu_strsplit_func);
+	g_test_add_func("/fwupd/common{olson-timezone-id}", fu_common_olson_timezone_id_func);
 	g_test_add_func("/fwupd/common{memmem}", fu_common_memmem_func);
 	if (g_test_slow())
 		g_test_add_func("/fwupd/progress", fu_progress_func);
@@ -4479,12 +4515,12 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{string-append-kv}", fu_string_append_func);
 	g_test_add_func("/fwupd/common{version-guess-format}", fu_version_guess_format_func);
 	g_test_add_func("/fwupd/common{strtoull}", fu_strtoull_func);
+	g_test_add_func("/fwupd/common{strtoll}", fu_strtoll_func);
 	g_test_add_func("/fwupd/common{version}", fu_common_version_func);
 	g_test_add_func("/fwupd/common{version-semver}", fu_version_semver_func);
 	g_test_add_func("/fwupd/common{vercmp}", fu_common_vercmp_func);
 	g_test_add_func("/fwupd/common{strstrip}", fu_strstrip_func);
 	g_test_add_func("/fwupd/common{endian}", fu_common_endian_func);
-	g_test_add_func("/fwupd/common{cabinet}", fu_common_cabinet_func);
 	g_test_add_func("/fwupd/common{bytes-get-data}", fu_common_bytes_get_data_func);
 	g_test_add_func("/fwupd/common{kernel-lockdown}", fu_common_kernel_lockdown_func);
 	g_test_add_func("/fwupd/common{strsafe}", fu_strsafe_func);

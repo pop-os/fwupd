@@ -565,6 +565,15 @@ typedef guint64 FuDeviceInternalFlags;
  */
 #define FU_DEVICE_INTERNAL_FLAG_DISPLAY_REQUIRED (1ull << 34)
 
+/**
+ * FU_DEVICE_INTERNAL_FLAG_UPDATE_PENDING:
+ *
+ * The device has an update that is waiting to be applied.
+ *
+ * Since: 1.9.7
+ */
+#define FU_DEVICE_INTERNAL_FLAG_UPDATE_PENDING (1ull << 35)
+
 /* accessors */
 gchar *
 fu_device_to_string(FuDevice *self);
@@ -606,6 +615,8 @@ void
 fu_device_add_parent_guid(FuDevice *self, const gchar *guid);
 void
 fu_device_add_parent_physical_id(FuDevice *self, const gchar *physical_id);
+void
+fu_device_add_parent_backend_id(FuDevice *self, const gchar *backend_id);
 void
 fu_device_add_counterpart_guid(FuDevice *self, const gchar *guid);
 FuDevice *

@@ -22,6 +22,12 @@ struct _FuVliPdDevice {
  * Device has a PS186 attached via I²C.
  */
 #define FU_VLI_PD_DEVICE_FLAG_HAS_I2C_PS186 (1 << 0)
+/**
+ * FU_VLI_PD_DEVICE_FLAG_SKIPS_ROM:
+ *
+ * Device updates while in firmware mode, skips ROM mode in detach.
+ */
+#define FU_VLI_PD_DEVICE_FLAG_SKIPS_ROM (1 << 1)
 
 G_DEFINE_TYPE(FuVliPdDevice, fu_vli_pd_device, FU_TYPE_VLI_DEVICE)
 
@@ -193,7 +199,6 @@ fu_vli_pd_device_spi_write_enable(FuVliDevice *self, GError **error)
 					   FU_VLI_DEVICE_TIMEOUT,
 					   NULL,
 					   error)) {
-		g_prefix_error(error, "failed to write enable SPI: ");
 		return FALSE;
 	}
 	return TRUE;
@@ -264,6 +269,8 @@ fu_vli_pd_device_spi_write_data(FuVliDevice *self,
 	guint8 spi_cmd = 0x0;
 	guint16 value;
 	guint16 index;
+	g_autofree guint8 *buf_mut = NULL;
+
 	if (!fu_cfi_device_get_cmd(fu_vli_device_get_cfi_device(self),
 				   FU_CFI_DEVICE_CMD_PAGE_PROG,
 				   &spi_cmd,
@@ -271,6 +278,10 @@ fu_vli_pd_device_spi_write_data(FuVliDevice *self,
 		return FALSE;
 	value = ((addr << 8) & 0xff00) | spi_cmd;
 	index = addr >> 8;
+
+	buf_mut = fu_memdup_safe(buf, bufsz, error);
+	if (buf_mut == NULL)
+		return FALSE;
 	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
 					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
 					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
@@ -278,7 +289,7 @@ fu_vli_pd_device_spi_write_data(FuVliDevice *self,
 					   0xdc,
 					   value,
 					   index,
-					   (guint8 *)buf,
+					   buf_mut,
 					   bufsz,
 					   NULL,
 					   FU_VLI_DEVICE_TIMEOUT,
@@ -648,8 +659,10 @@ fu_vli_pd_device_write_firmware(FuDevice *device,
 	/* erase */
 	if (!fu_vli_device_spi_erase_all(FU_VLI_DEVICE(self),
 					 fu_progress_get_child(progress),
-					 error))
+					 error)) {
+		g_prefix_error(error, "failed to erase all: ");
 		return FALSE;
+	}
 	fu_progress_step_done(progress);
 
 	/* write in chunks */
@@ -696,6 +709,12 @@ fu_vli_pd_device_detach(FuDevice *device, FuProgress *progress, GError **error)
 					gpio_control_a,
 					error))
 		return FALSE;
+
+	/* VL103 only updates in ROM mode, check other devices for skips-rom flag */
+	if (fu_vli_device_get_kind(FU_VLI_DEVICE(device)) != FU_VLI_DEVICE_KIND_VL103 &&
+	    fu_device_has_private_flag(device, FU_VLI_PD_DEVICE_FLAG_SKIPS_ROM)) {
+		return TRUE;
+	}
 
 	/* VL103 set ROM sig does not work, so use alternate function */
 	if ((fu_vli_device_get_kind(FU_VLI_DEVICE(device)) != FU_VLI_DEVICE_KIND_VL100) &&
@@ -892,6 +911,9 @@ fu_vli_pd_device_init(FuVliPdDevice *self)
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_VLI_PD_DEVICE_FLAG_HAS_I2C_PS186,
 					"has-i2c-ps186");
+	fu_device_register_private_flag(FU_DEVICE(self),
+					FU_VLI_PD_DEVICE_FLAG_SKIPS_ROM,
+					"skips-rom");
 
 	/* connect up attach or detach vfuncs when kind is known */
 	g_signal_connect(FU_VLI_DEVICE(self),

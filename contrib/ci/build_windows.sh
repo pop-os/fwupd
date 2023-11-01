@@ -10,12 +10,6 @@ fi
 # install deps
 ./contrib/ci/fwupd_setup_helpers.py --yes -o fedora -v mingw64 install-dependencies
 
-# until it appears in updates-testing
-dnf install --allowerasing -y \
-    https://kojipkgs.fedoraproject.org//packages/msitools/0.102/1.fc39/x86_64/msitools-0.102-1.fc39.x86_64.rpm \
-    https://kojipkgs.fedoraproject.org//packages/glib2/2.76.4/3.fc38/x86_64/glib2-2.76.4-3.fc38.x86_64.rpm \
-    https://kojipkgs.fedoraproject.org//packages/glib2/2.76.4/3.fc38/x86_64/glib2-devel-2.76.4-3.fc38.x86_64.rpm
-
 # update to latest version of meson
 if [ "$(id -u)" -eq 0 ]; then
     dnf install -y python-pip
@@ -54,11 +48,6 @@ meson setup .. \
     -Dfirmware-packager=false \
     -Dmetainfo=false \
     -Dcompat_cli=false \
-    -Dgcab:introspection=false \
-    -Dgcab:docs=false \
-    -Dgcab:nls=false \
-    -Dgcab:vapi=false \
-    -Dgcab:tests=false \
     -Dlibxmlb:introspection=false \
     -Dlibxmlb:gtkdoc=false \
     -Dlibjcat:man=false \
@@ -72,7 +61,7 @@ meson setup .. \
 VERSION=$(meson introspect . --projectinfo | jq -r .version)
 
 # run tests
-export WINEPATH="/usr/x86_64-w64-mingw32/sys-root/mingw/bin/;$build/libfwupd/;$build/libfwupdplugin/;$build/subprojects/libxmlb/src/;$build/subprojects/gcab/libgcab/;$build/subprojects/libjcat/libjcat/;$build/subprojects/gusb/gusb/"
+export WINEPATH="/usr/x86_64-w64-mingw32/sys-root/mingw/bin/;$build/libfwupd/;$build/libfwupdplugin/;$build/subprojects/libxmlb/src/;$build/subprojects/libjcat/libjcat/;$build/subprojects/gusb/gusb/"
 ninja --verbose -C "$build" -v
 ninja -C "$build" test
 

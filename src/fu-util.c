@@ -2518,10 +2518,11 @@ fu_util_get_remotes(FuUtilPrivate *priv, gchar **values, GError **error)
 static FwupdRelease *
 fu_util_get_release_with_tag(FuUtilPrivate *priv,
 			     FwupdDevice *dev,
-			     const gchar *tag,
+			     const gchar *host_bkc,
 			     GError **error)
 {
 	g_autoptr(GPtrArray) rels = NULL;
+	g_auto(GStrv) host_bkcs = g_strsplit(host_bkc, ",", -1);
 
 	/* find the newest release that matches */
 	rels = fwupd_client_get_releases(priv->client,
@@ -2536,8 +2537,10 @@ fu_util_get_release_with_tag(FuUtilPrivate *priv,
 					       priv->filter_release_include,
 					       priv->filter_release_exclude))
 			continue;
-		if (fwupd_release_has_tag(rel, tag))
-			return g_object_ref(rel);
+		for (guint j = 0; host_bkcs[j] != NULL; j++) {
+			if (fwupd_release_has_tag(rel, host_bkcs[j]))
+				return g_object_ref(rel);
+		}
 	}
 
 	/* no match */
@@ -2854,8 +2857,16 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 			rel = g_object_ref(rel_tmp);
 			break;
 		}
-		if (!fu_util_update_device_with_release(priv, dev, rel, error))
+		if (!fu_util_update_device_with_release(priv, dev, rel, &error_local)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO)) {
+				g_debug("ignoring %s: %s",
+					fwupd_device_get_id(dev),
+					error_local->message);
+				continue;
+			}
+			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
+		}
 
 		fu_util_display_current_message(priv);
 
@@ -3765,8 +3776,16 @@ fu_util_sync_bkc(FuUtilPrivate *priv, gchar **values, GError **error)
 			fwupd_device_get_id(dev),
 			fwupd_device_get_version(dev),
 			fwupd_release_get_version(rel));
-		if (!fu_util_update_device_with_release(priv, dev, rel, error))
+		if (!fu_util_update_device_with_release(priv, dev, rel, &error_local)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO)) {
+				g_debug("ignoring %s: %s",
+					fwupd_device_get_id(dev),
+					error_local->message);
+				continue;
+			}
+			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
+		}
 		fu_util_display_current_message(priv);
 		cnt++;
 	}
@@ -3891,25 +3910,6 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	attrs = fwupd_client_get_host_security_attrs(priv->client, priv->cancellable, error);
 	if (attrs == NULL)
 		return FALSE;
-
-	for (guint j = 0; j < attrs->len; j++) {
-		FwupdSecurityAttr *attr = g_ptr_array_index(attrs, j);
-		g_autofree gchar *err_str = NULL;
-
-		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA))
-			continue;
-#ifndef SUPPORTED_BUILD
-		if (priv->flags & FWUPD_INSTALL_FLAG_FORCE)
-			continue;
-#endif
-		err_str = g_strdup_printf(
-		    "\n%s\n » %s",
-		    /* TRANSLATORS: error message to tell someone they can't use this feature */
-		    _("Not enough data was provided by the platform to make an HSI calculation."),
-		    "https://fwupd.github.io/hsi.html#not-enough-info");
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, err_str);
-		return FALSE;
-	}
 
 	/* the "when" */
 	events = fwupd_client_get_host_security_events(priv->client,

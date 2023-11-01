@@ -19,6 +19,8 @@
 #define MMC_SEND_EXT_CSD	   8	/* adtc				R1  */
 #define MMC_SWITCH_MODE_WRITE_BYTE 0x03 /* Set target to value */
 #define MMC_WRITE_BLOCK		   24	/* adtc [31:0] data addr	R1  */
+#define MMC_SET_BLOCK_COUNT	   23	/* adtc [31:0] data addr	R1  */
+#define MMC_WRITE_MULTIPLE_BLOCK   25	/* adtc [31:0] data addr	R1  */
 
 /* From kernel linux/mmc/core.h */
 #define MMC_RSP_PRESENT	 (1 << 0)
@@ -67,6 +69,7 @@
 struct _FuEmmcDevice {
 	FuUdevDevice parent_instance;
 	guint32 sect_size;
+	guint32 write_block_size;
 };
 
 G_DEFINE_TYPE(FuEmmcDevice, fu_emmc_device, FU_TYPE_UDEV_DEVICE)
@@ -309,6 +312,7 @@ static gboolean
 fu_emmc_device_setup(FuDevice *device, GError **error)
 {
 	g_autoptr(GError) error_validate = NULL;
+
 	if (!fu_emmc_validate_extcsd(device, &error_validate))
 		g_debug("%s", error_validate->message);
 	else
@@ -348,9 +352,10 @@ fu_emmc_device_write_firmware(FuDevice *device,
 {
 	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
 	gsize fw_size = 0;
-	gsize total_done;
 	guint32 arg;
 	guint32 sect_done = 0;
+	guint32 sector_size;
+	gboolean check_sect_done = FALSE;
 	guint8 ext_csd[512];
 	guint failure_cnt = 0;
 	g_autofree struct mmc_ioc_multi_cmd *multi_cmd = NULL;
@@ -372,13 +377,18 @@ fu_emmc_device_write_firmware(FuDevice *device,
 		return FALSE;
 	fw_size = g_bytes_get_size(fw);
 
+	sector_size = self->write_block_size ?: self->sect_size;
+
+	/*  mode operation codes are supported */
+	check_sect_done = (ext_csd[EXT_CSD_FFU_FEATURES] & 1) > 0;
+
 	/* set CMD ARG */
 	arg = ext_csd[EXT_CSD_FFU_ARG_0] | ext_csd[EXT_CSD_FFU_ARG_1] << 8 |
 	      ext_csd[EXT_CSD_FFU_ARG_2] << 16 | ext_csd[EXT_CSD_FFU_ARG_3] << 24;
 
 	/* prepare multi_cmd to be sent */
-	multi_cmd = g_malloc0(sizeof(struct mmc_ioc_multi_cmd) + 3 * sizeof(struct mmc_ioc_cmd));
-	multi_cmd->num_of_cmds = 3;
+	multi_cmd = g_malloc0(sizeof(struct mmc_ioc_multi_cmd) + 4 * sizeof(struct mmc_ioc_cmd));
+	multi_cmd->num_of_cmds = 4;
 
 	/* put device into ffu mode */
 	multi_cmd->cmds[0].opcode = MMC_SWITCH;
@@ -387,29 +397,34 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	multi_cmd->cmds[0].flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
 	multi_cmd->cmds[0].write_flag = 1;
 
-	/* send image chunk */
-	multi_cmd->cmds[1].opcode = MMC_WRITE_BLOCK;
-	multi_cmd->cmds[1].blksz = self->sect_size;
-	multi_cmd->cmds[1].blocks = 1;
-	multi_cmd->cmds[1].arg = arg;
+	/* send block count */
+	multi_cmd->cmds[1].opcode = MMC_SET_BLOCK_COUNT;
+	multi_cmd->cmds[1].arg = sector_size / 512;
 	multi_cmd->cmds[1].flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
-	multi_cmd->cmds[1].write_flag = 1;
+
+	/* send image chunk */
+	multi_cmd->cmds[2].opcode = MMC_WRITE_MULTIPLE_BLOCK;
+	multi_cmd->cmds[2].blksz = 512;
+	multi_cmd->cmds[2].blocks = sector_size / 512;
+	multi_cmd->cmds[2].arg = arg;
+	multi_cmd->cmds[2].flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
+	multi_cmd->cmds[2].write_flag = 1;
 
 	/* return device into normal mode */
-	multi_cmd->cmds[2].opcode = MMC_SWITCH;
-	multi_cmd->cmds[2].arg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) | (EXT_CSD_MODE_CONFIG << 16) |
+	multi_cmd->cmds[3].opcode = MMC_SWITCH;
+	multi_cmd->cmds[3].arg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) | (EXT_CSD_MODE_CONFIG << 16) |
 				 (EXT_CSD_NORMAL_MODE << 8) | EXT_CSD_CMD_SET_NORMAL;
-	multi_cmd->cmds[2].flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
-	multi_cmd->cmds[2].write_flag = 1;
+	multi_cmd->cmds[3].flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
+	multi_cmd->cmds[3].write_flag = 1;
 	fu_progress_step_done(progress);
 
 	/* build packets */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x00, self->sect_size);
-	while (sect_done == 0) {
+	chunks = fu_chunk_array_new_from_bytes(fw, 0x00, sector_size);
+	while (failure_cnt < 3) {
 		for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
 			g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
 
-			mmc_ioc_cmd_set_data(multi_cmd->cmds[1], fu_chunk_get_data(chk));
+			mmc_ioc_cmd_set_data(multi_cmd->cmds[2], fu_chunk_get_data(chk));
 
 			if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 						  MMC_IOC_MULTI_CMD,
@@ -422,7 +437,7 @@ fu_emmc_device_write_firmware(FuDevice *device,
 				/* multi-cmd ioctl failed before exiting from ffu mode */
 				if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 							  MMC_IOC_CMD,
-							  (guint8 *)&multi_cmd->cmds[2],
+							  (guint8 *)&multi_cmd->cmds[3],
 							  NULL,
 							  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
 							  &error_local)) {
@@ -431,50 +446,51 @@ fu_emmc_device_write_firmware(FuDevice *device,
 				return FALSE;
 			}
 
-			if (!fu_emmc_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
-				return FALSE;
-
-			/* if we need to restart the download */
-			sect_done = ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_0] |
-				    ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_1] << 8 |
-				    ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_2] << 16 |
-				    ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_3] << 24;
-			if (sect_done == 0) {
-				if (failure_cnt >= 3) {
-					g_set_error_literal(error,
-							    G_IO_ERROR,
-							    G_IO_ERROR_FAILED,
-							    "programming failed");
-					return FALSE;
-				}
-				failure_cnt++;
-				g_debug("programming failed: retrying (%u)", failure_cnt);
-				break;
-			}
-
 			/* update progress */
 			fu_progress_set_percentage_full(fu_progress_get_child(progress),
 							(gsize)i + 1,
 							(gsize)fu_chunk_array_length(chunks));
 		}
+
+		if (!check_sect_done)
+			break;
+
+		if (!fu_emmc_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
+			return FALSE;
+
+		sect_done = ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_0] |
+			    ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_1] << 8 |
+			    ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_2] << 16 |
+			    ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_3] << 24;
+
+		if (sect_done != 0)
+			break;
+
+		failure_cnt++;
+		g_debug("programming failed: retrying (%u)", failure_cnt);
+		fu_progress_step_done(progress);
 	}
+
 	fu_progress_step_done(progress);
 
 	/* sanity check */
-	total_done = (gsize)sect_done * (gsize)self->sect_size;
-	if (total_done != fw_size) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
-			    "firmware size and number of sectors written "
-			    "mismatch (%" G_GSIZE_FORMAT "/%" G_GSIZE_FORMAT "):",
-			    total_done,
-			    fw_size);
-		return FALSE;
+	if (check_sect_done) {
+		gsize total_done = (gsize)sect_done * (gsize)self->sect_size;
+
+		if (total_done != fw_size) {
+			g_set_error(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_FAILED,
+				    "firmware size and number of sectors written "
+				    "mismatch (%" G_GSIZE_FORMAT "/%" G_GSIZE_FORMAT "):",
+				    total_done,
+				    fw_size);
+			return FALSE;
+		}
 	}
 
 	/* check mode operation for ffu install*/
-	if (!ext_csd[EXT_CSD_FFU_FEATURES]) {
+	if (!check_sect_done) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
 	} else {
 		/* re-enter ffu mode and install the firmware */
@@ -528,6 +544,22 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	return TRUE;
 }
 
+static gboolean
+fu_emmc_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *value, GError **error)
+{
+	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
+	if (g_strcmp0(key, "EmmcBlockSize") == 0) {
+		guint64 tmp = 0;
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+			return FALSE;
+		self->write_block_size = tmp;
+		return TRUE;
+	}
+
+	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	return FALSE;
+}
+
 static void
 fu_emmc_device_set_progress(FuDevice *self, FuProgress *progress)
 {
@@ -559,6 +591,7 @@ fu_emmc_device_class_init(FuEmmcDeviceClass *klass)
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_emmc_device_finalize;
+	klass_device->set_quirk_kv = fu_emmc_device_set_quirk_kv;
 	klass_device->setup = fu_emmc_device_setup;
 	klass_device->to_string = fu_emmc_device_to_string;
 	klass_device->prepare_firmware = fu_emmc_device_prepare_firmware;

@@ -283,13 +283,19 @@ fu_uefi_device_clear_status(FuUefiDevice *self, GError **error)
 	/* just copy the new EfiUpdateInfo and save it back */
 	fu_struct_efi_update_info_set_status(st_inf, FU_UEFI_UPDATE_INFO_STATUS_UNKNOWN);
 	memcpy(data, st_inf->data, st_inf->len);
-	return fu_efivar_set_data(FU_EFIVAR_GUID_FWUPDATE,
+	if (!fu_efivar_set_data(FU_EFIVAR_GUID_FWUPDATE,
 				  varname,
 				  data,
 				  datasz,
 				  FU_EFIVAR_ATTR_NON_VOLATILE | FU_EFIVAR_ATTR_BOOTSERVICE_ACCESS |
 				      FU_EFIVAR_ATTR_RUNTIME_ACCESS,
-				  error);
+				  error)) {
+		g_prefix_error(error, "could not set EfiUpdateInfo: ");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
 }
 
 FuEfiDevicePathList *
@@ -401,13 +407,19 @@ fu_uefi_device_write_update_info(FuUefiDevice *self,
 	fu_struct_efi_update_info_set_status(st_inf, FU_UEFI_UPDATE_INFO_STATUS_ATTEMPT_UPDATE);
 	fu_struct_efi_update_info_set_guid(st_inf, &guid);
 	fu_byte_array_append_bytes(st_inf, dp_blob);
-	return fu_efivar_set_data(FU_EFIVAR_GUID_FWUPDATE,
+	if (!fu_efivar_set_data(FU_EFIVAR_GUID_FWUPDATE,
 				  varname,
 				  st_inf->data,
 				  st_inf->len,
 				  FU_EFIVAR_ATTR_NON_VOLATILE | FU_EFIVAR_ATTR_BOOTSERVICE_ACCESS |
 				      FU_EFIVAR_ATTR_RUNTIME_ACCESS,
-				  error);
+				  error)) {
+		g_prefix_error(error, "could not set DP_BUF with %s: ", capsule_path);
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
 }
 
 static gboolean
@@ -419,41 +431,6 @@ fu_uefi_check_asset(FuDevice *device, GError **error)
 			g_prefix_error(error, "missing signed bootloader for secure boot: ");
 		return FALSE;
 	}
-
-	return TRUE;
-}
-
-static gboolean
-fu_uefi_device_cleanup_esp(FuDevice *device, GError **error)
-{
-	FuUefiDevice *self = FU_UEFI_DEVICE(device);
-	FuUefiDevicePrivate *priv = GET_PRIVATE(self);
-	g_autofree gchar *esp_path = fu_volume_get_mount_point(priv->esp);
-	g_autofree gchar *pattern = NULL;
-	g_autoptr(GPtrArray) files = NULL;
-
-	/* in case we call capsule install twice before reboot */
-	if (fu_efivar_exists(FU_EFIVAR_GUID_EFI_GLOBAL, "BootNext"))
-		return TRUE;
-
-	/* delete any files matching the glob in the ESP */
-	files = fu_path_get_files(esp_path, error);
-	if (files == NULL)
-		return FALSE;
-	pattern = g_build_filename(esp_path, "EFI/*/fw/fwupd*.cap", NULL);
-	for (guint i = 0; i < files->len; i++) {
-		const gchar *fn = g_ptr_array_index(files, i);
-		if (g_pattern_match_simple(pattern, fn)) {
-			g_autoptr(GFile) file = g_file_new_for_path(fn);
-			g_debug("deleting %s", fn);
-			if (!g_file_delete(file, NULL, error))
-				return FALSE;
-		}
-	}
-
-	/* delete any old variables */
-	if (!fu_efivar_delete_with_glob(FU_EFIVAR_GUID_FWUPDATE, "fwupd*-*", error))
-		return FALSE;
 
 	return TRUE;
 }
@@ -473,8 +450,6 @@ fu_uefi_device_prepare(FuDevice *device,
 		return FALSE;
 
 	/* sanity checks */
-	if (!fu_uefi_device_cleanup_esp(device, error))
-		return FALSE;
 	if (!fu_uefi_check_asset(device, error))
 		return FALSE;
 
@@ -741,6 +716,9 @@ fu_uefi_device_init(FuUefiDevice *self)
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_UEFI_DEVICE_FLAG_COD_INDEXED_FILENAME,
 					"cod-indexed-filename");
+	fu_device_register_private_flag(FU_DEVICE(self),
+					FU_UEFI_DEVICE_FLAG_MODIFY_BOOTORDER,
+					"modify-bootorder");
 }
 
 static void

@@ -17,6 +17,8 @@
 #include <libfwupdplugin/fu-bluez-device.h>
 #include <libfwupdplugin/fu-byte-array.h>
 #include <libfwupdplugin/fu-bytes.h>
+#include <libfwupdplugin/fu-cab-firmware.h>
+#include <libfwupdplugin/fu-cab-image.h>
 #include <libfwupdplugin/fu-cfi-device.h>
 #include <libfwupdplugin/fu-cfu-offer.h>
 #include <libfwupdplugin/fu-cfu-payload.h>
@@ -34,6 +36,7 @@
 #include <libfwupdplugin/fu-device.h>
 #include <libfwupdplugin/fu-dfu-firmware.h>
 #include <libfwupdplugin/fu-dfuse-firmware.h>
+#include <libfwupdplugin/fu-drm-device.h>
 #include <libfwupdplugin/fu-dump.h>
 #include <libfwupdplugin/fu-edid.h>
 #include <libfwupdplugin/fu-efi-device-path-list.h>

@@ -1058,11 +1058,14 @@ fu_util_firmware_sign(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* load, sign, export */
-	if (!fu_cabinet_parse(cabinet, archive_blob_old, FU_CABINET_PARSE_FLAG_NONE, error))
+	if (!fu_firmware_parse(FU_FIRMWARE(cabinet),
+			       archive_blob_old,
+			       FWUPD_INSTALL_FLAG_NONE,
+			       error))
 		return FALSE;
 	if (!fu_cabinet_sign(cabinet, cert, privkey, FU_CABINET_SIGN_FLAG_NONE, error))
 		return FALSE;
-	archive_blob_new = fu_cabinet_export(cabinet, FU_CABINET_EXPORT_FLAG_NONE, error);
+	archive_blob_new = fu_firmware_write(FU_FIRMWARE(cabinet), error);
 	if (archive_blob_new == NULL)
 		return FALSE;
 	return fu_bytes_set_contents(values[0], archive_blob_new, error);
@@ -3169,24 +3172,6 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	attrs = fu_engine_get_host_security_attrs(priv->engine);
 	items = fu_security_attrs_get_all(attrs);
-	for (guint j = 0; j < items->len; j++) {
-		FwupdSecurityAttr *attr = g_ptr_array_index(items, j);
-		g_autofree gchar *err_str = NULL;
-
-		if (!fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_MISSING_DATA))
-			continue;
-#ifndef SUPPORTED_BUILD
-		if (priv->flags & FWUPD_INSTALL_FLAG_FORCE)
-			continue;
-#endif
-		err_str = g_strdup_printf(
-		    "\n%s\n » %s",
-		    /* TRANSLATORS: error message to tell someone they can't use this feature */
-		    _("Not enough data was provided by the platform to make an HSI calculation."),
-		    "https://fwupd.github.io/hsi.html#not-enough-info");
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, err_str);
-		return FALSE;
-	}
 
 	/* print the "why" */
 	if (priv->as_json) {
@@ -3615,6 +3600,31 @@ fu_util_get_bios_setting(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
+fu_util_reboot_cleanup(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	FuPlugin *plugin;
+	g_autoptr(FuDevice) device = NULL;
+
+	if (!fu_util_start_engine(priv, FU_ENGINE_LOAD_FLAG_COLDPLUG, priv->progress, error))
+		return FALSE;
+
+	/* both arguments are optional */
+	if (g_strv_length(values) >= 1) {
+		device = fu_engine_get_device(priv->engine, values[1], error);
+		if (device == NULL)
+			return FALSE;
+	} else {
+		device = fu_util_prompt_for_device(priv, NULL, error);
+		if (device == NULL)
+			return FALSE;
+	}
+	plugin = fu_engine_get_plugin_by_name(priv->engine, fu_device_get_plugin(device), error);
+	if (plugin == NULL)
+		return FALSE;
+	return fu_plugin_runner_reboot_cleanup(plugin, device, error);
+}
+
+static gboolean
 fu_util_efivar_list(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(GPtrArray) names = NULL;
@@ -3686,11 +3696,11 @@ fu_util_build_cabinet(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	/* sanity check JCat and XML MetaInfo files */
-	if (!fu_cabinet_parse(cab_file, NULL, FU_CABINET_PARSE_FLAG_NONE, error))
+	if (!fu_firmware_parse(FU_FIRMWARE(cab_file), NULL, FWUPD_INSTALL_FLAG_NONE, error))
 		return FALSE;
 
 	/* export */
-	cab_blob = fu_cabinet_export(cab_file, FU_CABINET_EXPORT_FLAG_NONE, error);
+	cab_blob = fu_firmware_write(FU_FIRMWARE(cab_file), error);
 	if (cab_blob == NULL)
 		return FALSE;
 	return fu_bytes_set_contents(values[0], cab_blob, error);
@@ -4312,6 +4322,13 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command description */
 			      _("Undo the host security attribute fix"),
 			      fu_util_security_undo);
+	fu_util_cmd_array_add(cmd_array,
+			      "reboot-cleanup",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("[DEVICE]"),
+			      /* TRANSLATORS: command description */
+			      _("Run the post-reboot cleanup action"),
+			      fu_util_reboot_cleanup);
 
 	/* do stuff on ctrl+c */
 	priv->cancellable = g_cancellable_new();

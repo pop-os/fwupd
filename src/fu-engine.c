@@ -1735,22 +1735,25 @@ fu_engine_check_requirement_firmware(FuEngine *self,
 				     GError **error)
 {
 	const gchar *version;
-	guint64 depth;
+	const gchar *depth_str;
+	gint64 depth = G_MAXINT64;
 	g_autoptr(FuDevice) device_actual = g_object_ref(device);
 	g_autoptr(GError) error_local = NULL;
 	g_auto(GStrv) guids = NULL;
 
 	/* look at the parent device */
-	depth = xb_node_get_attr_as_uint(req, "depth");
-	if (depth != G_MAXUINT64) {
-		for (guint64 i = 0; i < depth; i++) {
+	depth_str = xb_node_get_attr(req, "depth");
+	if (depth_str != NULL) {
+		if (!fu_strtoll(depth_str, &depth, -1, 10, error))
+			return FALSE;
+		for (gint64 i = 0; i < depth; i++) {
 			FuDevice *device_tmp = fu_device_get_parent(device_actual);
 			if (device_tmp == NULL) {
 				g_set_error(error,
 					    FWUPD_ERROR,
 					    FWUPD_ERROR_NOT_SUPPORTED,
 					    "No parent device for %s "
-					    "(%" G_GUINT64_FORMAT "/%" G_GUINT64_FORMAT ")",
+					    "(%" G_GINT64_FORMAT "/%" G_GINT64_FORMAT ")",
 					    fu_device_get_name(device_actual),
 					    i,
 					    depth);
@@ -1840,7 +1843,7 @@ fu_engine_check_requirement_firmware(FuEngine *self,
 	}
 
 	/* find if any of the other devices exists */
-	if (depth == G_MAXUINT64) {
+	if (depth == G_MAXINT64) {
 		g_autoptr(FuDevice) device_tmp = NULL;
 		for (guint i = 0; guids[i] != NULL; i++) {
 			device_tmp = fu_device_list_get_by_guid(self->device_list, guids[i], NULL);
@@ -1857,6 +1860,28 @@ fu_engine_check_requirement_firmware(FuEngine *self,
 		}
 		g_set_object(&device_actual, device_tmp);
 
+	} else if (depth == -1) {
+		GPtrArray *children;
+		FuDevice *child = NULL;
+
+		/* look for a child */
+		children = fu_device_get_children(device);
+		for (guint i = 0; i < children->len; i++) {
+			child = g_ptr_array_index(children, i);
+			if (fu_device_has_guids_any(child, guids))
+				break;
+			child = NULL;
+		}
+		if (child == NULL) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "No child found with GUID of %s",
+				    xb_node_get_text(req));
+			return FALSE;
+		}
+		g_set_object(&device_actual, child);
+
 		/* look for a sibling */
 	} else if (depth == 0) {
 		FuDevice *child = NULL;
@@ -1869,7 +1894,7 @@ fu_engine_check_requirement_firmware(FuEngine *self,
 				g_set_error(error,
 					    FWUPD_ERROR,
 					    FWUPD_ERROR_NOT_SUPPORTED,
-					    "No GUID of %s on self device %s",
+					    "No GUID of %s on device %s",
 					    xb_node_get_text(req),
 					    fu_device_get_name(device_actual));
 				return FALSE;
@@ -2627,9 +2652,9 @@ fu_engine_add_release_metadata(FuEngine *self, FuRelease *release, FuPlugin *plu
 								 plugin_name,
 								 &error_local);
 			if (plugin_tmp == NULL) {
-				g_warning("could not add metadata for %s: %s",
-					  plugin_name,
-					  error_local->message);
+				g_debug("could not add metadata for %s: %s",
+					plugin_name,
+					error_local->message);
 				continue;
 			}
 			if (fu_plugin_get_report_metadata(plugin_tmp) != NULL) {
@@ -3102,6 +3127,8 @@ fu_engine_install_release(FuEngine *self,
 				g_warning("failed to publish firmware to Passim: %s",
 					  error_passim->message);
 			}
+		} else {
+			g_debug("published %s to Passim", passim_item_get_hash(passim_item));
 		}
 	}
 #endif
@@ -3127,6 +3154,25 @@ fu_engine_get_plugins(FuEngine *self)
 {
 	g_return_val_if_fail(FU_IS_ENGINE(self), NULL);
 	return fu_plugin_list_get_all(self->plugin_list);
+}
+
+/**
+ * fu_engine_get_plugin_by_name:
+ * @self: a #FuPluginList
+ * @name: a plugin name, e.g. `dfu`
+ * @error: (nullable): optional return location for an error
+ *
+ * Gets a specific plugin.
+ *
+ * Returns: (transfer none): a plugin, or %NULL
+ *
+ * Since: 1.9.6
+ **/
+FuPlugin *
+fu_engine_get_plugin_by_name(FuEngine *self, const gchar *name, GError **error)
+{
+	g_return_val_if_fail(FU_IS_ENGINE(self), NULL);
+	return fu_plugin_list_find_by_name(self->plugin_list, name, error);
 }
 
 static gboolean
@@ -4229,6 +4275,7 @@ fu_engine_create_metadata_builder_source(FuEngine *self, const gchar *fn, GError
 	xb_builder_source_add_simple_adapter(source,
 					     "application/vnd.ms-cab-compressed,"
 					     "com.microsoft.cab,"
+					     ".cab,"
 					     "application/octet-stream",
 					     fu_engine_builder_cabinet_adapter_cb,
 					     self,
@@ -4304,6 +4351,7 @@ static void
 fu_engine_ensure_device_supported(FuEngine *self, FuDevice *device)
 {
 	gboolean is_supported = FALSE;
+	gboolean update_pending = FALSE;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) releases = NULL;
 	g_autoptr(FuEngineRequest) request = NULL;
@@ -4326,6 +4374,19 @@ fu_engine_ensure_device_supported(FuEngine *self, FuDevice *device)
 	} else {
 		if (releases->len > 0)
 			is_supported = TRUE;
+		for (guint i = 0; i < releases->len; i++) {
+			FuRelease *release = FU_RELEASE(g_ptr_array_index(releases, i));
+			if (fu_release_has_flag(release, FWUPD_RELEASE_FLAG_IS_UPGRADE)) {
+				update_pending = TRUE;
+				break;
+			}
+		}
+		if (update_pending) {
+			fu_device_add_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_UPDATE_PENDING);
+		} else {
+			fu_device_remove_internal_flag(device,
+						       FU_DEVICE_INTERNAL_FLAG_UPDATE_PENDING);
+		}
 	}
 
 	/* was supported, now unsupported */
@@ -4844,6 +4905,8 @@ fu_engine_update_metadata_bytes(FuEngine *self,
 				g_warning("failed to publish metadata to Passim: %s",
 					  error_passim->message);
 			}
+		} else {
+			g_debug("published %s to Passim", passim_item_get_hash(passim_item));
 		}
 	}
 #endif
@@ -4948,9 +5011,10 @@ fu_engine_get_silo_from_blob(FuEngine *self, GBytes *blob_cab, GError **error)
 
 	/* load file */
 	fu_engine_set_status(self, FWUPD_STATUS_DECOMPRESSING);
-	fu_cabinet_set_size_max(cabinet, fu_engine_config_get_archive_size_max(self->config));
+	fu_firmware_set_size_max(FU_FIRMWARE(cabinet),
+				 fu_engine_config_get_archive_size_max(self->config));
 	fu_cabinet_set_jcat_context(cabinet, self->jcat_context);
-	if (!fu_cabinet_parse(cabinet, blob_cab, FU_CABINET_PARSE_FLAG_NONE, error))
+	if (!fu_firmware_parse(FU_FIRMWARE(cabinet), blob_cab, FWUPD_INSTALL_FLAG_NONE, error))
 		return NULL;
 	return fu_cabinet_get_silo(cabinet);
 }
@@ -6495,6 +6559,23 @@ fu_engine_adopt_children(FuEngine *self, FuDevice *device)
 		}
 	}
 	if (fu_device_get_parent(device) == NULL) {
+		for (guint i = 0; i < devices->len; i++) {
+			FuDevice *device_tmp = g_ptr_array_index(devices, i);
+			if (!fu_device_has_internal_flag(
+				device_tmp,
+				FU_DEVICE_INTERNAL_FLAG_AUTO_PARENT_CHILDREN))
+				continue;
+			if (fu_device_get_backend_id(device_tmp) == NULL)
+				continue;
+			if (fu_device_has_parent_backend_id(device,
+							    fu_device_get_backend_id(device_tmp))) {
+				fu_device_set_parent(device, device_tmp);
+				fu_engine_ensure_device_supported(self, device_tmp);
+				break;
+			}
+		}
+	}
+	if (fu_device_get_parent(device) == NULL) {
 		guids = fu_device_get_parent_guids(device);
 		for (guint j = 0; j < guids->len; j++) {
 			const gchar *guid = g_ptr_array_index(guids, j);
@@ -6521,6 +6602,20 @@ fu_engine_adopt_children(FuEngine *self, FuDevice *device)
 		for (guint i = 0; i < parent_physical_ids->len; i++) {
 			const gchar *parent_physical_id = g_ptr_array_index(parent_physical_ids, i);
 			if (g_strcmp0(parent_physical_id, fu_device_get_physical_id(device)) == 0)
+				fu_device_set_parent(device_tmp, device);
+		}
+	}
+	for (guint j = 0; j < devices->len; j++) {
+		GPtrArray *parent_backend_ids = NULL;
+		FuDevice *device_tmp = g_ptr_array_index(devices, j);
+		if (fu_device_get_parent(device_tmp) != NULL)
+			continue;
+		parent_backend_ids = fu_device_get_parent_backend_ids(device_tmp);
+		if (parent_backend_ids == NULL)
+			continue;
+		for (guint i = 0; i < parent_backend_ids->len; i++) {
+			const gchar *parent_backend_id = g_ptr_array_index(parent_backend_ids, i);
+			if (g_strcmp0(parent_backend_id, fu_device_get_backend_id(device)) == 0)
 				fu_device_set_parent(device_tmp, device);
 		}
 	}
@@ -8087,6 +8182,12 @@ fu_engine_update_history_device(FuEngine *self, FuDevice *dev_history, GError **
 	if (fu_plugin_has_flag(plugin, FWUPD_PLUGIN_FLAG_MEASURE_SYSTEM_INTEGRITY))
 		fu_engine_update_release_integrity(self, rel_history, "SystemIntegrityNew");
 
+	/* do any late-cleanup actions */
+	if (!fu_plugin_runner_reboot_cleanup(plugin, dev, error)) {
+		g_prefix_error(error, "failed to do post-reboot cleanup: ");
+		return FALSE;
+	}
+
 	/* the system is running with the new firmware version */
 	if (fu_version_compare(fu_device_get_version(dev),
 			       fwupd_release_get_version(rel_history),
@@ -8604,6 +8705,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 
 	/* add the "built-in" firmware types */
 	fu_context_add_firmware_gtype(self->ctx, "raw", FU_TYPE_FIRMWARE);
+	fu_context_add_firmware_gtype(self->ctx, "cab", FU_TYPE_CAB_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "dfu", FU_TYPE_DFU_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "fdt", FU_TYPE_FDT_FIRMWARE);
 	fu_context_add_firmware_gtype(self->ctx, "csv", FU_TYPE_CSV_FIRMWARE);

@@ -114,7 +114,8 @@ The `[fwupd]` section can contain the following parameters:
 
 **HostBkc={{FU_DAEMON_CONFIG_DEFAULT_HOST_BKC}}**
 
-  A host best known configuration is used when using `fwupdmgr sync` which can downgrade firmware to factory versions or upgrade firmware to a supported config level. e.g. **vendor-factory-2021q1**
+  Comma separated list of best known configuration IDs to be used when using `fwupdmgr sync`.
+  This can downgrade firmware to factory versions or upgrade firmware to a supported config level. e.g. **vendor-factory-2021q1,mycompany-2023**
 
 **ReleaseDedupe={{FU_DAEMON_CONFIG_DEFAULT_RELEASE_DEDUPE}}**
 
@@ -235,6 +236,13 @@ The `[uefi_capsule]` section can contain the following parameters:
 
   This value also has no affect when using Capsule-on-Disk as the EFI helper binary is
   not being used.
+
+**RebootCleanup={{FU_UEFI_CAPSULE_CONFIG_DEFAULT_REBOOT_CLEANUP}}**
+
+  Delete any capsule files copy to the ESP, and remove any EFI variables set for the update.
+
+  **NOTE:** disabling this option is only required when debugging the flash process and normal
+  users should not need to change this setting.
 {% endif %}
 
 {% if plugin_msr %}

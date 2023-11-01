@@ -9,7 +9,6 @@
 #include <fwupdplugin.h>
 
 #include <glib/gstdio.h>
-#include <libgcab.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +20,7 @@
 #include "fu-backend-private.h"
 #include "fu-bios-settings-private.h"
 #include "fu-cabinet-common.h"
+#include "fu-cabinet.h"
 #include "fu-console.h"
 #include "fu-context-private.h"
 #include "fu-device-list.h"
@@ -1218,6 +1218,78 @@ fu_engine_requirements_parent_device_func(gconstpointer user_data)
 }
 
 static void
+fu_engine_requirements_child_device_func(gconstpointer user_data)
+{
+	FuTest *self = (FuTest *)user_data;
+	gboolean ret;
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new();
+	g_autoptr(FuEngineRequest) request = fu_engine_request_new();
+	g_autoptr(FuRelease) release = fu_release_new();
+	g_autoptr(GError) error = NULL;
+	g_autoptr(XbNode) component = NULL;
+	g_autoptr(XbSilo) silo = NULL;
+	g_autoptr(XbSilo) silo_empty = xb_silo_new();
+	const gchar *xml =
+	    "<component>"
+	    "  <requires>"
+	    "    <firmware depth=\"-1\">1ff60ab2-3905-06a1-b476-0371f00c9e9b</firmware>"
+	    "  </requires>"
+	    "  <provides>"
+	    "    <firmware type=\"flashed\">12345678-1234-1234-1234-123456789012</firmware>"
+	    "  </provides>"
+	    "  <releases>"
+	    "    <release version=\"4.5.7\">"
+	    "      <checksum type=\"sha1\" filename=\"bios.bin\" target=\"content\"/>"
+	    "    </release>"
+	    "  </releases>"
+	    "</component>";
+
+	/* no metadata in daemon */
+	fu_engine_set_silo(engine, silo_empty);
+
+	/* set up a parent device */
+	fu_device_set_id(device1, "parent");
+	fu_device_add_vendor_id(device1, "USB:FFFF");
+	fu_device_add_protocol(device1, "com.acme");
+	fu_device_set_name(device1, "parent");
+	fu_device_set_version_format(device1, FWUPD_VERSION_FORMAT_TRIPLET);
+	fu_device_set_version(device1, "1.2.3");
+	fu_device_add_guid(device1, "12345678-1234-1234-1234-123456789012");
+	fu_device_add_flag(device1, FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(device1, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+
+	/* set up child device */
+	fu_device_set_id(device2, "child");
+	fu_device_set_name(device2, "child");
+	fu_device_set_version_format(device2, FWUPD_VERSION_FORMAT_TRIPLET);
+	fu_device_set_version(device2, "4.5.6");
+	fu_device_add_guid(device2, "1ff60ab2-3905-06a1-b476-0371f00c9e9b");
+	fu_device_add_child(device1, device2);
+
+	fu_engine_add_device(engine, device1);
+
+	/* import firmware metainfo */
+	silo = xb_silo_new_from_xml(xml, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+	component = xb_silo_query_first(silo, "component", &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(component);
+
+	/* check this passes */
+	fu_release_set_device(release, device1);
+	fu_release_set_request(release, request);
+	ret = fu_release_load(release, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_engine_check_requirements(engine, release, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+}
+
+static void
 fu_engine_device_parent_guid_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
@@ -1279,6 +1351,7 @@ fu_engine_device_parent_id_func(gconstpointer user_data)
 	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
 	g_autoptr(FuDevice) device3 = fu_device_new(self->ctx);
 	g_autoptr(FuDevice) device4 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device5 = fu_device_new(self->ctx);
 	g_autoptr(FuEngine) engine = fu_engine_new();
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
 
@@ -1300,6 +1373,7 @@ fu_engine_device_parent_id_func(gconstpointer user_data)
 	/* parent */
 	fu_device_set_id(device2, "parent");
 	fu_device_set_name(device2, "Parent");
+	fu_device_set_backend_id(device2, "/sys/devices/foo/bar/baz");
 	fu_device_set_physical_id(device2, "parent-ID");
 	fu_device_add_vendor_id(device2, "USB:FFFF");
 	fu_device_add_protocol(device2, "com.acme");
@@ -1334,9 +1408,24 @@ fu_engine_device_parent_id_func(gconstpointer user_data)
 	/* this is normally done by fu_plugin_device_add() */
 	fu_engine_add_device(engine, device4);
 
+	/* add child with the parent backend ID */
+	fu_device_set_id(device5, "child5");
+	fu_device_set_name(device5, "Child5");
+	fu_device_set_physical_id(device5, "child-ID5");
+	fu_device_add_vendor_id(device5, "USB:FFFF");
+	fu_device_add_protocol(device5, "com.acme");
+	fu_device_add_instance_id(device5, "child-GUID-5");
+	fu_device_add_parent_backend_id(device5, "/sys/devices/foo/bar/baz");
+	fu_device_convert_instance_ids(device5);
+	fu_engine_add_device(engine, device5);
+
+	/* this is normally done by fu_plugin_device_add() */
+	fu_engine_add_device(engine, device5);
+
 	/* verify both children were adopted */
 	g_assert_true(fu_device_get_parent(device3) == device2);
 	g_assert_true(fu_device_get_parent(device4) == device2);
+	g_assert_true(fu_device_get_parent(device5) == device2);
 	g_assert_true(fu_device_get_parent(device1) == device2);
 	g_assert_cmpstr(fu_device_get_vendor(device3), ==, "oem");
 }
@@ -1535,12 +1624,6 @@ fu_engine_require_hwid_func(gconstpointer user_data)
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
 	g_autoptr(XbSilo) silo = NULL;
 
-#if defined(__s390x__)
-	/* See https://github.com/fwupd/fwupd/issues/318 for more information */
-	g_test_skip("Skipping HWID test on s390x due to known problem with gcab");
-	return;
-#endif
-
 	/* no metadata in daemon */
 	fu_engine_set_silo(engine, silo_empty);
 
@@ -1614,12 +1697,6 @@ fu_engine_get_details_added_func(gconstpointer user_data)
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
 
-#if defined(__s390x__)
-	/* See https://github.com/fwupd/fwupd/issues/318 for more information */
-	g_test_skip("Skipping HWID test on s390x due to known problem with gcab");
-	return;
-#endif
-
 	/* no metadata in daemon */
 	fu_engine_set_silo(engine, silo_empty);
 
@@ -1673,12 +1750,6 @@ fu_engine_get_details_missing_func(gconstpointer user_data)
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
-
-#if defined(__s390x__)
-	/* See https://github.com/fwupd/fwupd/issues/318 for more information */
-	g_test_skip("Skipping HWID test on s390x due to known problem with gcab");
-	return;
-#endif
 
 	/* no metadata in daemon */
 	fu_engine_set_silo(engine, silo_empty);
@@ -3922,28 +3993,21 @@ fu_history_func(gconstpointer user_data)
 }
 
 static GBytes *
-_build_cab(GCabCompression compression, ...)
+_build_cab(gboolean compressed, ...)
 {
-	gboolean ret;
 	va_list args;
-	g_autoptr(GCabCabinet) cabinet = NULL;
-	g_autoptr(GCabFolder) cabfolder = NULL;
+	g_autoptr(FuCabFirmware) cabinet = fu_cab_firmware_new();
 	g_autoptr(GError) error = NULL;
-	g_autoptr(GOutputStream) op = NULL;
+	g_autoptr(GBytes) cabinet_blob = NULL;
 
-	/* create a new archive */
-	cabinet = gcab_cabinet_new();
-	cabfolder = gcab_folder_new(compression);
-	ret = gcab_cabinet_add_folder(cabinet, cabfolder, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
+	fu_cab_firmware_set_compressed(cabinet, compressed);
 
 	/* add each file */
-	va_start(args, compression);
+	va_start(args, compressed);
 	do {
 		const gchar *fn;
 		const gchar *text;
-		g_autoptr(GCabFile) cabfile = NULL;
+		g_autoptr(FuCabImage) img = fu_cab_image_new();
 		g_autoptr(GBytes) blob = NULL;
 
 		/* get filename */
@@ -3959,22 +4023,17 @@ _build_cab(GCabCompression compression, ...)
 
 		/* add a GCabFile to the cabinet */
 		blob = g_bytes_new_static(text, strlen(text));
-		cabfile = gcab_file_new_with_bytes(fn, blob);
-		ret = gcab_folder_add_file(cabfolder, cabfile, FALSE, NULL, &error);
-		g_assert_no_error(error);
-		g_assert_true(ret);
+		fu_firmware_set_id(FU_FIRMWARE(img), fn);
+		fu_firmware_set_bytes(FU_FIRMWARE(img), blob);
+		fu_firmware_add_image(FU_FIRMWARE(cabinet), FU_FIRMWARE(img));
 	} while (TRUE);
 	va_end(args);
 
 	/* write the archive to a blob */
-	op = g_memory_output_stream_new_resizable();
-	ret = gcab_cabinet_write_simple(cabinet, op, NULL, NULL, NULL, &error);
+	cabinet_blob = fu_firmware_write(FU_FIRMWARE(cabinet), &error);
 	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = g_output_stream_close(op, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	return g_memory_output_stream_steal_as_bytes(G_MEMORY_OUTPUT_STREAM(op));
+	g_assert_nonnull(cabinet_blob);
+	return g_steal_pointer(&cabinet_blob);
 }
 
 static void
@@ -4021,7 +4080,7 @@ fu_plugin_composite_func(gconstpointer user_data)
 
 	/* create CAB file */
 	blob = _build_cab(
-	    GCAB_COMPRESSION_NONE,
+	    FALSE,
 	    "acme.metainfo.xml",
 	    "<component type=\"firmware\">\n"
 	    "  <id>com.acme.example.firmware</id>\n"
@@ -4250,6 +4309,34 @@ fu_security_attr_func(gconstpointer user_data)
 	ret = fu_test_compare_lines(json2, json1, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+}
+
+static void
+fu_common_cabinet_func(void)
+{
+	g_autoptr(FuCabinet) cabinet = fu_cabinet_new();
+	g_autoptr(GBytes) blob1 = NULL;
+	g_autoptr(GBytes) blob2 = NULL;
+	g_autoptr(GBytes) jcat_blob1 = g_bytes_new_static("hello", 6);
+	g_autoptr(GBytes) jcat_blob2 = g_bytes_new_static("hellX", 6);
+	g_autoptr(GError) error = NULL;
+
+	/* add */
+	fu_cabinet_add_file(cabinet, "firmware.jcat", jcat_blob1);
+
+	/* replace */
+	fu_cabinet_add_file(cabinet, "firmware.jcat", jcat_blob2);
+
+	/* get data */
+	blob1 = fu_cabinet_get_file(cabinet, "firmware.jcat", &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(blob1);
+	g_assert_cmpstr(g_bytes_get_data(blob1, NULL), ==, "hellX");
+
+	/* get data that does not exist */
+	blob2 = fu_cabinet_get_file(cabinet, "foo.jcat", &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_null(blob2);
 }
 
 static void
@@ -4641,7 +4728,7 @@ fu_common_store_cab_func(void)
 
 	/* create silo */
 	blob = _build_cab(
-	    GCAB_COMPRESSION_NONE,
+	    FALSE,
 	    "acme.metainfo.xml",
 	    "<component type=\"firmware\">\n"
 	    "  <id>com.acme.example.firmware</id>\n"
@@ -4709,7 +4796,7 @@ fu_common_store_cab_artifact_func(void)
 
 	/* create silo (sha256, using artifacts object) */
 	blob1 = _build_cab(
-	    GCAB_COMPRESSION_NONE,
+	    FALSE,
 	    "acme.metainfo.xml",
 	    "<component type=\"firmware\">\n"
 	    "  <id>com.acme.example.firmware</id>\n"
@@ -4737,7 +4824,7 @@ fu_common_store_cab_artifact_func(void)
 	g_clear_object(&silo);
 
 	/* create silo (sha1, using artifacts object; mixed case) */
-	blob2 = _build_cab(GCAB_COMPRESSION_NONE,
+	blob2 = _build_cab(FALSE,
 			   "acme.metainfo.xml",
 			   "<component type=\"firmware\">\n"
 			   "  <id>com.acme.example.firmware</id>\n"
@@ -4766,7 +4853,7 @@ fu_common_store_cab_artifact_func(void)
 
 	/* create silo (sha512, using artifacts object; lower case) */
 	blob3 =
-	    _build_cab(GCAB_COMPRESSION_NONE,
+	    _build_cab(FALSE,
 		       "acme.metainfo.xml",
 		       "<component type=\"firmware\">\n"
 		       "  <id>com.acme.example.firmware</id>\n"
@@ -4796,7 +4883,7 @@ fu_common_store_cab_artifact_func(void)
 	g_clear_object(&silo);
 
 	/* create silo (legacy release object) */
-	blob4 = _build_cab(GCAB_COMPRESSION_NONE,
+	blob4 = _build_cab(FALSE,
 			   "acme.metainfo.xml",
 			   "<component type=\"firmware\">\n"
 			   "  <id>com.acme.example.firmware</id>\n"
@@ -4833,7 +4920,7 @@ fu_common_store_cab_unsigned_func(void)
 	g_autoptr(XbQuery) query = NULL;
 
 	/* create silo */
-	blob = _build_cab(GCAB_COMPRESSION_NONE,
+	blob = _build_cab(FALSE,
 			  "acme.metainfo.xml",
 			  "<component type=\"firmware\">\n"
 			  "  <id>com.acme.example.firmware</id>\n"
@@ -4880,7 +4967,7 @@ fu_common_store_cab_sha256_func(void)
 
 	/* create silo */
 	blob = _build_cab(
-	    GCAB_COMPRESSION_NONE,
+	    FALSE,
 	    "acme.metainfo.xml",
 	    "<component type=\"firmware\">\n"
 	    "  <id>com.acme.example.firmware</id>\n"
@@ -4912,7 +4999,7 @@ fu_common_store_cab_folder_func(void)
 	g_autoptr(XbQuery) query = NULL;
 
 	/* create silo */
-	blob = _build_cab(GCAB_COMPRESSION_NONE,
+	blob = _build_cab(FALSE,
 			  "lvfs\\acme.metainfo.xml",
 			  "<component type=\"firmware\">\n"
 			  "  <id>com.acme.example.firmware</id>\n"
@@ -4955,7 +5042,7 @@ fu_common_store_cab_error_no_metadata_func(void)
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GError) error = NULL;
 
-	blob = _build_cab(GCAB_COMPRESSION_NONE, "foo.txt", "hello", "bar.txt", "world", NULL);
+	blob = _build_cab(FALSE, "foo.txt", "hello", "bar.txt", "world", NULL);
 	silo = fu_cabinet_build_silo(blob, 10240, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_null(silo);
@@ -4968,7 +5055,7 @@ fu_common_store_cab_error_wrong_size_func(void)
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GError) error = NULL;
 
-	blob = _build_cab(GCAB_COMPRESSION_NONE,
+	blob = _build_cab(FALSE,
 			  "acme.metainfo.xml",
 			  "<component type=\"firmware\">\n"
 			  "  <id>com.acme.example.firmware</id>\n"
@@ -4995,7 +5082,7 @@ fu_common_store_cab_error_missing_file_func(void)
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GError) error = NULL;
 
-	blob = _build_cab(GCAB_COMPRESSION_NONE,
+	blob = _build_cab(FALSE,
 			  "acme.metainfo.xml",
 			  "<component type=\"firmware\">\n"
 			  "  <id>com.acme.example.firmware</id>\n"
@@ -5020,7 +5107,7 @@ fu_common_store_cab_error_size_func(void)
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GError) error = NULL;
 
-	blob = _build_cab(GCAB_COMPRESSION_NONE,
+	blob = _build_cab(FALSE,
 			  "acme.metainfo.xml",
 			  "<component type=\"firmware\">\n"
 			  "  <id>com.acme.example.firmware</id>\n"
@@ -5043,7 +5130,7 @@ fu_common_store_cab_error_wrong_checksum_func(void)
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GError) error = NULL;
 
-	blob = _build_cab(GCAB_COMPRESSION_NONE,
+	blob = _build_cab(FALSE,
 			  "acme.metainfo.xml",
 			  "<component type=\"firmware\">\n"
 			  "  <id>com.acme.example.firmware</id>\n"
@@ -5078,6 +5165,11 @@ fu_engine_modify_bios_settings_func(void)
 	g_autoptr(GPtrArray) items = NULL;
 	g_autoptr(GHashTable) bios_settings =
 	    g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+
+#ifdef _WIN32
+	g_test_skip("BIOS settings not supported on Windows");
+	return;
+#endif
 
 	/* Load contrived attributes */
 	test_dir = g_test_build_filename(G_TEST_DIST, "tests", "bios-attrs", NULL);
@@ -5271,6 +5363,7 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/backend{usb-invalid}", self, fu_backend_usb_invalid_func);
 	g_test_add_data_func("/fwupd/plugin{module}", self, fu_plugin_module_func);
 	g_test_add_data_func("/fwupd/memcpy", self, fu_memcpy_func);
+	g_test_add_func("/fwupd/cabinet", fu_common_cabinet_func);
 	g_test_add_data_func("/fwupd/security-attr", self, fu_security_attr_func);
 	g_test_add_data_func("/fwupd/device-list", self, fu_device_list_func);
 	g_test_add_data_func("/fwupd/device-list{delay}", self, fu_device_list_delay_func);
@@ -5353,6 +5446,9 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/engine{requirements-parent-device}",
 			     self,
 			     fu_engine_requirements_parent_device_func);
+	g_test_add_data_func("/fwupd/engine{requirements-child-device}",
+			     self,
+			     fu_engine_requirements_child_device_func);
 	g_test_add_data_func("/fwupd/engine{requirements_protocol_check_func}",
 			     self,
 			     fu_engine_requirements_protocol_check_func);

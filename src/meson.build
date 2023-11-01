@@ -8,7 +8,6 @@ engine_dep = [
   libarchive,
   libjcat,
   libxmlb,
-  libgcab,
   giounix,
   gmodule,
   gudev,
@@ -28,6 +27,7 @@ client_dep = [
   gudev,
   gusb,
   libcurl,
+  libjcat,
   libjsonglib,
   libxmlb,
   sqlite,
@@ -41,6 +41,7 @@ if polkit.found()
 endif
 
 fwupd_engine_src = [
+  'fu-cabinet.c',
   'fu-cabinet-common.c',
   'fu-debug.c',
   'fu-device-list.c',
@@ -201,7 +202,7 @@ plugins_hdr = custom_target('fwupd-generate-plugins-header',
   command : [
     generate_plugins_header,
     '@OUTPUT@',
-    meson.project_source_root(),
+    '.',
     ','.join(plugin_names),
   ],
 )
@@ -253,7 +254,6 @@ fwupdtool = executable(
   ],
   dependencies: [
     libfwupd_deps,
-    libgcab,
     libarchive,
     client_dep,
     valgrind,
