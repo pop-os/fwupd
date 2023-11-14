@@ -10,6 +10,7 @@ fwupdplugin_structs = [
   'fu-cfu-firmware.rs', # fuzzing
   'fu-coswid.rs', # fuzzing
   'fu-dfu-firmware.rs', # fuzzing
+  'fu-dpaux.rs', # fuzzing
   'fu-edid.rs', # fuzzing
   'fu-efi.rs', # fuzzing
   'fu-elf.rs', # fuzzing
@@ -74,6 +75,7 @@ fwupdplugin_src = [
   'fu-device-progress.c',
   'fu-dfu-firmware.c', # fuzzing
   'fu-dfuse-firmware.c', # fuzzing
+  'fu-dpaux-device.c',
   'fu-drm-device.c',
   'fu-dump.c', # fuzzing
   'fu-edid.c', # fuzzing
@@ -123,6 +125,7 @@ fwupdplugin_src = [
   'fu-kenv.c', # fuzzing
   'fu-kernel.c', # fuzzing
   'fu-linear-firmware.c',
+  'fu-lzma-common.c', # fuzzing
   'fu-mei-device.c',
   'fu-mem.c', # fuzzing
   'fu-oprom-firmware.c', # fuzzing
@@ -200,6 +203,7 @@ fwupdplugin_headers = [
   'fu-device-progress.h',
   'fu-dfu-firmware.h',
   'fu-dfuse-firmware.h',
+  'fu-dpaux-device.h',
   'fu-drm-device.h',
   'fu-dump.h',
   'fu-edid.h',
@@ -376,25 +380,25 @@ if introspection.allowed()
   )
 endif
 
-gcab = executable(
-  'gcab',
-  sources: [
-    'fu-gcab.c',
-  ],
-  include_directories: [
-    root_incdir,
-    fwupd_incdir,
-  ],
-  dependencies: [
-    library_deps
-  ],
-  link_with: [
-    fwupd,
-    fwupdplugin
-  ],
-)
-
 if get_option('tests')
+  gcab = executable(
+    'gcab',
+    sources: [
+      'fu-gcab.c',
+    ],
+    include_directories: [
+      root_incdir,
+      fwupd_incdir,
+    ],
+    dependencies: [
+      library_deps,
+      fwupdplugin_rs_dep,
+    ],
+    link_with: [
+      fwupd,
+      fwupdplugin
+    ],
+  )
   subdir('tests')
 endif
 

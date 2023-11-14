@@ -1,9 +1,5 @@
 cargs = ['-DG_LOG_DOMAIN="FuPluginTest"']
-
-install_dummy = false
-if get_option('plugin_dummy')
-  install_dummy = true
-endif
+plugins += {meson.current_source_dir().split('/')[-1]: true}
 
 if bluez.allowed()
   plugin_quirks += files('test-ble.quirk')

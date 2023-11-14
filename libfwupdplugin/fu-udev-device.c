@@ -47,7 +47,7 @@ typedef struct {
 	gchar *bind_id;
 	gchar *driver;
 	gchar *device_file;
-	gint fd;
+	FuIOChannel *io_channel;
 	FuUdevDeviceFlags flags;
 } FuUdevDevicePrivate;
 
@@ -319,7 +319,14 @@ fu_udev_device_probe_serio(FuUdevDevice *self, GError **error)
 		if (g_str_has_prefix(tmp, "PNP: "))
 			tmp += 5;
 		fu_device_add_instance_strsafe(FU_DEVICE(self), "FWID", tmp);
-		if (!fu_device_build_instance_id(FU_DEVICE(self), error, "SERIO", "FWID", NULL))
+		if (!fu_device_build_instance_id_full(FU_DEVICE(self),
+						      FU_DEVICE_INSTANCE_FLAG_GENERIC |
+							  FU_DEVICE_INSTANCE_FLAG_VISIBLE |
+							  FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+						      error,
+						      "SERIO",
+						      "FWID",
+						      NULL))
 			return FALSE;
 	}
 	return TRUE;
@@ -495,16 +502,6 @@ fu_udev_device_probe(FuDevice *device, GError **error)
 		}
 	}
 
-	/* set serial */
-	if (!fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_NO_SERIAL_NUMBER) &&
-	    fu_device_get_serial(device) == NULL) {
-		tmp = g_udev_device_get_property(priv->udev_device, "ID_SERIAL_SHORT");
-		if (tmp == NULL)
-			tmp = g_udev_device_get_property(priv->udev_device, "ID_SERIAL");
-		if (tmp != NULL)
-			fu_device_set_serial(device, tmp);
-	}
-
 	/* set revision */
 	if (fu_device_get_version(device) == NULL &&
 	    fu_device_get_version_format(device) == FWUPD_VERSION_FORMAT_UNKNOWN) {
@@ -536,20 +533,66 @@ fu_udev_device_probe(FuDevice *device, GError **error)
 		fu_device_add_instance_u8(device, "REV", priv->revision);
 	}
 
-	fu_device_build_instance_id_quirk(device, NULL, subsystem, "VEN", NULL);
-	fu_device_build_instance_id(device, NULL, subsystem, "VEN", "DEV", NULL);
-	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV))
-		fu_device_build_instance_id(device, NULL, subsystem, "VEN", "DEV", "REV", NULL);
-	fu_device_build_instance_id(device, NULL, subsystem, "VEN", "DEV", "SUBSYS", NULL);
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 subsystem,
+					 "VEN",
+					 NULL);
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					     FU_DEVICE_INSTANCE_FLAG_VISIBLE |
+					     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 subsystem,
+					 "VEN",
+					 "DEV",
+					 NULL);
 	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV)) {
-		fu_device_build_instance_id(device,
-					    NULL,
-					    subsystem,
-					    "VEN",
-					    "DEV",
-					    "SUBSYS",
-					    "REV",
-					    NULL);
+		fu_device_build_instance_id_full(device,
+						 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+						     FU_DEVICE_INSTANCE_FLAG_VISIBLE |
+						     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+						 NULL,
+						 subsystem,
+						 "VEN",
+						 "DEV",
+						 "REV",
+						 NULL);
+	}
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					     FU_DEVICE_INSTANCE_FLAG_VISIBLE |
+					     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 subsystem,
+					 "VEN",
+					 "DEV",
+					 "SUBSYS",
+					 NULL);
+	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV)) {
+		fu_device_build_instance_id_full(device,
+						 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+						     FU_DEVICE_INSTANCE_FLAG_VISIBLE |
+						     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+						 NULL,
+						 subsystem,
+						 "VEN",
+						 "DEV",
+						 "SUBSYS",
+						 "REV",
+						 NULL);
+	}
+
+	/* set serial */
+	if (!fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_NO_SERIAL_NUMBER) &&
+	    fu_device_get_serial(device) == NULL) {
+		tmp = g_udev_device_get_property(priv->udev_device, "ID_SERIAL_SHORT");
+		if (tmp == NULL)
+			tmp = g_udev_device_get_property(priv->udev_device, "ID_SERIAL");
+		if (tmp != NULL)
+			fu_device_set_serial(device, tmp);
 	}
 
 	/* add device class */
@@ -557,21 +600,46 @@ fu_udev_device_probe(FuDevice *device, GError **error)
 	if (tmp != NULL && g_str_has_prefix(tmp, "0x"))
 		tmp += 2;
 	fu_device_add_instance_strup(device, "CLASS", tmp);
-	fu_device_build_instance_id_quirk(device, NULL, subsystem, "VEN", "CLASS", NULL);
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 subsystem,
+					 "VEN",
+					 "CLASS",
+					 NULL);
 
 	/* add devtype */
 	fu_device_add_instance_strup(device, "TYPE", g_udev_device_get_devtype(priv->udev_device));
-	fu_device_build_instance_id_quirk(device, NULL, subsystem, "TYPE", NULL);
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 subsystem,
+					 "TYPE",
+					 NULL);
 
 	/* add the driver */
 	fu_device_add_instance_str(device, "DRIVER", priv->driver);
-	fu_device_build_instance_id_quirk(device, NULL, subsystem, "DRIVER", NULL);
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 subsystem,
+					 "DRIVER",
+					 NULL);
 
 	/* add the modalias */
 	fu_device_add_instance_strsafe(device,
 				       "MODALIAS",
 				       g_udev_device_get_property(priv->udev_device, "MODALIAS"));
-	fu_device_build_instance_id_quirk(device, NULL, subsystem, "MODALIAS", NULL);
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					     FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 subsystem,
+					 "MODALIAS",
+					 NULL);
 
 	/* add firmware_id */
 	if (g_strcmp0(g_udev_device_get_subsystem(priv->udev_device), "serio") == 0) {
@@ -861,6 +929,8 @@ fu_udev_device_incorporate(FuDevice *self, FuDevice *donor)
 		priv->subsystem_model = priv_donor->subsystem_model;
 	if (priv->revision == 0x0 && priv_donor->revision != 0x0)
 		priv->revision = priv_donor->revision;
+	if (priv->io_channel == NULL && priv_donor->io_channel != 0x0)
+		priv->io_channel = g_object_ref(priv_donor->io_channel);
 }
 
 /**
@@ -1414,42 +1484,40 @@ fu_udev_device_set_logical_id(FuUdevDevice *self, const gchar *subsystem, GError
 }
 
 /**
- * fu_udev_device_get_fd:
+ * fu_udev_device_get_io_channel:
  * @self: a #FuUdevDevice
  *
- * Gets the file descriptor if the device is open.
+ * Gets the IO channel.
  *
- * Returns: positive integer, or -1 if the device is not open
+ * Returns: (transfer none): a #FuIOChannel, or %NULL if the device is not open
  *
- * Since: 1.3.3
+ * Since: 1.9.8
  **/
-gint
-fu_udev_device_get_fd(FuUdevDevice *self)
+FuIOChannel *
+fu_udev_device_get_io_channel(FuUdevDevice *self)
 {
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
-	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), -1);
-	return priv->fd;
+	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), NULL);
+	return priv->io_channel;
 }
 
 /**
- * fu_udev_device_set_fd:
+ * fu_udev_device_set_io_channel:
  * @self: a #FuUdevDevice
- * @fd: a valid file descriptor
+ * @io_channel: a #FuIOChannel
  *
- * Replace the file descriptor to use when the device has already been opened.
- * This object will automatically close() @fd when fu_device_close() is called.
+ * Replace the IO channel to use when the device has already been opened.
+ * This object will automatically unref @io_channel when fu_device_close() is called.
  *
- * Since: 1.3.3
+ * Since: 1.9.8
  **/
 void
-fu_udev_device_set_fd(FuUdevDevice *self, gint fd)
+fu_udev_device_set_io_channel(FuUdevDevice *self, FuIOChannel *io_channel)
 {
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
-
 	g_return_if_fail(FU_IS_UDEV_DEVICE(self));
-	if (priv->fd >= 0)
-		close(priv->fd);
-	priv->fd = fd;
+	g_return_if_fail(FU_IS_IO_CHANNEL(io_channel));
+	g_set_object(&priv->io_channel, io_channel);
 }
 
 /**
@@ -1488,10 +1556,12 @@ fu_udev_device_open(FuDevice *device, GError **error)
 {
 	FuUdevDevice *self = FU_UDEV_DEVICE(device);
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
+	gint fd;
 
 	/* open device */
 	if (priv->device_file != NULL && priv->flags != FU_UDEV_DEVICE_FLAG_NONE) {
 		gint flags;
+		g_autoptr(FuIOChannel) io_channel = NULL;
 		if (priv->flags & FU_UDEV_DEVICE_FLAG_OPEN_READ &&
 		    priv->flags & FU_UDEV_DEVICE_FLAG_OPEN_WRITE) {
 			flags = O_RDWR;
@@ -1508,8 +1578,8 @@ fu_udev_device_open(FuDevice *device, GError **error)
 		if (priv->flags & FU_UDEV_DEVICE_FLAG_OPEN_SYNC)
 			flags |= O_SYNC;
 #endif
-		priv->fd = g_open(priv->device_file, flags, 0);
-		if (priv->fd < 0) {
+		fd = g_open(priv->device_file, flags, 0);
+		if (fd < 0) {
 			g_set_error(error,
 				    G_IO_ERROR,
 #ifdef HAVE_ERRNO_H
@@ -1522,6 +1592,8 @@ fu_udev_device_open(FuDevice *device, GError **error)
 				    strerror(errno));
 			return FALSE;
 		}
+		io_channel = fu_io_channel_unix_new(fd);
+		g_set_object(&priv->io_channel, io_channel);
 	}
 
 	/* success */
@@ -1567,15 +1639,10 @@ fu_udev_device_close(FuDevice *device, GError **error)
 {
 	FuUdevDevice *self = FU_UDEV_DEVICE(device);
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
-
-	/* close device */
-	if (priv->fd >= 0) {
-		if (!g_close(priv->fd, error))
+	if (priv->io_channel != NULL) {
+		if (!fu_io_channel_shutdown(priv->io_channel, error))
 			return FALSE;
-		priv->fd = -1;
 	}
-
-	/* success */
 	return TRUE;
 }
 
@@ -1613,7 +1680,7 @@ fu_udev_device_ioctl(FuUdevDevice *self,
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* not open! */
-	if (priv->fd < 0) {
+	if (priv->io_channel == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INTERNAL,
@@ -1625,7 +1692,7 @@ fu_udev_device_ioctl(FuUdevDevice *self,
 
 	/* poll if required  up to the timeout */
 	do {
-		rc_tmp = ioctl(priv->fd, request, buf);
+		rc_tmp = ioctl(fu_io_channel_unix_get_fd(priv->io_channel), request, buf);
 		if (rc_tmp >= 0)
 			break;
 	} while ((priv->flags & FU_UDEV_DEVICE_FLAG_IOCTL_RETRY) &&
@@ -1694,7 +1761,7 @@ fu_udev_device_pread(FuUdevDevice *self, goffset port, guint8 *buf, gsize bufsz,
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* not open! */
-	if (priv->fd < 0) {
+	if (priv->io_channel == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INTERNAL,
@@ -1705,7 +1772,7 @@ fu_udev_device_pread(FuUdevDevice *self, goffset port, guint8 *buf, gsize bufsz,
 	}
 
 #ifdef HAVE_PWRITE
-	if (pread(priv->fd, buf, bufsz, port) != (gssize)bufsz) {
+	if (pread(fu_io_channel_unix_get_fd(priv->io_channel), buf, bufsz, port) != (gssize)bufsz) {
 		g_set_error(error,
 			    G_IO_ERROR,
 #ifdef HAVE_ERRNO_H
@@ -1749,7 +1816,7 @@ fu_udev_device_seek(FuUdevDevice *self, goffset offset, GError **error)
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* not open! */
-	if (priv->fd < 0) {
+	if (priv->io_channel == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INTERNAL,
@@ -1760,7 +1827,7 @@ fu_udev_device_seek(FuUdevDevice *self, goffset offset, GError **error)
 	}
 
 #ifdef HAVE_PWRITE
-	if (lseek(priv->fd, offset, SEEK_SET) < 0) {
+	if (lseek(fu_io_channel_unix_get_fd(priv->io_channel), offset, SEEK_SET) < 0) {
 		g_set_error(error,
 			    G_IO_ERROR,
 #ifdef HAVE_ERRNO_H
@@ -1810,7 +1877,7 @@ fu_udev_device_pwrite(FuUdevDevice *self,
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* not open! */
-	if (priv->fd < 0) {
+	if (priv->io_channel == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INTERNAL,
@@ -1821,7 +1888,8 @@ fu_udev_device_pwrite(FuUdevDevice *self,
 	}
 
 #ifdef HAVE_PWRITE
-	if (pwrite(priv->fd, buf, bufsz, port) != (gssize)bufsz) {
+	if (pwrite(fu_io_channel_unix_get_fd(priv->io_channel), buf, bufsz, port) !=
+	    (gssize)bufsz) {
 		g_set_error(error,
 			    G_IO_ERROR,
 #ifdef HAVE_ERRNO_H
@@ -2070,7 +2138,8 @@ fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *subs
 	const gchar *udev_parent_path;
 	g_autoptr(GUdevDevice) udev_parent = g_udev_device_get_parent(priv->udev_device);
 	g_autoptr(GUdevClient) udev_client = g_udev_client_new(NULL);
-	g_autoptr(GList) enumerated = g_udev_client_query_by_subsystem(udev_client, subsystem);
+	g_autolist(GUdevDevice) enumerated =
+	    g_udev_client_query_by_subsystem(udev_client, subsystem);
 
 	/* we have no parent, and so no siblings are possible */
 	if (udev_parent == NULL)
@@ -2078,7 +2147,7 @@ fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *subs
 	udev_parent_path = g_udev_device_get_sysfs_path(udev_parent);
 
 	for (GList *element = enumerated; element != NULL; element = element->next) {
-		g_autoptr(GUdevDevice) enumerated_device = element->data;
+		GUdevDevice *enumerated_device = G_UDEV_DEVICE(element->data);
 		g_autoptr(GUdevDevice) enumerated_parent = NULL;
 		const gchar *enumerated_parent_path;
 
@@ -2091,10 +2160,9 @@ fu_udev_device_get_siblings_with_subsystem(FuUdevDevice *self, const gchar *subs
 		/* if the sysfs path of self's parent is the same as that of the
 		 * located device's parent, they are siblings */
 		if (g_strcmp0(udev_parent_path, enumerated_parent_path) == 0) {
-			FuUdevDevice *dev =
-			    fu_udev_device_new(fu_device_get_context(FU_DEVICE(self)),
-					       g_steal_pointer(&enumerated_device));
-			g_ptr_array_add(out, dev);
+			g_ptr_array_add(out,
+					fu_udev_device_new(fu_device_get_context(FU_DEVICE(self)),
+							   enumerated_device));
 		}
 	}
 #endif
@@ -2383,8 +2451,8 @@ fu_udev_device_finalize(GObject *object)
 	g_free(priv->device_file);
 	if (priv->udev_device != NULL)
 		g_object_unref(priv->udev_device);
-	if (priv->fd >= 0)
-		g_close(priv->fd, NULL);
+	if (priv->io_channel != NULL)
+		g_object_unref(priv->io_channel);
 
 	G_OBJECT_CLASS(fu_udev_device_parent_class)->finalize(object);
 }
@@ -2393,7 +2461,6 @@ static void
 fu_udev_device_init(FuUdevDevice *self)
 {
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
-	priv->fd = -1;
 	priv->flags = FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE;
 	fu_device_set_acquiesce_delay(FU_DEVICE(self), 2500);
 }

@@ -101,14 +101,19 @@ fu_vli_usbhub_pd_device_setup(FuDevice *device, GError **error)
 	fu_device_set_name(device, name);
 
 	/* use header to populate device info */
-	fu_device_set_version_from_uint32(device, fwver);
+	fu_device_set_version_u32(device, fwver);
 
 	/* add standard GUIDs in order of priority */
 	fu_device_add_instance_u16(device, "VID", fu_struct_vli_pd_hdr_get_vid(st));
 	fu_device_add_instance_u16(device, "PID", fu_struct_vli_pd_hdr_get_pid(st));
 	fu_device_add_instance_u8(device, "APP", fwver & 0xff);
 	fu_device_add_instance_str(device, "DEV", name);
-	if (!fu_device_build_instance_id_quirk(device, error, "USB", "VID", NULL))
+	if (!fu_device_build_instance_id_full(device,
+					      FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					      error,
+					      "USB",
+					      "VID",
+					      NULL))
 		return FALSE;
 	if (!fu_device_build_instance_id(device, error, "USB", "VID", "PID", NULL))
 		return FALSE;

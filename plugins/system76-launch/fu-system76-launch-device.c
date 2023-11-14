@@ -217,7 +217,8 @@ fu_system76_launch_device_detach(FuDevice *device, FuProgress *progress, GError 
 	fwupd_request_set_kind(request, FWUPD_REQUEST_KIND_IMMEDIATE);
 	fwupd_request_set_id(request, FWUPD_REQUEST_ID_PRESS_UNLOCK);
 	fwupd_request_set_message(request, fu_device_get_update_message(device));
-	fu_device_emit_request(device, request);
+	if (!fu_device_emit_request(device, request, progress, error))
+		return FALSE;
 
 	/* poll for the user-unlock */
 	do {
@@ -258,6 +259,7 @@ fu_system76_launch_device_init(FuSystem76LaunchDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NON_GENERIC_REQUEST);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_add_protocol(FU_DEVICE(self), "com.microsoft.uf2");
 	fu_device_add_protocol(FU_DEVICE(self), "org.usb.dfu");

@@ -18,6 +18,7 @@
 
 #include "fu-i2c-device.h"
 #include "fu-string.h"
+#include "fu-udev-device-private.h"
 
 /**
  * FuI2cDevice
@@ -83,6 +84,7 @@ fu_i2c_device_open(FuDevice *device, GError **error)
 	FuI2cDevicePrivate *priv = GET_PRIVATE(self);
 	gint bus_fd;
 	g_autofree gchar *bus_path = NULL;
+	g_autoptr(FuIOChannel) io_channel = NULL;
 
 	/* open the bus, not the device represented by self */
 	bus_path = g_strdup_printf("/dev/i2c-%u", priv->bus_number);
@@ -98,7 +100,8 @@ fu_i2c_device_open(FuDevice *device, GError **error)
 			    bus_path);
 		return FALSE;
 	}
-	fu_udev_device_set_fd(FU_UDEV_DEVICE(self), bus_fd);
+	io_channel = fu_io_channel_unix_new(bus_fd);
+	fu_udev_device_set_io_channel(FU_UDEV_DEVICE(self), io_channel);
 	fu_udev_device_set_flags(FU_UDEV_DEVICE(self), FU_UDEV_DEVICE_FLAG_NONE);
 #endif
 
@@ -126,7 +129,14 @@ fu_i2c_device_probe(FuDevice *device, GError **error)
 	/* i2c devices all expose a name */
 	tmp = g_udev_device_get_sysfs_attr(udev_device, "name");
 	fu_device_add_instance_strsafe(device, "NAME", tmp);
-	if (!fu_device_build_instance_id(device, error, "I2C", "NAME", NULL))
+	if (!fu_device_build_instance_id_full(device,
+					      FU_DEVICE_INSTANCE_FLAG_GENERIC |
+						  FU_DEVICE_INSTANCE_FLAG_VISIBLE |
+						  FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					      error,
+					      "I2C",
+					      "NAME",
+					      NULL))
 		return FALSE;
 
 	/* get bus number out of sysfs path */

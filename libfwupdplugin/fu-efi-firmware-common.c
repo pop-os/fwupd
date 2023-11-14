@@ -6,14 +6,11 @@
 
 #include "config.h"
 
-#ifdef HAVE_LZMA
-#include <lzma.h>
-#endif
-
 #include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-efi-firmware-common.h"
 #include "fu-efi-firmware-section.h"
+#include "fu-lzma-common.h"
 
 /**
  * fu_efi_firmware_parse_sections:
@@ -43,90 +40,27 @@ fu_efi_firmware_parse_sections(FuFirmware *firmware,
 
 		/* maximum payload */
 		blob = fu_bytes_new_offset(fw, offset, bufsz - offset, error);
-		if (blob == NULL)
+		if (blob == NULL) {
+			g_prefix_error(error, "failed to build maximum payload: ");
 			return FALSE;
+		}
 
 		/* parse section */
-		if (!fu_firmware_parse(img, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error))
+		if (!fu_firmware_parse(img, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error)) {
+			g_prefix_error(error,
+				       "failed to parse section of size 0x%x: ",
+				       (guint)g_bytes_get_size(blob));
 			return FALSE;
+		}
+
 		fu_firmware_set_offset(img, offset);
 		if (!fu_firmware_add_image_full(firmware, img, error))
 			return FALSE;
 
 		/* next! */
-		offset += fu_firmware_get_size(img);
-	}
-	if (offset != g_bytes_get_size(fw)) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "EFI sections overflow 0x%x of 0x%x",
-			    (guint)offset,
-			    (guint)g_bytes_get_size(fw));
-		return FALSE;
+		offset += fu_common_align_up(fu_firmware_get_size(img), FU_FIRMWARE_ALIGNMENT_4);
 	}
 
 	/* success */
 	return TRUE;
-}
-
-/**
- * fu_efi_firmware_decompress_lzma:
- * @blob: data
- * @error: (nullable): optional return location for an error
- *
- * Decompresses a LZMA stream.
- *
- * Returns: decompressed data
- *
- * Since: 1.6.2
- **/
-GBytes *
-fu_efi_firmware_decompress_lzma(GBytes *blob, GError **error)
-{
-#ifdef HAVE_LZMA
-	const gsize tmpbufsz = 0x20000;
-	lzma_ret rc;
-	lzma_stream strm = LZMA_STREAM_INIT;
-	uint64_t memlimit = G_MAXUINT32;
-	g_autofree guint8 *tmpbuf = g_malloc0(tmpbufsz);
-	g_autoptr(GByteArray) buf = g_byte_array_new();
-
-	strm.next_in = g_bytes_get_data(blob, NULL);
-	strm.avail_in = g_bytes_get_size(blob);
-
-	rc = lzma_auto_decoder(&strm, memlimit, LZMA_TELL_UNSUPPORTED_CHECK);
-	if (rc != LZMA_OK) {
-		lzma_end(&strm);
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
-			    "failed to set up LZMA decoder rc=%u",
-			    rc);
-		return NULL;
-	}
-	do {
-		strm.next_out = tmpbuf;
-		strm.avail_out = tmpbufsz;
-		rc = lzma_code(&strm, LZMA_RUN);
-		if (rc != LZMA_OK && rc != LZMA_STREAM_END)
-			break;
-		g_byte_array_append(buf, tmpbuf, tmpbufsz - strm.avail_out);
-	} while (rc == LZMA_OK);
-	lzma_end(&strm);
-
-	/* success */
-	if (rc != LZMA_OK && rc != LZMA_STREAM_END) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
-			    "failed to decode LZMA data rc=%u",
-			    rc);
-		return NULL;
-	}
-	return g_bytes_new(buf->data, buf->len);
-#else
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "missing lzma support");
-	return NULL;
-#endif
 }

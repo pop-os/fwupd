@@ -16,15 +16,14 @@ This plugin supports the following protocol ID:
 
 These devices use the standard UDEV DeviceInstanceId values, e.g.
 
-* `BLOCK\VEN_05E3&DEV_XXXX`
+* `BLOCK\VEN_05E3&DEV_XXXX` (quirk-only)
 
 These devices also use custom GUID values, e.g.
 
-* `BLOCK\VEN_05E3&DEV_XXXX&VER_YY`
+* `BLOCK\VEN_05E3&DEV_XXXX&VER_YY` (quirk-only)
 
-Additional GUID values based on customer ID read from the device, e.g.
+Additional GUID value based on firmware version stream and customer ID read from the device, e.g.
 
-* `BLOCK\VEN_05E3&DEV_XXXX&CID_ZZZZZZZZ`
 * `BLOCK\VEN_05E3&DEV_XXXX&VER_YY&CID_ZZZZZZZZ`
 
 ## Update Behavior

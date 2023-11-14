@@ -10,13 +10,16 @@ Vendor = GDMicroelectronics
 
 # Realtek USB camera
 [USB\VID_0BDA&PID_5850]
+Flags = enforce-requires
 CounterpartGuid = USB\VID_0BDA&PID_5800
 [USB\VID_0BDA&PID_5855]
+Flags = enforce-requires
 CounterpartGuid = USB\VID_0BDA&PID_5800
 [USB\VID_0BDA&PID_58FE]
+Flags = enforce-requires
 CounterpartGuid = USB\VID_0BDA&PID_5800
 [USB\VID_0BDA&PID_5800]
-Flags = detach-for-attach
+Flags = detach-for-attach,enforce-requires
 
 # Openmoko Freerunner / GTA02
 [USB\VID_1D50&PID_5119]
@@ -463,27 +466,30 @@ Flags = detach-for-attach,ignore-upload
 # Sonix USB cameras
 [USB\VID_0C45&PID_636D]
 Plugin = dfu
-Flags = detach-for-attach,ignore-upload
+Flags = detach-for-attach,ignore-upload,enforce-requires
 [USB\VID_0C45&PID_636C]
 Plugin = dfu
-Flags = detach-for-attach,ignore-upload
+Flags = detach-for-attach,ignore-upload,enforce-requires
 [USB\VID_0C45&PID_636E]
 Plugin = dfu
-Flags = detach-for-attach,ignore-upload
+Flags = detach-for-attach,ignore-upload,enforce-requires
 [USB\VID_0C45&PID_636F]
 Plugin = dfu
-Flags = detach-for-attach,ignore-upload
+Flags = detach-for-attach,ignore-upload,enforce-requires
 [USB\VID_0C45&PID_6373]
 Plugin = dfu
-Flags = detach-for-attach,ignore-upload
+Flags = detach-for-attach,ignore-upload,enforce-requires
 [USB\VID_0C45&PID_6374]
 Plugin = dfu
-Flags = detach-for-attach,ignore-upload
+Flags = detach-for-attach,ignore-upload,enforce-requires
 
 # FPC Fingerprint Reader
 [USB\VID_10A5&PID_FFE0]
 DfuForceVersion = 0x0
+Flags = enforce-requires
 [USB\VID_10A5&PID_FFE1]
 DfuForceVersion = 0x0
+Flags = enforce-requires
 [USB\VID_10A5&PID_9800]
 DfuForceVersion = 0x0
+Flags = enforce-requires

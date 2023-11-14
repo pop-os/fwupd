@@ -58,7 +58,7 @@ fu_io_channel_unix_get_fd(FuIOChannel *self)
  * @self: a #FuIOChannel
  * @error: (nullable): optional return location for an error
  *
- * Closes the file descriptor for the device.
+ * Closes the file descriptor for the device if open.
  *
  * Returns: %TRUE if all the FD was closed.
  *
@@ -69,9 +69,12 @@ fu_io_channel_shutdown(FuIOChannel *self, GError **error)
 {
 	g_return_val_if_fail(FU_IS_IO_CHANNEL(self), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
-	if (!g_close(self->fd, error))
-		return FALSE;
-	self->fd = -1;
+
+	if (self->fd != -1) {
+		if (!g_close(self->fd, error))
+			return FALSE;
+		self->fd = -1;
+	}
 	return TRUE;
 }
 
@@ -257,26 +260,26 @@ fu_io_channel_write_raw(FuIOChannel *self,
 /**
  * fu_io_channel_read_bytes:
  * @self: a #FuIOChannel
- * @max_size: maximum size of the returned blob, or -1 for no limit
+ * @count: number of bytes to read, or -1 for no limit
  * @timeout_ms: timeout in ms
  * @flags: channel flags, e.g. %FU_IO_CHANNEL_FLAG_SINGLE_SHOT
  * @error: (nullable): optional return location for an error
  *
  * Reads bytes from the TTY, that will fail if exceeding @timeout_ms.
  *
- * Returns: a #GBytes, or %NULL for error
+ * Returns: a #GBytes (which may be bigger than @count), or %NULL for error
  *
  * Since: 1.2.2
  **/
 GBytes *
 fu_io_channel_read_bytes(FuIOChannel *self,
-			 gssize max_size,
+			 gssize count,
 			 guint timeout_ms,
 			 FuIOChannelFlags flags,
 			 GError **error)
 {
 	g_autoptr(GByteArray) buf =
-	    fu_io_channel_read_byte_array(self, max_size, timeout_ms, flags, error);
+	    fu_io_channel_read_byte_array(self, count, timeout_ms, flags, error);
 	if (buf == NULL)
 		return NULL;
 	return g_bytes_new(buf->data, buf->len);
@@ -285,20 +288,20 @@ fu_io_channel_read_bytes(FuIOChannel *self,
 /**
  * fu_io_channel_read_byte_array:
  * @self: a #FuIOChannel
- * @max_size: maximum size of the returned blob, or -1 for no limit
+ * @count: number of bytes to read, or -1 for no limit
  * @timeout_ms: timeout in ms
  * @flags: channel flags, e.g. %FU_IO_CHANNEL_FLAG_SINGLE_SHOT
  * @error: (nullable): optional return location for an error
  *
  * Reads bytes from the TTY, that will fail if exceeding @timeout_ms.
  *
- * Returns: (transfer full): a #GByteArray, or %NULL for error
+ * Returns: (transfer full): a #GByteArray (which may be bigger than @count), or %NULL for error
  *
  * Since: 1.3.2
  **/
 GByteArray *
 fu_io_channel_read_byte_array(FuIOChannel *self,
-			      gssize max_size,
+			      gssize count,
 			      guint timeout_ms,
 			      FuIOChannelFlags flags,
 			      GError **error)
@@ -313,7 +316,7 @@ fu_io_channel_read_byte_array(FuIOChannel *self,
 
 	/* blocking IO */
 	if (flags & FU_IO_CHANNEL_FLAG_USE_BLOCKING_IO) {
-		guint8 buf[1024];
+		guint8 buf[1024] = {0x0};
 		gssize len = read(self->fd, buf, sizeof(buf));
 		if (len < 0) {
 			g_set_error(error,
@@ -350,7 +353,7 @@ fu_io_channel_read_byte_array(FuIOChannel *self,
 
 		/* we have data to read */
 		if (fds.revents & G_IO_IN) {
-			guint8 buf[1024];
+			guint8 buf[1024] = {0x0};
 			gssize len = read(self->fd, buf, sizeof(buf));
 			if (len < 0) {
 				if (errno == EINTR)
@@ -365,11 +368,13 @@ fu_io_channel_read_byte_array(FuIOChannel *self,
 					    strerror(errno));
 				return NULL;
 			}
+			if (len == 0)
+				break;
 			if (len > 0)
 				g_byte_array_append(buf2, buf, len);
 
 			/* check maximum size */
-			if (max_size > 0 && buf2->len >= (guint)max_size)
+			if (count > 0 && buf2->len >= (guint)count)
 				break;
 			if (flags & FU_IO_CHANNEL_FLAG_SINGLE_SHOT)
 				break;
@@ -437,20 +442,17 @@ fu_io_channel_read_raw(FuIOChannel *self,
 		       FuIOChannelFlags flags,
 		       GError **error)
 {
-	const guint8 *tmpbuf = NULL;
-	gsize bytes_read_tmp;
-	g_autoptr(GBytes) tmp = NULL;
+	g_autoptr(GByteArray) tmp = NULL;
 
 	g_return_val_if_fail(FU_IS_IO_CHANNEL(self), FALSE);
 
-	tmp = fu_io_channel_read_bytes(self, bufsz, timeout_ms, flags, error);
+	tmp = fu_io_channel_read_byte_array(self, bufsz, timeout_ms, flags, error);
 	if (tmp == NULL)
 		return FALSE;
-	tmpbuf = g_bytes_get_data(tmp, &bytes_read_tmp);
-	if (tmpbuf != NULL)
-		memcpy(buf, tmpbuf, bytes_read_tmp);
+	if (buf != NULL)
+		memcpy(buf, tmp->data, MIN(tmp->len, bufsz));
 	if (bytes_read != NULL)
-		*bytes_read = bytes_read_tmp;
+		*bytes_read = tmp->len;
 	return TRUE;
 }
 

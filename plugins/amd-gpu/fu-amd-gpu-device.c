@@ -101,8 +101,6 @@ fu_amd_gpu_device_probe(FuDevice *device, GError **error)
 		fu_device_add_protocol(device, "com.amd.pspvbflash");
 	}
 
-	fu_device_add_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_AUTO_PARENT_CHILDREN);
-
 	return TRUE;
 }
 
@@ -119,6 +117,7 @@ fu_amd_gpu_device_setup(FuDevice *device, GError **error)
 	};
 	g_autofree gchar *part = NULL;
 	g_autofree gchar *ver = NULL;
+	g_autofree gchar *model = NULL;
 
 	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(device),
 				  DRM_IOCTL_AMDGPU_INFO,
@@ -134,12 +133,8 @@ fu_amd_gpu_device_setup(FuDevice *device, GError **error)
 	fu_device_set_version_raw(device, vbios_info.version);
 	ver = fu_strsafe((const gchar *)vbios_info.vbios_ver_str, sizeof(vbios_info.vbios_ver_str));
 	fu_device_set_version(device, ver);
-
-	if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_INTERNAL)) {
-		g_autofree gchar *model = NULL;
-		model = fu_strsafe((const gchar *)vbios_info.name, sizeof(vbios_info.name));
-		fu_device_set_name(device, model);
-	}
+	model = fu_strsafe((const gchar *)vbios_info.name, sizeof(vbios_info.name));
+	fu_device_set_summary(device, model);
 
 	return TRUE;
 }
@@ -266,6 +261,8 @@ fu_amd_gpu_device_set_progress(FuDevice *self, FuProgress *progress)
 static void
 fu_amd_gpu_device_init(FuAmdGpuDevice *self)
 {
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_AUTO_PARENT_CHILDREN);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NO_GENERIC_GUIDS);
 }
 
 static void

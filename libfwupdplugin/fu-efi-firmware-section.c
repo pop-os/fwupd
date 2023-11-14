@@ -13,6 +13,7 @@
 #include "fu-efi-firmware-section.h"
 #include "fu-efi-firmware-volume.h"
 #include "fu-efi-struct.h"
+#include "fu-lzma-common.h"
 #include "fu-mem.h"
 
 /**
@@ -85,8 +86,7 @@ fu_efi_firmware_section_parse(FuFirmware *firmware,
 		guid_str = fwupd_guid_to_string(fu_struct_efi_section_guid_defined_get_name(st_def),
 						FWUPD_GUID_FLAG_MIXED_ENDIAN);
 		fu_firmware_set_id(firmware, guid_str);
-		if (fu_struct_efi_section_guid_defined_get_offset(st_def) <
-		    FU_STRUCT_EFI_SECTION_SIZE) {
+		if (fu_struct_efi_section_guid_defined_get_offset(st_def) < st_def->len) {
 			g_set_error(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INTERNAL,
@@ -94,13 +94,16 @@ fu_efi_firmware_section_parse(FuFirmware *firmware,
 				    (guint)fu_struct_efi_section_guid_defined_get_offset(st_def));
 			return FALSE;
 		}
+		offset += fu_struct_efi_section_guid_defined_get_offset(st_def) - st->len;
 	}
 
 	/* create blob */
 	offset += st->len;
 	blob = fu_bytes_new_offset(fw, offset, size - offset, error);
-	if (blob == NULL)
+	if (blob == NULL) {
+		g_prefix_error(error, "cannot parse payload of size 0x%x: ", size);
 		return FALSE;
+	}
 	fu_firmware_set_offset(firmware, offset);
 	fu_firmware_set_size(firmware, size);
 	fu_firmware_set_bytes(firmware, blob);
@@ -108,8 +111,10 @@ fu_efi_firmware_section_parse(FuFirmware *firmware,
 	/* nested volume */
 	if (priv->type == FU_EFI_SECTION_TYPE_VOLUME_IMAGE) {
 		g_autoptr(FuFirmware) img = fu_efi_firmware_volume_new();
-		if (!fu_firmware_parse(img, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error))
+		if (!fu_firmware_parse(img, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error)) {
+			g_prefix_error(error, "failed to parse nested volume: ");
 			return FALSE;
+		}
 		fu_firmware_add_image(firmware, img);
 
 		/* LZMA */
@@ -119,11 +124,15 @@ fu_efi_firmware_section_parse(FuFirmware *firmware,
 		g_autoptr(GBytes) blob_uncomp = NULL;
 
 		/* parse all sections */
-		blob_uncomp = fu_efi_firmware_decompress_lzma(blob, error);
-		if (blob_uncomp == NULL)
+		blob_uncomp = fu_lzma_decompress_bytes(blob, error);
+		if (blob_uncomp == NULL) {
+			g_prefix_error(error, "failed to decompress lzma section: ");
 			return FALSE;
-		if (!fu_efi_firmware_parse_sections(firmware, blob_uncomp, flags, error))
+		}
+		if (!fu_efi_firmware_parse_sections(firmware, blob_uncomp, flags, error)) {
+			g_prefix_error(error, "failed to parse sections: ");
 			return FALSE;
+		}
 	}
 
 	/* success */

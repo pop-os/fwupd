@@ -85,6 +85,8 @@ struct _FuDeviceClass {
 			FwupdRequest *request);
 	gboolean (*get_results)(FuDevice *self, GError **error) G_GNUC_WARN_UNUSED_RESULT;
 	void (*set_progress)(FuDevice *self, FuProgress *progress);
+	void (*invalidate)(FuDevice *self);
+	gchar *(*convert_version)(FuDevice *self, guint64 version_raw);
 #endif
 };
 
@@ -93,6 +95,7 @@ struct _FuDeviceClass {
  * @FU_DEVICE_INSTANCE_FLAG_NONE:		No flags set
  * @FU_DEVICE_INSTANCE_FLAG_VISIBLE:		Show to the user
  * @FU_DEVICE_INSTANCE_FLAG_QUIRKS:		Match against quirk files
+ * @FU_DEVICE_INSTANCE_FLAG_GENERIC:		Generic GUID added by a baseclass
  *
  * The flags to use when interacting with a device instance
  **/
@@ -100,6 +103,7 @@ typedef enum {
 	FU_DEVICE_INSTANCE_FLAG_NONE = 0,
 	FU_DEVICE_INSTANCE_FLAG_VISIBLE = 1 << 0,
 	FU_DEVICE_INSTANCE_FLAG_QUIRKS = 1 << 1,
+	FU_DEVICE_INSTANCE_FLAG_GENERIC = 1 << 2,
 	/*< private >*/
 	FU_DEVICE_INSTANCE_FLAG_LAST
 } FuDeviceInstanceFlags;
@@ -163,7 +167,6 @@ fu_device_new(FuContext *ctx);
 #define fu_device_set_update_error(d, v)   fwupd_device_set_update_error(FWUPD_DEVICE(d), v)
 #define fu_device_add_vendor_id(d, v)	   fwupd_device_add_vendor_id(FWUPD_DEVICE(d), v)
 #define fu_device_add_protocol(d, v)	   fwupd_device_add_protocol(FWUPD_DEVICE(d), v)
-#define fu_device_set_version_raw(d, v)	   fwupd_device_set_version_raw(FWUPD_DEVICE(d), v)
 #define fu_device_set_version_lowest_raw(d, v)                                                     \
 	fwupd_device_set_version_lowest_raw(FWUPD_DEVICE(d), v)
 #define fu_device_set_version_bootloader_raw(d, v)                                                 \
@@ -415,7 +418,7 @@ typedef guint64 FuDeviceInternalFlags;
  *
  * Since 1.7.3
  */
-#define FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE (1llu << 19)
+#define FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE (1ull << 19)
 
 /**
  * FU_DEVICE_INTERNAL_FLAG_MD_SET_VENDOR:
@@ -574,6 +577,34 @@ typedef guint64 FuDeviceInternalFlags;
  */
 #define FU_DEVICE_INTERNAL_FLAG_UPDATE_PENDING (1ull << 35)
 
+/**
+ * FU_DEVICE_INTERNAL_FLAG_NO_GENERIC_GUIDS:
+ *
+ * Do not add generic GUIDs from outside the plugin.
+ *
+ * Since: 1.9.8
+ */
+#define FU_DEVICE_INTERNAL_FLAG_NO_GENERIC_GUIDS (1ull << 36)
+
+/**
+ * FU_DEVICE_INTERNAL_FLAG_ENFORCE_REQUIRES:
+ *
+ * The device uses a generic instance ID and firmware requires a parent, child, sibling or CHID
+ * requirement.
+ *
+ * Since: 1.9.8
+ */
+#define FU_DEVICE_INTERNAL_FLAG_ENFORCE_REQUIRES (1ull << 37)
+
+/**
+ * FU_DEVICE_INTERNAL_FLAG_NON_GENERIC_REQUEST:
+ *
+ * The device uses a non-generic request that cannot be localized.
+ *
+ * Since: 1.9.8
+ */
+#define FU_DEVICE_INTERNAL_FLAG_NON_GENERIC_REQUEST (1ull << 38)
+
 /* accessors */
 gchar *
 fu_device_to_string(FuDevice *self);
@@ -650,11 +681,15 @@ fu_device_set_version_lowest(FuDevice *self, const gchar *version);
 void
 fu_device_set_version_bootloader(FuDevice *self, const gchar *version);
 void
-fu_device_set_version_from_uint16(FuDevice *self, guint16 version_raw);
+fu_device_set_version_raw(FuDevice *self, guint64 version_raw);
 void
-fu_device_set_version_from_uint32(FuDevice *self, guint32 version_raw);
+fu_device_set_version_u16(FuDevice *self, guint16 version_raw);
 void
-fu_device_set_version_from_uint64(FuDevice *self, guint64 version_raw);
+fu_device_set_version_u24(FuDevice *self, guint32 version_raw);
+void
+fu_device_set_version_u32(FuDevice *self, guint32 version_raw);
+void
+fu_device_set_version_u64(FuDevice *self, guint64 version_raw);
 void
 fu_device_inhibit(FuDevice *self, const gchar *inhibit_id, const gchar *reason);
 void
@@ -846,8 +881,8 @@ void
 fu_device_remove_private_flag(FuDevice *self, guint64 flag);
 gboolean
 fu_device_has_private_flag(FuDevice *self, guint64 flag);
-void
-fu_device_emit_request(FuDevice *self, FwupdRequest *request);
+gboolean
+fu_device_emit_request(FuDevice *self, FwupdRequest *request, FuProgress *progress, GError **error);
 FwupdSecurityAttr *
 fu_device_security_attr_new(FuDevice *self, const gchar *appstream_id);
 
@@ -871,7 +906,10 @@ gboolean
 fu_device_build_instance_id(FuDevice *self, GError **error, const gchar *subsystem, ...)
     G_GNUC_NULL_TERMINATED;
 gboolean
-fu_device_build_instance_id_quirk(FuDevice *self, GError **error, const gchar *subsystem, ...)
-    G_GNUC_NULL_TERMINATED;
+fu_device_build_instance_id_full(FuDevice *self,
+				 FuDeviceInstanceFlags flags,
+				 GError **error,
+				 const gchar *subsystem,
+				 ...) G_GNUC_NULL_TERMINATED;
 FuDeviceLocker *
 fu_device_poll_locker_new(FuDevice *self, GError **error);

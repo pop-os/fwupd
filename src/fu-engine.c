@@ -2175,13 +2175,26 @@ fu_engine_check_soft_requirement(FuEngine *self,
 	return TRUE;
 }
 
+static gboolean
+fu_engine_requirement_is_specific(XbNode *req)
+{
+	if (g_strcmp0(xb_node_get_element(req), "firmware") == 0 &&
+	    xb_node_get_attr(req, "depth") != NULL)
+		return TRUE;
+	if (g_strcmp0(xb_node_get_element(req), "hardware") == 0)
+		return TRUE;
+	return FALSE;
+}
+
 gboolean
 fu_engine_check_requirements(FuEngine *self,
 			     FuRelease *release,
 			     FwupdInstallFlags flags,
 			     GError **error)
 {
+	FuDevice *device = fu_release_get_device(release);
 	GPtrArray *reqs;
+	gboolean has_specific_requirement = FALSE;
 
 	/* hard requirements */
 	reqs = fu_release_get_hard_reqs(release);
@@ -2190,7 +2203,34 @@ fu_engine_check_requirements(FuEngine *self,
 			XbNode *req = g_ptr_array_index(reqs, i);
 			if (!fu_engine_check_requirement(self, release, req, flags, error))
 				return FALSE;
+			if (fu_engine_requirement_is_specific(req))
+				has_specific_requirement = TRUE;
 		}
+	}
+
+	/* if a device uses a generic ID (i.e. not matching the OEM) then check to make sure the
+	 * firmware is specific enough, e.g. by using a CHID or depth requirement */
+	if (device != NULL &&
+	    fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_ENFORCE_REQUIRES) &&
+	    !has_specific_requirement) {
+#ifdef SUPPORTED_BUILD
+		g_set_error_literal(
+		    error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
+		    "generic GUID requires a CHID, child, parent or sibling requirement");
+		return FALSE;
+#else
+		if ((flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
+					    "generic GUID requires --force, a CHID, child, parent "
+					    "or sibling requirement");
+			return FALSE;
+		}
+		g_info("ignoring enforce-requires requirement due to --force");
+#endif
 	}
 
 	/* soft requirements */
@@ -4891,6 +4931,8 @@ fu_engine_update_metadata_bytes(FuEngine *self,
 #ifdef HAVE_PASSIM
 	/* send to passimd, if enabled and running */
 	if (passim_client_get_version(self->passim_client) != NULL &&
+	    fwupd_remote_get_username(remote) == NULL &&
+	    fwupd_remote_get_password(remote) == NULL &&
 	    fu_engine_config_get_p2p_policy(self->config) & FU_P2P_POLICY_METADATA) {
 		g_autofree gchar *basename =
 		    g_path_get_basename(fwupd_remote_get_filename_cache(remote));
@@ -5825,6 +5867,16 @@ fu_engine_get_releases_for_device(FuEngine *self,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "is not updatable");
+		return NULL;
+	}
+
+	/* only show devices that can be updated */
+	if (!fu_engine_request_has_feature_flag(request, FWUPD_FEATURE_FLAG_REQUESTS_NON_GENERIC) &&
+	    fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_NON_GENERIC_REQUEST)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "is not updatable as requires a non-generic request");
 		return NULL;
 	}
 
@@ -7960,7 +8012,8 @@ fu_engine_backend_device_added_run_plugins(FuEngine *self, FuDevice *device, FuP
 							       plugin_name,
 							       fu_progress_get_child(progress),
 							       &error_local)) {
-			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED) ||
+			    g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
 				g_debug("%s ignoring: %s", plugin_name, error_local->message);
 			} else {
 				g_warning("failed to add device %s: %s",

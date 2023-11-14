@@ -49,6 +49,8 @@ fwupd_status_to_string(FwupdStatus status)
 		return "waiting-for-auth";
 	if (status == FWUPD_STATUS_SHUTDOWN)
 		return "shutdown";
+	if (status == FWUPD_STATUS_WAITING_FOR_USER)
+		return "waiting-for-user";
 	return NULL;
 }
 
@@ -93,6 +95,8 @@ fwupd_status_from_string(const gchar *status)
 		return FWUPD_STATUS_WAITING_FOR_AUTH;
 	if (g_strcmp0(status, "shutdown") == 0)
 		return FWUPD_STATUS_SHUTDOWN;
+	if (g_strcmp0(status, "waiting-for-user") == 0)
+		return FWUPD_STATUS_WAITING_FOR_USER;
 	return FWUPD_STATUS_LAST;
 }
 
@@ -672,6 +676,8 @@ fwupd_feature_flag_to_string(FwupdFeatureFlags feature_flag)
 		return "show-problems";
 	if (feature_flag == FWUPD_FEATURE_FLAG_ALLOW_AUTHENTICATION)
 		return "allow-authentication";
+	if (feature_flag == FWUPD_FEATURE_FLAG_REQUESTS_NON_GENERIC)
+		return "requests-non-generic";
 	return NULL;
 }
 
@@ -708,6 +714,8 @@ fwupd_feature_flag_from_string(const gchar *feature_flag)
 		return FWUPD_FEATURE_FLAG_SHOW_PROBLEMS;
 	if (g_strcmp0(feature_flag, "allow-authentication") == 0)
 		return FWUPD_FEATURE_FLAG_ALLOW_AUTHENTICATION;
+	if (g_strcmp0(feature_flag, "requests-non-generic") == 0)
+		return FWUPD_FEATURE_FLAG_REQUESTS_NON_GENERIC;
 	return FWUPD_FEATURE_FLAG_LAST;
 }
 

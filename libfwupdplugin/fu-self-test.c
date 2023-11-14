@@ -1105,9 +1105,18 @@ fu_plugin_quirks_device_func(void)
 	fu_device_set_physical_id(device, "usb:00:05");
 	fu_device_set_context(device, ctx);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
-	fu_device_add_instance_id(device, "USB\\VID_0BDA&PID_1100");
+	fu_device_add_instance_id_full(device,
+				       "USB\\VID_0BDA&PID_1100",
+				       FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					   FU_DEVICE_INSTANCE_FLAG_QUIRKS |
+					   FU_DEVICE_INSTANCE_FLAG_VISIBLE);
+	fu_device_add_instance_id(device, "USB\\VID_0BDA&PID_1100&CID_1234");
 	fu_device_convert_instance_ids(device);
 	g_assert_cmpstr(fu_device_get_name(device), ==, "Hub");
+
+	/* ensure the non-customer-id instance ID is not available */
+	g_assert_true(fu_device_has_instance_id(device, "USB\\VID_0BDA&PID_1100&CID_1234"));
+	g_assert_false(fu_device_has_instance_id(device, "USB\\VID_0BDA&PID_1100"));
 
 	/* ensure children are created */
 	children = fu_device_get_children(device);
@@ -1626,7 +1635,13 @@ fu_device_incorporate_func(void)
 	fu_device_add_instance_str(donor, "PID", "6412");
 
 	/* match a quirk entry, and then clear to ensure encorporate uses the quirk instance ID */
-	ret = fu_device_build_instance_id_quirk(donor, &error, "USB", "VID", "PID", NULL);
+	ret = fu_device_build_instance_id_full(donor,
+					       FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					       &error,
+					       "USB",
+					       "VID",
+					       "PID",
+					       NULL);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	g_assert_cmpstr(fu_device_get_custom_flags(donor), ==, "ignore-runtime");
@@ -3934,14 +3949,14 @@ fu_firmware_builder_round_trip_func(void)
 	     "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"},
 	    {FU_TYPE_EFI_FIRMWARE_FILE,
 	     "efi-firmware-file.builder.xml",
-	     "1002c14b29a76069f3b7e35c50a55d2b0d197441"},
+	     "90374d97cf6bc70059d24c816c188c10bd250ed7"},
 	    {FU_TYPE_EFI_FIRMWARE_FILESYSTEM,
 	     "efi-firmware-filesystem.builder.xml",
 	     "d6fbadc1c303a3b4eede9db7fb0ddb353efffc86"},
 	    {FU_TYPE_EFI_FIRMWARE_VOLUME,
 	     "efi-firmware-volume.builder.xml",
 	     "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"},
-	    {FU_TYPE_IFD_FIRMWARE, "ifd.builder.xml", "0805c742e0deec12db2d8f9a86158a7cf610869b"},
+	    {FU_TYPE_IFD_FIRMWARE, "ifd.builder.xml", "06ae066ea53cefe43fed2f1ca4fc7d8cccdbcf1e"},
 	    {FU_TYPE_CFU_OFFER,
 	     "cfu-offer.builder.xml",
 	     "c10223887ff6cdf4475ad07c65b1f0f3a2d0d5ca"},

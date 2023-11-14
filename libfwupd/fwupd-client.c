@@ -4031,6 +4031,9 @@ fwupd_client_refresh_remote_metadata_cb(GObject *source, GAsyncResult *res, gpoi
 	/* save metadata */
 	bytes = fwupd_client_download_bytes_finish(FWUPD_CLIENT(source), res, &error);
 	if (bytes == NULL) {
+		g_prefix_error(&error,
+			       "Failed to download metadata for %s: ",
+			       fwupd_remote_get_id(data->remote));
 		g_task_return_error(task, g_steal_pointer(&error));
 		return;
 	}
@@ -4079,6 +4082,9 @@ fwupd_client_refresh_remote_signature_cb(GObject *source, GAsyncResult *res, gpo
 	/* save signature */
 	bytes = fwupd_client_download_bytes_finish(FWUPD_CLIENT(source), res, &error);
 	if (bytes == NULL) {
+		g_prefix_error(&error,
+			       "Failed to download metadata for %s: ",
+			       fwupd_remote_get_id(data->remote));
 		g_task_return_error(task, g_steal_pointer(&error));
 		return;
 	}
@@ -4106,7 +4112,9 @@ fwupd_client_refresh_remote_signature_cb(GObject *source, GAsyncResult *res, gpo
 
 	/* maybe get metadata from Passim */
 	if (fwupd_remote_has_flag(data->remote, FWUPD_REMOTE_FLAG_ALLOW_P2P_METADATA) &&
-	    fwupd_remote_get_checksum_metadata(data->remote) != NULL) {
+	    fwupd_remote_get_checksum_metadata(data->remote) != NULL &&
+	    fwupd_remote_get_username(data->remote) == NULL &&
+	    fwupd_remote_get_password(data->remote) == NULL) {
 		g_autofree gchar *basename =
 		    g_path_get_basename(fwupd_remote_get_metadata_uri(data->remote));
 		g_ptr_array_add(urls,
@@ -4114,8 +4122,14 @@ fwupd_client_refresh_remote_signature_cb(GObject *source, GAsyncResult *res, gpo
 						basename,
 						fwupd_remote_get_checksum_metadata(data->remote)));
 	}
-	if ((data->download_flags & FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_P2P) == 0)
-		g_ptr_array_add(urls, g_strdup(fwupd_remote_get_metadata_uri(data->remote)));
+	if ((data->download_flags & FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_P2P) == 0) {
+		g_autofree gchar *uri = fwupd_remote_build_metadata_uri(data->remote, &error);
+		if (uri == NULL) {
+			g_task_return_error(task, g_steal_pointer(&error));
+			return;
+		}
+		g_ptr_array_add(urls, g_steal_pointer(&uri));
+	}
 	fwupd_client_download_bytes2_async(self,
 					   urls,
 					   FWUPD_CLIENT_DOWNLOAD_FLAG_NONE,
@@ -4150,7 +4164,9 @@ fwupd_client_refresh_remote2_async(FwupdClient *self,
 				   gpointer callback_data)
 {
 	FwupdClientRefreshRemoteData *data;
+	g_autofree gchar *uri = NULL;
 	g_autoptr(GTask) task = NULL;
+	g_autoptr(GError) error = NULL;
 
 	g_return_if_fail(FWUPD_IS_CLIENT(self));
 	g_return_if_fail(FWUPD_IS_REMOTE(remote));
@@ -4185,8 +4201,13 @@ fwupd_client_refresh_remote2_async(FwupdClient *self,
 	}
 
 	/* download signature */
+	uri = fwupd_remote_build_metadata_sig_uri(remote, &error);
+	if (uri == NULL) {
+		g_task_return_error(task, g_steal_pointer(&error));
+		return;
+	}
 	fwupd_client_download_bytes_async(self,
-					  fwupd_remote_get_metadata_uri_sig(remote),
+					  uri,
 					  download_flags,
 					  cancellable,
 					  fwupd_client_refresh_remote_signature_cb,
@@ -5182,7 +5203,7 @@ fwupd_client_set_user_agent_for_package(FwupdClient *self,
 
 	g_free(priv->package_name);
 	g_free(priv->package_version);
-	priv->package_name = g_strdup(package_name);
+	priv->package_name = g_path_get_basename(package_name);
 	priv->package_version = g_strdup(package_version);
 	fwupd_client_rebuild_user_agent(self);
 }

@@ -174,11 +174,11 @@ fu_steelseries_fizz_hid_detach(FuDevice *device, FuProgress *progress, GError **
 	fwupd_request_set_kind(request, FWUPD_REQUEST_KIND_IMMEDIATE);
 	fwupd_request_set_id(request, FWUPD_REQUEST_ID_PRESS_UNLOCK);
 	fwupd_request_set_message(request, msg);
-	fu_device_emit_request(device, request);
-
-	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
+	if (!fu_device_emit_request(device, request, progress, error))
+		return FALSE;
 
 	/* success */
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 	return TRUE;
 }
 
@@ -206,6 +206,7 @@ fu_steelseries_fizz_hid_init(FuSteelseriesFizzHid *self)
 {
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NON_GENERIC_REQUEST);
 	fu_device_set_physical_id(FU_DEVICE(self), "hid");
 	fu_device_add_protocol(FU_DEVICE(self), "com.steelseries.fizz");
 	fu_device_set_remove_delay(FU_DEVICE(self), 300000); /* 5min */

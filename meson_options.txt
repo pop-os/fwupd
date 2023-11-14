@@ -174,11 +174,6 @@ option('plugin_cpu',
     'false': 'disabled',
   },
 )
-option('plugin_dummy',
-  type: 'boolean',
-  value: false,
-  description: 'enable the dummy device',
-)
 option('plugin_emmc',
   type: 'feature',
   description: 'eMMC support',
@@ -214,6 +209,10 @@ option('plugin_gpio',
 option('plugin_igsc',
   type: 'feature',
   description: 'Intel Graphics System Controller support',
+)
+option('plugin_kinetic_dp',
+       type: 'feature',
+       description: 'Kinetic SST/MST DisplayPort converter support',
 )
 option('plugin_logitech_bulkcontroller',
   type: 'feature',
