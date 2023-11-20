@@ -96,11 +96,21 @@ typedef enum {
  * FWUPD_REQUEST_ID_REPLUG_INSTALL:
  *
  * Show the user a message to replug the device and then install the firmware, e.g.
- * "Unplug and replug the device, then install the firmware."
+ * "Unplug and replug the device, to continue the update process."
  *
  * Since 1.8.11
  */
 #define FWUPD_REQUEST_ID_REPLUG_INSTALL "org.freedesktop.fwupd.replug-install"
+
+/**
+ * FWUPD_REQUEST_ID_REPLUG_POWER:
+ *
+ * Show the user a message to replug the power connector, e.g.
+ * "The update will continue when the device power cable has been unplugged and then re-inserted."
+ *
+ * Since 1.9.9
+ */
+#define FWUPD_REQUEST_ID_REPLUG_POWER "org.freedesktop.fwupd.replug-power"
 
 /**
  * FWUPD_REQUEST_FLAG_NONE:
@@ -194,7 +204,7 @@ fwupd_request_add_flag(FwupdRequest *self, FwupdRequestFlags flag);
 void
 fwupd_request_remove_flag(FwupdRequest *self, FwupdRequestFlags flag);
 gboolean
-fwupd_request_has_flag(FwupdRequest *self, FwupdRequestFlags flag);
+fwupd_request_has_flag(FwupdRequest *self, FwupdRequestFlags flag) G_GNUC_WARN_UNUSED_RESULT;
 
 FwupdRequest *
 fwupd_request_from_variant(GVariant *value);

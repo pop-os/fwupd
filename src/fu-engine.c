@@ -2210,7 +2210,7 @@ fu_engine_check_requirements(FuEngine *self,
 
 	/* if a device uses a generic ID (i.e. not matching the OEM) then check to make sure the
 	 * firmware is specific enough, e.g. by using a CHID or depth requirement */
-	if (device != NULL &&
+	if (device != NULL && !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) &&
 	    fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_ENFORCE_REQUIRES) &&
 	    !has_specific_requirement) {
 #ifdef SUPPORTED_BUILD
@@ -4342,6 +4342,14 @@ fu_engine_create_metadata(FuEngine *self, XbBuilder *builder, FwupdRemote *remot
 
 	/* find all files in directory */
 	path = fwupd_remote_get_filename_cache(remote);
+	if (path == NULL) {
+		g_set_error(error,
+			    G_IO_ERROR,
+			    G_IO_ERROR_NOT_SUPPORTED,
+			    "no filename cache for %s",
+			    fwupd_remote_get_id(remote));
+		return FALSE;
+	}
 	files = fu_path_get_files(path, error);
 	if (files == NULL)
 		return FALSE;

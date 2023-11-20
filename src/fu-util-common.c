@@ -2239,7 +2239,12 @@ fu_util_request_get_message(FwupdRequest *req)
 		}
 		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_REPLUG_INSTALL) == 0) {
 			/* TRANSLATORS: message shown after device has been marked for emulation */
-			return _("Unplug and replug the device, then install the firmware.");
+			return _("Unplug and replug the device to continue the update process.");
+		}
+		if (g_strcmp0(fwupd_request_get_id(req), FWUPD_REQUEST_ID_REPLUG_POWER) == 0) {
+			/* TRANSLATORS: warning message */
+			return _("The update will continue when the device power cable has been "
+				 "removed and re-inserted.");
 		}
 	}
 	return fwupd_request_get_message(req);
