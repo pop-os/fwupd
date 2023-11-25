@@ -1,6 +1,7 @@
 fwupd (1.9.9-2) UNRELEASED; urgency=medium
 
   * Backport a patch to fix probing on amd-gpu.
+  * Remove extra confffiles (Closes: #1040350)
 
  -- Mario Limonciello <superm1@gmail.com>  Sat, 25 Nov 2023 07:36:55 -0600
 
