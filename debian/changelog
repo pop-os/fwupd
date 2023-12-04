@@ -1,4 +1,4 @@
-fwupd (1.9.10-1) UNRELEASED; urgency=medium
+fwupd (1.9.10-1) unstable; urgency=medium
 
   * New upstream version (1.9.10)
   * Fixes scroll bars from fwupd-refresh (Closes: #1040245)
@@ -6,6 +6,7 @@ fwupd (1.9.10-1) UNRELEASED; urgency=medium
     (LP: #2044022)
   * Remove extra conffiles with the 1.9.10~ version instead.
     (Closes: #932617)
+  * Fix FTBFS when udev.pc changes (Closes: #1057241)
 
  -- Mario Limonciello <superm1@gmail.com>  Mon, 04 Dec 2023 08:58:30 -0600
 
