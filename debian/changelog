@@ -1,3 +1,14 @@
+fwupd (1.9.10-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.9.10)
+  * Fixes scroll bars from fwupd-refresh (Closes: #1040245)
+  * Stop advertising update support for certain unsupported genesys hubs
+    (LP: #2044022)
+  * Remove extra conffiles with the 1.9.10~ version instead.
+    (Closes: #932617)
+
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 04 Dec 2023 08:58:30 -0600
+
 fwupd (1.9.9-2) unstable; urgency=medium
 
   * Backport a patch to fix probing on amd-gpu.
