@@ -64,7 +64,7 @@ Build-Depends:
 	udev,
 	umockdev,
 	valac,
-	valgrind [!ia64 !riscv64 !x32 !mips !sparc64 !sh4 !ppc64 !powerpcspe !hppa !alpha !mips64el !armhf !armel !mipsel !m68k],
+	valgrind-if-available,
 Build-Depends-Indep: gi-docgen <!nodoc>,
 Rules-Requires-Root: no
 Standards-Version: 4.6.0.1
