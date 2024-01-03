@@ -117,7 +117,7 @@ fu_cab_firmware_parse_helper_free(FuCabFirmwareParseHelper *helper)
 	inflateEnd(&helper->zstrm);
 	if (helper->fw != NULL)
 		g_bytes_unref(helper->fw);
-	if (helper->fw != NULL)
+	if (helper->folder_data != NULL)
 		g_ptr_array_unref(helper->folder_data);
 	g_free(helper);
 }
@@ -457,6 +457,8 @@ fu_cab_firmware_parse_helper_new(GBytes *fw, FwupdInstallFlags flags, GError **e
 	g_autoptr(FuCabFirmwareParseHelper) helper = g_new0(FuCabFirmwareParseHelper, 1);
 
 	/* zlib */
+	helper->zstrm.zalloc = zalloc;
+	helper->zstrm.zfree = zfree;
 	zret = inflateInit2(&helper->zstrm, -MAX_WBITS);
 	if (zret != Z_OK) {
 		g_set_error(error,
@@ -466,8 +468,6 @@ fu_cab_firmware_parse_helper_new(GBytes *fw, FwupdInstallFlags flags, GError **e
 			    zError(zret));
 		return NULL;
 	}
-	helper->zstrm.zalloc = zalloc;
-	helper->zstrm.zfree = zfree;
 
 	helper->fw = g_bytes_ref(fw);
 	helper->install_flags = flags;

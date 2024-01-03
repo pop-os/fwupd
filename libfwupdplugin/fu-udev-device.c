@@ -455,6 +455,12 @@ fu_udev_device_probe(FuDevice *device, GError **error)
 		}
 	}
 
+	if (g_strcmp0(priv->subsystem, "drm_dp_aux_dev") == 0) {
+		tmp = g_udev_device_get_sysfs_attr(priv->udev_device, "name");
+		if (tmp != NULL && fu_device_get_name(device) == NULL)
+			fu_device_set_name(device, tmp);
+	}
+
 	/* set the version if the revision has been set */
 	if (fu_device_get_version(device) == NULL &&
 	    fu_device_get_version_format(device) == FWUPD_VERSION_FORMAT_UNKNOWN) {
@@ -959,7 +965,7 @@ fu_udev_device_get_dev(FuUdevDevice *self)
 {
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), NULL);
-#ifdef SUPPORTED_BUILD
+#ifndef SUPPORTED_BUILD
 	if (priv->udev_device_cleared) {
 		g_warning("soon the GUdevDevice will not be available post-probe, use "
 			  "FU_DEVICE_INTERNAL_FLAG_NO_PROBE_COMPLETE in %s plugin to opt-out %s",

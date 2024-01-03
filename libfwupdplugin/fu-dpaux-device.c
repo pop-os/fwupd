@@ -28,10 +28,11 @@ typedef struct {
 	guint32 dpcd_ieee_oui;
 	guint8 dpcd_hw_rev;
 	gchar *dpcd_dev_id;
-	gchar *name;
 } FuDpauxDevicePrivate;
 
 G_DEFINE_TYPE_WITH_PRIVATE(FuDpauxDevice, fu_dpaux_device, FU_TYPE_UDEV_DEVICE)
+
+enum { PROP_0, PROP_DPCD_IEEE_OUI, PROP_LAST };
 
 #define GET_PRIVATE(o) (fu_dpaux_device_get_instance_private(o))
 
@@ -49,8 +50,6 @@ fu_dpaux_device_to_string(FuDevice *device, guint idt, GString *str)
 		fu_string_append_kx(str, idt, "DpcdHwRev", priv->dpcd_hw_rev);
 	if (priv->dpcd_dev_id != NULL)
 		fu_string_append(str, idt, "DpcdDevId", priv->dpcd_dev_id);
-	if (priv->name != NULL)
-		fu_string_append(str, idt, "Name", priv->name);
 }
 
 static void
@@ -61,33 +60,11 @@ fu_dpaux_device_invalidate(FuDevice *device)
 	priv->dpcd_ieee_oui = 0;
 	priv->dpcd_hw_rev = 0;
 	g_clear_pointer(&priv->dpcd_dev_id, g_free);
-	g_clear_pointer(&priv->name, g_free);
-}
-
-static void
-fu_dpaux_device_set_name(FuDpauxDevice *self, const gchar *name)
-{
-	FuDpauxDevicePrivate *priv = GET_PRIVATE(self);
-
-	if (g_strcmp0(priv->name, name) == 0)
-		return;
-	g_free(priv->name);
-	priv->name = name != NULL ? fu_strstrip(name) : NULL;
 }
 
 static gboolean
 fu_dpaux_device_probe(FuDevice *device, GError **error)
 {
-	FuDpauxDevice *self = FU_DPAUX_DEVICE(device);
-
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_dpaux_device_parent_class)->probe(device, error))
-		return FALSE;
-
-	/* name */
-	fu_dpaux_device_set_name(self,
-				 fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(self), "name", NULL));
-
 	/* get from sysfs if not set from tests */
 	if (fu_device_get_logical_id(device) == NULL &&
 	    fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device)) != NULL) {
@@ -107,16 +84,16 @@ fu_dpaux_device_setup(FuDevice *device, GError **error)
 	FuDpauxDevicePrivate *priv = GET_PRIVATE(self);
 	guint8 buf[FU_STRUCT_DPAUX_DPCD_SIZE] = {0x0};
 	g_autoptr(GByteArray) st = NULL;
-
 	/* ignore all Framework FRANDGCP07 BIOS version 3.02 */
-	if (priv->name != NULL && g_str_has_prefix(priv->name, "AMDGPU DM") &&
+	if (fu_device_get_name(device) != NULL &&
+	    g_str_has_prefix(fu_device_get_name(device), "AMDGPU DM") &&
 	    fu_context_has_hwid_guid(ctx, "32d49d99-414b-55d5-813b-12aaf0335b58")) {
 		g_set_error(error,
 			    G_IO_ERROR,
 			    G_IO_ERROR_NOT_SUPPORTED,
 			    "reading %s DPCD is broken on this hardware, "
 			    "you need to update the system BIOS",
-			    priv->name);
+			    fu_device_get_name(device));
 		return FALSE;
 	}
 
@@ -172,7 +149,10 @@ fu_dpaux_device_set_dpcd_ieee_oui(FuDpauxDevice *self, guint32 dpcd_ieee_oui)
 {
 	FuDpauxDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_if_fail(FU_IS_DPAUX_DEVICE(self));
+	if (priv->dpcd_ieee_oui == dpcd_ieee_oui)
+		return;
 	priv->dpcd_ieee_oui = dpcd_ieee_oui;
+	g_object_notify(G_OBJECT(self), "dpcd-ieee-oui");
 }
 
 /**
@@ -383,6 +363,35 @@ fu_dpaux_device_incorporate(FuDevice *device, FuDevice *donor)
 }
 
 static void
+fu_dpaux_device_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
+{
+	FuDpauxDevice *self = FU_DPAUX_DEVICE(object);
+	FuDpauxDevicePrivate *priv = GET_PRIVATE(self);
+	switch (prop_id) {
+	case PROP_DPCD_IEEE_OUI:
+		g_value_set_uint(value, priv->dpcd_ieee_oui);
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+		break;
+	}
+}
+
+static void
+fu_dpaux_device_set_property(GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec)
+{
+	FuDpauxDevice *self = FU_DPAUX_DEVICE(object);
+	switch (prop_id) {
+	case PROP_DPCD_IEEE_OUI:
+		fu_dpaux_device_set_dpcd_ieee_oui(self, g_value_get_uint(value));
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+		break;
+	}
+}
+
+static void
 fu_dpaux_device_init(FuDpauxDevice *self)
 {
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_TRIPLET);
@@ -398,7 +407,6 @@ fu_dpaux_device_finalize(GObject *object)
 	FuDpauxDevice *self = FU_DPAUX_DEVICE(object);
 	FuDpauxDevicePrivate *priv = GET_PRIVATE(self);
 	g_free(priv->dpcd_dev_id);
-	g_free(priv->name);
 	G_OBJECT_CLASS(fu_dpaux_device_parent_class)->finalize(object);
 }
 
@@ -407,10 +415,30 @@ fu_dpaux_device_class_init(FuDpauxDeviceClass *klass)
 {
 	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
+	GParamSpec *pspec;
+
 	object_class->finalize = fu_dpaux_device_finalize;
+	object_class->get_property = fu_dpaux_device_get_property;
+	object_class->set_property = fu_dpaux_device_set_property;
 	klass_device->probe = fu_dpaux_device_probe;
 	klass_device->setup = fu_dpaux_device_setup;
 	klass_device->invalidate = fu_dpaux_device_invalidate;
 	klass_device->to_string = fu_dpaux_device_to_string;
 	klass_device->incorporate = fu_dpaux_device_incorporate;
+
+	/**
+	 * FuDpauxDevice:dpcd-ieee-oui:
+	 *
+	 * The DPCD IEEE OUI.
+	 *
+	 * Since: 1.9.11
+	 */
+	pspec = g_param_spec_uint("dpcd-ieee-oui",
+				  NULL,
+				  NULL,
+				  0x0,
+				  G_MAXUINT32,
+				  0x0,
+				  G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_DPCD_IEEE_OUI, pspec);
 }

@@ -6,6 +6,10 @@
 
 #include "config.h"
 
+#ifdef HAVE_UTSNAME_H
+#include <sys/utsname.h>
+#endif
+
 #include "fu-cpu-device.h"
 
 typedef enum {
@@ -310,14 +314,14 @@ fu_cpu_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 }
 
 static void
-fu_cpu_device_add_security_attrs_intel_cet_enabled(FuCpuDevice *self, FuSecurityAttrs *attrs)
+fu_cpu_device_add_security_attrs_cet_enabled(FuCpuDevice *self, FuSecurityAttrs *attrs)
 {
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
 
 	/* create attr */
 	attr =
 	    fu_device_security_attr_new(FU_DEVICE(self), FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED);
-	fwupd_security_attr_set_result_success(attr, FWUPD_SECURITY_ATTR_RESULT_ENABLED);
+	fwupd_security_attr_set_result_success(attr, FWUPD_SECURITY_ATTR_RESULT_SUPPORTED);
 	fu_security_attrs_append(attrs, attr);
 
 	/* check for CET */
@@ -332,7 +336,7 @@ fu_cpu_device_add_security_attrs_intel_cet_enabled(FuCpuDevice *self, FuSecurity
 }
 
 static void
-fu_cpu_device_add_security_attrs_intel_cet_active(FuCpuDevice *self, FuSecurityAttrs *attrs)
+fu_cpu_device_add_security_attrs_cet_active(FuCpuDevice *self, FuSecurityAttrs *attrs)
 {
 	gint exit_status = 0xff;
 	g_autofree gchar *toolfn = NULL;
@@ -392,7 +396,7 @@ fu_cpu_device_add_security_attrs_intel_tme(FuCpuDevice *self, FuSecurityAttrs *a
 }
 
 static void
-fu_cpu_device_add_security_attrs_intel_smap(FuCpuDevice *self, FuSecurityAttrs *attrs)
+fu_cpu_device_add_security_attrs_smap(FuCpuDevice *self, FuSecurityAttrs *attrs)
 {
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
 
@@ -412,17 +416,33 @@ fu_cpu_device_add_security_attrs_intel_smap(FuCpuDevice *self, FuSecurityAttrs *
 }
 
 static void
-fu_cpu_device_add_security_attrs(FuDevice *device, FuSecurityAttrs *attrs)
+fu_cpu_device_add_x86_64_security_attrs(FuDevice *device, FuSecurityAttrs *attrs)
 {
 	FuCpuDevice *self = FU_CPU_DEVICE(device);
 
 	/* only Intel */
-	if (fu_cpu_get_vendor() == FU_CPU_VENDOR_INTEL) {
-		fu_cpu_device_add_security_attrs_intel_cet_enabled(self, attrs);
-		fu_cpu_device_add_security_attrs_intel_cet_active(self, attrs);
+	if (fu_cpu_get_vendor() == FU_CPU_VENDOR_INTEL)
 		fu_cpu_device_add_security_attrs_intel_tme(self, attrs);
-		fu_cpu_device_add_security_attrs_intel_smap(self, attrs);
+	fu_cpu_device_add_security_attrs_cet_enabled(self, attrs);
+	fu_cpu_device_add_security_attrs_cet_active(self, attrs);
+	fu_cpu_device_add_security_attrs_smap(self, attrs);
+}
+
+static void
+fu_cpu_device_add_security_attrs(FuDevice *device, FuSecurityAttrs *attrs)
+{
+#ifdef HAVE_UTSNAME_H
+	struct utsname name_tmp;
+
+	memset(&name_tmp, 0, sizeof(struct utsname));
+	if (uname(&name_tmp) < 0) {
+		g_warning("failed to read CPU architecture");
+		return;
 	}
+
+	if (g_strcmp0(name_tmp.machine, "x86_64") == 0)
+		fu_cpu_device_add_x86_64_security_attrs(device, attrs);
+#endif
 }
 
 static void

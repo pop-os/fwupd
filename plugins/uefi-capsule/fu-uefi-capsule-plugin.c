@@ -619,6 +619,26 @@ static FuVolume *
 fu_uefi_capsule_plugin_get_default_esp(FuPlugin *plugin, GError **error)
 {
 	g_autoptr(GPtrArray) esp_volumes = NULL;
+	const gchar *recovery_partitions[] = {
+	    "DellRestore",
+	    "DellUtility",
+	    "DIAGS",
+	    "HP_RECOVERY",
+	    "IBM_SERVICE",
+	    "IntelRST",
+	    "Lenovo_Recovery",
+	    "OS",
+	    "PQSERVICE",
+	    "Recovery",
+	    "RECOVERY",
+	    "Recovery_Partition",
+	    "SERVICEV001",
+	    "SERVICEV002",
+	    "System_Reserved",
+	    "SYSTEM_RESERVED",
+	    "WINRE_DRV",
+	    NULL,
+	}; /* from https://github.com/storaged-project/udisks/blob/master/data/80-udisks2.rules */
 
 	/* show which volumes we're choosing from */
 	esp_volumes = fu_context_get_esp_volumes(fu_plugin_get_context(plugin), error);
@@ -633,6 +653,7 @@ fu_uefi_capsule_plugin_get_default_esp(FuPlugin *plugin, GError **error)
 			FuVolume *esp = g_ptr_array_index(esp_volumes, i);
 			guint score = 0;
 			g_autofree gchar *name = NULL;
+			g_autofree gchar *kind = NULL;
 			g_autoptr(FuDeviceLocker) locker = NULL;
 			g_autoptr(GError) error_local = NULL;
 
@@ -645,13 +666,21 @@ fu_uefi_capsule_plugin_get_default_esp(FuPlugin *plugin, GError **error)
 
 			/* ignore a partition that claims to be a recovery partition */
 			name = fu_volume_get_partition_name(esp);
-			if (g_strcmp0(name, "Recovery Partition") == 0) {
-				g_debug("skipping partition '%s'", name);
-				continue;
+			if (name != NULL) {
+				g_strdelimit(name, " ", '_');
+				if (g_strv_contains(recovery_partitions, name) == 0) {
+					g_debug("skipping partition '%s'", name);
+					continue;
+				}
 			}
 
 			/* big partitions are better than small partitions */
 			score += fu_volume_get_size(esp) / (1024 * 1024);
+
+			/* prefer partitions with the ESP flag set over msftdata */
+			kind = fu_volume_get_partition_kind(esp);
+			if (g_strcmp0(kind, FU_VOLUME_KIND_ESP) == 0)
+				score += 0x20000;
 
 			/* prefer linux ESP */
 			if (!fu_uefi_capsule_plugin_is_esp_linux(esp, &error_local)) {

@@ -2416,12 +2416,14 @@ fu_engine_install_release(FuEngine *self,
 	if (version_rel != NULL && fu_version_compare(version_orig, version_rel, fmt) != 0 &&
 	    fu_version_compare(version_orig, fu_device_get_version(device), fmt) == 0 &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
-		g_autofree gchar *str = NULL;
 		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED);
-		str = g_strdup_printf("device version not updated on success, %s != %s",
-				      version_rel,
-				      fu_device_get_version(device));
-		fu_device_set_update_error(device, str);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "device version not updated on success, %s != %s",
+			    version_rel,
+			    fu_device_get_version(device));
+		return FALSE;
 	}
 
 	/* mark success unless needs a reboot */
@@ -4358,7 +4360,7 @@ fu_engine_get_silo_from_blob(FuEngine *self, GBytes *blob_cab, GError **error)
 	fu_cabinet_set_jcat_context(cabinet, self->jcat_context);
 	if (!fu_firmware_parse(FU_FIRMWARE(cabinet), blob_cab, FWUPD_INSTALL_FLAG_NONE, error))
 		return NULL;
-	return fu_cabinet_get_silo(cabinet);
+	return fu_cabinet_get_silo(cabinet, error);
 }
 
 static FuDevice *
@@ -6945,9 +6947,9 @@ fu_engine_ensure_security_attrs(FuEngine *self)
 	for (guint i = 0; i < vals->len; i++) {
 		FwupdSecurityAttr *attr = g_ptr_array_index(vals, i);
 		if (fwupd_security_attr_get_result(attr) == FWUPD_SECURITY_ATTR_RESULT_UNKNOWN) {
-			g_critical("HSI attribute %s (from %s) had unknown result",
-				   fwupd_security_attr_get_appstream_id(attr),
-				   fwupd_security_attr_get_plugin(attr));
+			g_warning("HSI attribute %s (from %s) had unknown result",
+				  fwupd_security_attr_get_appstream_id(attr),
+				  fwupd_security_attr_get_plugin(attr));
 		}
 	}
 

@@ -3245,11 +3245,13 @@ fu_util_prompt_for_volume(FuUtilPrivate *priv, GError **error)
 		return NULL;
 	if (volumes->len == 1) {
 		volume = g_ptr_array_index(volumes, 0);
-		fu_console_print(priv->console,
-				 "%s: %s",
-				 /* TRANSLATORS: Volume has been chosen by the user */
-				 _("Selected volume"),
-				 fu_volume_get_id(volume));
+		if (fu_volume_get_id(volume) != NULL) {
+			fu_console_print(priv->console,
+					 "%s: %s",
+					 /* TRANSLATORS: Volume has been chosen by the user */
+					 _("Selected volume"),
+					 fu_volume_get_id(volume));
+		}
 		return g_object_ref(volume);
 	}
 
@@ -3299,6 +3301,9 @@ fu_util_esp_list(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FuDeviceLocker) locker = NULL;
 	g_autoptr(FuVolume) volume = NULL;
 	g_autoptr(GPtrArray) files = NULL;
+
+	if (!fu_util_start_engine(priv, FU_ENGINE_LOAD_FLAG_READONLY, priv->progress, error))
+		return FALSE;
 
 	volume = fu_util_prompt_for_volume(priv, error);
 	if (volume == NULL)
