@@ -66,6 +66,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.8.6@LIBFWUPD_1.8.6 1.8.6
  LIBFWUPD_1.8.7@LIBFWUPD_1.8.7 1.8.7
  LIBFWUPD_1.8.8@LIBFWUPD_1.8.8 1.8.8
+ LIBFWUPD_1.9.10@LIBFWUPD_1.9.10 1.9.10
  LIBFWUPD_1.9.1@LIBFWUPD_1.9.1 1.9.1
  LIBFWUPD_1.9.3@LIBFWUPD_1.9.3 1.9.3
  LIBFWUPD_1.9.4@LIBFWUPD_1.9.4 1.9.4
@@ -291,6 +292,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_add_problem@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_add_protocol@LIBFWUPD_1.5.8 1.5.8
  fwupd_device_add_release@LIBFWUPD_0.9.8 1.0.0
+ fwupd_device_add_request_flag@LIBFWUPD_1.9.10 1.9.10
  fwupd_device_add_vendor_id@LIBFWUPD_1.5.5 1.5.5
  fwupd_device_array_ensure_parents@LIBFWUPD_1.3.7 1.3.7
  fwupd_device_array_filter_flags@LIBFWUPD_1.9.3 1.9.3
@@ -328,6 +330,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_get_protocols@LIBFWUPD_1.5.8 1.5.8
  fwupd_device_get_release_default@LIBFWUPD_0.9.8 1.0.0
  fwupd_device_get_releases@LIBFWUPD_0.9.8 1.0.0
+ fwupd_device_get_request_flags@LIBFWUPD_1.9.10 1.9.10
  fwupd_device_get_root@LIBFWUPD_1.7.4 1.7.4
  fwupd_device_get_serial@LIBFWUPD_1.1.2 1.1.2
  fwupd_device_get_status@LIBFWUPD_1.4.0 1.4.0
@@ -355,6 +358,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_has_instance_id@LIBFWUPD_1.2.5 1.2.5
  fwupd_device_has_problem@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_has_protocol@LIBFWUPD_1.5.8 1.5.8
+ fwupd_device_has_request_flag@LIBFWUPD_1.9.10 1.9.10
  fwupd_device_has_vendor_id@LIBFWUPD_1.5.5 1.5.5
  fwupd_device_id_is_valid@LIBFWUPD_1.4.1 1.4.1
  fwupd_device_incorporate@LIBFWUPD_1.1.0 1.1.0
@@ -365,6 +369,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_remove_child@LIBFWUPD_1.6.2 1.6.2
  fwupd_device_remove_flag@LIBFWUPD_0.9.3 1.0.0
  fwupd_device_remove_problem@LIBFWUPD_1.8.1 1.8.1
+ fwupd_device_remove_request_flag@LIBFWUPD_1.9.10 1.9.10
  fwupd_device_set_battery_level@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_set_battery_threshold@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_set_branch@LIBFWUPD_1.5.0 1.5.0
@@ -383,6 +388,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_device_set_plugin@LIBFWUPD_1.0.0 1.0.0
  fwupd_device_set_problems@LIBFWUPD_1.8.1 1.8.1
  fwupd_device_set_protocol@LIBFWUPD_1.3.6 1.3.6
+ fwupd_device_set_request_flags@LIBFWUPD_1.9.10 1.9.10
  fwupd_device_set_serial@LIBFWUPD_1.1.2 1.1.2
  fwupd_device_set_status@LIBFWUPD_1.4.0 1.4.0
  fwupd_device_set_summary@LIBFWUPD_0.9.3 1.0.0
