@@ -1,3 +1,10 @@
+fwupd (1.9.12-2) UNRELEASED; urgency=medium
+
+  * Correct a FTBFS mistake where the systemd-dev was applied to the wrong
+    alternative.  It didn't reproduce locally because my chroot was old.
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 24 Jan 2024 11:25:54 -0600
+
 fwupd (1.9.12-1) unstable; urgency=medium
 
   * New upstream version (1.9.12)
