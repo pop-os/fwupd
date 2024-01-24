@@ -1,4 +1,4 @@
-fwupd (1.9.12-2) UNRELEASED; urgency=medium
+fwupd (1.9.12-2) unstable; urgency=medium
 
   * Correct a FTBFS mistake where the systemd-dev was applied to the wrong
     alternative.  It didn't reproduce locally because my chroot was old.
