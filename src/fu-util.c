@@ -448,38 +448,6 @@ fu_util_perhaps_show_unreported(FuUtilPrivate *priv, GError **error)
 	return TRUE;
 }
 
-static gboolean
-fu_util_modify_remote_warning(FuUtilPrivate *priv, FwupdRemote *remote, GError **error)
-{
-	const gchar *warning_markup = NULL;
-	g_autofree gchar *warning_plain = NULL;
-
-	/* get formatted text */
-	warning_markup = fwupd_remote_get_agreement(remote);
-	if (warning_markup == NULL)
-		return TRUE;
-	warning_plain = fu_util_convert_description(warning_markup, error);
-	if (warning_plain == NULL)
-		return FALSE;
-
-	/* TRANSLATORS: a remote here is like a 'repo' or software source */
-	fu_console_box(priv->console, _("Enable new remote?"), warning_plain, 80);
-	if (!priv->assume_yes) {
-		if (!fu_console_input_bool(priv->console,
-					   TRUE,
-					   "%s",
-					   /* TRANSLATORS: should the remote still be enabled */
-					   _("Agree and enable the remote?"))) {
-			g_set_error_literal(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_NOTHING_TO_DO,
-					    "Declined agreement");
-			return FALSE;
-		}
-	}
-	return TRUE;
-}
-
 static void
 fu_util_build_device_tree_node(FuUtilPrivate *priv, GNode *root, FwupdDevice *dev)
 {
@@ -2080,7 +2048,7 @@ fu_util_download_metadata_enable_lvfs(FuUtilPrivate *priv, GError **error)
 					priv->cancellable,
 					error))
 		return FALSE;
-	if (!fu_util_modify_remote_warning(priv, remote, error))
+	if (!fu_util_modify_remote_warning(priv->console, remote, priv->assume_yes, error))
 		return FALSE;
 
 	/* refresh the newly-enabled remote */
@@ -3141,7 +3109,7 @@ fu_util_remote_enable(FuUtilPrivate *priv, gchar **values, GError **error)
 	remote = fwupd_client_get_remote_by_id(priv->client, values[0], priv->cancellable, error);
 	if (remote == NULL)
 		return FALSE;
-	if (!fu_util_modify_remote_warning(priv, remote, error))
+	if (!fu_util_modify_remote_warning(priv->console, remote, priv->assume_yes, error))
 		return FALSE;
 	if (!fwupd_client_modify_remote(priv->client,
 					fwupd_remote_get_id(remote),
@@ -3672,10 +3640,12 @@ fu_util_modify_config(FuUtilPrivate *priv, gchar **values, GError **error)
 					   _("Restart the daemon to make the change effective?")))
 			return TRUE;
 	}
-#ifdef HAVE_SYSTEMD
-	if (!fu_systemd_unit_stop(fu_util_get_systemd_unit(), error))
+
+	if (!fu_util_quit(priv, NULL, error))
 		return FALSE;
-#endif
+	if (!fwupd_client_connect(priv->client, priv->cancellable, error))
+		return FALSE;
+
 	/* TRANSLATORS: success message -- a per-system setting value */
 	fu_console_print_literal(priv->console, _("Successfully modified configuration value"));
 	return TRUE;
@@ -4069,7 +4039,7 @@ fu_util_security_fix_attr(FuUtilPrivate *priv, FwupdSecurityAttr *attr, GError *
 			    /* TRANSLATORS: the %1 is a kernel command line key=value */
 			    _("This tool can add a kernel argument of '%s', but it will "
 			      "only be active after restarting the computer."),
-			    fwupd_security_attr_get_kernel_current_value(attr));
+			    fwupd_security_attr_get_kernel_target_value(attr));
 		}
 		g_string_append(body, "\n\n");
 		g_string_append(body,
@@ -5596,16 +5566,6 @@ main(int argc, char *argv[])
 		fu_util_print_error(priv, error);
 		return EXIT_FAILURE;
 	}
-
-#ifdef HAVE_SYSTEMD
-	/* make sure the correct daemon is in use */
-	if ((priv->flags & FWUPD_INSTALL_FLAG_FORCE) == 0 &&
-	    !fwupd_client_get_daemon_interactive(priv->client) &&
-	    !fu_util_using_correct_daemon(&error)) {
-		fu_util_print_error(priv, error);
-		return EXIT_FAILURE;
-	}
-#endif
 
 	/* make sure polkit actions were installed */
 	if (!fu_util_check_polkit_actions(&error)) {

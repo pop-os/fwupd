@@ -1,7 +1,7 @@
 project('fwupd', 'c',
   version: '1.9.11',
   license: 'LGPL-2.1-or-later',
-  meson_version: '>=0.61.0',
+  meson_version: '>=0.62.0',
   default_options: ['warning_level=2', 'c_std=c11'],
 )
 
@@ -535,6 +535,8 @@ motd_dir = 'motd.d'
 conf.set_quoted('MOTD_FILE', motd_file)
 conf.set_quoted('MOTD_DIR', motd_dir)
 
+conf.set_quoted('FU_DEFAULT_P2P_POLICY', get_option('p2p_policy'))
+
 configure_file(
   output: 'config.h',
   configuration: conf
@@ -605,6 +607,8 @@ if polkit.found()
   subdir('policy')
 endif
 if build_standalone
+  man_md = []
+  md_targets = []
   plugin_quirks = []
   subdir('libfwupdplugin')
   subdir('data')

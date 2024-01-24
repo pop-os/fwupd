@@ -274,10 +274,14 @@ fu_cpu_device_probe_extended_features(FuDevice *device, GError **error)
 		self->flags |= FU_CPU_DEVICE_FLAG_SMAP;
 	if ((ecx >> 7) & 0x1)
 		self->flags |= FU_CPU_DEVICE_FLAG_SHSTK;
-	if ((ecx >> 13) & 0x1)
-		self->flags |= FU_CPU_DEVICE_FLAG_TME;
-	if ((edx >> 20) & 0x1)
-		self->flags |= FU_CPU_DEVICE_FLAG_IBT;
+
+	if (fu_cpu_get_vendor() == FU_CPU_VENDOR_INTEL) {
+		if ((ecx >> 13) & 0x1)
+			self->flags |= FU_CPU_DEVICE_FLAG_TME;
+		if ((edx >> 20) & 0x1)
+			self->flags |= FU_CPU_DEVICE_FLAG_IBT;
+	}
+
 	return TRUE;
 }
 
@@ -324,15 +328,25 @@ fu_cpu_device_add_security_attrs_cet_enabled(FuCpuDevice *self, FuSecurityAttrs 
 	fwupd_security_attr_set_result_success(attr, FWUPD_SECURITY_ATTR_RESULT_SUPPORTED);
 	fu_security_attrs_append(attrs, attr);
 
-	/* check for CET */
-	if (!fu_cpu_device_has_flag(self, FU_CPU_DEVICE_FLAG_SHSTK) ||
-	    !fu_cpu_device_has_flag(self, FU_CPU_DEVICE_FLAG_IBT)) {
-		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_SUPPORTED);
-		return;
+	switch (fu_cpu_get_vendor()) {
+	case FU_CPU_VENDOR_INTEL:
+		if (fu_cpu_device_has_flag(self, FU_CPU_DEVICE_FLAG_SHSTK) &&
+		    fu_cpu_device_has_flag(self, FU_CPU_DEVICE_FLAG_IBT)) {
+			fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
+			return;
+		}
+		break;
+	case FU_CPU_VENDOR_AMD:
+		if (fu_cpu_device_has_flag(self, FU_CPU_DEVICE_FLAG_SHSTK)) {
+			fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
+			return;
+		}
+		break;
+	default:
+		break;
 	}
 
-	/* success */
-	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
+	fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_SUPPORTED);
 }
 
 static void
@@ -340,12 +354,19 @@ fu_cpu_device_add_security_attrs_cet_active(FuCpuDevice *self, FuSecurityAttrs *
 {
 	gint exit_status = 0xff;
 	g_autofree gchar *toolfn = NULL;
+	g_autofree gchar *dir = NULL;
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
+	g_autoptr(FwupdSecurityAttr) cet_plat_attr = NULL;
 	g_autoptr(GError) error_local = NULL;
 
 	/* check for CET */
-	if (!fu_cpu_device_has_flag(self, FU_CPU_DEVICE_FLAG_SHSTK) ||
-	    !fu_cpu_device_has_flag(self, FU_CPU_DEVICE_FLAG_IBT))
+	cet_plat_attr =
+	    fu_security_attrs_get_by_appstream_id(attrs,
+						  FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED,
+						  NULL);
+	if (cet_plat_attr == NULL)
+		return;
+	if (!fwupd_security_attr_has_flag(cet_plat_attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS))
 		return;
 
 	/* create attr */
@@ -356,7 +377,8 @@ fu_cpu_device_add_security_attrs_cet_active(FuCpuDevice *self, FuSecurityAttrs *
 	fu_security_attrs_append(attrs, attr);
 
 	/* check that userspace has been compiled for CET support */
-	toolfn = g_build_filename(FWUPD_LIBEXECDIR, "fwupd", "fwupd-detect-cet", NULL);
+	dir = fu_path_from_kind(FU_PATH_KIND_LIBEXECDIR_PKG);
+	toolfn = g_build_filename(dir, "fwupd-detect-cet", NULL);
 	if (!g_spawn_command_line_sync(toolfn, NULL, NULL, &exit_status, &error_local)) {
 		g_warning("failed to test CET: %s", error_local->message);
 		return;

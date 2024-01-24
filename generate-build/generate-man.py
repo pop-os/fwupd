@@ -12,15 +12,6 @@ from typing import List, Dict
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 
-def _is_md_title(line: str) -> bool:
-    if not line:
-        return False
-    for char in line:
-        if char not in ["#", "-", "="]:
-            return False
-    return True
-
-
 def _replace_bookend(line: str, search: str, replace_l: str, replace_r: str) -> str:
 
     try:
@@ -37,6 +28,23 @@ def _replace_bookend(line: str, search: str, replace_l: str, replace_r: str) -> 
     except StopIteration:
         pass
     return line
+
+
+def _strip_md(data: str) -> str:
+    content = ""
+    for line in data.split("\n"):
+        # skip the man page header
+        if line.startswith("%"):
+            continue
+        if line.startswith("|"):
+            line = line[2:]
+        # create links to other "man" pages
+        if line.startswith("<") and (line.endswith("(1)>") or line.endswith("(5)>")):
+            line = line.strip("<>")
+            name = line.split("(")[0]
+            line = f"[`{line}`](./{name}.html)"
+        content += f"{line}\n"
+    return content
 
 
 def _convert_md_to_man(data: str) -> str:
@@ -70,20 +78,24 @@ def _convert_md_to_man(data: str) -> str:
         sectalign: int = 4
 
         # convert markdown headers to section headers
-        if _is_md_title(lines[-1]):
-            lines = lines[:-1]
+        if lines[-1].startswith("##"):
+            lines = [lines[-1].strip("#").strip()]
             sectkind = ".SH"
 
         # join long lines
         line = ""
+        indent = False
         for line_tmp in lines:
             if not line_tmp:
                 continue
+            if line_tmp.startswith("```"):
+                indent = not indent
+                line_tmp = "```"  # strip the language
             if line_tmp.startswith("| "):
                 line_tmp = line_tmp[2:]
-            if line_tmp.startswith("  "):
+            if indent:
                 line += ".nf\n"
-                line += line_tmp[2:] + "\n"
+                line += line_tmp + "\n"
                 line += ".fi\n"
                 continue
             elif line_tmp.startswith("* "):
@@ -145,6 +157,7 @@ if __name__ == "__main__":
         "-r", "--replace", action="append", nargs=2, metavar=("symbol", "version")
     )
     parser.add_argument("-d", "--defines", action="append")
+    parser.add_argument("--md", action="store_true")
     args, argv = parser.parse_known_args()
     if len(argv) != 1:
         print(f"usage: {sys.argv[0]} MARKDOWN [-o TROFF]\n")
@@ -172,7 +185,13 @@ if __name__ == "__main__":
         keep_trailing_newline=True,
     )
     template = env.get_template(os.path.basename(argv[0]))
-    out = _convert_md_to_man(template.render(subst))
+    rendered = template.render(subst)
+
+    # Stripped markdown mode is used for HTML docs
+    if args.md:
+        out = _strip_md(rendered)
+    else:
+        out = _convert_md_to_man(rendered)
 
     # success
     if args.output:

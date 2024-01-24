@@ -24,25 +24,12 @@
 #include "fu-device-private.h"
 #include "fu-util-common.h"
 
-#ifdef HAVE_SYSTEMD
-#include "fu-systemd.h"
-#endif
-
-#define SYSTEMD_FWUPD_UNIT	"fwupd.service"
-#define SYSTEMD_SNAP_FWUPD_UNIT "snap.fwupd.fwupd.service"
-
 static gchar *
 fu_util_remote_to_string(FwupdRemote *remote, guint idt);
 static gchar *
 fu_util_release_to_string(FwupdRelease *rel, guint idt);
-
-const gchar *
-fu_util_get_systemd_unit(void)
-{
-	if (g_getenv("SNAP") != NULL)
-		return SYSTEMD_SNAP_FWUPD_UNIT;
-	return SYSTEMD_FWUPD_UNIT;
-}
+static gchar *
+fu_util_convert_description(const gchar *xml, GError **error);
 
 gchar *
 fu_console_color_format(const gchar *text, FuConsoleColor fg_color)
@@ -50,48 +37,6 @@ fu_console_color_format(const gchar *text, FuConsoleColor fg_color)
 	if (g_getenv("NO_COLOR") != NULL)
 		return g_strdup(text);
 	return g_strdup_printf("\033[%um\033[1m%s\033[0m", fg_color, text);
-}
-
-#ifdef HAVE_SYSTEMD
-static const gchar *
-fu_util_get_expected_command(const gchar *target)
-{
-	if (g_strcmp0(target, SYSTEMD_SNAP_FWUPD_UNIT) == 0)
-		return "fwupd.fwupdmgr";
-	return "fwupdmgr";
-}
-#endif
-
-gboolean
-fu_util_using_correct_daemon(GError **error)
-{
-#ifdef HAVE_SYSTEMD
-	g_autofree gchar *default_target = NULL;
-	g_autoptr(GError) error_local = NULL;
-	const gchar *target;
-
-	if (g_getenv("FWUPD_DBUS_SOCKET") != NULL)
-		return TRUE;
-
-	target = fu_util_get_systemd_unit();
-
-	default_target = fu_systemd_get_default_target(&error_local);
-	if (default_target == NULL) {
-		g_info("systemd is not accessible: %s", error_local->message);
-		return TRUE;
-	}
-	if (!fu_systemd_unit_check_exists(target, &error_local)) {
-		g_info("wrong target: %s", error_local->message);
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_ARGS,
-			    /* TRANSLATORS: error message */
-			    _("Mismatched daemon and client, use %s instead"),
-			    fu_util_get_expected_command(target));
-		return FALSE;
-	}
-#endif
-	return TRUE;
 }
 
 typedef struct {
@@ -993,7 +938,7 @@ fu_util_convert_description_tail_cb(XbNode *n, gpointer user_data)
 	return FALSE;
 }
 
-gchar *
+static gchar *
 fu_util_convert_description(const gchar *xml, GError **error)
 {
 	g_autoptr(GString) str = g_string_new(NULL);
@@ -3004,6 +2949,41 @@ fu_util_show_unsupported_warning(FuConsole *console)
 			      /* TRANSLATORS: unsupported build of the package */
 			      _("This package has not been validated, it may not work properly."));
 #endif
+}
+
+gboolean
+fu_util_modify_remote_warning(FuConsole *console,
+			      FwupdRemote *remote,
+			      gboolean assume_yes,
+			      GError **error)
+{
+	const gchar *warning_markup = NULL;
+	g_autofree gchar *warning_plain = NULL;
+
+	/* get formatted text */
+	warning_markup = fwupd_remote_get_agreement(remote);
+	if (warning_markup == NULL)
+		return TRUE;
+	warning_plain = fu_util_convert_description(warning_markup, error);
+	if (warning_plain == NULL)
+		return FALSE;
+
+	/* TRANSLATORS: a remote here is like a 'repo' or software source */
+	fu_console_box(console, _("Enable new remote?"), warning_plain, 80);
+	if (!assume_yes) {
+		if (!fu_console_input_bool(console,
+					   TRUE,
+					   "%s",
+					   /* TRANSLATORS: should the remote still be enabled */
+					   _("Agree and enable the remote?"))) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOTHING_TO_DO,
+					    "Declined agreement");
+			return FALSE;
+		}
+	}
+	return TRUE;
 }
 
 #ifdef HAVE_LIBCURL

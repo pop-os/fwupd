@@ -23,6 +23,14 @@ configure_file(
 )
 
 configure_file(
+  input: 'fwupdtool.test.in',
+  output: 'fwupdtool.test',
+  configuration: con2,
+  install: true,
+  install_dir: installed_test_datadir,
+)
+
+configure_file(
   input: 'fwupd.test.in',
   output: 'fwupd.test',
   configuration: con2,
@@ -39,9 +47,20 @@ configure_file(
 )
 
 install_data([
+    'fakedevice124.bin',
+    'fakedevice124.jcat',
+    'fakedevice124.metainfo.xml',
     'fwupdmgr.sh',
     'fwupd-tests.xml',
   ],
+  install_dir: installed_test_datadir,
+)
+
+configure_file(
+  input: 'fwupdtool.sh',
+  output: 'fwupdtool.sh',
+  configuration: con2,
+  install: true,
   install_dir: installed_test_datadir,
 )
 
@@ -56,7 +75,7 @@ configure_file(
 custom_target('installed-cab123',
   input: [
     'fakedevice123.bin',
-    'fakedevice123.bin.asc',
+    'fakedevice123.jcat',
     'fakedevice123.metainfo.xml',
   ],
   output: 'fakedevice123.cab',
@@ -69,7 +88,7 @@ custom_target('installed-cab123',
 custom_target('installed-cab124',
   input: [
     'fakedevice124.bin',
-    'fakedevice124.bin.asc',
+    'fakedevice124.jcat',
     'fakedevice124.metainfo.xml',
   ],
   output: 'fakedevice124.cab',

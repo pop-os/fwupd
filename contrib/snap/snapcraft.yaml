@@ -8,6 +8,7 @@ description: |
 grade: stable
 confinement: strict
 base: core22
+license: LGPL-2.1+
 
 architectures:
   - amd64
@@ -28,12 +29,9 @@ plugs:
     action-prefix: org.freedesktop.fwupd
 
 apps:
-  dbxtool:
-    command: dbxtool.wrapper
-    plugs: [fwupdmgr, network]
   fwupdtool:
     command: fwupdtool.wrapper
-    plugs: [bluez, udisks2, modem-manager, upower-observe, network, hardware-observe, opengl, raw-usb]
+    plugs: [bluez, udisks2, modem-manager, upower-observe, network, hardware-observe, home, opengl, raw-usb]
     slots: [fwupd]
     completer:
       share/bash-completion/completions/fwupdtool
@@ -43,7 +41,7 @@ apps:
     command: fwupd.wrapper
     daemon: dbus
     slots: [fwupd]
-    plugs: [bluez, udisks2, modem-manager, upower-observe, polkit, network, hardware-observe, opengl, raw-usb]
+    plugs: [bluez, udisks2, modem-manager, upower-observe, polkit, network, hardware-observe, home, opengl, raw-usb]
     daemon-scope: system
     activates-on:
       - fwupd-dbus
@@ -51,7 +49,7 @@ apps:
       FWUPD_HOSTDIR: /var/lib/snapd/hostfs
   fwupdmgr:
     command: fwupdmgr.wrapper
-    plugs: [fwupdmgr, network, polkit, shutdown]
+    plugs: [fwupdmgr, home, network, polkit, shutdown]
     completer:
       share/bash-completion/completions/fwupdmgr
 
@@ -120,7 +118,7 @@ parts:
               ${CRAFT_PART_INSTALL}/share/dbus-1/system-services/org.freedesktop.fwupd.service
       cp -R /usr/libexec/fwupd/efi ${CRAFT_PART_INSTALL}/libexec/fwupd
       cp /usr/lib/shim/shimx64.efi.signed ${CRAFT_PART_INSTALL}/libexec/fwupd/efi/
-      sed -i 's,^MetadataURI=.*$,MetadataURI=file:///var/snap/fwupd/common,' "${CRAFT_PART_INSTALL}/etc/fwupd/remotes.d/vendor-directory.conf"
+      sed -i 's,^MetadataURI=.*$,MetadataURI=file:///var/snap/fwupd/common/share/fwupd/remotes.d/vendor/firmware,' "${CRAFT_PART_INSTALL}/etc/fwupd/remotes.d/vendor-directory.conf"
     override-pull: |
       craftctl default
       craftctl set version=$(git describe HEAD --always)
@@ -168,8 +166,6 @@ parts:
       - systemd
       - uuid-dev
     stage-packages:
-      - libunbound8
-      - libevent-2.1-7
       - libnghttp2-14
       - libpsl5
       - librtmp1
@@ -179,13 +175,11 @@ parts:
       - libassuan0
       - libffi8
       - libjcat1
-      - liblcms2-2
       - liblzma5
       - libgusb2
       - libusb-1.0-0
       - libgudev-1.0-0
       - libgpgme11
-      - libpcre32-3
       - libprotobuf-c1
       - libpolkit-gobject-1-0
       - libtss2-esys-3.0.2-0
@@ -210,6 +204,13 @@ parts:
       # this will cause gpgme to error finding it
       # but that also avoids trying to use nonexistent
       # /usr/bin/gpg2
+      - -etc/dconf/db
+      - -etc/grub.d
+      - -etc/fwupd/remotes.d/vendor.conf
+      - -etc/systemd/system
+      - -share/fwupd/*.py
+      - -share/fish
+      - -root
       - -usr/bin
       - -usr/sbin
       - -usr/libexec
@@ -234,6 +235,7 @@ parts:
       - -usr/share/upstart
       - -usr/share/X11
       - -include
+      - -lib/systemd
       - -lib/udev
       - -lib/*/pkgconfig
       - -usr/share/lintian
@@ -246,18 +248,18 @@ parts:
       - -usr/share/info
       - -usr/share/gir-1.0
       - -usr/share/upstart
+      - -usr/lib/*/libicu*
       - -usr/lib/*/pkgconfig
-      - -usr/lib/x86_64-linux-gnu/gio/modules/libdconfsettings.so
+      - -usr/lib/*/libnpth*
+      - -usr/lib/*/libgthread*
+      - -usr/lib/*/libksba*
+      - -usr/lib/*/gio/modules/libdconfsettings.so
       - -usr/lib/systemd/user/dconf.service
       - -usr/share/dbus-1/services/ca.desrt.dconf.service
-      - -usr/lib/x86_64-linux-gnu/libdconf.so.1.0.0
+      - -usr/lib/*/libdconf.so.1.0.0
     after: [build-introspection]
     build-environment:
       - PYTHONPATH: "${CRAFT_STAGE}/usr/lib/python3/dist-packages"
-  activate-shutdown:
-    plugin: make
-    source: contrib/snap/activate-shutdown
-    after: [fwupd]
   update-mime:
     plugin: make
     source: contrib/snap/update-mime
@@ -283,7 +285,6 @@ parts:
     plugin: dump
     source: contrib/snap
     stage:
-    - dbxtool.wrapper
     - fwupd-command
     - fwupdtool.wrapper
     - fwupd.wrapper
