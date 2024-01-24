@@ -1,3 +1,12 @@
+fwupd (1.9.12-1) unstable; urgency=medium
+
+  * New upstream version (1.9.12)
+  * Adjust build-depends to cover systemd-dev (Closes: #1060577)
+  * Build depends on valgrind-if-available.  Enables for loongarch64
+    too (Closes: #1059606)
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 24 Jan 2024 06:56:42 -0600
+
 fwupd (1.9.11-1) unstable; urgency=medium
 
   * New upstream version (1.9.11)
