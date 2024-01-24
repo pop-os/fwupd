@@ -1,9 +1,9 @@
-fwupd (1.9.12-3) UNRELEASED; urgency=medium
+fwupd (1.9.12-3) unstable; urgency=medium
 
   * Try harder to correct the FTBFS so that both libsystemd-dev and
     systemd-dev get installed.
 
- -- Mario Limonciello <superm1@gmail.com>  Wed, 24 Jan 2024 12:32:14 -0600
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 24 Jan 2024 12:32:54 -0600
 
 fwupd (1.9.12-2) unstable; urgency=medium
 
