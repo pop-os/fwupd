@@ -1,10 +1,10 @@
-fwupd (1.9.12-4) UNRELEASED; urgency=medium
+fwupd (1.9.12-4) unstable; urgency=medium
 
   * debian/tests/ci: Put all stderr into stdout.
     fwupdtool is pretty verbose with messages that happen to go to stderr
     but aren't errors.
 
- -- Mario Limonciello <superm1@gmail.com>  Thu, 25 Jan 2024 14:18:38 -0600
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 25 Jan 2024 14:19:28 -0600
 
 fwupd (1.9.12-3) unstable; urgency=medium
 
