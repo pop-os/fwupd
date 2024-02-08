@@ -53,7 +53,7 @@ fu_usb_device_fw_ds20_parse(FuUsbDeviceDs20 *self,
 	}
 
 	/* no NUL is unexpected, but fine */
-	if (bufsz == 0)
+	if (bufsz_safe == 0)
 		bufsz_safe = bufsz;
 
 	if (!g_utf8_validate((const gchar *)buf, (gssize)bufsz_safe, NULL)) {
@@ -70,9 +70,16 @@ fu_usb_device_fw_ds20_parse(FuUsbDeviceDs20 *self,
 	/* split into lines */
 	lines = fu_strsplit((const gchar *)buf, bufsz_safe, "\n", -1);
 	for (guint i = 0; lines[i] != NULL; i++) {
+		g_autofree gchar *key = NULL;
+		g_autofree gchar *value = NULL;
 		g_auto(GStrv) kv = NULL;
+
 		if (lines[i][0] == '\0')
 			continue;
+		if (g_str_has_prefix(lines[i], "[") && g_str_has_suffix(lines[i], "]")) {
+			g_debug("ignoring DS-20 group header: %s", lines[i]);
+			continue;
+		}
 		kv = g_strsplit(lines[i], "=", 2);
 		if (g_strv_length(kv) < 2) {
 			g_set_error(error,
@@ -82,10 +89,17 @@ fu_usb_device_fw_ds20_parse(FuUsbDeviceDs20 *self,
 				    lines[i]);
 			return FALSE;
 		}
+		key = fu_strstrip(kv[0]);
+		if (g_strcmp0(key, kv[0]) != 0)
+			g_debug("removing DS-20 whitespace '%s'", kv[0]);
+		value = fu_strstrip(kv[1]);
+		if (g_strcmp0(value, kv[1]) != 0)
+			g_debug("removing DS-20 whitespace '%s'", kv[1]);
+
 		/* it's fine to be strict here, as we checked the fwupd version was new enough in
 		 * FuUsbDeviceDs20Item */
-		g_debug("setting ds20 device quirk '%s'='%s'", kv[0], kv[1]);
-		if (!fu_device_set_quirk_kv(FU_DEVICE(device), kv[0], kv[1], error))
+		g_debug("setting ds20 device quirk '%s'='%s'", key, value);
+		if (!fu_device_set_quirk_kv(FU_DEVICE(device), key, value, error))
 			return FALSE;
 	}
 

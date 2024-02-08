@@ -292,6 +292,8 @@ fu_device_internal_flag_to_string(FuDeviceInternalFlags flag)
 		return "host-cpu";
 	if (flag == FU_DEVICE_INTERNAL_FLAG_HOST_CPU_CHILD)
 		return "host-cpu-child";
+	if (flag == FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER)
+		return "explicit-order";
 	return NULL;
 }
 
@@ -392,6 +394,8 @@ fu_device_internal_flag_from_string(const gchar *flag)
 		return FU_DEVICE_INTERNAL_FLAG_HOST_CPU;
 	if (g_strcmp0(flag, "host-cpu-child") == 0)
 		return FU_DEVICE_INTERNAL_FLAG_HOST_CPU_CHILD;
+	if (g_strcmp0(flag, "explicit-order") == 0)
+		return FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER;
 	return FU_DEVICE_INTERNAL_FLAG_UNKNOWN;
 }
 
@@ -2860,6 +2864,8 @@ fu_device_set_id(FuDevice *self, const gchar *id)
 void
 fu_device_set_version_format(FuDevice *self, FwupdVersionFormat fmt)
 {
+	FuDeviceClass *klass = FU_DEVICE_GET_CLASS(self);
+
 	/* same */
 	if (fu_device_get_version_format(self) == fmt)
 		return;
@@ -2870,6 +2876,14 @@ fu_device_set_version_format(FuDevice *self, FwupdVersionFormat fmt)
 			fwupd_version_format_to_string(fmt));
 	}
 	fwupd_device_set_version_format(FWUPD_DEVICE(self), fmt);
+
+	/* convert this, now we know */
+	if (klass->convert_version != NULL && fu_device_get_version(self) != NULL &&
+	    fu_device_get_version_raw(self) != 0) {
+		g_autofree gchar *version =
+		    klass->convert_version(self, fu_device_get_version_raw(self));
+		fu_device_set_version(self, version);
+	}
 }
 
 /**
@@ -5712,7 +5726,9 @@ fu_device_ensure_from_component_flags(FuDevice *self, XbNode *component)
 	const gchar *tmp =
 	    xb_node_query_text(component, "custom/value[@key='LVFS::DeviceFlags']", NULL);
 	if (tmp != NULL) {
-		fu_device_set_custom_flag(self, tmp);
+		g_auto(GStrv) hints = g_strsplit(tmp, ",", -1);
+		for (guint i = 0; hints[i] != NULL; i++)
+			fu_device_set_custom_flag(self, hints[i]);
 		fu_device_remove_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
 	}
 }
@@ -6003,7 +6019,8 @@ fu_device_emit_request(FuDevice *self, FwupdRequest *request, FuProgress *progre
 		return FALSE;
 	}
 	g_signal_emit(self, signals[SIGNAL_REQUEST], 0, request);
-	priv->request_cnts[fwupd_request_get_kind(request)]++;
+	if (fwupd_request_get_kind(request) < FWUPD_REQUEST_KIND_LAST)
+		priv->request_cnts[fwupd_request_get_kind(request)]++;
 	return TRUE;
 }
 

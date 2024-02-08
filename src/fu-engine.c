@@ -129,6 +129,7 @@ struct _FuEngine {
 	GHashTable *blocked_firmware;  /* (nullable) */
 	GHashTable *emulation_phases;  /* (element-type int utf8) */
 	GHashTable *emulation_backend_ids; /* (element-type str int) */
+	GHashTable *device_changed_allowlist; /* (element-type str int) */
 	gchar *host_machine_id;
 	JcatContext *jcat_context;
 	gboolean loaded;
@@ -168,7 +169,7 @@ fu_engine_update_motd_timeout_cb(gpointer user_data)
 	g_autoptr(GError) error_local = NULL;
 
 	/* busy */
-	if (fu_idle_has_inhibit(self->idle, "update"))
+	if (fu_idle_has_inhibit(self->idle, FU_IDLE_INHIBIT_SIGNALS))
 		return G_SOURCE_CONTINUE;
 
 	/* update now */
@@ -254,6 +255,12 @@ fu_engine_set_status(FuEngine *self, FwupdStatus status)
 static void
 fu_engine_generic_notify_cb(FuDevice *device, GParamSpec *pspec, FuEngine *self)
 {
+	if (fu_idle_has_inhibit(self->idle, FU_IDLE_INHIBIT_SIGNALS) &&
+	    !g_hash_table_contains(self->device_changed_allowlist, fu_device_get_id(device))) {
+		g_debug("suppressing notification from %s as transaction is in progress",
+			fu_device_get_id(device));
+		return;
+	}
 	fu_engine_emit_device_changed(self, fu_device_get_id(device));
 }
 
@@ -754,6 +761,7 @@ fu_engine_modify_config(FuEngine *self, const gchar *key, const gchar *value, GE
 			       "ReleaseDedupe",
 			       "ReleasePriority",
 			       "ShowDevicePrivate",
+			       "TestDevices",
 			       "TrustedReports",
 			       "TrustedUids",
 			       "UpdateMotd",
@@ -1487,6 +1495,18 @@ fu_engine_idle_reset(FuEngine *self)
 	fu_idle_reset(self->idle);
 }
 
+guint32
+fu_engine_idle_inhibit(FuEngine *self, FuIdleInhibit inhibit, const gchar *reason)
+{
+	return fu_idle_inhibit(self->idle, inhibit, reason);
+}
+
+void
+fu_engine_idle_uninhibit(FuEngine *self, guint32 token)
+{
+	fu_idle_uninhibit(self->idle, token);
+}
+
 static gchar *
 fu_engine_get_boot_time(void)
 {
@@ -1855,8 +1875,20 @@ fu_engine_install_releases(FuEngine *self,
 	g_autoptr(GPtrArray) devices_new = NULL;
 
 	/* do not allow auto-shutdown during this time */
-	locker = fu_idle_locker_new(self->idle, "update");
+	locker = fu_idle_locker_new(self->idle,
+				    FU_IDLE_INHIBIT_TIMEOUT | FU_IDLE_INHIBIT_SIGNALS,
+				    "update");
 	g_assert(locker != NULL);
+
+	/* use an allow-list for device-changed signals -- only allow any of the composite update
+	 * devices to emit signals for the duration of the install */
+	for (guint i = 0; i < releases->len; i++) {
+		FuRelease *release = g_ptr_array_index(releases, i);
+		FuDevice *device = fu_release_get_device(release);
+		g_hash_table_insert(self->device_changed_allowlist,
+				    g_strdup(fu_device_get_id(device)),
+				    GUINT_TO_POINTER(1));
+	}
 
 	/* install these in the right order */
 	g_ptr_array_sort(releases, fu_engine_sort_release_device_order_release_version_cb);
@@ -1867,9 +1899,11 @@ fu_engine_install_releases(FuEngine *self,
 		FuRelease *release = g_ptr_array_index(releases, i);
 		FuDevice *device = fu_release_get_device(release);
 		const gchar *logical_id = fu_device_get_logical_id(device);
-		g_info("composite update %u: %s (%s: %i)",
+		g_info("composite update %u: %s %s->%s (%s: %i)",
 		       i + 1,
 		       fu_device_get_id(device),
+		       fu_device_get_version(device),
+		       fu_release_get_version(release),
 		       logical_id != NULL ? logical_id : "n/a",
 		       fu_device_get_order(device));
 		g_ptr_array_add(devices, g_object_ref(device));
@@ -3798,7 +3832,7 @@ fu_engine_ensure_device_supported(FuEngine *self, FuDevice *device)
 static void
 fu_engine_md_refresh_devices(FuEngine *self)
 {
-	g_autoptr(GPtrArray) devices = fu_device_list_get_all(self->device_list);
+	g_autoptr(GPtrArray) devices = fu_device_list_get_active(self->device_list);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
 		g_autoptr(XbNode) component = fu_engine_get_component_by_guids(self, device);
@@ -4752,7 +4786,7 @@ fu_engine_get_devices_by_guid(FuEngine *self, const gchar *guid, GError **error)
 	g_autoptr(GPtrArray) devices_tmp = NULL;
 
 	/* find the devices by GUID */
-	devices_tmp = fu_device_list_get_all(self->device_list);
+	devices_tmp = fu_device_list_get_active(self->device_list);
 	devices = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	for (guint i = 0; i < devices_tmp->len; i++) {
 		FuDevice *dev_tmp = g_ptr_array_index(devices_tmp, i);
@@ -4780,7 +4814,7 @@ fu_engine_get_devices_by_guid(FuEngine *self, const gchar *guid, GError **error)
  * @composite_id: a device ID
  * @error: (nullable): optional return location for an error
  *
- * Gets all devices that match a specific composite ID.
+ * Gets all active devices that match a specific composite ID.
  *
  * Returns: (transfer full) (element-type FuDevice): devices
  **/
@@ -4791,7 +4825,7 @@ fu_engine_get_devices_by_composite_id(FuEngine *self, const gchar *composite_id,
 	g_autoptr(GPtrArray) devices_tmp = NULL;
 
 	/* find the devices by composite ID */
-	devices_tmp = fu_device_list_get_all(self->device_list);
+	devices_tmp = fu_device_list_get_active(self->device_list);
 	devices = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	for (guint i = 0; i < devices_tmp->len; i++) {
 		FuDevice *dev_tmp = g_ptr_array_index(devices_tmp, i);
@@ -6128,6 +6162,17 @@ fu_engine_device_inherit_history(FuEngine *self, FuDevice *device)
 	if (device_history == NULL)
 		return;
 
+	/* in an offline environment we may have used the .cab file to find the version-format
+	 * to use for the device -- so when we reboot use the database as the archive data is no
+	 * longer available */
+	if (fu_device_get_version_format(device_history) != FWUPD_VERSION_FORMAT_UNKNOWN) {
+		g_debug(
+		    "absorbing version format %s into %s from history database",
+		    fwupd_version_format_to_string(fu_device_get_version_format(device_history)),
+		    fu_device_get_id(device));
+		fu_device_set_version_format(device, fu_device_get_version_format(device_history));
+	}
+
 	/* the device is still running the old firmware version and so if it
 	 * required activation before, it still requires it now -- note:
 	 * we can't just check for version_new=version to allow for re-installs */
@@ -6315,7 +6360,7 @@ fu_engine_plugin_rules_changed_cb(FuPlugin *plugin, gpointer user_data)
 		return;
 	for (guint j = 0; j < rules->len; j++) {
 		const gchar *tmp = g_ptr_array_index(rules, j);
-		fu_idle_inhibit(self->idle, tmp);
+		fu_idle_inhibit(self->idle, FU_IDLE_INHIBIT_TIMEOUT, tmp);
 	}
 }
 
@@ -6388,6 +6433,16 @@ fu_engine_is_uid_trusted(FuEngine *self, guint64 calling_uid)
 			return TRUE;
 	}
 	return FALSE;
+}
+
+static gboolean
+fu_engine_is_test_plugin_disabled(FuEngine *self, FuPlugin *plugin)
+{
+	if (!fu_plugin_has_flag(plugin, FWUPD_PLUGIN_FLAG_TEST_ONLY))
+		return FALSE;
+	if (fu_engine_config_get_test_devices(self->config))
+		return FALSE;
+	return TRUE;
 }
 
 static gboolean
@@ -6964,7 +7019,7 @@ fu_engine_ensure_security_attrs(FuEngine *self)
 {
 #ifdef HAVE_HSI
 	GPtrArray *plugins = fu_plugin_list_get_all(self->plugin_list);
-	g_autoptr(GPtrArray) devices = fu_device_list_get_all(self->device_list);
+	g_autoptr(GPtrArray) devices = fu_device_list_get_active(self->device_list);
 	g_autoptr(GPtrArray) vals = NULL;
 	g_autoptr(GError) error = NULL;
 
@@ -7127,6 +7182,7 @@ fu_engine_load_plugins_builtins(FuEngine *self, FuProgress *progress)
 	for (guint i = 0; fu_plugin_externals[i] != NULL; i++) {
 		GType plugin_gtype = fu_plugin_externals[i]();
 		g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(plugin_gtype, self->ctx);
+		fu_progress_set_name(fu_progress_get_child(progress), fu_plugin_get_name(plugin));
 		fu_engine_add_plugin(self, plugin);
 		fu_progress_step_done(progress);
 	}
@@ -7187,6 +7243,7 @@ fu_engine_plugins_init(FuEngine *self, FuProgress *progress, GError **error)
 
 		/* is disabled */
 		if (fu_engine_is_plugin_name_disabled(self, name) ||
+		    fu_engine_is_test_plugin_disabled(self, plugin) ||
 		    !fu_engine_is_plugin_name_enabled(self, name)) {
 			g_ptr_array_add(plugins_disabled, g_strdup(name));
 			fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_DISABLED);
@@ -7344,7 +7401,7 @@ fu_engine_backend_device_removed_cb(FuBackend *backend, FuDevice *device, FuEngi
 	g_debug("%s removed %s", fu_backend_get_name(backend), fu_device_get_backend_id(device));
 
 	/* go through each device and remove any that match */
-	devices = fu_device_list_get_all(self->device_list);
+	devices = fu_device_list_get_active(self->device_list);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device_tmp = g_ptr_array_index(devices, i);
 		if (g_strcmp0(fu_device_get_backend_id(device_tmp),
@@ -7499,7 +7556,7 @@ fu_engine_backend_device_changed_cb(FuBackend *backend, FuDevice *device, FuEngi
 	g_debug("%s changed %s", fu_backend_get_name(backend), fu_device_get_physical_id(device));
 
 	/* emit changed on any that match */
-	devices = fu_device_list_get_all(self->device_list);
+	devices = fu_device_list_get_active(self->device_list);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device_tmp = g_ptr_array_index(devices, i);
 		if (!FU_IS_UDEV_DEVICE(device_tmp) || !FU_IS_UDEV_DEVICE(device))
@@ -8062,6 +8119,8 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	/* read remotes */
 	if (flags & FU_ENGINE_LOAD_FLAG_REMOTES) {
 		FuRemoteListLoadFlags remote_list_flags = FU_REMOTE_LIST_LOAD_FLAG_NONE;
+		if (fu_engine_config_get_test_devices(self->config))
+			remote_list_flags |= FU_REMOTE_LIST_LOAD_FLAG_TEST_REMOTE;
 		if (flags & FU_ENGINE_LOAD_FLAG_READONLY)
 			remote_list_flags |= FU_REMOTE_LIST_LOAD_FLAG_READONLY_FS;
 		if (flags & FU_ENGINE_LOAD_FLAG_NO_CACHE)
@@ -8116,8 +8175,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	/* migrate per-plugin settings into fwupd.conf */
 	plugin_uefi = fu_plugin_list_find_by_name(self->plugin_list, "uefi_capsule", NULL);
 	if (plugin_uefi != NULL) {
-		const gchar *tmp =
-		    fu_plugin_get_config_value(plugin_uefi, "OverrideESPMountPoint", NULL);
+		const gchar *tmp = fu_plugin_get_config_value(plugin_uefi, "OverrideESPMountPoint");
 		if (tmp != NULL &&
 		    g_strcmp0(tmp, fu_engine_config_get_esp_location(self->config)) != 0) {
 			g_info("migrating OverrideESPMountPoint=%s to EspLocation", tmp);
@@ -8517,9 +8575,9 @@ fu_engine_add_runtime_version(FuEngine *self, const gchar *component_id, const g
 }
 
 static void
-fu_engine_context_power_changed_cb(FuContext *ctx, GParamSpec *pspec, FuEngine *self)
+fu_engine_context_power_changed(FuEngine *self)
 {
-	g_autoptr(GPtrArray) devices = fu_device_list_get_all(self->device_list);
+	g_autoptr(GPtrArray) devices = fu_device_list_get_active(self->device_list);
 
 	/* apply policy on any existing devices */
 	for (guint i = 0; i < devices->len; i++) {
@@ -8532,11 +8590,33 @@ fu_engine_context_power_changed_cb(FuContext *ctx, GParamSpec *pspec, FuEngine *
 }
 
 static void
-fu_engine_idle_status_notify_cb(FuIdle *idle, GParamSpec *pspec, FuEngine *self)
+fu_engine_context_power_changed_cb(FuContext *ctx, GParamSpec *pspec, FuEngine *self)
 {
-	FwupdStatus status = fu_idle_get_status(idle);
-	if (status == FWUPD_STATUS_SHUTDOWN)
-		fu_engine_set_status(self, status);
+	if (fu_idle_has_inhibit(self->idle, FU_IDLE_INHIBIT_SIGNALS)) {
+		g_debug("suppressing ::power-changed as transaction is in progress");
+		return;
+	}
+	fu_engine_context_power_changed(self);
+}
+
+static void
+fu_engine_idle_timeout_cb(FuIdle *idle, FuEngine *self)
+{
+	fu_engine_set_status(self, FWUPD_STATUS_SHUTDOWN);
+}
+
+static void
+fu_engine_idle_inhibit_changed_cb(FuIdle *idle, GParamSpec *pspec, FuEngine *self)
+{
+	if (!fu_idle_has_inhibit(idle, FU_IDLE_INHIBIT_SIGNALS) &&
+	    g_hash_table_size(self->device_changed_allowlist) > 0) {
+		g_debug("clearing device-changed allowlist as transaction done");
+		g_hash_table_remove_all(self->device_changed_allowlist);
+
+		/* we might have suppressed this during the transaction, so ensure all the device
+		 * inhibits are being set up correctly */
+		fu_engine_context_power_changed(self);
+	}
 }
 
 static void
@@ -8596,8 +8676,12 @@ fu_engine_constructed(GObject *obj)
 			 self);
 
 	g_signal_connect(FU_IDLE(self->idle),
-			 "notify::status",
-			 G_CALLBACK(fu_engine_idle_status_notify_cb),
+			 "inhibit-changed",
+			 G_CALLBACK(fu_engine_idle_inhibit_changed_cb),
+			 self);
+	g_signal_connect(FU_IDLE(self->idle),
+			 "timeout",
+			 G_CALLBACK(fu_engine_idle_timeout_cb),
 			 self);
 
 	/* backends */
@@ -8702,6 +8786,8 @@ fu_engine_init(FuEngine *self)
 	self->acquiesce_loop = g_main_loop_new(NULL, FALSE);
 	self->emulation_phases = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
 	self->emulation_backend_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+	self->device_changed_allowlist =
+	    g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 #ifdef HAVE_PASSIM
 	self->passim_client = passim_client_new();
 #endif
@@ -8768,6 +8854,7 @@ fu_engine_finalize(GObject *obj)
 	g_ptr_array_unref(self->local_monitors);
 	g_hash_table_unref(self->emulation_phases);
 	g_hash_table_unref(self->emulation_backend_ids);
+	g_hash_table_unref(self->device_changed_allowlist);
 	g_object_unref(self->plugin_list);
 
 	G_OBJECT_CLASS(fu_engine_parent_class)->finalize(obj);

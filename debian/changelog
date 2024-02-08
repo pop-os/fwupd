@@ -1,3 +1,10 @@
+fwupd (1.9.13-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.9.13)
+  * Fixes conffile migrations from some older versions.
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 08 Feb 2024 11:51:17 -0600
+
 fwupd (1.9.12-4) unstable; urgency=medium
 
   * debian/tests/ci: Put all stderr into stdout.
