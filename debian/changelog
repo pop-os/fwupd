@@ -1,4 +1,4 @@
-fwupd (1.9.13-1) UNRELEASED; urgency=medium
+fwupd (1.9.13-1) unstable; urgency=medium
 
   * New upstream version (1.9.13)
   * Fixes conffile migrations from some older versions.
