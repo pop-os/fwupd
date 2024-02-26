@@ -2494,32 +2494,6 @@ fu_device_add_counterpart_guid(FuDevice *self, const gchar *guid)
 }
 
 /**
- * fu_device_get_guids_as_str:
- * @self: a #FuDevice
- *
- * Gets the device GUIDs as a joined string, which may be useful for error
- * messages.
- *
- * Returns: a string, which may be empty length but not %NULL
- *
- * Since: 1.0.8
- **/
-gchar *
-fu_device_get_guids_as_str(FuDevice *self)
-{
-	GPtrArray *guids;
-	g_autofree gchar **tmp = NULL;
-
-	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
-
-	guids = fu_device_get_guids(self);
-	tmp = g_new0(gchar *, guids->len + 1);
-	for (guint i = 0; i < guids->len; i++)
-		tmp[i] = g_ptr_array_index(guids, i);
-	return g_strjoinv(",", tmp);
-}
-
-/**
  * fu_device_get_metadata:
  * @self: a #FuDevice
  * @key: the key
@@ -4238,6 +4212,8 @@ fu_device_add_string(FuDevice *self, guint idt, GString *str)
 	if (priv->firmware_gtype != G_TYPE_INVALID) {
 		fu_string_append(str, idt + 1, "FirmwareGType", g_type_name(priv->firmware_gtype));
 	}
+	if (priv->specialized_gtype != G_TYPE_INVALID)
+		fu_string_append(str, idt + 1, "GType", g_type_name(priv->specialized_gtype));
 	if (priv->size_min > 0) {
 		g_autofree gchar *sz = g_strdup_printf("%" G_GUINT64_FORMAT, priv->size_min);
 		fu_string_append(str, idt + 1, "FirmwareSizeMin", sz);

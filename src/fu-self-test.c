@@ -2641,6 +2641,7 @@ fu_engine_history_verfmt_func(gconstpointer user_data)
 	fu_device_add_checksum(device, "0123456789abcdef0123456789abcdef01234567");
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_device_add_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_SET_VERFMT);
 	fu_device_set_created(device, 1515338000);
 	fu_engine_add_device(engine, device);
 	g_assert_cmpint(fu_device_get_version_format(device), ==, FWUPD_VERSION_FORMAT_TRIPLET);
@@ -3810,7 +3811,7 @@ fu_plugin_list_depsolve_func(gconstpointer user_data)
 }
 
 static void
-fu_history_migrate_func(gconstpointer user_data)
+fu_history_migrate_v1_func(gconstpointer user_data)
 {
 	gboolean ret;
 	g_autoptr(GError) error = NULL;
@@ -3827,6 +3828,43 @@ fu_history_migrate_func(gconstpointer user_data)
 
 	/* load old version */
 	filename = g_test_build_filename(G_TEST_DIST, "tests", "history_v1.db", NULL);
+	file_src = g_file_new_for_path(filename);
+	file_dst = g_file_new_for_path("/tmp/fwupd-self-test/var/lib/fwupd/pending.db");
+	ret = g_file_copy(file_src, file_dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* create, migrating as required */
+	history = fu_history_new();
+	g_assert_nonnull(history);
+
+	/* get device */
+	device = fu_history_get_device_by_id(history,
+					     "2ba16d10df45823dd4494ff10a0bfccfef512c9d",
+					     &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(device);
+	g_assert_cmpstr(fu_device_get_id(device), ==, "2ba16d10df45823dd4494ff10a0bfccfef512c9d");
+}
+
+static void
+fu_history_migrate_v2_func(gconstpointer user_data)
+{
+	gboolean ret;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GFile) file_dst = NULL;
+	g_autoptr(GFile) file_src = NULL;
+	g_autoptr(FuDevice) device = NULL;
+	g_autoptr(FuHistory) history = NULL;
+	g_autofree gchar *filename = NULL;
+
+#ifndef HAVE_SQLITE
+	g_test_skip("no sqlite support");
+	return;
+#endif
+
+	/* load old version */
+	filename = g_test_build_filename(G_TEST_DIST, "tests", "history_v2.db", NULL);
 	file_src = g_file_new_for_path(filename);
 	file_dst = g_file_new_for_path("/tmp/fwupd-self-test/var/lib/fwupd/pending.db");
 	ret = g_file_copy(file_src, file_dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &error);
@@ -5028,6 +5066,61 @@ fu_release_trusted_report_oem_func(gconstpointer user_data)
 }
 
 static void
+fu_release_no_trusted_report_upgrade_func(gconstpointer user_data)
+{
+	FuTest *self = (FuTest *)user_data;
+	FwupdRelease *rel;
+	gboolean ret;
+	g_autofree gchar *filename = NULL;
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GFile) file = NULL;
+	g_autoptr(XbBuilder) builder = xb_builder_new();
+	g_autoptr(XbBuilderSource) source = xb_builder_source_new();
+	g_autoptr(XbSilo) silo = NULL;
+	g_autoptr(GPtrArray) releases = NULL;
+	g_autoptr(FuEngineRequest) request = fu_engine_request_new();
+
+	/* load engine to get FuConfig set up */
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* metadata with FromOEM, but *NOT* an upgrade */
+	filename = g_test_build_filename(G_TEST_DIST, "tests", "metadata-report4.xml", NULL);
+	file = g_file_new_for_path(filename);
+	ret = xb_builder_source_load_file(source, file, XB_BUILDER_SOURCE_FLAG_NONE, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	xb_builder_import_source(builder, source);
+	silo = xb_builder_compile(builder, XB_BUILDER_COMPILE_FLAG_NONE, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(silo);
+	fu_engine_set_silo(engine, silo);
+
+	/* add a dummy device */
+	fu_device_set_id(device, "dummy");
+	fu_device_set_version(device, "1.2.3");
+	fu_device_add_vendor_id(device, "USB:FFFF");
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_device_add_protocol(device, "com.acme");
+	fu_device_add_guid(device, "2d47f29b-83a2-4f31-a2e8-63474f4d4c2e");
+	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
+	fu_engine_add_device(engine, device);
+
+	/* ensure we set this as trusted */
+	releases = fu_engine_get_releases_for_device(engine, request, device, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(releases);
+	g_assert_cmpint(releases->len, ==, 1);
+	rel = g_ptr_array_index(releases, 0);
+	g_assert_false(fwupd_release_has_flag(rel, FWUPD_RELEASE_FLAG_TRUSTED_REPORT));
+}
+
+static void
 fu_release_no_trusted_report_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
@@ -5904,6 +5997,9 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/release{trusted-report-oem}",
 			     self,
 			     fu_release_trusted_report_oem_func);
+	g_test_add_data_func("/fwupd/release{no-trusted-report-upgrade}",
+			     self,
+			     fu_release_no_trusted_report_upgrade_func);
 	g_test_add_data_func("/fwupd/release{no-trusted-report}",
 			     self,
 			     fu_release_no_trusted_report_func);
@@ -6017,7 +6113,8 @@ main(int argc, char **argv)
 			     fu_engine_requirements_sibling_device_func);
 	g_test_add_data_func("/fwupd/plugin{composite}", self, fu_plugin_composite_func);
 	g_test_add_data_func("/fwupd/history", self, fu_history_func);
-	g_test_add_data_func("/fwupd/history{migrate}", self, fu_history_migrate_func);
+	g_test_add_data_func("/fwupd/history{migrate-v1}", self, fu_history_migrate_v1_func);
+	g_test_add_data_func("/fwupd/history{migrate-v2}", self, fu_history_migrate_v2_func);
 	g_test_add_data_func("/fwupd/plugin-list", self, fu_plugin_list_func);
 	g_test_add_data_func("/fwupd/plugin-list{depsolve}", self, fu_plugin_list_depsolve_func);
 	if (g_test_slow()) {

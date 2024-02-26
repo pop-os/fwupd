@@ -79,18 +79,6 @@ fu_daemon_stop(FuDaemon *self)
 	g_main_loop_quit(self->loop);
 }
 
-static FuDaemonMachineKind
-fu_daemon_machine_kind_from_string(const gchar *kind)
-{
-	if (g_strcmp0(kind, "physical") == 0)
-		return FU_DAEMON_MACHINE_KIND_PHYSICAL;
-	if (g_strcmp0(kind, "virtual") == 0)
-		return FU_DAEMON_MACHINE_KIND_VIRTUAL;
-	if (g_strcmp0(kind, "container") == 0)
-		return FU_DAEMON_MACHINE_KIND_CONTAINER;
-	return FU_DAEMON_MACHINE_KIND_UNKNOWN;
-}
-
 static void
 fu_daemon_engine_changed_cb(FuEngine *engine, FuDaemon *self)
 {
@@ -2196,22 +2184,30 @@ fu_daemon_client_list_removed_cb(FuClientList *client_list, FuClient *client, gp
 }
 
 static void
+fu_daemon_set_connection(FuDaemon *self, GDBusConnection *connection)
+{
+	g_set_object(&self->connection, connection);
+	if (connection != NULL) {
+		g_autoptr(FuClientList) client_list = fu_client_list_new(connection);
+		g_signal_connect(client_list,
+				 "added",
+				 G_CALLBACK(fu_daemon_client_list_added_cb),
+				 self);
+		g_signal_connect(client_list,
+				 "removed",
+				 G_CALLBACK(fu_daemon_client_list_removed_cb),
+				 self);
+		g_set_object(&self->client_list, client_list);
+	}
+}
+
+static void
 fu_daemon_dbus_bus_acquired_cb(GDBusConnection *connection, const gchar *name, gpointer user_data)
 {
 	FuDaemon *self = FU_DAEMON(user_data);
 	g_autoptr(GError) error = NULL;
 
-	self->connection = g_object_ref(connection);
-	self->client_list = fu_client_list_new(self->connection);
-	g_signal_connect(self->client_list,
-			 "added",
-			 G_CALLBACK(fu_daemon_client_list_added_cb),
-			 self);
-	g_signal_connect(self->client_list,
-			 "removed",
-			 G_CALLBACK(fu_daemon_client_list_removed_cb),
-			 self);
-
+	fu_daemon_set_connection(self, connection);
 	fu_daemon_register_object(self);
 
 	/* connect to D-Bus directly */
@@ -2264,7 +2260,7 @@ fu_daemon_dbus_new_connection_cb(GDBusServer *server,
 				 gpointer user_data)
 {
 	FuDaemon *self = FU_DAEMON(user_data);
-	g_set_object(&self->connection, connection);
+	fu_daemon_set_connection(self, connection);
 	g_signal_connect(connection,
 			 "closed",
 			 G_CALLBACK(fu_daemon_dbus_connection_closed_cb),

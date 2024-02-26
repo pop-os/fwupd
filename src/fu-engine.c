@@ -560,6 +560,9 @@ fu_engine_compare_report_trusted(FwupdReport *report_trusted, FwupdReport *repor
 	if (fwupd_report_has_flag(report_trusted, FWUPD_REPORT_FLAG_FROM_OEM) &&
 	    !fwupd_report_has_flag(report, FWUPD_REPORT_FLAG_FROM_OEM))
 		return FALSE;
+	if (fwupd_report_has_flag(report_trusted, FWUPD_REPORT_FLAG_IS_UPGRADE) &&
+	    !fwupd_report_has_flag(report, FWUPD_REPORT_FLAG_IS_UPGRADE))
+		return FALSE;
 	if (fwupd_report_get_vendor_id(report_trusted) != 0) {
 		if (fwupd_report_get_vendor_id(report_trusted) !=
 		    fwupd_report_get_vendor_id(report))
@@ -2079,7 +2082,7 @@ fu_realpath(const gchar *filename, GError **error)
 			    G_IO_ERROR,
 			    G_IO_ERROR_INVALID_DATA,
 			    "cannot resolve path: %s",
-			    strerror(errno));
+			    g_strerror(errno));
 		return NULL;
 	}
 	if (!g_file_test(full_tmp, G_FILE_TEST_EXISTS)) {
@@ -2121,7 +2124,7 @@ fu_engine_offline_setup(GError **error)
 			    "Failed to create symlink %s to %s: %s",
 			    trigger,
 			    symlink_target,
-			    strerror(errno));
+			    g_strerror(errno));
 		return FALSE;
 	}
 	return TRUE;
@@ -6165,7 +6168,8 @@ fu_engine_device_inherit_history(FuEngine *self, FuDevice *device)
 	/* in an offline environment we may have used the .cab file to find the version-format
 	 * to use for the device -- so when we reboot use the database as the archive data is no
 	 * longer available */
-	if (fu_device_get_version_format(device_history) != FWUPD_VERSION_FORMAT_UNKNOWN) {
+	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_SET_VERFMT) &&
+	    fu_device_get_version_format(device_history) != FWUPD_VERSION_FORMAT_UNKNOWN) {
 		g_debug(
 		    "absorbing version format %s into %s from history database",
 		    fwupd_version_format_to_string(fu_device_get_version_format(device_history)),

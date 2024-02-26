@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.9.13',
+  version: '1.9.14',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=0.62.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -440,6 +440,8 @@ if build_standalone
     EFI_MACHINE_TYPE_NAME = 'aa64'
   elif host_cpu == 'loongarch64'
     EFI_MACHINE_TYPE_NAME = 'loongarch64'
+  elif host_cpu == 'riscv64'
+    EFI_MACHINE_TYPE_NAME = 'riscv64'
   else
     EFI_MACHINE_TYPE_NAME = ''
   endif
