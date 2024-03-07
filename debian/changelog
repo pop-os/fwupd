@@ -1,3 +1,14 @@
+fwupd (1.9.14-2) unstable; urgency=medium
+
+  [ Arnaud Rebillout ]
+  * Call dh_installsysusers explicitly, depend on systemd-sysusers
+    (Closes: #1065466)
+
+  [ Mario Limonciello ]
+  * Backport a patch to avoid probing for BOS descriptor on really old USB devices
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 07 Mar 2024 06:37:07 -0600
+
 fwupd (1.9.14-1) unstable; urgency=medium
 
   * New upstream version (1.9.14)
