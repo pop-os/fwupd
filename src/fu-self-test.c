@@ -35,6 +35,7 @@
 #include "fu-plugin-list.h"
 #include "fu-plugin-private.h"
 #include "fu-release-common.h"
+#include "fu-remote-list.h"
 #include "fu-security-attr-common.h"
 #include "fu-smbios-private.h"
 #include "fu-spawn.h"
@@ -2075,7 +2076,7 @@ fu_engine_downgrade_func(gconstpointer user_data)
 	remotes = fu_engine_get_remotes(engine, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(remotes);
-	g_assert_cmpint(remotes->len, ==, 4);
+	g_assert_cmpint(remotes->len, ==, 6);
 
 	/* ensure there are no devices already */
 	devices_pre = fu_engine_get_devices(engine, &error);
@@ -2488,6 +2489,12 @@ fu_engine_history_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
+	ret = fu_plugin_reset_config_values(self->plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_plugin_set_config_value(self->plugin, "AnotherWriteRequired", "true", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fu_engine_add_plugin(engine, self->plugin);
 
 	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
@@ -2532,7 +2539,6 @@ fu_engine_history_func(gconstpointer user_data)
 	g_assert_nonnull(component);
 
 	/* set the counter */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "another-write-required", TRUE);
 	fu_device_set_metadata_integer(device, "nr-update", 0);
 
 	/* install it */
@@ -2679,6 +2685,9 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
+	ret = fu_plugin_reset_config_values(self->plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fu_engine_add_plugin(engine, self->plugin);
 
 	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
@@ -2761,6 +2770,11 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	/* check we did 1.2.2 -> 1.2.3 -> 1.2.4 */
 	g_assert_cmpint(fu_device_get_metadata_integer(device, "nr-update"), ==, 2);
 	g_assert_cmpstr(fu_device_get_version(device), ==, "1.2.4");
+
+	/* reset the config back to defaults */
+	ret = fu_engine_reset_config(engine, "test", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 }
 
 static void
@@ -2796,7 +2810,12 @@ fu_engine_history_inherit(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "fail", TRUE);
+	ret = fu_plugin_reset_config_values(self->plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_plugin_set_config_value(self->plugin, "NeedsActivation", "true", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fu_engine_add_plugin(engine, self->plugin);
 	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
@@ -2839,7 +2858,6 @@ fu_engine_history_inherit(gconstpointer user_data)
 	g_assert_nonnull(component);
 
 	/* install it */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "requires-activation", TRUE);
 	fu_release_set_device(release, device);
 	ret = fu_release_load(release, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_no_error(error);
@@ -2935,7 +2953,12 @@ fu_engine_install_needs_reboot(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "fail", TRUE);
+	ret = fu_plugin_reset_config_values(self->plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_plugin_set_config_value(self->plugin, "NeedsReboot", "true", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fu_engine_add_plugin(engine, self->plugin);
 	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NONE, progress, &error);
 	g_assert_no_error(error);
@@ -2978,7 +3001,6 @@ fu_engine_install_needs_reboot(gconstpointer user_data)
 	g_assert_nonnull(component);
 
 	/* install it */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "requires-reboot", TRUE);
 	fu_release_set_device(release, device);
 	ret = fu_release_load(release, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_no_error(error);
@@ -3045,6 +3067,12 @@ fu_engine_install_request(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
+	ret = fu_plugin_reset_config_values(self->plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_plugin_set_config_value(self->plugin, "RequestSupported", "true", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fu_engine_add_plugin(engine, self->plugin);
 	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NONE, progress, &error);
 	g_assert_no_error(error);
@@ -3088,7 +3116,6 @@ fu_engine_install_request(gconstpointer user_data)
 	g_assert_nonnull(component);
 
 	/* install it */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "request", TRUE);
 	fu_release_set_device(release, device);
 	ret = fu_release_load(release, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_no_error(error);
@@ -3142,7 +3169,9 @@ fu_engine_history_error_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "fail", TRUE);
+	ret = fu_plugin_set_config_value(self->plugin, "WriteSupported", "false", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fu_engine_add_plugin(engine, self->plugin);
 	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
 	g_assert_no_error(error);
@@ -3656,6 +3685,34 @@ fu_device_list_explicit_order_func(gconstpointer user_data)
 }
 
 static void
+fu_device_list_explicit_order_post_func(gconstpointer user_data)
+{
+	FuTest *self = (FuTest *)user_data;
+	g_autoptr(FuDevice) device_child = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device_root = fu_device_new(self->ctx);
+	g_autoptr(FuDeviceList) device_list = fu_device_list_new();
+
+	/* add both */
+	fu_device_set_id(device_root, "device");
+	fu_device_add_instance_id(device_root, "foobar");
+	fu_device_convert_instance_ids(device_root);
+	fu_device_set_id(device_child, "device-child");
+	fu_device_add_instance_id(device_child, "baz");
+	fu_device_convert_instance_ids(device_child);
+	fu_device_add_child(device_root, device_child);
+	fu_device_list_add(device_list, device_root);
+	fu_device_list_add(device_list, device_child);
+
+	fu_device_list_depsolve_order(device_list, device_root);
+	g_assert_cmpint(fu_device_get_order(device_root), ==, 0);
+	g_assert_cmpint(fu_device_get_order(device_child), ==, -1);
+
+	fu_device_add_internal_flag(device_root, FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER);
+	g_assert_cmpint(fu_device_get_order(device_root), ==, G_MAXINT);
+	g_assert_cmpint(fu_device_get_order(device_child), ==, G_MAXINT);
+}
+
+static void
 fu_device_list_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
@@ -4142,7 +4199,9 @@ fu_plugin_module_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* create a fake device */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "registration", TRUE);
+	ret = fu_plugin_set_config_value(self->plugin, "RegistrationSupported", "true", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	ret = fu_plugin_runner_startup(self->plugin, progress, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -4536,7 +4595,12 @@ fu_plugin_composite_func(gconstpointer user_data)
 	g_assert_cmpint(components->len, ==, 3);
 
 	/* set up dummy plugin */
-	(void)g_setenv("FWUPD_PLUGIN_TEST", "composite", TRUE);
+	ret = fu_plugin_reset_config_values(self->plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_plugin_set_config_value(self->plugin, "CompositeChild", "true", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fu_engine_add_plugin(engine, self->plugin);
 
 	ret = fu_plugin_runner_startup(self->plugin, progress, &error);
@@ -5782,6 +5846,33 @@ fu_engine_modify_bios_settings_func(gconstpointer user_data)
 }
 
 static void
+fu_remote_list_repair_func(void)
+{
+	FwupdRemote *remote;
+	gboolean ret;
+	g_autoptr(FuRemoteList) remote_list = fu_remote_list_new();
+	g_autoptr(GError) error = NULL;
+
+	ret = fu_remote_list_load(remote_list, FU_REMOTE_LIST_LOAD_FLAG_FIX_METADATA_URI, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* check .gz converted to .xz */
+	remote = fu_remote_list_get_by_id(remote_list, "legacy-lvfs");
+	g_assert_nonnull(remote);
+	g_assert_cmpstr(fwupd_remote_get_metadata_uri(remote),
+			==,
+			"http://localhost/stable.xml.xz");
+
+	/* check non-LVFS remote NOT .gz converted to .xz */
+	remote = fu_remote_list_get_by_id(remote_list, "legacy");
+	g_assert_nonnull(remote);
+	g_assert_cmpstr(fwupd_remote_get_metadata_uri(remote),
+			==,
+			"http://localhost/stable.xml.gz");
+}
+
+static void
 fu_config_migrate_1_9_func(void)
 {
 	const gchar *fake_localconf_fn = "/tmp/fwupd-self-test/var/etc/fwupd/fwupd.conf";
@@ -5969,6 +6060,7 @@ main(int argc, char **argv)
 	}
 	g_test_add_func("/fwupd/idle", fu_idle_func);
 	g_test_add_func("/fwupd/client-list", fu_client_list_func);
+	g_test_add_func("/fwupd/remote-list{repair}", fu_remote_list_repair_func);
 	g_test_add_data_func("/fwupd/backend{usb}", self, fu_backend_usb_func);
 	g_test_add_data_func("/fwupd/backend{usb-invalid}", self, fu_backend_usb_invalid_func);
 	g_test_add_data_func("/fwupd/plugin{module}", self, fu_plugin_module_func);
@@ -5980,6 +6072,9 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/device-list{explicit-order}",
 			     self,
 			     fu_device_list_explicit_order_func);
+	g_test_add_data_func("/fwupd/device-list{explicit-order-post}",
+			     self,
+			     fu_device_list_explicit_order_post_func);
 	g_test_add_data_func("/fwupd/device-list{no-auto-remove-children}",
 			     self,
 			     fu_device_list_no_auto_remove_children_func);

@@ -746,8 +746,16 @@ fu_engine_unlock(FuEngine *self, const gchar *device_id, GError **error)
 }
 
 gboolean
+fu_engine_reset_config(FuEngine *self, const gchar *section, GError **error)
+{
+	/* reset, effective next reboot */
+	return fu_config_reset_defaults(FU_CONFIG(self->config), section, error);
+}
+
+gboolean
 fu_engine_modify_config(FuEngine *self, const gchar *key, const gchar *value, GError **error)
 {
+	g_auto(GStrv) section_key = NULL;
 	const gchar *keys[] = {"ArchiveSizeMax",
 			       "AllowEmulation",
 			       "ApprovedFirmware",
@@ -770,6 +778,17 @@ fu_engine_modify_config(FuEngine *self, const gchar *key, const gchar *value, GE
 			       "UpdateMotd",
 			       "UriSchemes",
 			       "VerboseDomains",
+			       "test:AnotherWriteRequired",
+			       "test:CompositeChild",
+			       "test:DecompressDelay",
+			       "test:NeedsActivation",
+			       "test:NeedsReboot",
+			       "test:RegistrationSupported",
+			       "test:RequestDelay",
+			       "test:RequestSupported",
+			       "test:VerifyDelay",
+			       "test:WriteDelay",
+			       "test:WriteSupported",
 			       NULL};
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
@@ -781,6 +800,16 @@ fu_engine_modify_config(FuEngine *self, const gchar *key, const gchar *value, GE
 	if (!g_strv_contains(keys, key)) {
 		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "key %s not supported", key);
 		return FALSE;
+	}
+
+	/* plugin specified */
+	section_key = g_strsplit(key, ":", 2);
+	if (g_strv_length(section_key) == 2) {
+		return fu_config_set_value(FU_CONFIG(self->config),
+					   section_key[0],
+					   section_key[1],
+					   value,
+					   error);
 	}
 
 	/* modify, effective next reboot */
@@ -1902,13 +1931,14 @@ fu_engine_install_releases(FuEngine *self,
 		FuRelease *release = g_ptr_array_index(releases, i);
 		FuDevice *device = fu_release_get_device(release);
 		const gchar *logical_id = fu_device_get_logical_id(device);
-		g_info("composite update %u: %s %s->%s (%s: %i)",
+		g_info("composite update %u: %s %s->%s (%s, order:%i: priority:%u)",
 		       i + 1,
 		       fu_device_get_id(device),
 		       fu_device_get_version(device),
 		       fu_release_get_version(release),
 		       logical_id != NULL ? logical_id : "n/a",
-		       fu_device_get_order(device));
+		       fu_device_get_order(device),
+		       (guint)fu_release_get_priority(release));
 		g_ptr_array_add(devices, g_object_ref(device));
 	}
 	fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_COMPOSITE_PREPARE);
@@ -2630,9 +2660,10 @@ fu_engine_emulation_load(FuEngine *self, GBytes *data, GError **error)
 		g_autofree gchar *fn =
 		    g_strdup_printf("%s.json", fu_engine_install_phase_to_string(phase));
 		g_autofree gchar *json_safe = NULL;
-		GBytes *blob = fu_archive_lookup_by_fn(archive, fn, NULL);
+		g_autoptr(GBytes) blob = NULL;
 
 		/* not found */
+		blob = fu_archive_lookup_by_fn(archive, fn, NULL);
 		if (blob == NULL)
 			continue;
 		json_safe = g_strndup(g_bytes_get_data(blob, NULL), g_bytes_get_size(blob));
@@ -3474,6 +3505,7 @@ fu_engine_install_blob(FuEngine *self,
 
 	/* update history database */
 	fu_device_set_update_state(device, FWUPD_UPDATE_STATE_SUCCESS);
+	fu_device_set_install_duration(device, g_timer_elapsed(timer, NULL));
 	if ((flags & FWUPD_INSTALL_FLAG_NO_HISTORY) == 0) {
 		if (!fu_history_modify_device(self->history, device, error)) {
 			g_prefix_error(error, "failed to set success: ");
@@ -4033,16 +4065,8 @@ fu_engine_config_changed_cb(FuEngineConfig *config, FuEngine *self)
 	fu_idle_set_timeout(self->idle, fu_engine_config_get_idle_timeout(config));
 
 	/* allow changing the hardcoded ESP location */
-	if (fu_engine_config_get_esp_location(config) != NULL) {
-		g_autoptr(GError) error = NULL;
-		g_autoptr(FuVolume) vol = NULL;
-		vol = fu_volume_new_esp_for_path(fu_engine_config_get_esp_location(config), &error);
-		if (vol == NULL) {
-			g_warning("not adding changed EspLocation: %s", error->message);
-		} else {
-			fu_context_add_esp_volume(self->ctx, vol);
-		}
-	}
+	if (fu_engine_config_get_esp_location(config) != NULL)
+		fu_context_set_esp_location(self->ctx, fu_engine_config_get_esp_location(config));
 
 	/* amend P2P policy */
 	for (guint i = 0; i < remotes->len; i++) {
@@ -7192,14 +7216,12 @@ fu_engine_load_plugins_builtins(FuEngine *self, FuProgress *progress)
 	}
 }
 
-static gboolean
-fu_engine_load_plugins(FuEngine *self,
-		       FuEngineLoadFlags flags,
-		       FuProgress *progress,
-		       GError **error)
+static void
+fu_engine_load_plugins(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress)
 {
 	g_autofree gchar *plugin_path = NULL;
 	g_autoptr(GPtrArray) filenames = NULL;
+	g_autoptr(GError) error_local = NULL;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -7210,22 +7232,20 @@ fu_engine_load_plugins(FuEngine *self,
 
 	/* search */
 	plugin_path = fu_path_from_kind(FU_PATH_KIND_LIBDIR_PKG);
-	filenames = fu_path_get_files(plugin_path, error);
+	filenames = fu_path_get_files(plugin_path, &error_local);
 	if (filenames == NULL)
-		return FALSE;
+		g_debug("no external plugins found: %s", error_local->message);
 	fu_progress_step_done(progress);
 
 	/* load */
-	fu_engine_load_plugins_filenames(self, filenames, fu_progress_get_child(progress));
+	if (filenames != NULL)
+		fu_engine_load_plugins_filenames(self, filenames, fu_progress_get_child(progress));
 	fu_progress_step_done(progress);
 
 	/* load builtins */
 	if (flags & FU_ENGINE_LOAD_FLAG_BUILTIN_PLUGINS)
 		fu_engine_load_plugins_builtins(self, fu_progress_get_child(progress));
 	fu_progress_step_done(progress);
-
-	/* success */
-	return TRUE;
 }
 
 static gboolean
@@ -8112,17 +8132,13 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 
 	/* set the hardcoded ESP */
 	if (fu_engine_config_get_esp_location(self->config) != NULL) {
-		g_autoptr(FuVolume) vol = NULL;
-		vol = fu_volume_new_esp_for_path(fu_engine_config_get_esp_location(self->config),
-						 error);
-		if (vol == NULL)
-			return FALSE;
-		fu_context_add_esp_volume(self->ctx, vol);
+		fu_context_set_esp_location(self->ctx,
+					    fu_engine_config_get_esp_location(self->config));
 	}
 
 	/* read remotes */
 	if (flags & FU_ENGINE_LOAD_FLAG_REMOTES) {
-		FuRemoteListLoadFlags remote_list_flags = FU_REMOTE_LIST_LOAD_FLAG_NONE;
+		FuRemoteListLoadFlags remote_list_flags = FU_REMOTE_LIST_LOAD_FLAG_FIX_METADATA_URI;
 		if (fu_engine_config_get_test_devices(self->config))
 			remote_list_flags |= FU_REMOTE_LIST_LOAD_FLAG_TEST_REMOTE;
 		if (flags & FU_ENGINE_LOAD_FLAG_READONLY)
@@ -8170,10 +8186,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_progress_step_done(progress);
 
 	/* load plugins early, as we have to call ->load() *before* building quirk silo */
-	if (!fu_engine_load_plugins(self, flags, fu_progress_get_child(progress), error)) {
-		g_prefix_error(error, "failed to load plugins: ");
-		return FALSE;
-	}
+	fu_engine_load_plugins(self, flags, fu_progress_get_child(progress));
 	fu_progress_step_done(progress);
 
 	/* migrate per-plugin settings into fwupd.conf */

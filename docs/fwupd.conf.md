@@ -135,8 +135,8 @@ The `[fwupd]` section can contain the following parameters:
 
 **EspLocation=**
 
-  Override the location used for the EFI system partition (ESP) path.
-  This is typically used if UDisks is not available, or was not able to automatically identify the location for any reason.
+  Set the preferred location used for the EFI system partition (ESP) path.
+  This is typically used if UDisks was not able to automatically identify the location for any reason.
 
 **Manufacturer=**
 
@@ -318,6 +318,54 @@ The `[thunderbolt]` section can contain the following parameters:
 **DelayedActivation={{thunderbolt_DelayedActivation}}**
 
   Forces delaying activation until shutdown/logout/reboot.
+
+## TEST PARAMETERS
+
+The `[test]` section can contain the following parameters:
+
+**AnotherWriteRequired={{test_AnotherWriteRequired}}**
+
+  Do two passes of the write function.
+
+**CompositeChild={{test_CompositeChild}}**
+
+  If the device should have a child device.
+
+**DecompressDelay={{test_DecompressDelay}}**
+
+  Delay in milliseconds to use when decompressing the test device.
+
+**NeedsActivation={{test_NeedsActivation}}**
+
+  If the device needs activating before deploying the update.
+
+**NeedsReboot={{test_NeedsReboot}}**
+
+  If the device needs a reboot before deploying the update.
+
+**RegistrationSupported={{RegistrationSupported}}**
+
+  If the device should register with other plugins.
+
+**RequestDelay={{test_RequestDelay}}**
+
+  Delay in milliseconds to use when requesting user input from the user.
+
+**RequestSupported={{test_RequestSupported}}**
+
+  If the device interactive request is supported.
+
+**VerifyDelay={{test_DecompressDelay}}**
+
+  Delay in milliseconds to use when verifying the test device.
+
+**WriteDelay={{test_DecompressDelay}}**
+
+  Delay in milliseconds to use when writing the test device.
+
+**WriteSupported={{test_Supported}}**
+
+  If the device write is supported. If unsupported the device write will not start.
 
 ## NOTES
 

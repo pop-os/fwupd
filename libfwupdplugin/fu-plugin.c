@@ -16,7 +16,7 @@
 #include <unistd.h>
 
 #include "fu-bytes.h"
-#include "fu-config.h"
+#include "fu-config-private.h"
 #include "fu-context-private.h"
 #include "fu-device-private.h"
 #include "fu-kernel.h"
@@ -1672,6 +1672,7 @@ fu_plugin_backend_device_added(FuPlugin *self,
 	FuDevice *proxy;
 	FuPluginPrivate *priv = GET_PRIVATE(self);
 	GType device_gtype = fu_device_get_specialized_gtype(FU_DEVICE(device));
+	GType proxy_gtype = fu_device_get_proxy_gtype(FU_DEVICE(device));
 	g_autoptr(FuDevice) dev = NULL;
 	g_autoptr(FuDeviceLocker) locker = NULL;
 
@@ -1711,6 +1712,17 @@ fu_plugin_backend_device_added(FuPlugin *self,
 	/* create new device and incorporate existing properties */
 	dev = g_object_new(device_gtype, "context", priv->ctx, NULL);
 	fu_device_incorporate(dev, FU_DEVICE(device));
+
+	/* any proxy device to create too? */
+	if (proxy_gtype != G_TYPE_INVALID) {
+		g_autoptr(FuDevice) proxy_tmp =
+		    g_object_new(proxy_gtype, "context", priv->ctx, NULL);
+		fu_device_incorporate(proxy_tmp, device);
+		fu_device_add_internal_flag(dev, FU_DEVICE_INTERNAL_FLAG_REFCOUNTED_PROXY);
+		fu_device_set_proxy(dev, proxy_tmp);
+	}
+
+	/* notify plugins */
 	if (!fu_plugin_runner_device_created(self, dev, error))
 		return FALSE;
 	fu_progress_step_done(progress);
@@ -1731,7 +1743,7 @@ fu_plugin_backend_device_added(FuPlugin *self,
 	}
 
 	/* open */
-	proxy = fu_device_get_proxy(device);
+	proxy = fu_device_get_proxy(dev);
 	if (proxy != NULL) {
 		g_autoptr(FuDeviceLocker) locker_proxy = NULL;
 		locker_proxy = fu_device_locker_new(proxy, error);
@@ -2718,6 +2730,34 @@ fu_plugin_set_config_value(FuPlugin *self, const gchar *key, const gchar *value,
 		return FALSE;
 	}
 	return fu_config_set_value(config, fu_plugin_get_name(self), key, value, error);
+}
+
+/**
+ * fu_plugin_reset_config_values:
+ * @self: a #FuPlugin
+ * @error: (nullable): optional return location for an error
+ *
+ * Reset all the plugin keys back to the default values.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.9.15
+ **/
+gboolean
+fu_plugin_reset_config_values(FuPlugin *self, GError **error)
+{
+	FuPluginPrivate *priv = fu_plugin_get_instance_private(self);
+	FuConfig *config = fu_context_get_config(priv->ctx);
+	g_return_val_if_fail(FU_IS_PLUGIN(self), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+	if (config == NULL) {
+		g_set_error_literal(error,
+				    G_IO_ERROR,
+				    G_IO_ERROR_FAILED,
+				    "cannot reset config values with no loaded context");
+		return FALSE;
+	}
+	return fu_config_reset_defaults(config, fu_plugin_get_name(self), error);
 }
 
 /**
