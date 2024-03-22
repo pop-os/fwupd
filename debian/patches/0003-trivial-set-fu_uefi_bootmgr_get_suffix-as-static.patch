@@ -1,0 +1,39 @@
+From 2f0a307f296c7f9acf09e9f209f8efdcac21d6b6 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <superm1@gmail.com>
+Date: Fri, 22 Mar 2024 10:58:47 -0500
+Subject: [PATCH 3/3] trivial: set fu_uefi_bootmgr_get_suffix() as static
+
+It's only used in fu-uefi-common.c.
+
+(cherry picked from commit 52d0c10fdc95079761881765aa72323d9fcdf2b7)
+---
+ plugins/uefi-capsule/fu-uefi-common.c | 2 +-
+ plugins/uefi-capsule/fu-uefi-common.h | 2 --
+ 2 files changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/plugins/uefi-capsule/fu-uefi-common.c b/plugins/uefi-capsule/fu-uefi-common.c
+index 1077c1768..2cf08bfce 100644
+--- a/plugins/uefi-capsule/fu-uefi-common.c
++++ b/plugins/uefi-capsule/fu-uefi-common.c
+@@ -10,7 +10,7 @@
+ #include "fu-uefi-common.h"
+ #include "fu-uefi-device.h"
+ 
+-const gchar *
++static const gchar *
+ fu_uefi_bootmgr_get_suffix(GError **error)
+ {
+ 	guint64 firmware_bits;
+diff --git a/plugins/uefi-capsule/fu-uefi-common.h b/plugins/uefi-capsule/fu-uefi-common.h
+index 5ad1cf6a3..710efcf15 100644
+--- a/plugins/uefi-capsule/fu-uefi-common.h
++++ b/plugins/uefi-capsule/fu-uefi-common.h
+@@ -44,5 +44,3 @@ fu_uefi_esp_target_copy(const gchar *source_fn,
+ 			FuVolume *esp,
+ 			const gchar *target_no_mountpoint,
+ 			GError **error);
+-const gchar *
+-fu_uefi_bootmgr_get_suffix(GError **error);
+-- 
+2.34.1
+

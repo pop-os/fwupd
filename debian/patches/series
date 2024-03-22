@@ -1,0 +1,5 @@
+0001-trivial-Fix-UEFI-capsule-ESP-cleanup.patch
+0001-trivial-Include-the-type-in-the-UEFI-capsule-device-.patch
+0001-uefi-capsule-Don-t-look-for-EFI-suffix-in-ESP-heuris.patch
+0002-uefi-capsule-Recognize-zfsbootmenu-in-ESP-detection-.patch
+0003-trivial-set-fu_uefi_bootmgr_get_suffix-as-static.patch
