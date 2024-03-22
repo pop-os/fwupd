@@ -44,7 +44,6 @@ Build-Depends:
 	libsqlite3-dev,
 	libsystemd-dev,
 	systemd-dev | systemd,
-	libtool-bin,
 	libtss2-dev,
 	libxmlb-dev (>= 0.1.13),
 	libzstd-dev,
