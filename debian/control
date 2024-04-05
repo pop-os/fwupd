@@ -45,7 +45,7 @@ Build-Depends:
 	libsystemd-dev,
 	systemd-dev | systemd,
 	libtss2-dev,
-	libxmlb-dev (>= 0.1.13),
+	libxmlb-dev (>= 0.3.17),
 	libzstd-dev,
 	locales,
 	meson,
