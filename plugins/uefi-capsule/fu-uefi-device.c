@@ -547,19 +547,19 @@ fu_uefi_device_capture_efi_debugging(FuDevice *device)
 				       NULL,
 				       &error_local);
 	if (buf == NULL) {
-		fu_device_set_update_error(device, error_local->message);
+		g_warning("failed to capture EFI debugging: %s", error_local->message);
 		return;
 	}
 
 	/* convert from UCS-2 to UTF-8 */
 	str = fu_utf16_to_utf8_bytes(buf, G_LITTLE_ENDIAN, &error_local);
 	if (str == NULL) {
-		fu_device_set_update_error(device, error_local->message);
+		g_warning("failed to capture EFI debugging: %s", error_local->message);
 		return;
 	}
 
-	/* success */
-	fu_device_set_update_error(device, str);
+	/* success, dump into journal */
+	g_info("EFI debugging: %s", str);
 }
 
 gboolean
@@ -685,7 +685,6 @@ fu_uefi_device_set_progress(FuDevice *self, FuProgress *progress)
 static void
 fu_uefi_device_init(FuUefiDevice *self)
 {
-	fu_device_set_summary(FU_DEVICE(self), "UEFI ESRT device");
 	fu_device_add_protocol(FU_DEVICE(self), "org.uefi.capsule");
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
 	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);

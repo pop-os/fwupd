@@ -1154,6 +1154,7 @@ fu_engine_verify_update(FuEngine *self,
 	if (device == NULL)
 		return FALSE;
 	device_progress = fu_device_progress_new(device, progress);
+	g_assert(device_progress != NULL);
 
 	/* get the plugin */
 	plugin =
@@ -1876,6 +1877,33 @@ fu_engine_sort_release_device_order_release_version_cb(gconstpointer a, gconstpo
 	return fu_release_compare(na, nb);
 }
 
+static gboolean
+fu_engine_install_release_version_check(FuEngine *self,
+					FuRelease *release,
+					FuDevice *device,
+					GError **error)
+{
+	FwupdVersionFormat fmt = fu_device_get_version_format(device);
+	const gchar *version_rel = fu_release_get_version(release);
+	const gchar *version_old = fu_release_get_device_version_old(release);
+	if (version_rel != NULL && fu_version_compare(version_old, version_rel, fmt) != 0 &&
+	    fu_version_compare(version_old, fu_device_get_version(device), fmt) == 0 &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
+		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "device version not updated on success, %s != %s",
+			    version_rel,
+			    fu_device_get_version(device));
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+}
+
 /**
  * fu_engine_install_releases:
  * @self: a #FuEngine
@@ -1999,7 +2027,29 @@ fu_engine_install_releases(FuEngine *self,
 		return FALSE;
 	}
 
-	/* success */
+	/* for online updates, verify the version changed if not a re-install */
+	for (guint i = 0; i < releases->len; i++) {
+		FuRelease *release = g_ptr_array_index(releases, i);
+		FuDevice *device = fu_release_get_device(release);
+		g_autoptr(FuDevice) device_new = NULL;
+		g_autoptr(GError) error_local = NULL;
+
+		device_new = fu_device_list_get_by_id(self->device_list,
+						      fu_device_get_id(device),
+						      &error_local);
+		if (device_new == NULL) {
+			g_info("failed to find new device: %s", error_local->message);
+			continue;
+		}
+		if (!fu_engine_install_release_version_check(self, release, device_new, error))
+			return FALSE;
+	}
+
+	/* allow capturing setup again */
+	fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_SETUP);
+
+	/* make the UI update */
+	fu_engine_emit_changed(self);
 	return TRUE;
 }
 
@@ -2351,11 +2401,8 @@ fu_engine_install_release(FuEngine *self,
 	FuEngineRequest *request = fu_release_get_request(release);
 	FuPlugin *plugin;
 	FwupdFeatureFlags feature_flags = FWUPD_FEATURE_FLAG_NONE;
-	FwupdVersionFormat fmt;
 	GBytes *blob_fw;
 	const gchar *tmp;
-	const gchar *version_rel;
-	g_autofree gchar *version_orig = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDevice) device_tmp = NULL;
 	g_autoptr(GError) error_local = NULL;
@@ -2453,7 +2500,6 @@ fu_engine_install_release(FuEngine *self,
 	}
 
 	/* install firmware blob */
-	version_orig = g_strdup(fu_device_get_version(device));
 	if (!fu_engine_install_blob(self,
 				    device,
 				    blob_fw,
@@ -2461,15 +2507,12 @@ fu_engine_install_release(FuEngine *self,
 				    flags,
 				    feature_flags,
 				    &error_local)) {
-		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_AC_POWER_REQUIRED) ||
-		    g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_BATTERY_LEVEL_TOO_LOW) ||
-		    g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NEEDS_USER_ACTION) ||
-		    g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_BROKEN_SYSTEM)) {
-			fu_device_set_update_state(device_orig,
-						   FWUPD_UPDATE_STATE_FAILED_TRANSIENT);
-		} else {
+		FwupdUpdateState state = fu_device_get_update_state(device);
+		if (state != FWUPD_UPDATE_STATE_FAILED &&
+		    state != FWUPD_UPDATE_STATE_FAILED_TRANSIENT)
 			fu_device_set_update_state(device_orig, FWUPD_UPDATE_STATE_FAILED);
-		}
+		else
+			fu_device_set_update_state(device_orig, state);
 		fu_device_set_update_error(device_orig, error_local->message);
 		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
@@ -2490,22 +2533,6 @@ fu_engine_install_release(FuEngine *self,
 		return TRUE;
 	}
 
-	/* for online updates, verify the version changed if not a re-install */
-	fmt = fu_device_get_version_format(device);
-	version_rel = fu_release_get_version(release);
-	if (version_rel != NULL && fu_version_compare(version_orig, version_rel, fmt) != 0 &&
-	    fu_version_compare(version_orig, fu_device_get_version(device), fmt) == 0 &&
-	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
-		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED);
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "device version not updated on success, %s != %s",
-			    version_rel,
-			    fu_device_get_version(device));
-		return FALSE;
-	}
-
 	/* mark success unless needs a reboot */
 	if (fu_device_get_update_state(device) != FWUPD_UPDATE_STATE_NEEDS_REBOOT)
 		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_SUCCESS);
@@ -2516,9 +2543,6 @@ fu_engine_install_release(FuEngine *self,
 		fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_BUSY);
 		fu_engine_wait_for_acquiesce(self, fu_device_get_acquiesce_delay(device_orig));
 	}
-
-	/* allow capturing setup again */
-	fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_SETUP);
 
 #ifdef HAVE_PASSIM
 	/* send to passimd, if enabled and running */
@@ -2543,10 +2567,7 @@ fu_engine_install_release(FuEngine *self,
 		}
 	}
 #endif
-
-	/* make the UI update */
-	fu_engine_emit_changed(self);
-
+	/* success */
 	return TRUE;
 }
 
@@ -3247,6 +3268,7 @@ fu_engine_write_firmware(FuEngine *self,
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDeviceLocker) poll_locker = NULL;
+	g_autoptr(GError) error_write = NULL;
 
 	/* cancel the pending action */
 	if (!fu_engine_offline_invalidate(error))
@@ -3270,9 +3292,23 @@ fu_engine_write_firmware(FuEngine *self,
 	    fu_plugin_list_find_by_name(self->plugin_list, fu_device_get_plugin(device), error);
 	if (plugin == NULL)
 		return FALSE;
-	if (!fu_plugin_runner_write_firmware(plugin, device, blob_fw, progress, flags, error)) {
+	if (!fu_plugin_runner_write_firmware(plugin,
+					     device,
+					     blob_fw,
+					     progress,
+					     flags,
+					     &error_write)) {
 		g_autoptr(GError) error_attach = NULL;
 		g_autoptr(GError) error_cleanup = NULL;
+
+		if (g_error_matches(error_write, FWUPD_ERROR, FWUPD_ERROR_AC_POWER_REQUIRED) ||
+		    g_error_matches(error_write, FWUPD_ERROR, FWUPD_ERROR_BATTERY_LEVEL_TOO_LOW) ||
+		    g_error_matches(error_write, FWUPD_ERROR, FWUPD_ERROR_NEEDS_USER_ACTION) ||
+		    g_error_matches(error_write, FWUPD_ERROR, FWUPD_ERROR_BROKEN_SYSTEM)) {
+			fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED_TRANSIENT);
+		} else {
+			fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED);
+		}
 
 		/* attach back into runtime then cleanup */
 		fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_ATTACH);
@@ -3287,6 +3323,7 @@ fu_engine_write_firmware(FuEngine *self,
 			g_warning("failed to update-cleanup after failed update: %s",
 				  error_cleanup->message);
 		}
+		g_propagate_error(error, g_steal_pointer(&error_write));
 		return FALSE;
 	}
 
@@ -7795,6 +7832,11 @@ fu_engine_update_history_database(FuEngine *self, GError **error)
 
 		/* try to save the new update-state, but ignoring any error */
 		if (!fu_engine_update_history_device(self, dev, &error_local)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
+				g_debug("failed to update history database: %s",
+					error_local->message);
+				continue;
+			}
 			g_warning("failed to update history database: %s", error_local->message);
 		}
 	}
@@ -8145,6 +8187,7 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 			remote_list_flags |= FU_REMOTE_LIST_LOAD_FLAG_READONLY_FS;
 		if (flags & FU_ENGINE_LOAD_FLAG_NO_CACHE)
 			remote_list_flags |= FU_REMOTE_LIST_LOAD_FLAG_NO_CACHE;
+		fu_remote_list_set_lvfs_metadata_format(self->remote_list, FU_LVFS_METADATA_FORMAT);
 		if (!fu_remote_list_load(self->remote_list, remote_list_flags, error)) {
 			g_prefix_error(error, "Failed to load remotes: ");
 			return FALSE;

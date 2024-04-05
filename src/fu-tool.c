@@ -214,7 +214,7 @@ fu_util_lock(FuUtilPrivate *priv, GError **error)
 static const gchar *
 fu_util_get_systemd_unit(void)
 {
-	if (g_getenv("SNAP") != NULL)
+	if (g_strcmp0(g_getenv("SNAP_NAME"), "fwupd") == 0)
 		return SYSTEMD_SNAP_FWUPD_UNIT;
 	return SYSTEMD_FWUPD_UNIT;
 }
@@ -2155,8 +2155,6 @@ fu_util_activate(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	/* activate anything with _NEEDS_ACTIVATION */
-	/* order by device priority */
-	g_ptr_array_sort(devices, fu_util_device_order_sort_cb);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
 		if (!fwupd_device_match_flags(FWUPD_DEVICE(device),
@@ -3138,6 +3136,7 @@ fu_util_get_history(FuUtilPrivate *priv, gchar **values, GError **error)
 		FwupdRelease *rel;
 		const gchar *remote;
 		GNode *child;
+		g_autoptr(GError) error_local = NULL;
 
 		if (!fwupd_device_match_flags(dev,
 					      priv->filter_device_include,
@@ -3156,13 +3155,20 @@ fu_util_get_history(FuUtilPrivate *priv, gchar **values, GError **error)
 			continue;
 		}
 
-		/* try to lookup releases from client */
+		/* try to lookup releases from client, falling back to the history release */
 		rels = fu_engine_get_releases(priv->engine,
 					      priv->request,
 					      fwupd_device_get_id(dev),
-					      error);
-		if (rels == NULL)
-			return FALSE;
+					      &error_local);
+		if (rels == NULL) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
+				rels = g_ptr_array_new();
+				g_ptr_array_add(rels, fwupd_device_get_release_default(dev));
+			} else {
+				g_propagate_error(error, g_steal_pointer(&error_local));
+				return FALSE;
+			}
+		}
 
 		/* map to a release in client */
 		for (guint j = 0; j < rels->len; j++) {

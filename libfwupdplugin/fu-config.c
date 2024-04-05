@@ -342,7 +342,6 @@ fu_config_reload(FuConfig *self, GError **error)
 		return FALSE;
 	for (guint i = 0; i < priv->items->len; i++) {
 		FuConfigItem *item = g_ptr_array_index(priv->items, i);
-		g_autofree gchar *dirname = g_path_get_dirname(item->filename);
 		g_autoptr(GError) error_load = NULL;
 		g_autoptr(GBytes) blob_item = NULL;
 
@@ -444,6 +443,14 @@ fu_config_monitor_changed_cb(GFileMonitor *monitor,
 	FuConfig *self = FU_CONFIG(user_data);
 	g_autoptr(GError) error = NULL;
 	g_autofree gchar *fn = g_file_get_path(file);
+
+	/* nothing we need to care about */
+	if (event_type == G_FILE_MONITOR_EVENT_ATTRIBUTE_CHANGED) {
+		g_debug("%s attributes changed, ignoring", fn);
+		return;
+	}
+
+	/* reload everything */
 	g_info("%s changed, reloading all configs", fn);
 	if (!fu_config_reload(self, &error))
 		g_warning("failed to rescan daemon config: %s", error->message);

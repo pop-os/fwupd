@@ -892,7 +892,6 @@ fu_util_device_test_step(FuUtilPrivate *priv,
 	const gchar *url;
 	const gchar *emulation_url = NULL;
 	g_autofree gchar *filename = NULL;
-	g_autofree gchar *url_safe = NULL;
 	g_autoptr(GBytes) fw = NULL;
 	g_autoptr(GError) error_local = NULL;
 
@@ -3016,6 +3015,9 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 			rel = g_object_ref(rel_tmp);
 			break;
 		}
+		if (rel == NULL)
+			continue;
+
 		if (!fu_util_update_device_with_release(priv, dev, rel, &error_local)) {
 			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO)) {
 				g_debug("ignoring %s: %s",
@@ -3491,8 +3493,6 @@ fu_util_activate(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	/* activate anything with _NEEDS_ACTIVATION */
-	/* order by device priority */
-	g_ptr_array_sort(devices, fu_util_device_order_sort_cb);
 	for (guint i = 0; i < devices->len; i++) {
 		FwupdDevice *device = g_ptr_array_index(devices, i);
 		if (!fwupd_device_match_flags(device,
