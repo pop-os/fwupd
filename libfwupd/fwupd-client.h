@@ -91,8 +91,7 @@ fwupd_client_connect_finish(FwupdClient *self,
 			    GAsyncResult *res,
 			    GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 gboolean
-fwupd_client_disconnect(FwupdClient *self, GError **error) G_GNUC_WARN_UNUSED_RESULT
-    G_GNUC_NON_NULL(1);
+fwupd_client_disconnect(FwupdClient *self, GError **error) G_GNUC_NON_NULL(1);
 void
 fwupd_client_quit_async(FwupdClient *self,
 			GCancellable *cancellable,
@@ -605,6 +604,8 @@ GBytes *
 fwupd_client_download_bytes_finish(FwupdClient *self,
 				   GAsyncResult *res,
 				   GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
+void
+fwupd_client_download_set_retries(FwupdClient *self, guint retries) G_GNUC_NON_NULL(1);
 void
 fwupd_client_upload_bytes_async(FwupdClient *self,
 				const gchar *url,

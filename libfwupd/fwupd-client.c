@@ -58,6 +58,7 @@ typedef struct {
 	guint percentage;
 	guint32 battery_level;
 	guint32 battery_threshold;
+	guint download_retries;
 	GMutex idle_mutex; /* for @idle_id and @idle_sources */
 	guint idle_id;
 	GPtrArray *idle_sources; /* element-type FwupdClientContextHelper */
@@ -75,6 +76,7 @@ typedef struct {
 	gchar *package_version;
 	gchar *user_agent;
 	GHashTable *hints; /* str:str */
+	GHashTable *immediate_requests; /* str:FwupdRequest */
 } FwupdClientPrivate;
 
 #ifdef HAVE_LIBCURL
@@ -188,6 +190,8 @@ fwupd_client_context_idle_cb(gpointer user_data)
 		/* property */
 		if (helper->property_name != NULL)
 			fwupd_client_context_object_notify(self, helper->property_name);
+		if (g_strcmp0(helper->property_name, "FwupdRequest") == 0)
+			fwupd_request_emit_invalidate(FWUPD_REQUEST(helper->payload));
 
 		/* payload signal */
 		if (helper->signal_id != 0 && helper->payload != NULL)
@@ -236,6 +240,27 @@ fwupd_client_object_notify(FwupdClient *self, const gchar *property_name)
 	helper = g_new0(FwupdClientContextHelper, 1);
 	helper->self = g_object_ref(self);
 	helper->property_name = g_strdup(property_name);
+	fwupd_client_context_helper(self, helper);
+}
+
+/* run callback in the correct thread */
+static void
+fwupd_client_request_invalidate(FwupdClient *self, FwupdRequest *request)
+{
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
+	FwupdClientContextHelper *helper = NULL;
+
+	/* shortcut */
+	if (g_main_context_is_owner(priv->main_ctx)) {
+		fwupd_request_emit_invalidate(request);
+		return;
+	}
+
+	/* run in the correct GMainContext and thread */
+	helper = g_new0(FwupdClientContextHelper, 1);
+	helper->self = g_object_ref(self);
+	helper->property_name = g_strdup("FwupdRequest");
+	helper->payload = G_OBJECT(g_object_ref(request));
 	fwupd_client_context_helper(self, helper);
 }
 
@@ -363,6 +388,23 @@ fwupd_client_set_daemon_version(FwupdClient *self, const gchar *daemon_version)
 	priv->daemon_version = g_strdup(daemon_version);
 	fwupd_client_object_notify(self, "daemon-version");
 	fwupd_client_rebuild_user_agent(self);
+}
+
+/**
+ * fwupd_client_download_set_retries:
+ * @self: a #FwupdClient
+ * @retries: number of tries, defaulting to 0
+ *
+ * Sets the number of retries should be attempted on transient download errors.
+ *
+ * Since: 1.9.19
+ **/
+void
+fwupd_client_download_set_retries(FwupdClient *self, guint retries)
+{
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FWUPD_IS_CLIENT(self));
+	priv->download_retries = retries;
 }
 
 static void
@@ -527,6 +569,7 @@ fwupd_client_signal_cb(GDBusProxy *proxy,
 		       GVariant *parameters,
 		       FwupdClient *self)
 {
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
 	g_autoptr(FwupdDevice) dev = NULL;
 	if (g_strcmp0(signal_name, "Changed") == 0) {
 		g_debug("Emitting ::changed()");
@@ -549,12 +592,31 @@ fwupd_client_signal_cb(GDBusProxy *proxy,
 		dev = fwupd_device_from_variant(parameters);
 		g_debug("Emitting ::device-changed(%s)", fwupd_device_get_id(dev));
 		fwupd_client_signal_emit_object(self, SIGNAL_DEVICE_CHANGED, G_OBJECT(dev));
+
+		/* invalidate request */
+		if (fwupd_device_get_status(dev) != FWUPD_STATUS_WAITING_FOR_USER) {
+			FwupdRequest *req =
+			    g_hash_table_lookup(priv->immediate_requests, fwupd_device_get_id(dev));
+			if (req != NULL) {
+				fwupd_client_request_invalidate(self, req);
+				g_hash_table_remove(priv->immediate_requests,
+						    fwupd_device_get_id(dev));
+			}
+		}
 		return;
 	}
 	if (g_strcmp0(signal_name, "DeviceRequest") == 0) {
 		g_autoptr(FwupdRequest) req = fwupd_request_from_variant(parameters);
 		g_debug("Emitting ::device-request(%s)", fwupd_request_get_id(req));
 		fwupd_client_signal_emit_object(self, SIGNAL_DEVICE_REQUEST, G_OBJECT(req));
+
+		/* we may need to invalidate this later */
+		if (fwupd_request_get_kind(req) == FWUPD_REQUEST_KIND_IMMEDIATE &&
+		    fwupd_request_get_device_id(req) != NULL) {
+			g_hash_table_insert(priv->immediate_requests,
+					    g_strdup(fwupd_request_get_device_id(req)),
+					    g_object_ref(req));
+		}
 		return;
 	}
 	g_debug("Unknown signal name '%s' from %s", signal_name, sender_name);
@@ -665,20 +727,25 @@ fwupd_client_progress_callback_cb(void *clientp,
 	return 0;
 }
 
-static void
-fwupd_client_curl_helper_set_proxy(FwupdClient *self, FwupdCurlHelper *helper, const gchar *url)
+static gboolean
+fwupd_client_curl_helper_set_proxy(FwupdClient *self,
+				   FwupdCurlHelper *helper,
+				   const gchar *url,
+				   GError **error)
 {
 	FwupdClientPrivate *priv = GET_PRIVATE(self);
 	g_auto(GStrv) proxies = NULL;
-	g_autoptr(GError) error_local = NULL;
 
-	proxies = g_proxy_resolver_lookup(priv->proxy_resolver, url, NULL, &error_local);
+	proxies = g_proxy_resolver_lookup(priv->proxy_resolver, url, NULL, error);
 	if (proxies == NULL) {
-		g_warning("failed to lookup proxy for %s: %s", url, error_local->message);
-		return;
+		g_prefix_error(error, "failed to lookup proxy for %s: ", url);
+		return FALSE;
 	}
 	if (g_strcmp0(proxies[0], "direct://") != 0)
 		(void)curl_easy_setopt(helper->curl, CURLOPT_PROXY, proxies[0]);
+
+	/* success */
+	return TRUE;
 }
 
 static FwupdCurlHelper *
@@ -711,6 +778,9 @@ fwupd_client_curl_new(FwupdClient *self, GError **error)
 	(void)curl_easy_setopt(helper->curl, CURLOPT_NOPROGRESS, 0L);
 	(void)curl_easy_setopt(helper->curl, CURLOPT_FOLLOWLOCATION, 1L);
 	(void)curl_easy_setopt(helper->curl, CURLOPT_MAXREDIRS, 5L);
+#ifdef _WIN32
+	(void)curl_easy_setopt(helper->curl, CURLOPT_CAINFO, "ca-bundle.crt");
+#endif
 #if CURL_AT_LEAST_VERSION(7, 71, 0)
 	(void)curl_easy_setopt(helper->curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
 #endif
@@ -5311,6 +5381,24 @@ fwupd_client_download_http(FwupdClient *self, CURL *curl, const gchar *url, GErr
 				    "Failed to download due to server limit");
 		return NULL;
 	}
+	if (status_code == 502 || status_code == 503 || status_code == 504) {
+		g_autofree gchar *str = g_strndup((const gchar *)buf->data, MIN(buf->len, 4000));
+		if (g_str_is_ascii(str)) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "Transient failure to download, server response was %u: %s",
+				    (guint)status_code,
+				    str);
+			return NULL;
+		}
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "Transient failure to download, server response was %u",
+			    (guint)status_code);
+		return NULL;
+	}
 	if (status_code >= 400) {
 		g_autofree gchar *str = g_strndup((const gchar *)buf->data, MIN(buf->len, 4000));
 		if (g_str_is_ascii(str)) {
@@ -5333,6 +5421,36 @@ fwupd_client_download_http(FwupdClient *self, CURL *curl, const gchar *url, GErr
 	return g_bytes_new(buf->data, buf->len);
 }
 
+static gboolean
+fwupd_client_download_error_is_fatal(const GError *error)
+{
+	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND))
+		return FALSE;
+	return TRUE;
+}
+
+static GBytes *
+fwupd_client_download_http_retry(FwupdClient *self, CURL *curl, const gchar *url, GError **error)
+{
+	FwupdClientPrivate *priv = GET_PRIVATE(self);
+	guint delay_ms = 2500;
+	for (guint i = 0;; i++, delay_ms *= 2) {
+		g_autoptr(GBytes) blob = NULL;
+		g_autoptr(GError) error_local = NULL;
+
+		blob = fwupd_client_download_http(self, curl, url, &error_local);
+		if (blob != NULL)
+			return g_steal_pointer(&blob);
+		if (i >= priv->download_retries ||
+		    fwupd_client_download_error_is_fatal(error_local)) {
+			g_propagate_error(error, g_steal_pointer(&error_local));
+			break;
+		}
+		g_debug("ignoring and trying again: %s", error_local->message);
+		g_usleep(delay_ms * 1000);
+	}
+	return NULL;
+}
 static void
 fwupd_client_download_bytes_thread_cb(GTask *task,
 				      gpointer source_object,
@@ -5347,9 +5465,12 @@ fwupd_client_download_bytes_thread_cb(GTask *task,
 		const gchar *url = g_ptr_array_index(helper->urls, i);
 		g_autoptr(GError) error = NULL;
 		g_info("downloading %s", url);
-		fwupd_client_curl_helper_set_proxy(self, helper, url);
+		if (!fwupd_client_curl_helper_set_proxy(self, helper, url, &error)) {
+			g_task_return_error(task, g_steal_pointer(&error));
+			return;
+		}
 		if (fwupd_client_is_url_http(url)) {
-			blob = fwupd_client_download_http(self, helper->curl, url, &error);
+			blob = fwupd_client_download_http_retry(self, helper->curl, url, &error);
 			if (blob != NULL)
 				break;
 		} else if (fwupd_client_is_url_ipfs(url)) {
@@ -6591,6 +6712,8 @@ fwupd_client_init(FwupdClient *self)
 	priv->hints = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	priv->battery_level = FWUPD_BATTERY_LEVEL_INVALID;
 	priv->battery_threshold = FWUPD_BATTERY_LEVEL_INVALID;
+	priv->immediate_requests =
+	    g_hash_table_new_full(g_str_hash, g_str_equal, g_free, (GDestroyNotify)g_object_unref);
 
 	/* we get this one for free */
 	fwupd_client_add_hint(self, "locale", g_getenv("LANG"));
@@ -6613,6 +6736,7 @@ fwupd_client_finalize(GObject *object)
 	g_free(priv->host_machine_id);
 	g_free(priv->host_security_id);
 	g_hash_table_unref(priv->hints);
+	g_hash_table_unref(priv->immediate_requests);
 	g_mutex_clear(&priv->idle_mutex);
 	if (priv->idle_id != 0)
 		g_source_remove(priv->idle_id);

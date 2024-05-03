@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.9.16',
+  version: '1.9.19',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=0.62.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -222,7 +222,7 @@ if hsi
 endif
 libxmlb = dependency('xmlb', version: '>= 0.3.6', fallback: ['libxmlb', 'libxmlb_dep'])
 gusb = dependency('gusb', version: '>= 0.3.8', fallback: ['gusb', 'gusb_dep'], required: get_option('gusb'))
-if libxmlb.version().version_compare('>= 0.3.17')
+if libxmlb.version().version_compare('>= 0.3.18')
   if libxmlb.get_variable('zstd') == 'true'
     lvfs_metadata_format = 'zst'
   elif libxmlb.get_variable('lzma') == 'true'
@@ -303,6 +303,9 @@ endif
 cbor = dependency('libcbor', version: '>= 0.7.0', required: get_option('cbor'))
 if cbor.found()
   conf.set('HAVE_CBOR', '1')
+  if cc.has_header_symbol('cbor.h', 'cbor_set_allocs')
+    conf.set('HAVE_CBOR_SET_ALLOCS', '1')
+  endif
 endif
 
 platform_deps = []

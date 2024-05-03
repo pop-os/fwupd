@@ -26,8 +26,8 @@
   <url type="vcs-browser">https://github.com/fwupd/fwupd</url>
   <update_contact>richard_at_hughsie.com</update_contact>
   <developer_name>The fwupd authors</developer_name>
-  <developer id="fwupd.org">
-    <name translatable="no">The fwupd authors</name>
+  <developer id="org.fwupd">
+    <name translate="no">The fwupd authors</name>
   </developer>
   <translation type="gettext">fwupd</translation>
   <content_rating type="oars-1.1">
@@ -38,6 +38,61 @@
     <binary>fwupdtool</binary>
   </provides>
   <releases>
+    <release version="1.9.19" date="2024-05-03">
+      <description>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Drop heap as part of a housekeeping action</li>
+          <li>Retry downloads to workaround flaky network connections</li>
+        </ul>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Assume new ME versions are called CSME</li>
+          <li>Fix a buffer-overread when parsing invalid CoSWID entity data</li>
+          <li>Fix a logic thinko when parsing GUID strings</li>
+          <li>Fix downloading files on Windows with libcurl >= 7.77.0</li>
+          <li>Revert back to a simpler syscall blocklist-based filter</li>
+        </ul>
+        <p>This release adds support for the following hardware:</p>
+        <ul>
+          <li>Acer U32 dock</li>
+          <li>Luxshare 7-in-1 dock</li>
+          <li>Pixart models 2404, 4206, 2440, 2418, 2752, 2840 and 2818</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.9.18" date="2024-04-23">
+      <description>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Fix a small memory leak in fwupdmgr</li>
+          <li>Use simple allow-listing for the syscall filter</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.9.17" date="2024-04-22">
+      <description>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Capture device status changes when in bootloader mode</li>
+          <li>Change the systemd SystemCallFilter to an allowlist</li>
+          <li>Detect when a CCGX dock forbids downgrade</li>
+          <li>Do not add an overly-generic instance ID to CrosEC devices</li>
+          <li>Do not read OptionROM verification data on Apple hardware</li>
+          <li>Emit a signal when a user-request is no longer valid</li>
+          <li>Fix a potential crash when parsing invalid CBOR data</li>
+          <li>Properly show SPDX project licenses with AND as a delimiter</li>
+          <li>Verify that syscalls are being filtered correctly at startup</li>
+        </ul>
+        <p>This release adds support for the following hardware:</p>
+        <ul>
+          <li>Asus DC201</li>
+          <li>Realtek Gen1 RTS541x</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.9.16" date="2024-04-05">
       <description>
         <p>

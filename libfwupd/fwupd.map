@@ -1011,3 +1011,15 @@ LIBFWUPD_1.9.10 {
     fwupd_device_set_request_flags;
   local: *;
 } LIBFWUPD_1.9.8;
+
+LIBFWUPD_1.9.17 {
+  global:
+    fwupd_request_emit_invalidate;
+  local: *;
+} LIBFWUPD_1.9.10;
+
+LIBFWUPD_1.9.19 {
+  global:
+    fwupd_client_download_set_retries;
+  local: *;
+} LIBFWUPD_1.9.17;

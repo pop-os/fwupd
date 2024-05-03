@@ -162,6 +162,12 @@ static guint signals[SIGNAL_LAST] = {0};
 
 G_DEFINE_TYPE(FuEngine, fu_engine, G_TYPE_OBJECT)
 
+gboolean
+fu_engine_get_loaded(FuEngine *self)
+{
+	return self->loaded;
+}
+
 static gboolean
 fu_engine_update_motd_timeout_cb(gpointer user_data)
 {
@@ -1706,6 +1712,17 @@ fu_engine_get_report_metadata(FuEngine *self, GError **error)
 	if (tmp != NULL)
 		g_hash_table_insert(hash, g_strdup("HostBkc"), g_strdup(tmp));
 
+#ifdef HAVE_PASSIM
+#if PASSIM_CHECK_VERSION(0, 1, 6)
+	/* this is useful to know if passim support is actually helping bandwidth use */
+	g_hash_table_insert(
+	    hash,
+	    g_strdup("PassimDownloadSaving"),
+	    g_strdup_printf("%" G_GUINT64_FORMAT,
+			    passim_client_get_download_saving(self->passim_client)));
+#endif
+#endif
+
 	/* DMI data */
 	if (fu_context_has_flag(self->ctx, FU_CONTEXT_FLAG_LOADED_HWINFO)) {
 		struct {
@@ -3059,6 +3076,7 @@ fu_engine_detach(FuEngine *self,
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDeviceLocker) poll_locker = NULL;
+	g_autoptr(FuDeviceProgress) device_progress = NULL;
 
 	/* the device and plugin both may have changed */
 	device = fu_engine_get_device(self, device_id, error);
@@ -3066,6 +3084,8 @@ fu_engine_detach(FuEngine *self,
 		g_prefix_error(error, "failed to get device before update detach: ");
 		return FALSE;
 	}
+	device_progress = fu_device_progress_new(device, progress);
+	g_assert(device_progress != NULL);
 
 	/* pause the polling */
 	poll_locker = fu_device_poll_locker_new(device, error);
@@ -3125,6 +3145,7 @@ fu_engine_attach(FuEngine *self, const gchar *device_id, FuProgress *progress, G
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDeviceLocker) poll_locker = NULL;
+	g_autoptr(FuDeviceProgress) device_progress = NULL;
 
 	/* the device and plugin both may have changed */
 	device = fu_engine_get_device(self, device_id, error);
@@ -3132,6 +3153,9 @@ fu_engine_attach(FuEngine *self, const gchar *device_id, FuProgress *progress, G
 		g_prefix_error(error, "failed to get device before update attach: ");
 		return FALSE;
 	}
+	device_progress = fu_device_progress_new(device, progress);
+	g_assert(device_progress != NULL);
+
 	str = fu_device_to_string(device);
 	g_info("attach -> %s", str);
 	plugin =
@@ -3268,6 +3292,7 @@ fu_engine_write_firmware(FuEngine *self,
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuDeviceLocker) poll_locker = NULL;
+	g_autoptr(FuDeviceProgress) device_progress = NULL;
 	g_autoptr(GError) error_write = NULL;
 
 	/* cancel the pending action */
@@ -3280,6 +3305,8 @@ fu_engine_write_firmware(FuEngine *self,
 		g_prefix_error(error, "failed to get device before update: ");
 		return FALSE;
 	}
+	device_progress = fu_device_progress_new(device, progress);
+	g_assert(device_progress != NULL);
 
 	/* pause the polling */
 	poll_locker = fu_device_poll_locker_new(device, error);
@@ -5254,7 +5281,8 @@ fu_engine_add_releases_for_device_component(FuEngine *self,
 		}
 		update_request_id = fu_release_get_update_request_id(release);
 		if (fu_device_get_update_request_id(device) == NULL && update_request_id != NULL) {
-			fu_device_add_request_flag(device, FWUPD_REQUEST_FLAG_NON_GENERIC_MESSAGE);
+			fu_device_add_request_flag(device,
+						   FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
 			fu_device_set_update_request_id(device, update_request_id);
 		}
 
@@ -8778,6 +8806,11 @@ fu_engine_constructed(GObject *obj)
 #endif
 #if LIBJCAT_CHECK_VERSION(0, 1, 11)
 	fu_engine_add_runtime_version(self, "com.hughsie.libjcat", jcat_version_string());
+#endif
+#if LIBXMLB_CHECK_VERSION(0, 3, 19)
+	fu_engine_add_runtime_version(self, "com.hughsie.libxmlb", xb_version_string());
+#else
+	fu_engine_add_runtime_version(self, "com.hughsie.libxmlb", "0.3.x");
 #endif
 
 	/* optional kernel version */
