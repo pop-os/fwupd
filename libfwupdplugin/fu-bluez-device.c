@@ -267,7 +267,12 @@ fu_bluez_device_get_ble_property(const gchar *obj_path,
 	g_dbus_proxy_set_default_timeout(proxy, DEFAULT_PROXY_TIMEOUT);
 	val = g_dbus_proxy_get_cached_property(proxy, prop_name);
 	if (val == NULL) {
-		g_prefix_error(error, "property %s not found in %s: ", prop_name, obj_path);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "property %s not found in %s: ",
+			    prop_name,
+			    obj_path);
 		return NULL;
 	}
 
@@ -377,7 +382,7 @@ fu_bluez_device_probe(FuDevice *device, GError **error)
 		fu_device_set_name(device, g_variant_get_string(val_name, NULL));
 	val_icon = g_dbus_proxy_get_cached_property(priv->proxy, "Icon");
 	if (val_icon != NULL)
-		fu_device_add_icon(device, g_variant_get_string(val_name, NULL));
+		fu_device_add_icon(device, g_variant_get_string(val_icon, NULL));
 	val_modalias = g_dbus_proxy_get_cached_property(priv->proxy, "Modalias");
 	if (val_modalias != NULL)
 		fu_bluez_device_set_modalias(self, g_variant_get_string(val_modalias, NULL));
@@ -407,6 +412,10 @@ fu_bluez_device_read(FuBluezDevice *self, const gchar *uuid, GError **error)
 	g_autoptr(GVariantBuilder) builder = NULL;
 	g_autoptr(GVariantIter) iter = NULL;
 	g_autoptr(GVariant) val = NULL;
+
+	g_return_val_if_fail(FU_IS_BLUEZ_DEVICE(self), NULL);
+	g_return_val_if_fail(uuid != NULL, NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
 	uuid_helper = fu_bluez_device_get_uuid_helper(self, uuid, error);
 	if (uuid_helper == NULL)
@@ -488,6 +497,11 @@ fu_bluez_device_write(FuBluezDevice *self, const gchar *uuid, GByteArray *buf, G
 	GVariant *opt_variant = NULL;
 	GVariant *val_variant = NULL;
 
+	g_return_val_if_fail(FU_IS_BLUEZ_DEVICE(self), FALSE);
+	g_return_val_if_fail(uuid != NULL, FALSE);
+	g_return_val_if_fail(buf != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
 	uuid_helper = fu_bluez_device_get_uuid_helper(self, uuid, error);
 	if (uuid_helper == NULL)
 		return FALSE;
@@ -540,6 +554,10 @@ fu_bluez_device_notify_start(FuBluezDevice *self, const gchar *uuid, GError **er
 	FuBluezDeviceUuidHelper *uuid_helper;
 	g_autoptr(GVariant) retval = NULL;
 
+	g_return_val_if_fail(FU_IS_BLUEZ_DEVICE(self), FALSE);
+	g_return_val_if_fail(uuid != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
 	uuid_helper = fu_bluez_device_get_uuid_helper(self, uuid, error);
 	if (uuid_helper == NULL)
 		return FALSE;
@@ -578,6 +596,10 @@ fu_bluez_device_notify_stop(FuBluezDevice *self, const gchar *uuid, GError **err
 {
 	FuBluezDeviceUuidHelper *uuid_helper;
 	g_autoptr(GVariant) retval = NULL;
+
+	g_return_val_if_fail(FU_IS_BLUEZ_DEVICE(self), FALSE);
+	g_return_val_if_fail(uuid != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	uuid_helper = fu_bluez_device_get_uuid_helper(self, uuid, error);
 	if (uuid_helper == NULL)

@@ -1489,7 +1489,14 @@ fu_util_report_history_for_remote(FuUtilPrivate *priv,
 	}
 
 	/* POST request and parse reply */
-	if (!fu_util_send_report(priv->client, report_uri, data, sig, &uri, error))
+	if (!fu_util_send_report(priv->client,
+				 report_uri,
+				 data,
+				 sig,
+				 &uri,
+				 FWUPD_CLIENT_UPLOAD_FLAG_NONE,
+				 priv->cancellable,
+				 error))
 		return FALSE;
 
 	/* server wanted us to see a message */
@@ -4594,6 +4601,76 @@ fu_util_security_fix(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
+fu_util_report_devices(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	g_autofree gchar *data = NULL;
+	g_autofree gchar *report_uri = NULL;
+	g_autofree gchar *uri = NULL;
+	g_autoptr(FwupdRemote) remote = NULL;
+	g_autoptr(GHashTable) metadata = NULL;
+	g_autoptr(GPtrArray) devices = NULL;
+
+	/* we only know how to upload to the LVFS */
+	remote = fwupd_client_get_remote_by_id(priv->client, "lvfs", priv->cancellable, error);
+	if (remote == NULL)
+		return FALSE;
+	report_uri = fwupd_remote_build_report_uri(remote, error);
+	if (report_uri == NULL)
+		return FALSE;
+
+	/* include all the devices */
+	devices = fwupd_client_get_devices(priv->client, priv->cancellable, error);
+	if (devices == NULL)
+		return FALSE;
+	metadata = fwupd_client_get_report_metadata(priv->client, priv->cancellable, error);
+	if (metadata == NULL)
+		return FALSE;
+	data = fwupd_client_build_report_devices(priv->client, devices, metadata, error);
+	if (data == NULL)
+		return FALSE;
+
+	/* show the user the entire data blob */
+	fu_console_print_kv(priv->console, _("Target"), report_uri);
+	fu_console_print_kv(priv->console, _("Payload"), data);
+	fu_console_print(priv->console,
+			 /* TRANSLATORS: explain why we want to upload */
+			 _("Uploading a device list allows the %s team to know what hardware "
+			   "exists, and allows us to put pressure on vendors that do not upload "
+			   "firmware updates for their hardware."),
+			 fwupd_remote_get_title(remote));
+	if (!fu_console_input_bool(priv->console,
+				   TRUE,
+				   "%s (%s)",
+				   /* TRANSLATORS: ask the user to upload */
+				   _("Upload data now?"),
+				   /* TRANSLATORS: metadata is downloaded */
+				   _("Requires internet connection"))) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    "Declined upload");
+		return FALSE;
+	}
+
+	/* send to the LVFS */
+	uri = fwupd_client_upload_report(priv->client,
+					 report_uri,
+					 data,
+					 NULL,
+					 FWUPD_CLIENT_UPLOAD_FLAG_ALWAYS_MULTIPART,
+					 priv->cancellable,
+					 error);
+	if (uri == NULL)
+		return FALSE;
+
+	/* success */
+	fu_console_print_literal(priv->console,
+				 /* TRANSLATORS: success, so say thank you to the user */
+				 _("Device list uploaded successfully, thanks!"));
+	return TRUE;
+}
+
+static gboolean
 fu_util_security_undo(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 #ifndef HAVE_HSI
@@ -5361,10 +5438,15 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command description */
 			      _("Undo the host security attribute fix"),
 			      fu_util_security_undo);
+	fu_util_cmd_array_add(cmd_array,
+			      "report-devices",
+			      NULL,
+			      /* TRANSLATORS: command description */
+			      _("Upload the list of updatable devices to a remote server"),
+			      fu_util_report_devices);
 
 	/* do stuff on ctrl+c */
 	priv->cancellable = g_cancellable_new();
-	fu_util_setup_signal_handlers(priv);
 	g_signal_connect(G_CANCELLABLE(priv->cancellable),
 			 "cancelled",
 			 G_CALLBACK(fu_util_cancelled_cb),
@@ -5470,6 +5552,9 @@ main(int argc, char *argv[])
 	} else {
 		g_log_set_handler(G_LOG_DOMAIN, G_LOG_LEVEL_DEBUG, fu_util_ignore_cb, NULL);
 	}
+
+	/* set up ctrl+c */
+	fu_util_setup_signal_handlers(priv);
 
 	/* set flags */
 	if (offline)
