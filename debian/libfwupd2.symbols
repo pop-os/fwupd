@@ -70,6 +70,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  LIBFWUPD_1.9.17@LIBFWUPD_1.9.17 1.9.17
  LIBFWUPD_1.9.19@LIBFWUPD_1.9.19 1.9.19
  LIBFWUPD_1.9.1@LIBFWUPD_1.9.1 1.9.1
+ LIBFWUPD_1.9.20@LIBFWUPD_1.9.20 1.9.20
  LIBFWUPD_1.9.3@LIBFWUPD_1.9.3 1.9.3
  LIBFWUPD_1.9.4@LIBFWUPD_1.9.4 1.9.4
  LIBFWUPD_1.9.6@LIBFWUPD_1.9.6 1.9.6
@@ -119,6 +120,7 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_activate_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_activate_finish@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_add_hint@LIBFWUPD_1.7.1 1.7.1
+ fwupd_client_build_report_devices@LIBFWUPD_1.9.20 1.9.20
  fwupd_client_clear_results@LIBFWUPD_0.7.0 1.0.0
  fwupd_client_clear_results_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_clear_results_finish@LIBFWUPD_1.5.0 1.5.0
@@ -279,6 +281,9 @@ libfwupd.so.2 libfwupd2 #MINVER#
  fwupd_client_upload_bytes@LIBFWUPD_1.4.5 1.4.5
  fwupd_client_upload_bytes_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_upload_bytes_finish@LIBFWUPD_1.5.0 1.5.0
+ fwupd_client_upload_report@LIBFWUPD_1.9.20 1.9.20
+ fwupd_client_upload_report_async@LIBFWUPD_1.9.20 1.9.20
+ fwupd_client_upload_report_finish@LIBFWUPD_1.9.20 1.9.20
  fwupd_client_verify@LIBFWUPD_0.7.0 1.0.0
  fwupd_client_verify_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_verify_finish@LIBFWUPD_1.5.0 1.5.0
