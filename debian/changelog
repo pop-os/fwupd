@@ -1,9 +1,9 @@
-fwupd (1.9.20-1) UNRELEASED; urgency=medium
+fwupd (1.9.20-1) unstable; urgency=medium
 
   * New upstream version (1.9.20)
   * Fixes fwupdmgr auto-complete (LP: #2065948)
 
- -- Mario Limonciello <superm1@gmail.com>  Mon, 20 May 2024 08:50:15 -0500
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 20 May 2024 09:08:59 -0500
 
 fwupd (1.9.19-1) unstable; urgency=medium
 
