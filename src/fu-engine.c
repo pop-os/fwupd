@@ -641,6 +641,10 @@ fu_engine_load_release(FuEngine *self,
 	if (!fu_release_load(release, component, rel, install_flags, error))
 		return FALSE;
 
+	/* relax these */
+	if (fu_engine_config_get_ignore_requirements(self->config))
+		install_flags |= FWUPD_INSTALL_FLAG_IGNORE_REQUIREMENTS;
+
 	/* additional requirements */
 	if (!fu_engine_requirements_check(self, release, install_flags, error))
 		return FALSE;
@@ -1906,6 +1910,7 @@ fu_engine_install_release_version_check(FuEngine *self,
 	if (version_rel != NULL && fu_version_compare(version_old, version_rel, fmt) != 0 &&
 	    fu_version_compare(version_old, fu_device_get_version(device), fmt) == 0 &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
 		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED);
 		g_set_error(error,

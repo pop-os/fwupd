@@ -486,10 +486,6 @@ fu_util_get_plugins(FuUtilPrivate *priv, gchar **values, GError **error)
 		g_autofree gchar *str = fu_util_plugin_to_string(FWUPD_PLUGIN(plugin), 0);
 		fu_console_print_literal(priv->console, str);
 	}
-	if (plugins->len == 0) {
-		/* TRANSLATORS: nothing found */
-		fu_console_print_literal(priv->console, _("No plugins found"));
-	}
 
 	return TRUE;
 }
@@ -1386,6 +1382,7 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 			}
 
 			/* if component should have an update message from CAB */
+			fu_device_ensure_from_component(device, component);
 			fu_device_incorporate_from_component(device, component);
 
 			/* success */
@@ -4677,8 +4674,10 @@ main(int argc, char *argv[])
 		priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
 	if (allow_branch_switch)
 		priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH;
-	if (force)
+	if (force) {
 		priv->flags |= FWUPD_INSTALL_FLAG_FORCE;
+		priv->flags |= FWUPD_INSTALL_FLAG_IGNORE_REQUIREMENTS;
+	}
 	if (no_search)
 		priv->flags |= FWUPD_INSTALL_FLAG_NO_SEARCH;
 	if (ignore_checksum)

@@ -870,7 +870,7 @@ fu_daemon_install_with_helper_device(FuMainAuthHelper *helper,
 	}
 	if (!fu_engine_requirements_check(self->engine,
 					  release,
-					  helper->flags | FWUPD_INSTALL_FLAG_FORCE,
+					  helper->flags | FWUPD_INSTALL_FLAG_IGNORE_REQUIREMENTS,
 					  &error_local)) {
 		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			g_debug("first pass requirement on %s:%s failed: %s",
@@ -883,6 +883,7 @@ fu_daemon_install_with_helper_device(FuMainAuthHelper *helper,
 	}
 
 	/* sync update message from CAB */
+	fu_device_ensure_from_component(device, component);
 	fu_device_incorporate_from_component(device, component);
 
 	/* install each intermediate release */
@@ -1907,6 +1908,10 @@ fu_daemon_daemon_method_call(GDBusConnection *connection,
 			g_dbus_method_invocation_return_gerror(invocation, error);
 			return;
 		}
+
+		/* relax these */
+		if (fu_engine_config_get_ignore_requirements(fu_engine_get_config(self->engine)))
+			helper->flags |= FWUPD_INSTALL_FLAG_IGNORE_REQUIREMENTS;
 
 		/* install all the things in the store */
 		helper->client = fu_client_list_register(self->client_list, sender);

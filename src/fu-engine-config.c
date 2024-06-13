@@ -24,7 +24,6 @@ struct _FuEngineConfig {
 	GArray *trusted_uids;	      /* (element-type guint64) */
 	gchar *host_bkc;
 	gchar *esp_location;
-	gboolean allow_emulation;
 };
 
 G_DEFINE_TYPE(FuEngineConfig, fu_engine_config, FU_TYPE_CONFIG)
@@ -322,6 +321,12 @@ fu_engine_config_get_allow_emulation(FuEngineConfig *self)
 }
 
 gboolean
+fu_engine_config_get_ignore_requirements(FuEngineConfig *self)
+{
+	return fu_config_get_value_bool(FU_CONFIG(self), "fwupd", "IgnoreRequirements");
+}
+
+gboolean
 fu_engine_config_get_release_dedupe(FuEngineConfig *self)
 {
 	return fu_config_get_value_bool(FU_CONFIG(self), "fwupd", "ReleaseDedupe");
@@ -410,6 +415,7 @@ fu_engine_config_init(FuEngineConfig *self)
 	fu_engine_set_config_default(self, "IdleTimeout", "300");		  /* s */
 	fu_engine_set_config_default(self, "IdleInhibitStartupThreshold", "500"); /* ms */
 	fu_engine_set_config_default(self, "IgnorePower", "false");
+	fu_engine_set_config_default(self, "IgnoreRequirements", "false");
 	fu_engine_set_config_default(self, "OnlyTrusted", "true");
 	fu_engine_set_config_default(self, "P2pPolicy", FU_DEFAULT_P2P_POLICY);
 	fu_engine_set_config_default(self, "ReleaseDedupe", "true");
