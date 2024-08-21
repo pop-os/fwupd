@@ -837,6 +837,8 @@ fu_dfu_target_upload_element_dfu(FuDfuTarget *self,
 		/* keep a sum of all the chunks */
 		chunk_size = (guint32)g_bytes_get_size(chunk_tmp);
 		total_size += chunk_size;
+		if (total_size > maximum_size)
+			break;
 
 		/* add to array */
 		g_debug("got #%04x chunk of size %" G_GUINT32_FORMAT, idx, chunk_size);
@@ -1073,8 +1075,10 @@ fu_dfu_target_download_element_dfu(FuDfuTarget *self,
 			fu_byte_array_append_bytes(buf, bytes_tmp);
 		}
 		g_debug("writing #%04x chunk of size 0x%x", i, buf->len);
-		if (!fu_dfu_target_download_chunk(self, i, buf, 0, progress, error))
+		if (!fu_dfu_target_download_chunk(self, i, buf, 0, progress, error)) {
+			g_prefix_error(error, "failed to write chunk %u: ", i);
 			return FALSE;
+		}
 
 		/* update UI */
 		fu_progress_set_percentage_full(progress, i + 1, nr_chunks + 1);

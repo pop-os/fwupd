@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.9.21',
+  version: '1.9.24',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=0.62.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -94,6 +94,8 @@ warning_flags = [
   '-Wno-unknown-warning-option',
   '-Wno-unused-parameter',
   '-Wno-nonnull-compare',
+  '-Wno-analyzer-use-of-uninitialized-value', # incompatible with g_autoptr()
+  '-Wno-analyzer-fd-double-close',
   '-Wold-style-definition',
   '-Woverride-init',
   '-Wpointer-arith',
@@ -273,10 +275,12 @@ if build_daemon
   if not polkit.found()
     warning('Polkit is disabled, the daemon will allow ALL client actions')
   endif
-  udevdir = get_option('udevdir')
-  if udevdir == '' and host_machine.system() == 'linux'
-    udev = dependency('udev')
-    udevdir = udev.get_variable(pkgconfig: 'udevdir')
+  if gudev.found()
+    udevdir = get_option('udevdir')
+    if udevdir == '' and host_machine.system() == 'linux'
+      udev = dependency('udev')
+      udevdir = udev.get_variable(pkgconfig: 'udevdir')
+    endif
   endif
 endif
 libm = cc.find_library('m', required: false)

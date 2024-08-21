@@ -3330,6 +3330,7 @@ fu_engine_write_firmware(FuEngine *self,
 					     progress,
 					     flags,
 					     &error_write)) {
+		g_autofree gchar *str_write = NULL;
 		g_autoptr(GError) error_attach = NULL;
 		g_autoptr(GError) error_cleanup = NULL;
 
@@ -3342,19 +3343,28 @@ fu_engine_write_firmware(FuEngine *self,
 			fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED);
 		}
 
+		/* this is really helpful for debugging, as we want to dump the device *before*
+		 * we run cleanup */
+		str_write = fu_device_to_string(device);
+		g_debug("failed write-firmware '%s': %s", error_write->message, str_write);
+
 		/* attach back into runtime then cleanup */
-		fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_ATTACH);
-		fu_progress_reset(progress);
-		if (!fu_plugin_runner_attach(plugin, device, progress, &error_attach)) {
-			g_warning("failed to attach device after failed update: %s",
-				  error_attach->message);
+		if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED)) {
+			fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_ATTACH);
+			fu_progress_reset(progress);
+			if (!fu_plugin_runner_attach(plugin, device, progress, &error_attach)) {
+				g_warning("failed to attach device after failed update: %s",
+					  error_attach->message);
+			}
+			fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_CLEANUP);
+			fu_progress_reset(progress);
+			if (!fu_engine_cleanup(self, device_id, progress, flags, &error_cleanup)) {
+				g_warning("failed to update-cleanup after failed update: %s",
+					  error_cleanup->message);
+			}
 		}
-		fu_engine_set_install_phase(self, FU_ENGINE_INSTALL_PHASE_CLEANUP);
-		fu_progress_reset(progress);
-		if (!fu_engine_cleanup(self, device_id, progress, flags, &error_cleanup)) {
-			g_warning("failed to update-cleanup after failed update: %s",
-				  error_cleanup->message);
-		}
+
+		/* return error to client */
 		g_propagate_error(error, g_steal_pointer(&error_write));
 		return FALSE;
 	}
@@ -7302,9 +7312,11 @@ fu_engine_load_plugins(FuEngine *self, FuEngineLoadFlags flags, FuProgress *prog
 
 	/* search */
 	plugin_path = fu_path_from_kind(FU_PATH_KIND_LIBDIR_PKG);
-	filenames = fu_path_get_files(plugin_path, &error_local);
-	if (filenames == NULL)
-		g_debug("no external plugins found: %s", error_local->message);
+	if (flags & FU_ENGINE_LOAD_FLAG_EXTERNAL_PLUGINS) {
+		filenames = fu_path_get_files(plugin_path, &error_local);
+		if (filenames == NULL)
+			g_debug("no external plugins found: %s", error_local->message);
+	}
 	fu_progress_step_done(progress);
 
 	/* load */
@@ -7907,11 +7919,12 @@ fu_engine_context_set_battery_threshold(FuContext *ctx)
 {
 	guint64 minimum_battery;
 	g_autofree gchar *battery_str = NULL;
+	g_autofree gchar *vendor_guid = NULL;
 	g_autofree gchar *vendor = NULL;
 
 	vendor = fu_context_get_hwid_replace_value(ctx, FU_HWIDS_KEY_MANUFACTURER, NULL);
-	if (vendor != NULL) {
-		g_autofree gchar *vendor_guid = fwupd_guid_hash_string(vendor);
+	vendor_guid = fwupd_guid_hash_string(vendor);
+	if (vendor_guid != NULL) {
 		battery_str = g_strdup(
 		    fu_context_lookup_quirk_by_id(ctx, vendor_guid, FU_QUIRKS_BATTERY_THRESHOLD));
 	}
@@ -8229,7 +8242,8 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_progress_step_done(progress);
 
 	/* create client certificate */
-	fu_engine_ensure_client_certificate(self);
+	if (flags & FU_ENGINE_LOAD_FLAG_ENSURE_CLIENT_CERT)
+		fu_engine_ensure_client_certificate(self);
 	fu_progress_step_done(progress);
 
 	/* get hardcoded approved and blocked firmware */
