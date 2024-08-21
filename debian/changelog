@@ -1,3 +1,12 @@
+fwupd (1.9.24-1) UNRELEASED; urgency=medium
+
+  * New upstream version (1.9.24)
+    - Improves ESP detection false positives (LP: #2077553)
+    - Adds support for mediatek scalar (LP: #2076151)
+    - Fixes redfish protocol handling (LP: #2077411)
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 21 Aug 2024 13:29:12 -0500
+
 fwupd (1.9.21-1) unstable; urgency=medium
 
   * New upstream version (1.9.21)
