@@ -95,7 +95,7 @@ Depends: ${misc:Depends},
          systemd-sysusers
 Recommends: python3,
 	    bolt,
-	    dbus,
+	    default-dbus-system-bus | dbus-system-bus,
 	    secureboot-db,
 	    udisks2,
 	    fwupd-signed,
