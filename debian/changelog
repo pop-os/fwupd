@@ -1,3 +1,9 @@
+fwupd (1.9.25-1) unstable; urgency=medium
+
+  * New upstream version (1.9.25)
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 25 Sep 2024 09:54:26 -0500
+
 fwupd (1.9.24-1) unstable; urgency=medium
 
   * New upstream version (1.9.24)
