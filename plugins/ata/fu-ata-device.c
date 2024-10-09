@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -111,13 +111,11 @@ static void
 fu_ata_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuAtaDevice *self = FU_ATA_DEVICE(device);
-	FU_DEVICE_CLASS(fu_ata_device_parent_class)->to_string(device, idt, str);
-	fu_string_append_kx(str, idt, "TransferMode", self->transfer_mode);
-	fu_string_append_kx(str, idt, "TransferBlocks", self->transfer_blocks);
-	if (self->oui != 0x0)
-		fu_string_append_kx(str, idt, "OUI", self->oui);
-	fu_string_append_ku(str, idt, "PciDepth", self->pci_depth);
-	fu_string_append_ku(str, idt, "UsbDepth", self->usb_depth);
+	fwupd_codec_string_append_hex(str, idt, "TransferMode", self->transfer_mode);
+	fwupd_codec_string_append_hex(str, idt, "TransferBlocks", self->transfer_blocks);
+	fwupd_codec_string_append_hex(str, idt, "OUI", self->oui);
+	fwupd_codec_string_append_int(str, idt, "PciDepth", self->pci_depth);
+	fwupd_codec_string_append_int(str, idt, "UsbDepth", self->usb_depth);
 }
 
 /* https://docs.microsoft.com/en-us/windows-hardware/drivers/install/identifiers-for-ide-devices */
@@ -157,7 +155,7 @@ fu_ata_device_parse_id_maybe_dell(FuAtaDevice *self, const guint16 *buf)
 
 	/* do not add the FuUdevDevice instance IDs as generic firmware
 	 * should not be used on these OEM-specific devices */
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NO_AUTO_INSTANCE_IDS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_NO_AUTO_INSTANCE_IDS);
 
 	/* add instance ID *and* GUID as using no-auto-instance-ids */
 	guid_id = g_strdup_printf("STORAGE-DELL-%s", component_id);
@@ -172,7 +170,7 @@ fu_ata_device_parse_id_maybe_dell(FuAtaDevice *self, const guint16 *buf)
 
 	/* owned by Dell */
 	fu_device_set_vendor(FU_DEVICE(self), "Dell");
-	fu_device_add_vendor_id(FU_DEVICE(self), "ATA:0x1028");
+	fu_device_build_vendor_id_u16(FU_DEVICE(self), "ATA", 0x1028);
 }
 
 static void
@@ -277,46 +275,45 @@ fu_ata_device_parse_vendor_name(FuAtaDevice *self, const gchar *name)
 			   {"CS2111*", 0x196e, "PNY"},
 			   {"S?FM*", 0x1987, "Phison"},
 			   {NULL, 0x0000, NULL}};
+	guint16 vid = 0;
 	g_autofree gchar *name_up = g_ascii_strup(name, -1);
-	g_autofree gchar *vendor_id = NULL;
 
 	/* find match */
 	for (guint i = 0; map_name[i].prefix != NULL; i++) {
 		if (g_pattern_match_simple(map_name[i].prefix, name_up)) {
 			name += strlen(map_name[i].prefix) - 1;
 			fu_device_set_vendor(FU_DEVICE(self), map_name[i].name);
-			vendor_id = g_strdup_printf("ATA:0x%X", map_name[i].vid);
+			vid = map_name[i].vid;
 			break;
 		}
 	}
 
 	/* fall back to fuzzy match */
-	if (vendor_id == NULL) {
+	if (vid == 0x0) {
 		for (guint i = 0; map_fuzzy[i].prefix != NULL; i++) {
 			if (g_pattern_match_simple(map_fuzzy[i].prefix, name_up)) {
 				fu_device_set_vendor(FU_DEVICE(self), map_fuzzy[i].name);
-				vendor_id = g_strdup_printf("ATA:0x%X", map_fuzzy[i].vid);
+				vid = map_fuzzy[i].vid;
 				break;
 			}
 		}
 	}
 
 	/* fall back to version */
-	if (vendor_id == NULL) {
+	if (vid == 0x0) {
 		g_autofree gchar *version_up =
 		    g_ascii_strup(fu_device_get_version(FU_DEVICE(self)), -1);
 		for (guint i = 0; map_version[i].prefix != NULL; i++) {
 			if (g_pattern_match_simple(map_version[i].prefix, version_up)) {
 				fu_device_set_vendor(FU_DEVICE(self), map_version[i].name);
-				vendor_id = g_strdup_printf("ATA:0x%X", map_version[i].vid);
+				vid = map_version[i].vid;
 				break;
 			}
 		}
 	}
 
 	/* devices without a vendor ID will not be UPGRADABLE */
-	if (vendor_id != NULL)
-		fu_device_add_vendor_id(FU_DEVICE(self), vendor_id);
+	fu_device_build_vendor_id_u16(FU_DEVICE(self), "ATA", vid);
 
 	/* remove leading junk */
 	while (name[0] == ' ' || name[0] == '_' || name[0] == '-')
@@ -341,8 +338,8 @@ fu_ata_device_parse_id(FuAtaDevice *self, const guint8 *buf, gsize sz, GError **
 	/* check size */
 	if (sz != FU_ATA_IDENTIFY_SIZE) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "ID incorrect size, got 0x%02x",
 			    (guint)sz);
 		return FALSE;
@@ -355,8 +352,8 @@ fu_ata_device_parse_id(FuAtaDevice *self, const guint8 *buf, gsize sz, GError **
 	/* verify drive correctly supports DOWNLOAD_MICROCODE */
 	if (!(id[83] & 1 && id[86] & 1)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "DOWNLOAD_MICROCODE not supported by device");
 		return FALSE;
 	}
@@ -402,14 +399,13 @@ fu_ata_device_parse_id(FuAtaDevice *self, const guint8 *buf, gsize sz, GError **
 	self->oui = ((guint32)(id[108] & 0x0fff)) << 12 | ((guint32)(id[109] & 0xfff0)) >> 4;
 	if (self->oui > 0x0) {
 		g_autofree gchar *tmp = NULL;
-		tmp = g_strdup_printf("OUI\\%06x", self->oui);
+		tmp = g_strdup_printf("OUI\\VID_%06x", self->oui);
 		fu_device_add_instance_id_full(device, tmp, FU_DEVICE_INSTANCE_FLAG_QUIRKS);
 		has_oui_quirk = fu_device_get_vendor(FU_DEVICE(self)) != NULL;
 	}
 	if (self->oui > 0x0) {
-		g_autofree gchar *vendor_id = NULL;
-		vendor_id = g_strdup_printf("OUI:%06x", self->oui);
-		fu_device_add_vendor_id(device, vendor_id);
+		g_autofree gchar *vendor_id = g_strdup_printf("%06x", self->oui);
+		fu_device_build_vendor_id(device, "OUI", vendor_id);
 	}
 
 	/* if not already set using the vendor block or a OUI quirk */
@@ -464,23 +460,14 @@ static gboolean
 fu_ata_device_probe(FuDevice *device, GError **error)
 {
 	FuAtaDevice *self = FU_ATA_DEVICE(device);
-	GUdevDevice *udev_device = fu_udev_device_get_dev(FU_UDEV_DEVICE(device));
 
 	/* check is valid */
-	if (g_strcmp0(g_udev_device_get_devtype(udev_device), "disk") != 0) {
+	if (g_strcmp0(fu_udev_device_get_devtype(FU_UDEV_DEVICE(device)), "disk") != 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "is not correct devtype=%s, expected disk",
-			    g_udev_device_get_devtype(udev_device));
-		return FALSE;
-	}
-	if (!g_udev_device_get_property_as_boolean(udev_device, "ID_ATA_SATA") ||
-	    !g_udev_device_get_property_as_boolean(udev_device, "ID_ATA_DOWNLOAD_MICROCODE")) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "has no ID_ATA_DOWNLOAD_MICROCODE");
+			    fu_udev_device_get_devtype(FU_UDEV_DEVICE(device)));
 		return FALSE;
 	}
 
@@ -489,8 +476,8 @@ fu_ata_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* look at the PCI and USB depth to work out if in an external enclosure */
-	self->pci_depth = fu_udev_device_get_slot_depth(FU_UDEV_DEVICE(device), "pci");
-	self->usb_depth = fu_udev_device_get_slot_depth(FU_UDEV_DEVICE(device), "usb");
+	self->pci_depth = fu_udev_device_get_subsystem_depth(FU_UDEV_DEVICE(device), "pci");
+	self->usb_depth = fu_udev_device_get_subsystem_depth(FU_UDEV_DEVICE(device), "usb");
 	if (self->pci_depth <= 2 && self->usb_depth <= 2) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_INTERNAL);
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
@@ -564,8 +551,10 @@ fu_ata_device_command(FuAtaDevice *self,
 	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				  SG_IO,
 				  (guint8 *)&io_hdr,
+				  sizeof(io_hdr),
 				  NULL,
 				  FU_ATA_DEVICE_IOCTL_TIMEOUT,
+				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 				  error))
 		return FALSE;
 	g_debug("ATA_%u status=0x%x, host_status=0x%x, driver_status=0x%x",
@@ -578,24 +567,24 @@ fu_ata_device_command(FuAtaDevice *self,
 	/* error check */
 	if (io_hdr.status && io_hdr.status != SG_CHECK_CONDITION) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "bad status: 0x%x",
 			    io_hdr.status);
 		return FALSE;
 	}
 	if (io_hdr.host_status) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "bad host status: 0x%x",
 			    io_hdr.host_status);
 		return FALSE;
 	}
 	if (io_hdr.driver_status && (io_hdr.driver_status != SG_DRIVER_SENSE)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "bad driver status: 0x%x",
 			    io_hdr.driver_status);
 		return FALSE;
@@ -623,8 +612,8 @@ fu_ata_device_command(FuAtaDevice *self,
 	/* io error */
 	if (tf->status & (ATA_STAT_ERR | ATA_STAT_DRQ)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
 			    "I/O error, ata_op=0x%02x ata_status=0x%02x ata_error=0x%02x",
 			    tf->command,
 			    tf->status,
@@ -750,14 +739,17 @@ fu_ata_device_fw_download(FuAtaDevice *self,
 
 	/* the offset was set up incorrectly */
 	if (tf.nsect == 0x4) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "alignment error");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "alignment error");
 		return FALSE;
 	}
 
 	/* other error */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_INVALID_DATA,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_INVALID_DATA,
 		    "unknown return code 0x%02x",
 		    tf.nsect);
 	return FALSE;
@@ -771,14 +763,15 @@ fu_ata_device_write_firmware(FuDevice *device,
 			     GError **error)
 {
 	FuAtaDevice *self = FU_ATA_DEVICE(device);
+	gsize streamsz = 0;
 	guint32 chunksz = (guint32)self->transfer_blocks * FU_ATA_BLOCK_SIZE;
 	guint max_size = 0xffff * FU_ATA_BLOCK_SIZE;
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* only one block allowed */
@@ -786,18 +779,20 @@ fu_ata_device_write_firmware(FuDevice *device,
 		max_size = 0xffff;
 
 	/* check is valid */
-	if (g_bytes_get_size(fw) > max_size) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (streamsz > max_size) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "firmware is too large, maximum size is %u",
 			    max_size);
 		return FALSE;
 	}
-	if (g_bytes_get_size(fw) % FU_ATA_BLOCK_SIZE != 0) {
+	if (streamsz % FU_ATA_BLOCK_SIZE != 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "firmware is not multiple of block size %i",
 			    FU_ATA_BLOCK_SIZE);
 		return FALSE;
@@ -805,11 +800,18 @@ fu_ata_device_write_firmware(FuDevice *device,
 
 	/* write each block */
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x00, chunksz);
+	chunks = fu_chunk_array_new_from_stream(stream, 0x00, chunksz, error);
+	if (chunks == NULL)
+		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_ata_device_fw_download(self,
 					       fu_chunk_get_idx(chk),
 					       fu_chunk_get_address(chk),
@@ -834,14 +836,14 @@ fu_ata_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "AtaTransferMode") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		if (tmp != ATA_SUBCMD_MICROCODE_DOWNLOAD_CHUNKS_ACTIVATE &&
 		    tmp != ATA_SUBCMD_MICROCODE_DOWNLOAD_CHUNKS &&
 		    tmp != ATA_SUBCMD_MICROCODE_DOWNLOAD_CHUNK) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_NOT_SUPPORTED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
 					    "AtaTransferMode only supports "
 					    "values 0x3, 0x7 or 0xe");
 			return FALSE;
@@ -850,12 +852,15 @@ fu_ata_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 		return TRUE;
 	}
 	if (g_strcmp0(key, "AtaTransferBlocks") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->transfer_blocks = (guint16)tmp;
 		return TRUE;
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -879,14 +884,14 @@ fu_ata_device_init(FuAtaDevice *self)
 	self->transfer_mode = ATA_SUBCMD_MICROCODE_DOWNLOAD_CHUNKS;
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_INHERIT_ACTIVATION);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_INHERIT_ACTIVATION);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_FLAGS);
 	fu_device_set_summary(FU_DEVICE(self), "ATA drive");
 	fu_device_add_icon(FU_DEVICE(self), "drive-harddisk");
 	fu_device_add_protocol(FU_DEVICE(self), "org.t13.ata");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self), FU_UDEV_DEVICE_FLAG_OPEN_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
 }
 
 static void
@@ -899,15 +904,15 @@ static void
 fu_ata_device_class_init(FuAtaDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_ata_device_finalize;
-	klass_device->to_string = fu_ata_device_to_string;
-	klass_device->set_quirk_kv = fu_ata_device_set_quirk_kv;
-	klass_device->setup = fu_ata_device_setup;
-	klass_device->activate = fu_ata_device_activate;
-	klass_device->write_firmware = fu_ata_device_write_firmware;
-	klass_device->probe = fu_ata_device_probe;
-	klass_device->set_progress = fu_ata_device_set_progress;
+	device_class->to_string = fu_ata_device_to_string;
+	device_class->set_quirk_kv = fu_ata_device_set_quirk_kv;
+	device_class->setup = fu_ata_device_setup;
+	device_class->activate = fu_ata_device_activate;
+	device_class->write_firmware = fu_ata_device_write_firmware;
+	device_class->probe = fu_ata_device_probe;
+	device_class->set_progress = fu_ata_device_set_progress;
 }
 
 FuAtaDevice *

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -95,30 +95,6 @@ G_BEGIN_DECLS
  * Since: 1.5.0
  **/
 #define FWUPD_SECURITY_ATTR_ID_INTEL_BOOTGUARD_OTP "org.fwupd.hsi.IntelBootguard.Otp"
-/**
- * FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED:
- *
- * Host Security ID attribute for Intel CET enabled
- *
- * Since: 1.5.0
- **/
-#define FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED "org.fwupd.hsi.IntelCet.Enabled"
-/**
- * FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE:
- *
- * Host Security ID attribute for Intel CET active
- *
- * Since: 1.5.0
- **/
-#define FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE "org.fwupd.hsi.IntelCet.Active"
-/**
- * FWUPD_SECURITY_ATTR_ID_INTEL_SMAP:
- *
- * Host Security ID attribute for Intel SMAP
- *
- * Since: 1.5.0
- **/
-#define FWUPD_SECURITY_ATTR_ID_INTEL_SMAP "org.fwupd.hsi.IntelSmap"
 /**
  * FWUPD_SECURITY_ATTR_ID_IOMMU:
  *
@@ -374,14 +350,37 @@ G_BEGIN_DECLS
  * Since: 1.9.6
  **/
 #define FWUPD_SECURITY_ATTR_ID_BIOS_CAPSULE_UPDATES "org.fwupd.hsi.Bios.CapsuleUpdates"
+/**
+ * FWUPD_SECURITY_ATTR_ID_SMAP:
+ *
+ * Host Security ID attribute for SMAP
+ *
+ * NOTE: This attribute use to be known as org.fwupd.hsi.IntelSmap before fwupd 2.0.0
+ *
+ * Since: 2.0.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_SMAP "org.fwupd.hsi.Smap"
+/**
+ * FWUPD_SECURITY_ATTR_ID_CET_ENABLED:
+ *
+ * Host Security ID attribute for Intel CET enabled
+ *
+ * NOTE: This used to be known as org.fwupd.hsi.IntelCet.Enabled before fwupd 2.0.0
+ *
+ * Since: 2.0.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_CET_ENABLED "org.fwupd.hsi.Cet.Enabled"
+/**
+ * FWUPD_SECURITY_ATTR_ID_CET_ACTIVE:
+ *
+ * Host Security ID attribute for Intel CET active
+ *
+ * NOTE: This used to be known as org.fwupd.hsi.IntelCet.Active before fwupd 2.0.0
+ *
+ * Since: 2.0.0
+ **/
+#define FWUPD_SECURITY_ATTR_ID_CET_ACTIVE "org.fwupd.hsi.Cet.Active"
 
-GVariant *
-fwupd_security_attr_to_variant(FwupdSecurityAttr *self) G_GNUC_NON_NULL(1);
-void
-fwupd_security_attr_to_json(FwupdSecurityAttr *self, JsonBuilder *builder) G_GNUC_NON_NULL(1, 2);
-gboolean
-fwupd_security_attr_from_json(FwupdSecurityAttr *self, JsonNode *json_node, GError **error)
-    G_GNUC_NON_NULL(1, 2);
 FwupdSecurityAttr *
 fwupd_security_attr_copy(FwupdSecurityAttr *self) G_GNUC_NON_NULL(1);
 

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Christian J. Kellner <christian@kellner.me>
+ * Copyright 2017 Christian J. Kellner <christian@kellner.me>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -18,7 +18,7 @@ struct _FuThunderboltPlugin {
 G_DEFINE_TYPE(FuThunderboltPlugin, fu_thunderbolt_plugin, FU_TYPE_PLUGIN)
 
 /* 5 seconds sleep until retimer is available after nvm update */
-#define FU_THUNDERBOLT_RETIMER_CLEANUP_DELAY 5000000
+#define FU_THUNDERBOLT_RETIMER_CLEANUP_DELAY 5000 /* ms */
 
 static gboolean
 fu_thunderbolt_plugin_safe_kernel(FuPlugin *plugin, GError **error)
@@ -50,8 +50,8 @@ fu_thunderbolt_plugin_device_registered(FuPlugin *plugin, FuDevice *device)
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE)) {
 		g_info("turning on delayed activation for %s", fu_device_get_name(device));
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
-		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SKIPS_RESTART);
-		fu_device_remove_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+		fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
+		fu_device_remove_private_flag(device, FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	}
 }
 
@@ -68,7 +68,7 @@ fu_thunderbolt_plugin_composite_prepare(FuPlugin *plugin, GPtrArray *devices, GE
 		FuDevice *dev = g_ptr_array_index(devices, i);
 		if ((g_strcmp0(fu_device_get_plugin(dev), "thunderbolt") == 0) &&
 		    fu_device_has_private_flag(dev, FU_THUNDERBOLT_DEVICE_FLAG_FORCE_ENUMERATION) &&
-		    fu_device_has_internal_flag(dev, FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE)) {
+		    fu_device_has_private_flag(dev, FU_DEVICE_PRIVATE_FLAG_NO_AUTO_REMOVE)) {
 			return fu_thunderbolt_retimer_set_parent_port_offline(dev, error);
 		}
 	}
@@ -82,12 +82,30 @@ fu_thunderbolt_plugin_composite_cleanup(FuPlugin *plugin, GPtrArray *devices, GE
 		FuDevice *dev = g_ptr_array_index(devices, i);
 		if ((g_strcmp0(fu_device_get_plugin(dev), "thunderbolt") == 0) &&
 		    fu_device_has_private_flag(dev, FU_THUNDERBOLT_DEVICE_FLAG_FORCE_ENUMERATION) &&
-		    fu_device_has_internal_flag(dev, FU_DEVICE_INTERNAL_FLAG_NO_AUTO_REMOVE)) {
-			g_usleep(FU_THUNDERBOLT_RETIMER_CLEANUP_DELAY);
+		    fu_device_has_private_flag(dev, FU_DEVICE_PRIVATE_FLAG_NO_AUTO_REMOVE)) {
+			fu_device_sleep(dev, FU_THUNDERBOLT_RETIMER_CLEANUP_DELAY);
 			return fu_thunderbolt_retimer_set_parent_port_online(dev, error);
 		}
 	}
 	return TRUE;
+}
+
+static gboolean
+fu_thunderbolt_plugin_modify_config(FuPlugin *plugin,
+				    const gchar *key,
+				    const gchar *value,
+				    GError **error)
+{
+	const gchar *keys[] = {"DelayedActivation", "MinimumKernelVersion", NULL};
+	if (!g_strv_contains(keys, key)) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "config key %s not supported",
+			    key);
+		return FALSE;
+	}
+	return fu_plugin_set_config_value(plugin, key, value, error);
 }
 
 static void
@@ -118,4 +136,5 @@ fu_thunderbolt_plugin_class_init(FuThunderboltPluginClass *klass)
 	plugin_class->device_created = fu_thunderbolt_plugin_device_created;
 	plugin_class->composite_prepare = fu_thunderbolt_plugin_composite_prepare;
 	plugin_class->composite_cleanup = fu_thunderbolt_plugin_composite_cleanup;
+	plugin_class->modify_config = fu_thunderbolt_plugin_modify_config;
 }

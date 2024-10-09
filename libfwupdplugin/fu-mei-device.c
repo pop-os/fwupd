@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuMeiDevice"
@@ -58,13 +58,10 @@ fu_mei_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuMeiDevice *self = FU_MEI_DEVICE(device);
 	FuMeiDevicePrivate *priv = GET_PRIVATE(self);
-	FU_DEVICE_CLASS(fu_mei_device_parent_class)->to_string(device, idt, str);
-	fu_string_append(str, idt, "Uuid", priv->uuid);
-	fu_string_append(str, idt, "ParentDeviceFile", priv->parent_device_file);
-	if (priv->max_msg_length > 0x0)
-		fu_string_append_kx(str, idt, "MaxMsgLength", priv->max_msg_length);
-	if (priv->protocol_version > 0x0)
-		fu_string_append_kx(str, idt, "ProtocolVer", priv->protocol_version);
+	fwupd_codec_string_append(str, idt, "Uuid", priv->uuid);
+	fwupd_codec_string_append(str, idt, "ParentDeviceFile", priv->parent_device_file);
+	fwupd_codec_string_append_hex(str, idt, "MaxMsgLength", priv->max_msg_length);
+	fwupd_codec_string_append_hex(str, idt, "ProtocolVer", priv->protocol_version);
 }
 
 static gboolean
@@ -78,11 +75,10 @@ fu_mei_device_ensure_parent_device_file(FuMeiDevice *self, GError **error)
 	g_autoptr(GDir) dir = NULL;
 
 	/* get direct parent */
-	parent = fu_udev_device_get_parent_with_subsystem(FU_UDEV_DEVICE(self), NULL);
-	if (parent == NULL) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no MEI parent");
+	parent = FU_UDEV_DEVICE(
+	    fu_device_get_backend_parent_with_subsystem(FU_DEVICE(self), "pci", error));
+	if (parent == NULL)
 		return FALSE;
-	}
 
 	/* look for the only child with this subsystem */
 	parent_mei_path = g_build_filename(fu_udev_device_get_sysfs_path(parent), "mei", NULL);
@@ -125,19 +121,48 @@ fu_mei_device_set_uuid(FuMeiDevice *self, const gchar *uuid)
 }
 
 static gboolean
+fu_mei_device_pci_probe(FuMeiDevice *self, GError **error)
+{
+	g_autoptr(FuDevice) pci_donor = NULL;
+
+	pci_donor = fu_device_get_backend_parent_with_subsystem(FU_DEVICE(self), "pci", error);
+	if (pci_donor == NULL)
+		return FALSE;
+	if (!fu_device_probe(pci_donor, error))
+		return FALSE;
+	fu_device_incorporate(FU_DEVICE(self),
+			      pci_donor,
+			      FU_DEVICE_INCORPORATE_FLAG_VENDOR_IDS |
+				  FU_DEVICE_INCORPORATE_FLAG_VID | FU_DEVICE_INCORPORATE_FLAG_PID |
+				  FU_DEVICE_INCORPORATE_FLAG_PHYSICAL_ID);
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_mei_device_probe(FuDevice *device, GError **error)
 {
 	FuMeiDevice *self = FU_MEI_DEVICE(device);
 	FuMeiDevicePrivate *priv = GET_PRIVATE(self);
-	const gchar *uuid;
+	g_autofree gchar *uuid = NULL;
+	g_autoptr(GError) error_local = NULL;
+
+	/* copy the PCI-specific vendor */
+	if (!fu_mei_device_pci_probe(self, error))
+		return FALSE;
 
 	/* this has to exist */
-	uuid = fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(device), "uuid", NULL);
+	uuid = fu_udev_device_read_sysfs(FU_UDEV_DEVICE(device),
+					 "uuid",
+					 FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+					 &error_local);
 	if (uuid == NULL) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "UUID not provided");
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "UUID not provided: %s",
+			    error_local->message);
 		return FALSE;
 	}
 	fu_mei_device_set_uuid(self, uuid);
@@ -154,12 +179,8 @@ fu_mei_device_probe(FuDevice *device, GError **error)
 		fu_udev_device_set_device_file(FU_UDEV_DEVICE(device), device_file);
 	}
 
-	/* FuUdevDevice->probe */
-	if (!FU_DEVICE_CLASS(fu_mei_device_parent_class)->probe(device, error))
-		return FALSE;
-
-	/* set the physical ID */
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "pci", error);
+	/* success */
+	return TRUE;
 }
 
 static gchar *
@@ -305,12 +326,14 @@ fu_mei_device_connect(FuMeiDevice *self, guchar req_protocol_version, GError **e
 	if (!fwupd_guid_from_string(priv->uuid, &guid_le, FWUPD_GUID_FLAG_MIXED_ENDIAN, error))
 		return FALSE;
 	fu_dump_raw(G_LOG_DOMAIN, "guid_le", (guint8 *)&guid_le, sizeof(guid_le));
-	memcpy(&data.in_client_uuid, &guid_le, sizeof(guid_le));
+	memcpy(&data.in_client_uuid, &guid_le, sizeof(guid_le)); /* nocheck:blocked */
 	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				  IOCTL_MEI_CONNECT_CLIENT,
 				  (guint8 *)&data,
+				  sizeof(data),
 				  NULL, /* rc */
 				  FU_MEI_DEVICE_IOCTL_TIMEOUT,
+				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 				  error))
 		return FALSE;
 
@@ -481,9 +504,6 @@ fu_mei_device_incorporate(FuDevice *device, FuDevice *donor)
 	g_return_if_fail(FU_IS_MEI_DEVICE(self));
 	g_return_if_fail(FU_IS_MEI_DEVICE(donor));
 
-	/* FuUdevDevice->incorporate */
-	FU_DEVICE_CLASS(fu_mei_device_parent_class)->incorporate(device, donor);
-
 	/* copy private instance data */
 	priv->max_msg_length = priv_donor->max_msg_length;
 	priv->protocol_version = priv_donor->protocol_version;
@@ -497,10 +517,8 @@ static void
 fu_mei_device_init(FuMeiDevice *self)
 {
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NO_PROBE_COMPLETE);
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),
-				 FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE |
-				     FU_UDEV_DEVICE_FLAG_VENDOR_FROM_PARENT);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
 }
 
 static void
@@ -516,10 +534,10 @@ fu_mei_device_finalize(GObject *object)
 static void
 fu_mei_device_class_init(FuMeiDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_mei_device_finalize;
-	klass_device->probe = fu_mei_device_probe;
-	klass_device->to_string = fu_mei_device_to_string;
-	klass_device->incorporate = fu_mei_device_incorporate;
+	device_class->probe = fu_mei_device_probe;
+	device_class->to_string = fu_mei_device_to_string;
+	device_class->incorporate = fu_mei_device_incorporate;
 }

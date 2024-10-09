@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -29,8 +29,6 @@ struct _FwupdPluginClass {
 
 FwupdPlugin *
 fwupd_plugin_new(void);
-gchar *
-fwupd_plugin_to_string(FwupdPlugin *self) G_GNUC_NON_NULL(1);
 
 const gchar *
 fwupd_plugin_get_name(FwupdPlugin *self) G_GNUC_NON_NULL(1);
@@ -47,10 +45,5 @@ fwupd_plugin_remove_flag(FwupdPlugin *self, FwupdPluginFlags flag) G_GNUC_NON_NU
 gboolean
 fwupd_plugin_has_flag(FwupdPlugin *self, FwupdPluginFlags flag) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1);
-
-FwupdPlugin *
-fwupd_plugin_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
-GPtrArray *
-fwupd_plugin_array_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
 
 G_END_DECLS

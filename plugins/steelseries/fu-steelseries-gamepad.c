@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Denis Pynkin <denis.pynkin@collabora.com>
+ * Copyright 2021 Denis Pynkin <denis.pynkin@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -69,7 +69,7 @@ fu_steelseries_gamepad_setup(FuDevice *device, GError **error)
 
 	if (!fu_memread_uint16_safe(data, sizeof(data), 0x01, &fw_ver, G_LITTLE_ENDIAN, error))
 		return FALSE;
-	fu_device_set_version_u16(FU_DEVICE(device), fw_ver);
+	fu_device_set_version_raw(FU_DEVICE(device), fw_ver);
 
 	if (!fu_memread_uint16_safe(data, sizeof(data), 0x03, &fw_ver, G_LITTLE_ENDIAN, error))
 		return FALSE;
@@ -138,9 +138,14 @@ fu_steelseries_gamepad_write_firmware_chunks(FuDevice *device,
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chunk = fu_chunk_array_index(chunks, i);
 		guint16 chunk_checksum;
 		guint8 data[STEELSERIES_BUFFER_CONTROL_SIZE] = {0xA3};
+		g_autoptr(FuChunk) chunk = NULL;
+
+		/* prepare chunk */
+		chunk = fu_chunk_array_index(chunks, i, error);
+		if (chunk == NULL)
+			return FALSE;
 
 		/* block ID */
 		if (!fu_memwrite_uint16_safe(data,
@@ -216,8 +221,8 @@ fu_steelseries_gamepad_write_checksum(FuDevice *device, guint32 checksum, GError
 	/* validate checksum */
 	if (data[0] != 0xA5 || data[1] != 0xAA || data[2] != 0x55 || data[3] != 0x01) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "Controller is unable to validate checksum");
 		return FALSE;
 	}
@@ -284,16 +289,23 @@ fu_steelseries_gamepad_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "reload");
 }
 
+static gchar *
+fu_steelseries_gamepad_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint16(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_steelseries_gamepad_class_init(FuSteelseriesGamepadClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
-	klass_device->setup = fu_steelseries_gamepad_setup;
-	klass_device->attach = fu_steelseries_gamepad_attach;
-	klass_device->detach = fu_steelseries_gamepad_detach;
-	klass_device->write_firmware = fu_steelseries_gamepad_write_firmware;
-	klass_device->set_progress = fu_steelseries_gamepad_set_progress;
+	device_class->setup = fu_steelseries_gamepad_setup;
+	device_class->attach = fu_steelseries_gamepad_attach;
+	device_class->detach = fu_steelseries_gamepad_detach;
+	device_class->write_firmware = fu_steelseries_gamepad_write_firmware;
+	device_class->set_progress = fu_steelseries_gamepad_set_progress;
+	device_class->convert_version = fu_steelseries_gamepad_convert_version;
 }
 
 static void
@@ -304,8 +316,8 @@ fu_steelseries_gamepad_init(FuSteelseriesGamepad *self)
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_BCD);
 
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ADD_COUNTERPART_GUIDS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_protocol(FU_DEVICE(self), "com.steelseries.gamepad");
 
 	fu_device_set_firmware_size_max(FU_DEVICE(self),

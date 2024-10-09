@@ -46,6 +46,13 @@ The `[fwupd]` section can contain the following parameters:
 
   Allow blocking specific devices by their GUID, using semicolons as delimiter.
 
+**EmulatedDevices={{EmulatedDevices}}**
+
+  Allow adding specific devices by their device ID, using semicolons as delimiter.
+
+  This config option is useful to build emulations of "internal" devices which typically cannot be
+  hotplugged.
+
 **DisabledPlugins={{DisabledPlugins}}**
 
   Allow blocking specific plugins by name.
@@ -261,6 +268,15 @@ The `[uefi_capsule]` section can contain the following parameters:
 
   **NOTE:** disabling this option is only required when debugging the flash process and normal
   users should not need to change this setting.
+
+**ScreenWidth={{uefi_capsule_ScreenWidth}}**
+
+  Override the screen width in pixels of the EFI framebuffer as used by the UX capsule.
+
+**ScreenHeight={{uefi_capsule_ScreenHeight}}**
+
+  Override the screen height in pixels of the EFI framebuffer as used by the UX capsule.
+
 {% endif %}
 
 {% if plugin_msr %}

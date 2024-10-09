@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -198,7 +198,10 @@ fu_uefi_backend_linux_check_smbios_enabled(FuContext *ctx, GError **error)
 }
 
 static gboolean
-fu_uefi_backend_linux_setup(FuBackend *backend, FuProgress *progress, GError **error)
+fu_uefi_backend_linux_setup(FuBackend *backend,
+			    FuBackendSetupFlags flags,
+			    FuProgress *progress,
+			    GError **error)
 {
 	g_autoptr(GError) error_local = NULL;
 
@@ -233,9 +236,9 @@ fu_uefi_backend_linux_init(FuUefiBackendLinux *self)
 static void
 fu_uefi_backend_linux_class_init(FuUefiBackendLinuxClass *klass)
 {
-	FuBackendClass *klass_backend = FU_BACKEND_CLASS(klass);
-	klass_backend->coldplug = fu_uefi_backend_linux_coldplug;
-	klass_backend->setup = fu_uefi_backend_linux_setup;
+	FuBackendClass *backend_class = FU_BACKEND_CLASS(klass);
+	backend_class->coldplug = fu_uefi_backend_linux_coldplug;
+	backend_class->setup = fu_uefi_backend_linux_setup;
 }
 
 FuBackend *

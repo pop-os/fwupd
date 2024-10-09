@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuUsbDeviceDs20"
@@ -11,6 +11,7 @@
 #include "fu-byte-array.h"
 #include "fu-bytes.h"
 #include "fu-dump.h"
+#include "fu-input-stream.h"
 #include "fu-usb-device-ds20-struct.h"
 #include "fu-usb-device-ds20.h"
 
@@ -68,39 +69,37 @@ fu_usb_device_ds20_set_version_lowest(FuUsbDeviceDs20 *self, guint32 version_low
 gboolean
 fu_usb_device_ds20_apply_to_device(FuUsbDeviceDs20 *self, FuUsbDevice *device, GError **error)
 {
-#ifdef HAVE_GUSB
 	FuUsbDeviceDs20Class *klass = FU_USB_DEVICE_DS20_GET_CLASS(self);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(device);
 	gsize actual_length = 0;
 	gsize total_length = fu_firmware_get_size(FU_FIRMWARE(self));
 	guint8 vendor_code = fu_firmware_get_idx(FU_FIRMWARE(self));
 	g_autofree guint8 *buf = g_malloc0(total_length);
-	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 
 	g_return_val_if_fail(FU_IS_USB_DEVICE_DS20(self), FALSE);
 	g_return_val_if_fail(FU_IS_USB_DEVICE(device), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
-	if (!g_usb_device_control_transfer(usb_device,
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   vendor_code, /* bRequest */
-					   0x0,		/* wValue */
-					   0x07,	/* wIndex */
-					   buf,
-					   total_length,
-					   &actual_length,
-					   500,
-					   NULL, /* cancellable */
-					   error)) {
+	if (!fu_usb_device_control_transfer(device,
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    vendor_code, /* bRequest */
+					    0x0,	 /* wValue */
+					    0x07,	 /* wIndex */
+					    buf,
+					    total_length,
+					    &actual_length,
+					    500,
+					    NULL, /* cancellable */
+					    error)) {
 		g_prefix_error(error, "requested vendor code 0x%02x: ", vendor_code);
 		return FALSE;
 	}
 	if (total_length != actual_length) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "expected 0x%x bytes from vendor code 0x%02x, but got 0x%x",
 			    (guint)total_length,
 			    vendor_code,
@@ -112,25 +111,21 @@ fu_usb_device_ds20_apply_to_device(FuUsbDeviceDs20 *self, FuUsbDevice *device, G
 	fu_dump_raw(G_LOG_DOMAIN, "PlatformCapabilityOs20", buf, actual_length);
 
 	/* FuUsbDeviceDs20->parse */
-	blob = g_bytes_new_take(g_steal_pointer(&buf), actual_length);
-	return klass->parse(self, blob, device, error);
-#else
-	g_set_error_literal(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "GUsb support is unavailable");
-	return FALSE;
-#endif
+	stream = g_memory_input_stream_new_from_data(buf, actual_length, NULL);
+	return klass->parse(self, stream, device, error);
 }
 
 static gboolean
-fu_usb_device_ds20_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_usb_device_ds20_validate(FuFirmware *firmware,
+			    GInputStream *stream,
+			    gsize offset,
+			    GError **error)
 {
 	g_autoptr(GByteArray) st = NULL;
 	g_autofree gchar *guid_str = NULL;
 
 	/* matches the correct UUID */
-	st = fu_struct_ds20_parse_bytes(fw, offset, error);
+	st = fu_struct_ds20_parse_stream(stream, offset, error);
 	if (st == NULL)
 		return FALSE;
 	guid_str = fwupd_guid_to_string(fu_struct_ds20_get_guid(st), FWUPD_GUID_FLAG_MIXED_ENDIAN);
@@ -161,22 +156,25 @@ fu_usb_device_ds20_sort_by_platform_ver_cb(gconstpointer a, gconstpointer b)
 
 static gboolean
 fu_usb_device_ds20_parse(FuFirmware *firmware,
-			 GBytes *fw,
+			 GInputStream *stream,
 			 gsize offset,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuUsbDeviceDs20 *self = FU_USB_DEVICE_DS20(firmware);
 	FuUsbDeviceDs20Private *priv = GET_PRIVATE(self);
+	gsize streamsz = 0;
 	guint version_lowest = fu_firmware_get_version_raw(firmware);
 	g_autoptr(GPtrArray) dsinfos = g_ptr_array_new_with_free_func(g_free);
 
-	for (gsize off = 0; off < g_bytes_get_size(fw); off += FU_STRUCT_DS20_SIZE) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	for (gsize off = 0; off < streamsz; off += FU_STRUCT_DS20_SIZE) {
 		g_autofree FuUsbDeviceDs20Item *dsinfo = g_new0(FuUsbDeviceDs20Item, 1);
 		g_autoptr(GByteArray) st = NULL;
 
 		/* parse */
-		st = fu_struct_ds20_parse_bytes(fw, off, error);
+		st = fu_struct_ds20_parse_stream(stream, off, error);
 		if (st == NULL)
 			return FALSE;
 		dsinfo->platform_ver = fu_struct_ds20_get_platform_ver(st);
@@ -202,16 +200,16 @@ fu_usb_device_ds20_parse(FuFirmware *firmware,
 		/* not valid */
 		if (dsinfo->platform_ver == 0x0) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "invalid platform version 0x%08x",
 				    dsinfo->platform_ver);
 			return FALSE;
 		}
 		if (dsinfo->platform_ver < priv->version_lowest) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "invalid platform version 0x%08x, expected >= 0x%08x",
 				    dsinfo->platform_ver,
 				    priv->version_lowest);
@@ -227,14 +225,17 @@ fu_usb_device_ds20_parse(FuFirmware *firmware,
 	}
 
 	/* failed */
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no supported platform version");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no supported platform version");
 	return FALSE;
 }
 
 static GByteArray *
 fu_usb_device_ds20_write(FuFirmware *firmware, GError **error)
 {
-	g_autoptr(GByteArray) st = fu_struct_ds20_new();
+	g_autoptr(FuStructDs20) st = fu_struct_ds20_new();
 	fwupd_guid_t guid = {0x0};
 
 	/* pack */
@@ -259,8 +260,8 @@ fu_usb_device_ds20_init(FuUsbDeviceDs20 *self)
 static void
 fu_usb_device_ds20_class_init(FuUsbDeviceDs20Class *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_usb_device_ds20_check_magic;
-	klass_firmware->parse = fu_usb_device_ds20_parse;
-	klass_firmware->write = fu_usb_device_ds20_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_usb_device_ds20_validate;
+	firmware_class->parse = fu_usb_device_ds20_parse;
+	firmware_class->write = fu_usb_device_ds20_write;
 }

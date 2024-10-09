@@ -1,9 +1,9 @@
-if gusb.found()
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 cargs = ['-DG_LOG_DOMAIN="FuPluginVliUsbhub"']
 
 plugin_quirks += files([
   'vli-bizlink.quirk',
+  'vli-cablematters.quirk',
   'vli-dell.quirk',
   'vli-fujitsu.quirk',
   'vli-goodway.quirk',
@@ -55,5 +55,4 @@ if get_option('tests')
     c_args: cargs,
   )
   test('vli-self-test', e, env: env)  # added to installed-tests
-endif
 endif

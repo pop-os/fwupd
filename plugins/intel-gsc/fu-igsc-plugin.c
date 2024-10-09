@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Intel
+ * Copyright 2022 Intel
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR Apache-2.0
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR Apache-2.0
  */
 
 #include "config.h"
@@ -24,7 +24,7 @@ fu_igsc_plugin_init(FuIgscPlugin *self)
 }
 
 static void
-fu_igsc_constructed(GObject *obj)
+fu_igsc_plugin_constructed(GObject *obj)
 {
 	FuPlugin *plugin = FU_PLUGIN(obj);
 	fu_plugin_add_udev_subsystem(plugin, "mei");
@@ -38,5 +38,5 @@ static void
 fu_igsc_plugin_class_init(FuIgscPluginClass *klass)
 {
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
-	plugin_class->constructed = fu_igsc_constructed;
+	plugin_class->constructed = fu_igsc_plugin_constructed;
 }

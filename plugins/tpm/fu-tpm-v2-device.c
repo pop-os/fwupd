@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -20,7 +20,25 @@ G_DEFINE_TYPE(FuTpmV2Device, fu_tpm_v2_device, FU_TYPE_TPM_DEVICE)
 static gboolean
 fu_tpm_v2_device_probe(FuDevice *device, GError **error)
 {
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "tpm", error);
+	g_autofree gchar *physical_id = NULL;
+	g_autofree gchar *prop_devname = NULL;
+
+	/* we don't have anything better */
+	prop_devname = fu_udev_device_read_property(FU_UDEV_DEVICE(device), "DEVNAME", error);
+	if (prop_devname == NULL)
+		return FALSE;
+	physical_id = g_strdup_printf("DEVNAME=%s", prop_devname);
+	fu_device_set_physical_id(device, physical_id);
+
+	/* fake something as we cannot talk to tpmd */
+	if (fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_IS_FAKE)) {
+		fu_device_add_instance_str(device, "VEN", "fwupd");
+		fu_device_add_instance_str(device, "DEV", "TPM");
+		return fu_device_build_instance_id(device, error, "TPM", "VEN", "DEV", NULL);
+	}
+
+	/* success */
+	return TRUE;
 }
 
 static gboolean
@@ -42,24 +60,24 @@ fu_tpm_v2_device_get_uint32(FuTpmV2Device *self, guint32 query, guint32 *val, GE
 				&capability);
 	if (rc != TSS2_RC_SUCCESS) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "capability request failed for query %x",
 			    query);
 		return FALSE;
 	}
 	if (capability->data.tpmProperties.count == 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "no properties returned for query %x",
 			    query);
 		return FALSE;
 	}
 	if (capability->data.tpmProperties.tpmProperty[0].property != query) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "wrong query returned (got %x expected %x)",
 			    capability->data.tpmProperties.tpmProperty[0].property,
 			    query);
@@ -81,7 +99,7 @@ fu_tpm_v2_device_get_string(FuTpmV2Device *self, guint32 query, GError **error)
 	if (!fu_tpm_v2_device_get_uint32(self, query, &val_be, error))
 		return NULL;
 	val = GUINT32_FROM_BE(val_be);
-	memcpy(result, (gchar *)&val, 4);
+	memcpy(result, (gchar *)&val, 4); /* nocheck:blocked */
 
 	/* convert non-ASCII into spaces */
 	for (guint i = 0; i < 4; i++) {
@@ -163,8 +181,8 @@ fu_tpm_v2_device_setup_pcrs(FuTpmV2Device *self, GError **error)
 				&capability_data);
 	if (rc != TSS2_RC_SUCCESS) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "failed to get hash algorithms supported by TPM");
 		return FALSE;
 	}
@@ -189,8 +207,8 @@ fu_tpm_v2_device_setup_pcrs(FuTpmV2Device *self, GError **error)
 			   &pcr_values);
 	if (rc != TSS2_RC_SUCCESS) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "failed to read PCR values from TPM");
 		return FALSE;
 	}
@@ -236,8 +254,8 @@ fu_tpm_v2_device_ensure_commands(FuTpmV2Device *self, GError **error)
 				&capability);
 	if (rc != TSS2_RC_SUCCESS) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "capability request failed for TPM2_CAP_COMMANDS");
 		return FALSE;
 	}
@@ -283,7 +301,6 @@ fu_tpm_v2_device_setup(FuDevice *device, GError **error)
 	g_autofree gchar *model3 = NULL;
 	g_autofree gchar *model4 = NULL;
 	g_autofree gchar *model = NULL;
-	g_autofree gchar *vendor_id = NULL;
 	g_autofree gchar *family = NULL;
 
 	/* suppress warning messages about missing TCTI libraries for tpm2-tss <2.3 */
@@ -293,8 +310,8 @@ fu_tpm_v2_device_setup(FuDevice *device, GError **error)
 	rc = Esys_Startup(self->esys_context, TPM2_SU_CLEAR);
 	if (rc != TSS2_RC_SUCCESS) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "failed to initialize TPM");
 		return FALSE;
 	}
@@ -338,8 +355,7 @@ fu_tpm_v2_device_setup(FuDevice *device, GError **error)
 	fu_device_build_instance_id(device, NULL, "TPM", "VEN", "MOD", "VER", NULL);
 
 	/* enforce vendors can only ship updates for their own hardware */
-	vendor_id = g_strdup_printf("TPM:%s", manufacturer);
-	fu_device_add_vendor_id(device, vendor_id);
+	fu_device_build_vendor_id(device, "TPM", manufacturer);
 	tmp = fu_tpm_v2_device_convert_manufacturer(manufacturer);
 	fu_device_set_vendor(device, tmp != NULL ? tmp : manufacturer);
 
@@ -349,7 +365,7 @@ fu_tpm_v2_device_setup(FuDevice *device, GError **error)
 	if (!fu_tpm_v2_device_get_uint32(self, TPM2_PT_FIRMWARE_VERSION_2, &version2, error))
 		return FALSE;
 	version_raw = ((guint64)version1) << 32 | ((guint64)version2);
-	fu_device_set_version_u64(device, version_raw);
+	fu_device_set_version_raw(device, version_raw);
 
 	/* get capabilities */
 	if (!fu_tpm_v2_device_ensure_commands(self, error))
@@ -360,19 +376,32 @@ fu_tpm_v2_device_setup(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_tpm_v2_device_upgrade_data(FuTpmV2Device *self, GBytes *fw, FuProgress *progress, GError **error)
+fu_tpm_v2_device_upgrade_data(FuTpmV2Device *self,
+			      GInputStream *stream,
+			      FuProgress *progress,
+			      GError **error)
 {
 	TPMT_HA *first_digest;
 	TPMT_HA *next_digest;
 	TSS2_RC rc;
+	gsize streamsz = 0;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, TPM2_MAX_DIGEST_BUFFER);
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	chunks = fu_chunk_array_new_from_stream(stream, 0x0, TPM2_MAX_DIGEST_BUFFER, error);
+	if (chunks == NULL)
+		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
-		TPM2B_MAX_BUFFER data = {.size = g_bytes_get_size(fw)};
+		TPM2B_MAX_BUFFER data = {.size = streamsz};
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_memcpy_safe((guint8 *)data.buffer,
 				    sizeof(data.buffer),
 				    0x0, /* dst */
@@ -419,7 +448,7 @@ fu_tpm_v2_device_write_firmware(FuDevice *device,
 	FuTpmV2Device *self = FU_TPM_V2_DEVICE(device);
 	TPM2B_DIGEST digest = {0x0};
 	TSS2_RC rc;
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -454,10 +483,10 @@ fu_tpm_v2_device_write_firmware(FuDevice *device,
 	}
 
 	/* deploy data to device */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
-	if (!fu_tpm_v2_device_upgrade_data(self, fw, fu_progress_get_child(progress), error))
+	if (!fu_tpm_v2_device_upgrade_data(self, stream, fu_progress_get_child(progress), error))
 		return FALSE;
 
 	/* success! */
@@ -541,6 +570,12 @@ fu_tpm_v2_device_close(FuDevice *device, GError **error)
 	return TRUE;
 }
 
+static gchar *
+fu_tpm_v2_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint64(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_tpm_v2_device_init(FuTpmV2Device *self)
 {
@@ -556,13 +591,14 @@ fu_tpm_v2_device_init(FuTpmV2Device *self)
 static void
 fu_tpm_v2_device_class_init(FuTpmV2DeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_tpm_v2_device_setup;
-	klass_device->probe = fu_tpm_v2_device_probe;
-	klass_device->open = fu_tpm_v2_device_open;
-	klass_device->close = fu_tpm_v2_device_close;
-	klass_device->write_firmware = fu_tpm_v2_device_write_firmware;
-	klass_device->dump_firmware = fu_tpm_v2_device_dump_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_tpm_v2_device_setup;
+	device_class->probe = fu_tpm_v2_device_probe;
+	device_class->open = fu_tpm_v2_device_open;
+	device_class->close = fu_tpm_v2_device_close;
+	device_class->write_firmware = fu_tpm_v2_device_write_firmware;
+	device_class->dump_firmware = fu_tpm_v2_device_dump_firmware;
+	device_class->convert_version = fu_tpm_v2_device_convert_version;
 }
 
 FuTpmDevice *

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Twain Byrnes <binarynewts@google.com>
- * Copyright (C) 2021 George Popoola <gpopoola@google.com>
+ * Copyright 2021 Twain Byrnes <binarynewts@google.com>
+ * Copyright 2021 George Popoola <gpopoola@google.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -208,7 +208,7 @@ fu_powerd_plugin_init(FuPowerdPlugin *self)
 }
 
 static void
-fu_powerd_finalize(GObject *obj)
+fu_powerd_plugin_finalize(GObject *obj)
 {
 	FuPowerdPlugin *self = FU_POWERD_PLUGIN(obj);
 	if (self->proxy != NULL)
@@ -222,7 +222,7 @@ fu_powerd_plugin_class_init(FuPowerdPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->finalize = fu_powerd_finalize;
+	object_class->finalize = fu_powerd_plugin_finalize;
 	plugin_class->startup = fu_powerd_plugin_startup;
 	plugin_class->cleanup = fu_powerd_plugin_cleanup;
 	plugin_class->prepare = fu_powerd_plugin_prepare;

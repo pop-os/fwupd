@@ -1,4 +1,3 @@
-if gusb.found()
 cargs = ['-DG_LOG_DOMAIN="FuPluginDfu"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -35,39 +34,6 @@ plugin_builtin_dfu = static_library('fu_plugin_dfu',
 )
 plugin_builtins += plugin_builtin_dfu
 
-if get_option('compat_cli')
-fu_dfu_tool = executable(
-  'dfu-tool',
-  dfu_rs,
-  sources: [
-    'fu-dfu-tool.c',
-  ],
-  include_directories: plugin_incdirs,
-  dependencies: plugin_deps,
-  link_with: [
-    plugin_libs,
-    plugin_builtin_dfu,
-  ],
-  c_args: cargs,
-  install: true,
-  install_rpath: libdir_pkg,
-  install_dir: bindir
-)
-endif
-
-if get_option('compat_cli') and get_option('man')
-  custom_target('dfu-tool.1',
-    input: 'dfu-tool.md',
-    output: 'dfu-tool.1',
-    command: [
-      generate_man, '@INPUT@', '-o', '@OUTPUT@',
-      '--replace', 'PACKAGE_VERSION', fwupd_version,
-    ],
-    install: true,
-    install_dir: join_paths(mandir, 'man1'),
-  )
-endif
-
 if get_option('tests')
   env = environment()
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
@@ -98,4 +64,3 @@ if get_option('tests')
 endif
 
 plugindfu_incdir = include_directories('.')
-endif

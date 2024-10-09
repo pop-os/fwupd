@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2021 Realtek Corporation
- * Copyright (C) 2021 Ricky Wu <ricky_wu@realtek.com> <spring1527@gmail.com>
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Realtek Corporation
+ * Copyright 2021 Ricky Wu <ricky_wu@realtek.com> <spring1527@gmail.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -31,9 +31,9 @@ fu_rts54hub_rtd21xx_device_to_string(FuDevice *module, guint idt, GString *str)
 {
 	FuRts54hubRtd21xxDevice *self = FU_RTS54HUB_RTD21XX_DEVICE(module);
 	FuRts54hubRtd21xxDevicePrivate *priv = GET_PRIVATE(self);
-	fu_string_append_kx(str, idt, "TargetAddr", priv->target_addr);
-	fu_string_append_kx(str, idt, "I2cSpeed", priv->i2c_speed);
-	fu_string_append_kx(str, idt, "RegisterAddrLen", priv->register_addr_len);
+	fwupd_codec_string_append_hex(str, idt, "TargetAddr", priv->target_addr);
+	fwupd_codec_string_append_hex(str, idt, "I2cSpeed", priv->i2c_speed);
+	fwupd_codec_string_append_hex(str, idt, "RegisterAddrLen", priv->register_addr_len);
 }
 
 static FuRts54HubDevice *
@@ -59,7 +59,7 @@ fu_rts54hub_rtd21xx_device_set_quirk_kv(FuDevice *device,
 
 	/* load target address from quirks */
 	if (g_strcmp0(key, "Rts54TargetAddr") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->target_addr = tmp;
 		return TRUE;
@@ -67,7 +67,12 @@ fu_rts54hub_rtd21xx_device_set_quirk_kv(FuDevice *device,
 
 	/* load i2c speed from quirks */
 	if (g_strcmp0(key, "Rts54I2cSpeed") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, FU_RTS54HUB_I2C_SPEED_LAST - 1, error))
+		if (!fu_strtoull(value,
+				 &tmp,
+				 0,
+				 FU_RTS54HUB_I2C_SPEED_LAST - 1,
+				 FU_INTEGER_BASE_AUTO,
+				 error))
 			return FALSE;
 		priv->i2c_speed = tmp;
 		return TRUE;
@@ -75,14 +80,17 @@ fu_rts54hub_rtd21xx_device_set_quirk_kv(FuDevice *device,
 
 	/* load register address length from quirks */
 	if (g_strcmp0(key, "Rts54RegisterAddrLen") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->register_addr_len = tmp;
 		return TRUE;
 	}
 
 	/* failed */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -204,8 +212,8 @@ fu_rts54hub_rtd21xx_device_init(FuRts54hubRtd21xxDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_PARENT_FOR_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_set_install_duration(FU_DEVICE(self), 100); /* seconds */
 	fu_device_set_logical_id(FU_DEVICE(self), "I2C");
@@ -215,7 +223,7 @@ fu_rts54hub_rtd21xx_device_init(FuRts54hubRtd21xxDevice *self)
 static void
 fu_rts54hub_rtd21xx_device_class_init(FuRts54hubRtd21xxDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_rts54hub_rtd21xx_device_to_string;
-	klass_device->set_quirk_kv = fu_rts54hub_rtd21xx_device_set_quirk_kv;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_rts54hub_rtd21xx_device_to_string;
+	device_class->set_quirk_kv = fu_rts54hub_rtd21xx_device_set_quirk_kv;
 }

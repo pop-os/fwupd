@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -19,17 +19,10 @@ struct _FuLogitechHidppBootloaderClass {
 	FuHidDeviceClass parent_class;
 };
 
-/**
- * FU_LOGITECH_HIDPP_BOOTLOADER_FLAG_IS_SIGNED:
- *
- * Device requires signed firmware.
- *
- * Since: 1.7.0
- */
-#define FU_LOGITECH_HIDPP_BOOTLOADER_FLAG_IS_SIGNED (1 << 0)
+#define FU_LOGITECH_HIDPP_BOOTLOADER_FLAG_IS_SIGNED "is-signed"
 
 /* packet to and from device */
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint8 cmd;
 	guint16 addr;
 	guint8 len;

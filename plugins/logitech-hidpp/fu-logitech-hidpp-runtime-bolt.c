@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Ricardo Cañuelo <ricardo.canuelo@collabora.com>
+ * Copyright 2021 Ricardo Cañuelo <ricardo.canuelo@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -37,7 +37,7 @@ fu_logitech_hidpp_runtime_bolt_detach(FuDevice *device, FuProgress *progress, GE
 	msg->data[6] = 'E';
 	msg->hidpp_version = 1;
 	msg->flags = FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_LONGER_TIMEOUT;
-	if (!fu_logitech_hidpp_send(fu_logitech_hidpp_runtime_get_io_channel(self),
+	if (!fu_logitech_hidpp_send(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
 				    msg,
 				    FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
 				    &error_local)) {
@@ -57,9 +57,7 @@ static void
 fu_logitech_hidpp_runtime_bolt_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuLogitechHidppRuntimeBolt *self = FU_HIDPP_RUNTIME_BOLT(device);
-
-	FU_DEVICE_CLASS(fu_logitech_hidpp_runtime_bolt_parent_class)->to_string(device, idt, str);
-	fu_string_append_ku(str, idt, "PairingSlots", self->pairing_slots);
+	fwupd_codec_string_append_int(str, idt, "PairingSlots", self->pairing_slots);
 }
 
 static FuLogitechHidppDevice *
@@ -93,7 +91,7 @@ fu_logitech_hidpp_runtime_bolt_query_device_name(FuLogitechHidppRuntime *self,
 	msg->data[0] = 0x60 | slot; /* device name */
 	msg->data[1] = 1;
 	msg->hidpp_version = 1;
-	if (!fu_logitech_hidpp_transfer(fu_logitech_hidpp_runtime_get_io_channel(self),
+	if (!fu_logitech_hidpp_transfer(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
 					msg,
 					error)) {
 		g_prefix_error(error, "failed to retrieve the device name for slot %d: ", slot);
@@ -198,7 +196,7 @@ fu_logitech_hidpp_runtime_bolt_poll_peripherals(FuDevice *device)
 		msg->function_id = BOLT_REGISTER_PAIRING_INFORMATION;
 		msg->data[0] = 0x50 | i; /* pairing information */
 		msg->hidpp_version = 1;
-		if (!fu_logitech_hidpp_transfer(fu_logitech_hidpp_runtime_get_io_channel(self),
+		if (!fu_logitech_hidpp_transfer(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
 						msg,
 						&error_local))
 			continue;
@@ -291,11 +289,12 @@ fu_logitech_hidpp_runtime_bolt_poll(FuDevice *device, GError **error)
 		g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
 		g_autoptr(GError) error_local = NULL;
 		msg->hidpp_version = 1;
-		if (!fu_logitech_hidpp_receive(fu_logitech_hidpp_runtime_get_io_channel(runtime),
-					       msg,
-					       timeout,
-					       &error_local)) {
-			if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_TIMED_OUT))
+		if (!fu_logitech_hidpp_receive(
+			fu_udev_device_get_io_channel(FU_UDEV_DEVICE(runtime)),
+			msg,
+			timeout,
+			&error_local)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT))
 				break;
 			g_propagate_prefixed_error(error,
 						   g_steal_pointer(&error_local),
@@ -342,7 +341,7 @@ fu_logitech_hidpp_runtime_bolt_setup_internal(FuDevice *device, GError **error)
 	msg->function_id = BOLT_REGISTER_PAIRING_INFORMATION;
 	msg->data[0] = 0x02; /* FW Version (contains the number of pairing slots) */
 	msg->hidpp_version = 1;
-	if (!fu_logitech_hidpp_transfer(fu_logitech_hidpp_runtime_get_io_channel(self),
+	if (!fu_logitech_hidpp_transfer(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
 					msg,
 					error)) {
 		g_prefix_error(error, "failed to fetch the number of pairing slots: ");
@@ -366,7 +365,7 @@ fu_logitech_hidpp_runtime_bolt_setup_internal(FuDevice *device, GError **error)
 		msg->function_id = BOLT_REGISTER_RECEIVER_FW_INFORMATION;
 		msg->data[0] = i;
 		msg->hidpp_version = 1;
-		if (!fu_logitech_hidpp_transfer(fu_logitech_hidpp_runtime_get_io_channel(self),
+		if (!fu_logitech_hidpp_transfer(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
 						msg,
 						error)) {
 			g_prefix_error(error, "failed to read device config: ");
@@ -408,17 +407,16 @@ fu_logitech_hidpp_runtime_bolt_setup_internal(FuDevice *device, GError **error)
 			/* SoftDevice */
 			radio_version = g_string_new(NULL);
 			radio = fu_logitech_hidpp_radio_new(ctx, i);
-			fu_device_add_instance_u16(
-			    FU_DEVICE(radio),
-			    "VEN",
-			    fu_udev_device_get_vendor(FU_UDEV_DEVICE(device)));
-			fu_device_add_instance_u16(
-			    FU_DEVICE(radio),
-			    "DEV",
-			    fu_udev_device_get_model(FU_UDEV_DEVICE(device)));
+			fu_device_add_instance_u16(FU_DEVICE(radio),
+						   "VEN",
+						   fu_device_get_vid(device));
+			fu_device_add_instance_u16(FU_DEVICE(radio),
+						   "DEV",
+						   fu_device_get_pid(device));
 			fu_device_add_instance_u8(FU_DEVICE(radio), "ENT", msg->data[0]);
-			fu_device_set_physical_id(FU_DEVICE(radio),
-						  fu_device_get_physical_id(device));
+			fu_device_incorporate(FU_DEVICE(radio),
+					      FU_DEVICE(device),
+					      FU_DEVICE_INCORPORATE_FLAG_PHYSICAL_ID);
 			fu_device_set_logical_id(FU_DEVICE(radio), "Receiver_SoftDevice");
 			if (!fu_device_build_instance_id(FU_DEVICE(radio),
 							 error,
@@ -467,7 +465,7 @@ fu_logitech_hidpp_runtime_bolt_setup(FuDevice *device, GError **error)
 		fu_device_sleep(device, 200); /* ms */
 		if (fu_logitech_hidpp_runtime_bolt_setup_internal(device, &error_local))
 			return TRUE;
-		if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_DATA)) {
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA)) {
 			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
 		}
@@ -479,12 +477,12 @@ fu_logitech_hidpp_runtime_bolt_setup(FuDevice *device, GError **error)
 static void
 fu_logitech_hidpp_runtime_bolt_class_init(FuLogitechHidppRuntimeBoltClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
-	klass_device->detach = fu_logitech_hidpp_runtime_bolt_detach;
-	klass_device->setup = fu_logitech_hidpp_runtime_bolt_setup;
-	klass_device->poll = fu_logitech_hidpp_runtime_bolt_poll;
-	klass_device->to_string = fu_logitech_hidpp_runtime_bolt_to_string;
+	device_class->detach = fu_logitech_hidpp_runtime_bolt_detach;
+	device_class->setup = fu_logitech_hidpp_runtime_bolt_setup;
+	device_class->poll = fu_logitech_hidpp_runtime_bolt_poll;
+	device_class->to_string = fu_logitech_hidpp_runtime_bolt_to_string;
 }
 
 static void

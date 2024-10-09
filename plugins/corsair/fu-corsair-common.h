@@ -1,16 +1,12 @@
 /*
- * Copyright (C) 2022 Andrii Dushko <andrii.dushko@developex.net>
+ * Copyright 2022 Andrii Dushko <andrii.dushko@developex.net>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
 
 #include <fwupdplugin.h>
-
-#define FU_CORSAIR_DEVICE_FLAG_LEGACY_ATTACH		(1 << 0)
-#define FU_CORSAIR_DEVICE_FLAG_IS_SUBDEVICE		(1 << 1)
-#define FU_CORSAIR_DEVICE_FLAG_NO_VERSION_IN_BOOTLOADER (1 << 2)
 
 #define FU_CORSAIR_MAX_CMD_SIZE 1024
 
@@ -26,9 +22,6 @@ typedef enum {
 	FU_CORSAIR_DEVICE_MODE_APPLICATION = 0x01,
 	FU_CORSAIR_DEVICE_MODE_BOOTLOADER = 0x03
 } FuCorsairDeviceMode;
-
-guint32
-fu_corsair_calculate_crc(const guint8 *data, guint32 data_len);
 
 gchar *
 fu_corsair_version_from_uint32(guint32 val);

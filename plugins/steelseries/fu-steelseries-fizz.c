@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2022 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -87,8 +87,8 @@ fu_steelseries_fizz_command_error_to_error(guint8 cmd, guint8 err, GError **erro
 
 	if (err == STEELSERIES_FIZZ_COMMAND_ERROR_FILE_NOT_FOUND) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_FILE_ERROR_NOENT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
 			    "command 0x%02x returned error 0x%02x",
 			    cmd,
 			    err);
@@ -98,8 +98,8 @@ fu_steelseries_fizz_command_error_to_error(guint8 cmd, guint8 err, GError **erro
 	/* targeted offset is past the file end */
 	if (err == STEELSERIES_FIZZ_COMMAND_ERROR_FILE_TOO_SHORT) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_FILE_ERROR_NOSPC,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "command 0x%02x returned error 0x%02x",
 			    cmd,
 			    err);
@@ -109,8 +109,8 @@ fu_steelseries_fizz_command_error_to_error(guint8 cmd, guint8 err, GError **erro
 	/* when internal flash returns error */
 	if (err == STEELSERIES_FIZZ_COMMAND_ERROR_FLASH_FAILED) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_FILE_ERROR_IO,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
 			    "command 0x%02x returned error 0x%02x",
 			    cmd,
 			    err);
@@ -120,8 +120,8 @@ fu_steelseries_fizz_command_error_to_error(guint8 cmd, guint8 err, GError **erro
 	/* USB API doesn't have permission to access this file */
 	if (err == STEELSERIES_FIZZ_COMMAND_ERROR_PERMISSION_DENIED) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_FILE_ERROR_ACCES,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_PERMISSION_DENIED,
 			    "command 0x%02x returned error 0x%02x",
 			    cmd,
 			    err);
@@ -131,8 +131,8 @@ fu_steelseries_fizz_command_error_to_error(guint8 cmd, guint8 err, GError **erro
 	/* USB API doesn't have permission to access this file */
 	if (err == STEELSERIES_FIZZ_COMMAND_ERROR_OPERATION_NO_SUPPORTED) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_FILE_ERROR_PERM,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "command 0x%02x returned error 0x%02x",
 			    cmd,
 			    err);
@@ -141,8 +141,8 @@ fu_steelseries_fizz_command_error_to_error(guint8 cmd, guint8 err, GError **erro
 
 	/* fallback */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_FAILED,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_INTERNAL,
 		    "command 0x%02x returned error 0x%02x",
 		    cmd,
 		    err);
@@ -155,7 +155,6 @@ fu_steelseries_fizz_command_and_check_error(FuDevice *device,
 					    gsize datasz,
 					    GError **error)
 {
-	gint gerr = G_FILE_ERROR_FAILED;
 	const guint8 command = data[0];
 	guint8 err;
 	guint8 cmd;
@@ -168,8 +167,8 @@ fu_steelseries_fizz_command_and_check_error(FuDevice *device,
 
 	if (cmd != command) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    gerr,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "command invalid, got 0x%02x, expected 0x%02x",
 			    cmd,
 			    command);
@@ -239,9 +238,12 @@ fu_steelseries_fizz_write_fs(FuDevice *device,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
-		const guint16 size = fu_chunk_get_data_sz(chk);
-		const guint32 offset = fu_chunk_get_address(chk);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		if (!fu_memwrite_uint8_safe(data,
 					    sizeof(data),
@@ -267,7 +269,7 @@ fu_steelseries_fizz_write_fs(FuDevice *device,
 		if (!fu_memwrite_uint16_safe(data,
 					     sizeof(data),
 					     STEELSERIES_FIZZ_WRITE_ACCESS_FILE_SIZE_OFFSET,
-					     size,
+					     fu_chunk_get_data_sz(chk),
 					     G_LITTLE_ENDIAN,
 					     error))
 			return FALSE;
@@ -275,7 +277,7 @@ fu_steelseries_fizz_write_fs(FuDevice *device,
 		if (!fu_memwrite_uint32_safe(data,
 					     sizeof(data),
 					     STEELSERIES_FIZZ_WRITE_ACCESS_FILE_OFFSET_OFFSET,
-					     offset,
+					     fu_chunk_get_address(chk),
 					     G_LITTLE_ENDIAN,
 					     error))
 			return FALSE;
@@ -913,13 +915,13 @@ fu_steelseries_fizz_set_progress(FuDevice *self, FuProgress *progress)
 static void
 fu_steelseries_fizz_class_init(FuSteelseriesFizzClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
-	klass_device->attach = fu_steelseries_fizz_attach;
-	klass_device->setup = fu_steelseries_fizz_setup;
-	klass_device->write_firmware = fu_steelseries_fizz_write_firmware;
-	klass_device->read_firmware = fu_steelseries_fizz_read_firmware;
-	klass_device->set_progress = fu_steelseries_fizz_set_progress;
+	device_class->attach = fu_steelseries_fizz_attach;
+	device_class->setup = fu_steelseries_fizz_setup;
+	device_class->write_firmware = fu_steelseries_fizz_write_firmware;
+	device_class->read_firmware = fu_steelseries_fizz_read_firmware;
+	device_class->set_progress = fu_steelseries_fizz_set_progress;
 }
 
 static void
@@ -931,7 +933,7 @@ fu_steelseries_fizz_init(FuSteelseriesFizz *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_protocol(FU_DEVICE(self), "com.steelseries.fizz");
 	fu_device_set_install_duration(FU_DEVICE(self), 13);				 /* 13 s */
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_USER_REPLUG); /* 40 s */

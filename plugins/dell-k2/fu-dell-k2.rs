@@ -5,13 +5,13 @@
  */
 
 #[repr(u8)] // DellK2EcHidCmd::GetDockType
-enum DellK2BaseType {
+enum FuDellK2BaseType {
     Unknown = 0x0,
     K2 = 0x07,
 }
 
 #[repr(u8)] // EcV2HidCmd::SetModifyLock
-enum DellK2EcDevLock {
+enum FuDellK2EcDevLock {
     Ec = 0x01,
     UsbHubPrimary = 0x07,
     UsbHubSecondary = 0x08,

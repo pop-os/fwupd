@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -34,14 +34,12 @@ fu_steelseries_device_cmd(FuSteelseriesDevice *self,
 			  GError **error)
 {
 	FuSteelseriesDevicePrivate *priv = GET_PRIVATE(self);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_len = 0;
-	gboolean ret;
 
-	ret = g_usb_device_control_transfer(usb_device,
-					    G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					    G_USB_DEVICE_REQUEST_TYPE_CLASS,
-					    G_USB_DEVICE_RECIPIENT_INTERFACE,
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_CLASS,
+					    FU_USB_RECIPIENT_INTERFACE,
 					    0x09,
 					    0x0200,
 					    priv->iface_idx,
@@ -50,15 +48,14 @@ fu_steelseries_device_cmd(FuSteelseriesDevice *self,
 					    &actual_len,
 					    STEELSERIES_TRANSACTION_TIMEOUT,
 					    NULL,
-					    error);
-	if (!ret) {
+					    error)) {
 		g_prefix_error(error, "failed to do control transfer: ");
 		return FALSE;
 	}
 	if (actual_len != datasz) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only wrote %" G_GSIZE_FORMAT "bytes",
 			    actual_len);
 		return FALSE;
@@ -71,22 +68,22 @@ fu_steelseries_device_cmd(FuSteelseriesDevice *self,
 	if (answer != TRUE)
 		return TRUE;
 
-	ret = g_usb_device_interrupt_transfer(usb_device,
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
 					      priv->ep,
 					      data,
 					      priv->ep_in_size,
 					      &actual_len,
 					      STEELSERIES_TRANSACTION_TIMEOUT,
 					      NULL,
-					      error);
-	if (!ret) {
+					      error)) {
 		g_prefix_error(error, "failed to do EP transfer: ");
+		fu_error_convert(error);
 		return FALSE;
 	}
 	if (actual_len != priv->ep_in_size) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only read %" G_GSIZE_FORMAT "bytes",
 			    actual_len);
 		return FALSE;
@@ -101,15 +98,14 @@ fu_steelseries_device_probe(FuDevice *device, GError **error)
 {
 	FuSteelseriesDevice *self = FU_STEELSERIES_DEVICE(device);
 	FuSteelseriesDevicePrivate *priv = GET_PRIVATE(self);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-	GUsbInterface *iface = NULL;
-	GUsbEndpoint *ep = NULL;
+	FuUsbInterface *iface = NULL;
+	FuUsbEndpoint *ep = NULL;
 	guint8 ep_id;
 	guint16 packet_size;
 	g_autoptr(GPtrArray) ifaces = NULL;
 	g_autoptr(GPtrArray) endpoints = NULL;
 
-	ifaces = g_usb_device_get_interfaces(usb_device, error);
+	ifaces = fu_usb_device_get_interfaces(FU_USB_DEVICE(device), error);
 	if (ifaces == NULL)
 		return FALSE;
 
@@ -130,7 +126,7 @@ fu_steelseries_device_probe(FuDevice *device, GError **error)
 	}
 	iface = g_ptr_array_index(ifaces, priv->iface_idx);
 
-	endpoints = g_usb_interface_get_endpoints(iface);
+	endpoints = fu_usb_interface_get_endpoints(iface);
 	/* expecting to have only one endpoint for communication */
 	if (endpoints == NULL || endpoints->len != 1) {
 		g_set_error_literal(error,
@@ -141,8 +137,8 @@ fu_steelseries_device_probe(FuDevice *device, GError **error)
 	}
 
 	ep = g_ptr_array_index(endpoints, 0);
-	ep_id = g_usb_endpoint_get_address(ep);
-	packet_size = g_usb_endpoint_get_maximum_packet_size(ep);
+	ep_id = fu_usb_endpoint_get_address(ep);
+	packet_size = fu_usb_endpoint_get_maximum_packet_size(ep);
 
 	priv->ep = ep_id;
 	priv->ep_in_size = packet_size;
@@ -158,25 +154,20 @@ fu_steelseries_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuSteelseriesDevice *self = FU_STEELSERIES_DEVICE(device);
 	FuSteelseriesDevicePrivate *priv = GET_PRIVATE(self);
-
-	FU_DEVICE_CLASS(fu_steelseries_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append_kx(str, idt, "Interface", priv->iface_idx);
-	fu_string_append_kx(str, idt, "Endpoint", priv->ep);
+	fwupd_codec_string_append_hex(str, idt, "Interface", priv->iface_idx);
+	fwupd_codec_string_append_hex(str, idt, "Endpoint", priv->ep);
 }
 
 static void
 fu_steelseries_device_init(FuSteelseriesDevice *self)
 {
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_STEELSERIES_DEVICE_FLAG_IS_RECEIVER,
-					"is-receiver");
+	fu_device_register_private_flag(FU_DEVICE(self), FU_STEELSERIES_DEVICE_FLAG_IS_RECEIVER);
 }
 
 static void
 fu_steelseries_device_class_init(FuSteelseriesDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_steelseries_device_to_string;
-	klass_device->probe = fu_steelseries_device_probe;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_steelseries_device_to_string;
+	device_class->probe = fu_steelseries_device_probe;
 }

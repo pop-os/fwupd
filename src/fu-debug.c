@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2010 Richard Hughes <richard@hughsie.com>
+ * Copyright 2010 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuDebug"
@@ -284,7 +284,7 @@ fu_debug_post_parse_hook(GOptionContext *context,
 
 	/* for compat */
 	if (self->log_level == G_LOG_LEVEL_DEBUG)
-		(void)g_setenv("FWUPD_VERBOSE", "1", TRUE);
+		(void)g_setenv("FWUPD_VERBOSE", "1", FALSE);
 
 	/* redirect all domains */
 	g_log_set_default_handler(fu_debug_handler_cb, self);
@@ -334,7 +334,7 @@ fu_debug_setup_event_source(FuDebug *self)
 }
 #endif
 
-/*(transfer): full */
+/* (transfer): full */
 GOptionGroup *
 fu_debug_get_option_group(void)
 {

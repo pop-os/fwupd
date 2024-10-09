@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2018 Mario Limonciello <mario.limonciello@amd.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Mario Limonciello <mario.limonciello@amd.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -20,10 +20,12 @@ G_DEFINE_TYPE(FuUefiNvramDevice, fu_uefi_nvram_device, FU_TYPE_UEFI_DEVICE)
 static gboolean
 fu_uefi_nvram_device_get_results(FuDevice *device, GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	g_autoptr(GError) error_local = NULL;
 
 	/* check if something rudely removed our BOOTXXXX entry */
-	if (!fu_uefi_bootmgr_verify_fwupd(&error_local)) {
+	if (!fu_uefi_bootmgr_verify_fwupd(efivars, &error_local)) {
 		if (fu_device_has_private_flag(device,
 					       FU_UEFI_DEVICE_FLAG_SUPPORTS_BOOT_ORDER_LOCK)) {
 			g_prefix_error(&error_local,
@@ -49,6 +51,8 @@ fu_uefi_nvram_device_write_firmware(FuDevice *device,
 				    FwupdInstallFlags flags,
 				    GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	FuUefiDevice *self = FU_UEFI_DEVICE(device);
 	FuUefiBootmgrFlags bootmgr_flags = FU_UEFI_BOOTMGR_FLAG_NONE;
 	const gchar *bootmgr_desc = "Linux Firmware Updater";
@@ -78,7 +82,7 @@ fu_uefi_nvram_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* save the blob to the ESP */
-	directory = fu_uefi_get_esp_path_for_os();
+	directory = fu_uefi_get_esp_path_for_os(esp_path);
 	basename = g_strdup_printf("fwupd-%s.cap", fw_class);
 	capsule_path = g_build_filename(directory, "fw", basename, NULL);
 	fn = g_build_filename(esp_path, capsule_path, NULL);
@@ -95,8 +99,11 @@ fu_uefi_nvram_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* delete the old log to save space */
-	if (fu_efivar_exists(FU_EFIVAR_GUID_FWUPDATE, "FWUPDATE_DEBUG_LOG")) {
-		if (!fu_efivar_delete(FU_EFIVAR_GUID_FWUPDATE, "FWUPDATE_DEBUG_LOG", error))
+	if (fu_efivars_exists(efivars, FU_EFIVARS_GUID_FWUPDATE, "FWUPDATE_DEBUG_LOG")) {
+		if (!fu_efivars_delete(efivars,
+				       FU_EFIVARS_GUID_FWUPDATE,
+				       "FWUPDATE_DEBUG_LOG",
+				       error))
 			return FALSE;
 	}
 
@@ -115,7 +122,7 @@ fu_uefi_nvram_device_write_firmware(FuDevice *device,
 	/* some legacy devices use the old name to deduplicate boot entries */
 	if (fu_device_has_private_flag(device, FU_UEFI_DEVICE_FLAG_USE_LEGACY_BOOTMGR_DESC))
 		bootmgr_desc = "Linux-Firmware-Updater";
-	if (!fu_uefi_bootmgr_bootnext(esp, bootmgr_desc, bootmgr_flags, error))
+	if (!fu_uefi_bootmgr_bootnext(efivars, esp, bootmgr_desc, bootmgr_flags, error))
 		return FALSE;
 
 	/* success! */
@@ -140,8 +147,8 @@ fu_uefi_nvram_device_init(FuUefiNvramDevice *self)
 static void
 fu_uefi_nvram_device_class_init(FuUefiNvramDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->get_results = fu_uefi_nvram_device_get_results;
-	klass_device->write_firmware = fu_uefi_nvram_device_write_firmware;
-	klass_device->report_metadata_pre = fu_uefi_nvram_device_report_metadata_pre;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->get_results = fu_uefi_nvram_device_get_results;
+	device_class->write_firmware = fu_uefi_nvram_device_write_firmware;
+	device_class->report_metadata_pre = fu_uefi_nvram_device_report_metadata_pre;
 }

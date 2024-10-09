@@ -1,10 +1,10 @@
 /*
- * Copyright (C) 2017 Mario Limonciello <mario.limonciello@dell.com>
- * Copyright (C) 2017 Peichen Huang <peichenhuang@tw.kinetic.com>
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Hai Su <hsu@kinet-ic.com>
+ * Copyright 2017 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2017 Peichen Huang <peichenhuang@tw.kinetic.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Hai Su <hsu@kinet-ic.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -47,8 +47,8 @@ fu_kinetic_dp_plugin_create_device(FuDpauxDevice *dpaux_device, GError **error)
 	/* sanity check */
 	if (dev_id == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "device has no DPCD device id");
 		return NULL;
 	}
@@ -72,13 +72,15 @@ fu_kinetic_dp_plugin_create_device(FuDpauxDevice *dpaux_device, GError **error)
 		    FU_KINETIC_DP_DEVICE(g_object_new(FU_TYPE_KINETIC_DP_PUMA_DEVICE, NULL));
 	} else {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "%s is not a supported Kinetic device",
 			    dev_id);
 		return NULL;
 	}
-	fu_device_incorporate(FU_DEVICE(dp_device), FU_DEVICE(dpaux_device));
+	fu_device_incorporate(FU_DEVICE(dp_device),
+			      FU_DEVICE(dpaux_device),
+			      FU_DEVICE_INCORPORATE_FLAG_ALL);
 	fu_kinetic_dp_device_set_chip_id(dp_device, chip_id);
 	fu_kinetic_dp_device_set_fw_state(dp_device, fw_state);
 	return g_steal_pointer(&dp_device);
@@ -91,9 +93,7 @@ fu_kinetic_dp_plugin_backend_device_added(FuPlugin *plugin,
 					  GError **error)
 {
 	FuKineticDpPlugin *self = FU_KINETIC_DP_PLUGIN(plugin);
-	g_autoptr(FuDeviceLocker) locker = NULL;
 	g_autoptr(FuKineticDpDevice) dev = NULL;
-	g_autoptr(GError) error_local = NULL;
 
 	/* check to see if this is device we care about? */
 	if (!FU_IS_DPAUX_DEVICE(device))
@@ -103,15 +103,6 @@ fu_kinetic_dp_plugin_backend_device_added(FuPlugin *plugin,
 	dev = fu_kinetic_dp_plugin_create_device(FU_DPAUX_DEVICE(device), error);
 	if (dev == NULL)
 		return FALSE;
-	locker = fu_device_locker_new(dev, &error_local);
-	if (locker == NULL) {
-		if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
-			g_debug("no device found: %s", error_local->message);
-			return TRUE;
-		}
-		g_propagate_error(error, g_steal_pointer(&error_local));
-		return FALSE;
-	}
 	fu_plugin_device_add(FU_PLUGIN(self), FU_DEVICE(dev));
 	return TRUE;
 }

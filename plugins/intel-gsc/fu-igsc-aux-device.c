@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2022 Intel, Inc
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Intel, Inc
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR Apache-2.0
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR Apache-2.0
  */
 
 #include "config.h"
@@ -25,9 +25,9 @@ static void
 fu_igsc_aux_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuIgscAuxDevice *self = FU_IGSC_AUX_DEVICE(device);
-	fu_string_append_kx(str, idt, "OemManufDataVersion", self->oem_version);
-	fu_string_append_kx(str, idt, "MajorVersion", self->major_version);
-	fu_string_append_kx(str, idt, "MajorVcn", self->major_vcn);
+	fwupd_codec_string_append_hex(str, idt, "OemManufDataVersion", self->oem_version);
+	fwupd_codec_string_append_hex(str, idt, "MajorVersion", self->major_version);
+	fwupd_codec_string_append_hex(str, idt, "MajorVcn", self->major_vcn);
 }
 
 static gboolean
@@ -81,7 +81,8 @@ fu_igsc_aux_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_igsc_aux_device_prepare_firmware(FuDevice *device,
-				    GBytes *fw,
+				    GInputStream *stream,
+				    FuProgress *progress,
 				    FwupdInstallFlags flags,
 				    GError **error)
 {
@@ -90,7 +91,7 @@ fu_igsc_aux_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuIgscAuxFirmware) firmware = FU_IGSC_AUX_FIRMWARE(fu_igsc_aux_firmware_new());
 
 	/* parse container */
-	if (!fu_firmware_parse(FU_FIRMWARE(firmware), fw, flags, error))
+	if (!fu_firmware_parse_stream(FU_FIRMWARE(firmware), stream, 0x0, flags, error))
 		return NULL;
 
 	/* search the device list for a match */
@@ -144,21 +145,21 @@ fu_igsc_aux_device_write_firmware(FuDevice *device,
 {
 	FuIgscDevice *igsc_parent = FU_IGSC_DEVICE(fu_device_get_parent(device));
 	g_autoptr(GBytes) fw_info = NULL;
-	g_autoptr(GBytes) fw_payload = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 
 	/* get image */
 	fw_info =
 	    fu_firmware_get_image_by_idx_bytes(firmware, FU_IFWI_FPT_FIRMWARE_IDX_INFO, error);
 	if (fw_info == NULL)
 		return FALSE;
-	fw_payload =
-	    fu_firmware_get_image_by_idx_bytes(firmware, FU_IFWI_FPT_FIRMWARE_IDX_SDTA, error);
-	if (fw_payload == NULL)
+	stream_payload =
+	    fu_firmware_get_image_by_idx_stream(firmware, FU_IFWI_FPT_FIRMWARE_IDX_SDTA, error);
+	if (stream_payload == NULL)
 		return FALSE;
 	return fu_igsc_device_write_blob(igsc_parent,
 					 GSC_FWU_HECI_PAYLOAD_TYPE_FWDATA,
 					 fw_info,
-					 fw_payload,
+					 stream_payload,
 					 progress,
 					 error);
 }
@@ -198,14 +199,14 @@ fu_igsc_aux_device_init(FuIgscAuxDevice *self)
 static void
 fu_igsc_aux_device_class_init(FuIgscAuxDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_igsc_aux_device_to_string;
-	klass_device->probe = fu_igsc_aux_device_probe;
-	klass_device->setup = fu_igsc_aux_device_setup;
-	klass_device->prepare_firmware = fu_igsc_aux_device_prepare_firmware;
-	klass_device->write_firmware = fu_igsc_aux_device_write_firmware;
-	klass_device->prepare = fu_igsc_aux_device_prepare;
-	klass_device->cleanup = fu_igsc_aux_device_cleanup;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_igsc_aux_device_to_string;
+	device_class->probe = fu_igsc_aux_device_probe;
+	device_class->setup = fu_igsc_aux_device_setup;
+	device_class->prepare_firmware = fu_igsc_aux_device_prepare_firmware;
+	device_class->write_firmware = fu_igsc_aux_device_write_firmware;
+	device_class->prepare = fu_igsc_aux_device_prepare;
+	device_class->cleanup = fu_igsc_aux_device_cleanup;
 }
 
 FuIgscAuxDevice *

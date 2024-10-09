@@ -23,9 +23,9 @@ is taken automatically from the GType.
 
     /* fu-foo-plugin.h
      *
-     * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+     * Copyright 2022 Richard Hughes <richard@hughsie.com>
      *
-     * SPDX-License-Identifier: LGPL-2.1+
+     * SPDX-License-Identifier: LGPL-2.1-or-later
      */
 
     #pragma once
@@ -36,9 +36,9 @@ is taken automatically from the GType.
 
     /* fu-foo-plugin.c
      *
-     * Copyright (C) Richard Hughes <richard@hughsie.com>
+     * Copyright Richard Hughes <richard@hughsie.com>
      *
-     * SPDX-License-Identifier: LGPL-2.1+
+     * SPDX-License-Identifier: LGPL-2.1-or-later
      */
 
     #include "config.h"
@@ -166,6 +166,29 @@ Similarly, setting the version of the bootloader (if known) allows the firmware
 to depend on a specific bootloader version, for instance allowing signed
 firmware to only be installable on hardware with a bootloader new enough to
 deploy it.
+
+### Setting the device version
+
+Although the version can be set easily as a string using `fu_device_set_version()`
+directly, it is more flexible to tell fwupd what the *version format* should be,
+and to allow the daemon to convert it to a string internally.
+
+This also means that if we get the version format from a quirk file, or from metadata,
+or even if it changes at runtime -- the correct string version is used at all times.
+
+    static gchar *
+    fu_foo_device_convert_version(FuDevice *device, guint64 version_raw)
+    {
+        return fu_version_from_uint24(version_raw, FWUPD_VERSION_FORMAT_TRIPLET);
+    }
+
+    static void
+    fu_foo_device_class_init(FuFooDeviceClass *klass)
+    {
+        …
+        device_class->convert_version = fu_foo_device_convert_version;
+        …
+    }
 
 ## Mechanism Plugins
 
@@ -753,7 +776,7 @@ device, there might be firmware dependencies between parent and child
 devices that require a specific update ordering (for instance, child
 devices first, then the parent). This can be modeled by setting an
 appropriate firmware priority in the firmware metainfo or by setting the
-`FWUPD_DEVICE_FLAG_INSTALL_PARENT_FIRST` device flag.
+`FU_DEVICE_PRIVATE_FLAG_INSTALL_PARENT_FIRST` device flag.
 
 ### How to add a delay
 
@@ -778,8 +801,7 @@ define a private flag:
   2)`.  Note that this will be part of the ABI, so it must be versioned
 1. Call `fu_device_register_private_flag` in the device init function
   and assign a string identifier to the flag:
-  `fu_device_register_private_flag (FU_DEVICE (self), MY_PRIVATE_FLAG,
-  "myflag");`
+  `fu_device_register_private_flag(FU_DEVICE (self), MY_PRIVATE_FLAG);`
 
 You can then add it to the device programmatically with
 `fu_device_add_private_flag`, remove it with `fu_device_remove_private_flag`
@@ -863,7 +885,7 @@ Although these files *look like* Rust files they're *not actually compiled by
 rustc*, so small differences may be noticeable.
 
     #[derive(New, Validate, Parse)]
-    struct ExampleHdr {
+    struct FuExampleHdr {
         magic: Guid,
         hdrver: u8,
         hdrsz: u16le = $struct_size,
@@ -873,7 +895,7 @@ rustc*, so small differences may be noticeable.
 
     #[derive(ToString, FromString)]
     #[repr(u8)] // optional, and only required if using the enum as a struct item type
-    enum ExampleFamily {
+    enum FuExampleFamily {
         Unknown,
         Sps,
         Txe = 0x5,
@@ -881,7 +903,7 @@ rustc*, so small differences may be noticeable.
         Csme,
     }
     struct ExamplePacket {
-        family: ExampleFamily = Csme,
+        family: FuExampleFamily = Csme,
         data: [u8; 254],
     }
 

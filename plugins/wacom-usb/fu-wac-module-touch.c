@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -26,7 +26,7 @@ fu_wac_module_touch_write_firmware(FuDevice *device,
 				   GError **error)
 {
 	FuWacModule *self = FU_WAC_MODULE(device);
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* progress */
@@ -39,13 +39,14 @@ fu_wac_module_touch_write_firmware(FuDevice *device,
 	g_debug("using element at addr 0x%0x", (guint)fu_firmware_get_addr(firmware));
 
 	/* build each data packet */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL) {
-		g_prefix_error(error, "wacom touch module failed to get bytes: ");
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL) {
+		g_prefix_error(error, "wacom touch module failed to get stream: ");
 		return FALSE;
 	}
-	chunks =
-	    fu_chunk_array_new_from_bytes(fw, fu_firmware_get_addr(firmware), 128); /* packet_sz */
+	chunks = fu_chunk_array_new_from_stream(stream, fu_firmware_get_addr(firmware), 128, error);
+	if (chunks == NULL)
+		return FALSE;
 
 	/* start, which will erase the module */
 	if (!fu_wac_module_set_feature(self,
@@ -62,9 +63,14 @@ fu_wac_module_touch_write_firmware(FuDevice *device,
 
 	/* data */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		guint8 buf[128 + 7] = {0xff};
 		g_autoptr(GBytes) blob_chunk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* build G11T data packet */
 		memset(buf, 0xff, sizeof(buf));
@@ -130,8 +136,8 @@ fu_wac_module_touch_init(FuWacModuleTouch *self)
 static void
 fu_wac_module_touch_class_init(FuWacModuleTouchClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_wac_module_touch_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_wac_module_touch_write_firmware;
 }
 
 FuWacModule *

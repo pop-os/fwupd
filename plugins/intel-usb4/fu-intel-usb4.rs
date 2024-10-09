@@ -1,9 +1,9 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 // hub operation
 #[repr(u16le)]
-enum IntelUsb4Opcode {
+enum FuIntelUsb4Opcode {
     NVM_WRITE       = 0x20,
     NVM_AUTH_WRITE  = 0x21,
     NVM_READ        = 0x22,
@@ -12,8 +12,8 @@ enum IntelUsb4Opcode {
 }
 
 #[derive(New, Parse)]
-struct IntelUsb4Mbox {
-    opcode: IntelUsb4Opcode,
+struct FuStructIntelUsb4Mbox {
+    opcode: FuIntelUsb4Opcode,
     _rsvd: u8,
     status: u8,
 }

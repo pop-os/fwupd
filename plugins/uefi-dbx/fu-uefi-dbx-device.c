@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -22,6 +22,8 @@ fu_uefi_dbx_device_write_firmware(FuDevice *device,
 				  FwupdInstallFlags install_flags,
 				  GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	const guint8 *buf;
 	gsize bufsz = 0;
 	g_autoptr(GBytes) fw = NULL;
@@ -31,18 +33,20 @@ fu_uefi_dbx_device_write_firmware(FuDevice *device,
 	if (fw == NULL)
 		return FALSE;
 
-	/* write entire chunk to efivarfs */
+	/* write entire chunk to efivarsfs */
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
 	buf = g_bytes_get_data(fw, &bufsz);
-	if (!fu_efivar_set_data(FU_EFIVAR_GUID_SECURITY_DATABASE,
-				"dbx",
-				buf,
-				bufsz,
-				FU_EFIVAR_ATTR_APPEND_WRITE |
-				    FU_EFIVAR_ATTR_TIME_BASED_AUTHENTICATED_WRITE_ACCESS |
-				    FU_EFIVAR_ATTR_RUNTIME_ACCESS |
-				    FU_EFIVAR_ATTR_BOOTSERVICE_ACCESS | FU_EFIVAR_ATTR_NON_VOLATILE,
-				error)) {
+	if (!fu_efivars_set_data(efivars,
+				 FU_EFIVARS_GUID_SECURITY_DATABASE,
+				 "dbx",
+				 buf,
+				 bufsz,
+				 FU_EFIVARS_ATTR_APPEND_WRITE |
+				     FU_EFIVARS_ATTR_TIME_BASED_AUTHENTICATED_WRITE_ACCESS |
+				     FU_EFIVARS_ATTR_RUNTIME_ACCESS |
+				     FU_EFIVARS_ATTR_BOOTSERVICE_ACCESS |
+				     FU_EFIVARS_ATTR_NON_VOLATILE,
+				 error)) {
 		return FALSE;
 	}
 
@@ -53,13 +57,19 @@ fu_uefi_dbx_device_write_firmware(FuDevice *device,
 static gboolean
 fu_uefi_dbx_device_set_version_number(FuDevice *device, GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	g_autoptr(GBytes) dbx_blob = NULL;
 	g_autoptr(FuFirmware) dbx = fu_efi_signature_list_new();
 	g_autoptr(GPtrArray) sigs = NULL;
 
 	/* use the number of checksums in the dbx as a version number, ignoring
 	 * some owners that do not make sense */
-	dbx_blob = fu_efivar_get_data_bytes(FU_EFIVAR_GUID_SECURITY_DATABASE, "dbx", NULL, error);
+	dbx_blob = fu_efivars_get_data_bytes(efivars,
+					     FU_EFIVARS_GUID_SECURITY_DATABASE,
+					     "dbx",
+					     NULL,
+					     error);
 	if (dbx_blob == NULL)
 		return FALSE;
 	if (!fu_firmware_parse(dbx, dbx_blob, FWUPD_INSTALL_FLAG_NO_SEARCH, error))
@@ -86,18 +96,23 @@ fu_uefi_dbx_device_version_notify_cb(FuDevice *device, GParamSpec *pspec, gpoint
 }
 
 static FuFirmware *
-fu_uefi_dbx_prepare_firmware(FuDevice *device, GBytes *fw, FwupdInstallFlags flags, GError **error)
+fu_uefi_dbx_device_prepare_firmware(FuDevice *device,
+				    GInputStream *stream,
+				    FuProgress *progress,
+				    FwupdInstallFlags flags,
+				    GError **error)
 {
 	FuContext *ctx = fu_device_get_context(device);
+	g_autoptr(FuFirmware) firmware = fu_firmware_new();
 	g_autoptr(FuFirmware) siglist = fu_efi_signature_list_new();
 
 	/* parse dbx */
-	if (!fu_firmware_parse(siglist, fw, flags, error))
+	if (!fu_firmware_parse_stream(siglist, stream, 0x0, flags, error))
 		return NULL;
 
 	/* validate this is safe to apply */
 	if ((flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
-		//		fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_VERIFY);
+		fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_VERIFY);
 		if (!fu_uefi_dbx_signature_list_validate(ctx,
 							 FU_EFI_SIGNATURE_LIST(siglist),
 							 flags,
@@ -110,18 +125,23 @@ fu_uefi_dbx_prepare_firmware(FuDevice *device, GBytes *fw, FwupdInstallFlags fla
 	}
 
 	/* default blob */
-	return fu_firmware_new_from_bytes(fw);
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
+		return NULL;
+	return g_steal_pointer(&firmware);
 }
 
 static gboolean
 fu_uefi_dbx_device_probe(FuDevice *device, GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	g_autoptr(FuFirmware) kek = fu_efi_signature_list_new();
 	g_autoptr(GBytes) kek_blob = NULL;
 	g_autoptr(GPtrArray) sigs = NULL;
 
 	/* use each of the certificates in the KEK to generate the GUIDs */
-	kek_blob = fu_efivar_get_data_bytes(FU_EFIVAR_GUID_EFI_GLOBAL, "KEK", NULL, error);
+	kek_blob =
+	    fu_efivars_get_data_bytes(efivars, FU_EFIVARS_GUID_EFI_GLOBAL, "KEK", NULL, error);
 	if (kek_blob == NULL)
 		return FALSE;
 	if (!fu_firmware_parse(kek, kek_blob, FWUPD_INSTALL_FLAG_NONE, error))
@@ -151,10 +171,12 @@ fu_uefi_dbx_device_probe(FuDevice *device, GError **error)
 static void
 fu_uefi_dbx_device_report_metadata_pre(FuDevice *device, GHashTable *metadata)
 {
-	guint64 nvram_total = fu_efivar_space_used(NULL);
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
+	guint64 nvram_total = fu_efivars_space_used(efivars, NULL);
 	if (nvram_total != G_MAXUINT64) {
 		g_hash_table_insert(metadata,
-				    g_strdup("EfivarNvramUsed"),
+				    g_strdup("EfivarsNvramUsed"),
 				    g_strdup_printf("%" G_GUINT64_FORMAT, nvram_total));
 	}
 }
@@ -175,7 +197,7 @@ fu_uefi_dbx_device_init(FuUefiDbxDevice *self)
 	fu_device_set_physical_id(FU_DEVICE(self), "dbx");
 	fu_device_set_name(FU_DEVICE(self), "UEFI dbx");
 	fu_device_set_summary(FU_DEVICE(self), "UEFI revocation database");
-	fu_device_add_vendor_id(FU_DEVICE(self), "UEFI:Linux Foundation");
+	fu_device_build_vendor_id(FU_DEVICE(self), "UEFI", "Linux Foundation");
 	fu_device_add_protocol(FU_DEVICE(self), "org.uefi.dbx");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_NUMBER);
 	fu_device_set_install_duration(FU_DEVICE(self), 1);
@@ -185,9 +207,9 @@ fu_uefi_dbx_device_init(FuUefiDbxDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ONLY_VERSION_UPGRADE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_HOST_FIRMWARE_CHILD);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_ONLY_CHECKSUM);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_VERSION);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE_CHILD);
 	if (!fu_common_is_live_media())
 		fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	g_signal_connect(FWUPD_DEVICE(self),
@@ -199,12 +221,12 @@ fu_uefi_dbx_device_init(FuUefiDbxDevice *self)
 static void
 fu_uefi_dbx_device_class_init(FuUefiDbxDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->probe = fu_uefi_dbx_device_probe;
-	klass_device->write_firmware = fu_uefi_dbx_device_write_firmware;
-	klass_device->prepare_firmware = fu_uefi_dbx_prepare_firmware;
-	klass_device->set_progress = fu_uefi_dbx_device_set_progress;
-	klass_device->report_metadata_pre = fu_uefi_dbx_device_report_metadata_pre;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->probe = fu_uefi_dbx_device_probe;
+	device_class->write_firmware = fu_uefi_dbx_device_write_firmware;
+	device_class->prepare_firmware = fu_uefi_dbx_device_prepare_firmware;
+	device_class->set_progress = fu_uefi_dbx_device_set_progress;
+	device_class->report_metadata_pre = fu_uefi_dbx_device_report_metadata_pre;
 }
 
 FuUefiDbxDevice *

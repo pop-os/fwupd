@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2015 Peter Jones <pjones@redhat.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Peter Jones <pjones@redhat.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -18,9 +18,10 @@ typedef enum {
 } FuUefiBootmgrFlags;
 
 gboolean
-fu_uefi_bootmgr_verify_fwupd(GError **error);
+fu_uefi_bootmgr_verify_fwupd(FuEfivars *efivars, GError **error);
 gboolean
-fu_uefi_bootmgr_bootnext(FuVolume *esp,
+fu_uefi_bootmgr_bootnext(FuEfivars *efivars,
+			 FuVolume *esp,
 			 const gchar *description,
 			 FuUefiBootmgrFlags flags,
 			 GError **error);

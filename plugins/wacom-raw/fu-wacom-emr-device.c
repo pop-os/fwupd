@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -28,7 +28,7 @@ fu_wacom_emr_device_setup(FuDevice *device, GError **error)
 
 	/* get firmware version */
 	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER)) {
-		fu_device_set_version(device, "0.0");
+		fu_device_set_version_raw(device, 0);
 	} else {
 		guint16 fw_ver;
 		guint8 data[19] = {0x03, 0x0}; /* 0x03 is an unknown ReportID */
@@ -42,7 +42,7 @@ fu_wacom_emr_device_setup(FuDevice *device, GError **error)
 					    error))
 			return FALSE;
 		fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
-		fu_device_set_version_u32(device, fw_ver);
+		fu_device_set_version_raw(device, fw_ver);
 	}
 
 	/* success */
@@ -105,7 +105,7 @@ fu_wacom_emr_device_w9013_erase_code(FuWacomEmrDevice *self,
 }
 
 static gboolean
-fu_wacom_device_w9021_erase_all(FuWacomEmrDevice *self, GError **error)
+fu_wacom_emr_device_w9021_erase_all(FuWacomEmrDevice *self, GError **error)
 {
 	FuWacomRawRequest req = {
 	    .cmd = FU_WACOM_RAW_BL_CMD_ALL_ERASE,
@@ -180,16 +180,16 @@ fu_wacom_emr_device_write_block(FuWacomEmrDevice *self,
 	/* check size */
 	if (datasz > sizeof(req.data)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "data size 0x%x too large for packet",
 			    (guint)datasz);
 		return FALSE;
 	}
 	if (datasz != blocksz) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "block size 0x%x != 0x%x untested",
 			    (guint)datasz,
 			    (guint)blocksz);
@@ -197,7 +197,7 @@ fu_wacom_emr_device_write_block(FuWacomEmrDevice *self,
 	}
 
 	/* data */
-	memcpy(&req.data, data, datasz);
+	memcpy(&req.data, data, datasz); /* nocheck:blocked */
 
 	/* cmd and data checksums */
 	req.data_unused[0] =
@@ -242,14 +242,19 @@ fu_wacom_emr_device_write_firmware(FuDevice *device,
 
 	/* erase W9021 */
 	if (fu_device_has_instance_id(device, "WacomEMR_W9021")) {
-		if (!fu_wacom_device_w9021_erase_all(self, error))
+		if (!fu_wacom_emr_device_w9021_erase_all(self, error))
 			return FALSE;
 	}
 	fu_progress_step_done(progress);
 
 	/* write */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (fu_wacom_common_block_is_empty(fu_chunk_get_data(chk),
 						   fu_chunk_get_data_sz(chk)))
 			continue;
@@ -269,6 +274,12 @@ fu_wacom_emr_device_write_firmware(FuDevice *device,
 	return TRUE;
 }
 
+static gchar *
+fu_wacom_emr_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_wacom_emr_device_init(FuWacomEmrDevice *self)
 {
@@ -279,9 +290,10 @@ fu_wacom_emr_device_init(FuWacomEmrDevice *self)
 static void
 fu_wacom_emr_device_class_init(FuWacomEmrDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	FuWacomDeviceClass *klass_wac_device = FU_WACOM_DEVICE_CLASS(klass);
-	klass_device->setup = fu_wacom_emr_device_setup;
-	klass_device->attach = fu_wacom_emr_device_attach;
-	klass_wac_device->write_firmware = fu_wacom_emr_device_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	FuWacomDeviceClass *wac_device_class = FU_WACOM_DEVICE_CLASS(klass);
+	device_class->setup = fu_wacom_emr_device_setup;
+	device_class->attach = fu_wacom_emr_device_attach;
+	device_class->convert_version = fu_wacom_emr_device_convert_version;
+	wac_device_class->write_firmware = fu_wacom_emr_device_write_firmware;
 }

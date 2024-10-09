@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2022 Intel, Inc.
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Intel, Inc.
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR Apache-2.0
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR Apache-2.0
  */
 
 #pragma once
@@ -26,7 +26,7 @@ gboolean
 fu_igsc_device_write_blob(FuIgscDevice *self,
 			  enum gsc_fwu_heci_payload_type payload_type,
 			  GBytes *fw_info,
-			  GBytes *fw_payload,
+			  GInputStream *stream_payload,
 			  FuProgress *progress,
 			  GError **error);
 

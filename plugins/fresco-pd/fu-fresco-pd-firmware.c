@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2020 Fresco Logic
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Fresco Logic
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -32,26 +32,23 @@ fu_fresco_pd_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, 
 
 static gboolean
 fu_fresco_pd_firmware_parse(FuFirmware *firmware,
-			    GBytes *fw,
+			    GInputStream *stream,
 			    gsize offset,
 			    FwupdInstallFlags flags,
 			    GError **error)
 {
 	FuFrescoPdFirmware *self = FU_FRESCO_PD_FIRMWARE(firmware);
 	guint8 ver[4] = {0x0};
-	gsize bufsz = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autofree gchar *version = NULL;
 
 	/* read version block */
-	if (!fu_memcpy_safe(ver,
-			    sizeof(ver),
-			    0x0, /* dst */
-			    buf,
-			    bufsz,
-			    0x1000, /* src */
-			    sizeof(ver),
-			    error))
+	if (!fu_input_stream_read_safe(stream,
+				       ver,
+				       sizeof(ver),
+				       0x0,    /* dst */
+				       0x1000, /* src */
+				       sizeof(ver),
+				       error))
 		return FALSE;
 
 	/* customer ID is always the 2nd byte */
@@ -72,9 +69,9 @@ fu_fresco_pd_firmware_init(FuFrescoPdFirmware *self)
 static void
 fu_fresco_pd_firmware_class_init(FuFrescoPdFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_fresco_pd_firmware_parse;
-	klass_firmware->export = fu_fresco_pd_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_fresco_pd_firmware_parse;
+	firmware_class->export = fu_fresco_pd_firmware_export;
 }
 
 FuFirmware *

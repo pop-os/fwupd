@@ -1,18 +1,16 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-docstring
 #
-# Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+# Copyright 2022 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import argparse
 import sys
 import json
-import os
-from typing import Dict, List, Any
+from typing import List
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "filename_src", action="store", type=str, help="markdown source"

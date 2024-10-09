@@ -99,7 +99,7 @@ fu_dell_k2_ec_dev_entry(FuDevice *device, guint8 device_type, guint8 sub_type, g
 			continue;
 
 		/* vary by instance index */
-		if (device_type == FU_DELL_K2_EC_DEV_TYPE_PD &&
+		if (device_type == DELL_K2_EC_DEV_TYPE_PD &&
 		    self->dock_info->devices[i].ec_addr_map.instance != instance)
 			continue;
 
@@ -118,49 +118,49 @@ const gchar *
 fu_dell_k2_ec_devicetype_to_str(guint8 device_type, guint8 sub_type, guint8 instance)
 {
 	switch (device_type) {
-	case FU_DELL_K2_EC_DEV_TYPE_MAIN_EC:
+	case DELL_K2_EC_DEV_TYPE_MAIN_EC:
 		return "EC";
-	case FU_DELL_K2_EC_DEV_TYPE_PD:
-		if (sub_type == FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI) {
-			if (instance == FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP5)
+	case DELL_K2_EC_DEV_TYPE_PD:
+		if (sub_type == DELL_K2_EC_DEV_PD_SUBTYPE_TI) {
+			if (instance == DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP5)
 				return "PD UP5";
-			if (instance == FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP15)
+			if (instance == DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP15)
 				return "PD UP15";
-			if (instance == FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP17)
+			if (instance == DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP17)
 				return "PD UP17";
 		}
 		return NULL;
-	case FU_DELL_K2_EC_DEV_TYPE_USBHUB:
-		if (sub_type == FU_DELL_K2_EC_DEV_USBHUB_SUBTYPE_RTS5480)
+	case DELL_K2_EC_DEV_TYPE_USBHUB:
+		if (sub_type == DELL_K2_EC_DEV_USBHUB_SUBTYPE_RTS5480)
 			return "RTS5480 USB Hub";
-		if (sub_type == FU_DELL_K2_EC_DEV_USBHUB_SUBTYPE_RTS5485)
+		if (sub_type == DELL_K2_EC_DEV_USBHUB_SUBTYPE_RTS5485)
 			return "RTS5485 USB Hub";
 		return NULL;
-	case FU_DELL_K2_EC_DEV_TYPE_MST:
-		if (sub_type == FU_DELL_K2_EC_DEV_MST_SUBTYPE_VMM8430)
+	case DELL_K2_EC_DEV_TYPE_MST:
+		if (sub_type == DELL_K2_EC_DEV_MST_SUBTYPE_VMM8430)
 			return "MST VMM8430";
-		if (sub_type == FU_DELL_K2_EC_DEV_MST_SUBTYPE_VMM9430)
+		if (sub_type == DELL_K2_EC_DEV_MST_SUBTYPE_VMM9430)
 			return "MST VMM9430";
 		return NULL;
-	case FU_DELL_K2_EC_DEV_TYPE_TBT:
-		if (sub_type == FU_DELL_K2_EC_DEV_TBT_SUBTYPE_TR)
+	case DELL_K2_EC_DEV_TYPE_TBT:
+		if (sub_type == DELL_K2_EC_DEV_TBT_SUBTYPE_TR)
 			return "Titan Ridge";
-		if (sub_type == FU_DELL_K2_EC_DEV_TBT_SUBTYPE_GR)
+		if (sub_type == DELL_K2_EC_DEV_TBT_SUBTYPE_GR)
 			return "Goshen Ridge";
-		if (sub_type == FU_DELL_K2_EC_DEV_TBT_SUBTYPE_BR)
+		if (sub_type == DELL_K2_EC_DEV_TBT_SUBTYPE_BR)
 			return "Barlow Ridge";
 		return NULL;
-	case FU_DELL_K2_EC_DEV_TYPE_QI:
+	case DELL_K2_EC_DEV_TYPE_QI:
 		return "Qi";
-	case FU_DELL_K2_EC_DEV_TYPE_DP_MUX:
+	case DELL_K2_EC_DEV_TYPE_DP_MUX:
 		return "DP Mux";
-	case FU_DELL_K2_EC_DEV_TYPE_LAN:
+	case DELL_K2_EC_DEV_TYPE_LAN:
 		return "Intel i226-LM";
-	case FU_DELL_K2_EC_DEV_TYPE_FAN:
+	case DELL_K2_EC_DEV_TYPE_FAN:
 		return "Fan";
-	case FU_DELL_K2_EC_DEV_TYPE_RMM:
+	case DELL_K2_EC_DEV_TYPE_RMM:
 		return "Remote Management";
-	case FU_DELL_K2_EC_DEV_TYPE_WTPD:
+	case DELL_K2_EC_DEV_TYPE_WTPD:
 		return "Weltrend PD";
 	default:
 		return NULL;
@@ -230,8 +230,8 @@ fu_dell_k2_ec_probe_package(FuDevice *ec_dev, GError **error)
 
 static gboolean
 fu_dell_k2_ec_probe_pd(FuDevice *ec_dev,
-		       FuDellK2EcDevType dev_type,
-		       FuDellK2EcDevPdSubtype subtype,
+		       DellK2EcDevType dev_type,
+		       DellK2EcDevPdSubtype subtype,
 		       guint8 instance,
 		       GError **error)
 {
@@ -255,30 +255,30 @@ fu_dell_k2_ec_probe_subcomponents(FuDevice *device, GError **error)
 
 	/* PD UP5 */
 	if (!fu_dell_k2_ec_probe_pd(device,
-				    FU_DELL_K2_EC_DEV_TYPE_PD,
-				    FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI,
-				    FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP5,
+				    DELL_K2_EC_DEV_TYPE_PD,
+				    DELL_K2_EC_DEV_PD_SUBTYPE_TI,
+				    DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP5,
 				    error))
 		return FALSE;
 
 	/* PD UP15 */
 	if (!fu_dell_k2_ec_probe_pd(device,
-				    FU_DELL_K2_EC_DEV_TYPE_PD,
-				    FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI,
-				    FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP15,
+				    DELL_K2_EC_DEV_TYPE_PD,
+				    DELL_K2_EC_DEV_PD_SUBTYPE_TI,
+				    DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP15,
 				    error))
 		return FALSE;
 
 	/* PD UP17 */
 	if (!fu_dell_k2_ec_probe_pd(device,
-				    FU_DELL_K2_EC_DEV_TYPE_PD,
-				    FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI,
-				    FU_DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP17,
+				    DELL_K2_EC_DEV_TYPE_PD,
+				    DELL_K2_EC_DEV_PD_SUBTYPE_TI,
+				    DELL_K2_EC_DEV_PD_SUBTYPE_TI_INSTANCE_UP17,
 				    error))
 		return FALSE;
 
 	/* DP MUX */
-	if (fu_dell_k2_ec_dev_entry(device, FU_DELL_K2_EC_DEV_TYPE_DP_MUX, 0, 0) != NULL) {
+	if (fu_dell_k2_ec_dev_entry(device, DELL_K2_EC_DEV_TYPE_DP_MUX, 0, 0) != NULL) {
 		g_autoptr(FuDellK2Dpmux) dpmux_device = NULL;
 
 		dpmux_device = fu_dell_k2_dpmux_new(device);
@@ -287,7 +287,7 @@ fu_dell_k2_ec_probe_subcomponents(FuDevice *device, GError **error)
 	}
 
 	/* WELTREND PD */
-	if (fu_dell_k2_ec_dev_entry(device, FU_DELL_K2_EC_DEV_TYPE_WTPD, 0, 0) != NULL) {
+	if (fu_dell_k2_ec_dev_entry(device, DELL_K2_EC_DEV_TYPE_WTPD, 0, 0) != NULL) {
 		g_autoptr(FuDellK2Wtpd) weltrend_device = NULL;
 
 		weltrend_device = fu_dell_k2_wtpd_new(device);
@@ -296,7 +296,7 @@ fu_dell_k2_ec_probe_subcomponents(FuDevice *device, GError **error)
 	}
 
 	/* Remote Management */
-	if (fu_dell_k2_ec_dev_entry(device, FU_DELL_K2_EC_DEV_TYPE_RMM, 0, 0) != NULL) {
+	if (fu_dell_k2_ec_dev_entry(device, DELL_K2_EC_DEV_TYPE_RMM, 0, 0) != NULL) {
 		g_autoptr(FuDellK2Rmm) rmm_device = NULL;
 
 		rmm_device = fu_dell_k2_rmm_new(device);
@@ -305,7 +305,7 @@ fu_dell_k2_ec_probe_subcomponents(FuDevice *device, GError **error)
 	}
 
 	/* Intel i266-LM */
-	if (fu_dell_k2_ec_dev_entry(device, FU_DELL_K2_EC_DEV_TYPE_LAN, 0, 0) != NULL) {
+	if (fu_dell_k2_ec_dev_entry(device, DELL_K2_EC_DEV_TYPE_LAN, 0, 0) != NULL) {
 		g_autoptr(FuDellK2Ilan) ilan_device = NULL;
 
 		ilan_device = fu_dell_k2_ilan_new(device);
@@ -320,7 +320,7 @@ static gboolean
 fu_dell_k2_ec_dock_type_extract(FuDevice *device, GError **error)
 {
 	FuDellK2BaseType dock_type = fu_dell_k2_ec_get_dock_type(device);
-	guint8 dev_type = FU_DELL_K2_EC_DEV_TYPE_MAIN_EC;
+	guint8 dev_type = DELL_K2_EC_DEV_TYPE_MAIN_EC;
 
 	/* don't change error type, the plugin ignores it */
 	if (dock_type != FU_DELL_K2_BASE_TYPE_K2) {
@@ -348,7 +348,7 @@ fu_dell_k2_ec_dock_type_cmd(FuDevice *device, GError **error)
 	FuDellK2Ec *self = FU_DELL_K2_EC(device);
 	gsize length = 1;
 	g_autoptr(GByteArray) res = g_byte_array_new_take(g_malloc0(length), length);
-	guint8 cmd = FU_DELL_K2_EC_HID_CMD_GET_DOCK_TYPE;
+	guint8 cmd = DELL_K2_EC_HID_CMD_GET_DOCK_TYPE;
 
 	/* expect response 1 byte */
 	if (!fu_dell_k2_ec_read(device, cmd, res, error)) {
@@ -407,7 +407,7 @@ fu_dell_k2_ec_dock_info_extract(FuDevice *device, GError **error)
 		}
 
 		/* name the location of component */
-		location_str = (dev_entry.ec_addr_map.location == FU_DELL_K2_EC_LOCATION_BASE)
+		location_str = (dev_entry.ec_addr_map.location == DELL_K2_EC_LOCATION_BASE)
 				   ? "Base"
 				   : "Module";
 
@@ -432,7 +432,7 @@ fu_dell_k2_ec_dock_info_cmd(FuDevice *device, GError **error)
 	FuDellK2Ec *self = FU_DELL_K2_EC(device);
 	gsize length = sizeof(FuDellK2DockInfoStructure);
 	g_autoptr(GByteArray) res = g_byte_array_new_take(g_malloc0(length), length);
-	guint8 cmd = FU_DELL_K2_EC_HID_CMD_GET_DOCK_INFO;
+	guint8 cmd = DELL_K2_EC_HID_CMD_GET_DOCK_INFO;
 
 	/* get dock info over HID */
 	if (!fu_dell_k2_ec_read(device, cmd, res, error)) {
@@ -442,7 +442,7 @@ fu_dell_k2_ec_dock_info_cmd(FuDevice *device, GError **error)
 	if (res->len != length) {
 		g_set_error(error,
 			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid dock info size: expected %" G_GSIZE_FORMAT ",got %u",
 			    length,
 			    res->len);
@@ -504,7 +504,7 @@ fu_dell_k2_ec_dock_data_cmd(FuDevice *device, GError **error)
 	FuDellK2Ec *self = FU_DELL_K2_EC(device);
 	gsize length = sizeof(FuDellK2DockDataStructure);
 	g_autoptr(GByteArray) res = g_byte_array_new_take(g_malloc0(length), length);
-	guint8 cmd = FU_DELL_K2_EC_HID_CMD_GET_DOCK_DATA;
+	guint8 cmd = DELL_K2_EC_HID_CMD_GET_DOCK_DATA;
 
 	/* get dock data over HID */
 	if (!fu_dell_k2_ec_read(device, cmd, res, error)) {
@@ -514,7 +514,7 @@ fu_dell_k2_ec_dock_data_cmd(FuDevice *device, GError **error)
 	if (res->len != length) {
 		g_set_error(error,
 			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid dock info size: expected %" G_GSIZE_FORMAT ",got %u",
 			    length,
 			    res->len);
@@ -548,7 +548,7 @@ fu_dell_k2_ec_is_dock_ready4update(FuDevice *device, GError **error)
 	if ((self->dock_data->dock_status & bitmask_fw_update_pending) != 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
+			    FWUPD_ERROR_BUSY,
 			    "dock status (%x) has pending updates, unavailable for now.",
 			    self->dock_data->dock_status);
 		return FALSE;
@@ -572,20 +572,26 @@ fu_dell_k2_ec_to_string(FuDevice *device, guint idt, GString *str)
 			    NULL))
 		g_debug("failed to save dock service tag");
 
-	fu_string_append(str, idt, "ServiceTag", service_tag);
-	fu_string_append_ku(str, idt, "DockBaseType", self->base_type);
-	fu_string_append_ku(str, idt, "BoardId", self->dock_data->board_id);
-	fu_string_append_ku(str, idt, "ModuleSerial", self->dock_data->module_serial);
-	fu_string_append_ku(str, idt, "PowerSupply", self->dock_data->power_supply_wattage);
-	fu_string_append_ku(str, idt, "Configuration", self->dock_data->dock_configuration);
-	fu_string_append_kx(str,
-			    idt,
-			    "PackageFirmwareVersion",
-			    self->dock_data->dock_firmware_pkg_ver);
-	fu_string_append_ku(str,
-			    idt,
-			    "OriginalModuleSerial",
-			    self->dock_data->original_module_serial);
+	fwupd_codec_string_append(str, idt, "ServiceTag", service_tag);
+	fwupd_codec_string_append_int(str, idt, "DockBaseType", self->base_type);
+	fwupd_codec_string_append_int(str, idt, "BoardId", self->dock_data->board_id);
+	fwupd_codec_string_append_int(str, idt, "ModuleSerial", self->dock_data->module_serial);
+	fwupd_codec_string_append_int(str,
+				      idt,
+				      "PowerSupply",
+				      self->dock_data->power_supply_wattage);
+	fwupd_codec_string_append_int(str,
+				      idt,
+				      "Configuration",
+				      self->dock_data->dock_configuration);
+	fwupd_codec_string_append_hex(str,
+				      idt,
+				      "PackageFirmwareVersion",
+				      self->dock_data->dock_firmware_pkg_ver);
+	fwupd_codec_string_append_int(str,
+				      idt,
+				      "OriginalModuleSerial",
+				      self->dock_data->original_module_serial);
 }
 
 gboolean
@@ -595,7 +601,7 @@ fu_dell_k2_ec_modify_lock(FuDevice *device, gboolean lock, GError **error)
 	g_autoptr(GByteArray) req = g_byte_array_new();
 	g_autoptr(GError) error_local = NULL;
 
-	fu_byte_array_append_uint8(req, FU_DELL_K2_EC_HID_CMD_SET_MODIFY_LOCK);
+	fu_byte_array_append_uint8(req, DELL_K2_EC_HID_CMD_SET_MODIFY_LOCK);
 	fu_byte_array_append_uint8(req, 2); // length of data
 	fu_byte_array_append_uint16(req, lock ? 0xFFFF : 0x0000, G_LITTLE_ENDIAN);
 
@@ -622,7 +628,7 @@ fu_dell_k2_ec_run_passive_update(FuDevice *device, GError **error)
 	g_return_val_if_fail(device != NULL, FALSE);
 
 	/* ec included in cmd, set bit2 in data for tbt */
-	fu_byte_array_append_uint8(req, FU_DELL_K2_EC_HID_CMD_SET_PASSIVE);
+	fu_byte_array_append_uint8(req, DELL_K2_EC_HID_CMD_SET_PASSIVE);
 	fu_byte_array_append_uint8(req, 1); // length of data
 	fu_byte_array_append_uint8(req, 0x02);
 
@@ -639,20 +645,20 @@ fu_dell_k2_ec_set_dock_sku(FuDevice *device, GError **error)
 	case FU_DELL_K2_BASE_TYPE_K2:
 		/* TBT type yet available, do workaround */
 		if (fu_dell_k2_ec_dev_entry(device,
-					    FU_DELL_K2_EC_DEV_TYPE_TBT,
-					    FU_DELL_K2_EC_DEV_TBT_SUBTYPE_BR,
+					    DELL_K2_EC_DEV_TYPE_TBT,
+					    DELL_K2_EC_DEV_TBT_SUBTYPE_BR,
 					    0) != NULL) {
-			self->base_sku = FU_K2_DOCK_SKU_TBT5;
+			self->base_sku = K2_DOCK_SKU_TBT5;
 			return TRUE;
 		}
 		if (fu_dell_k2_ec_dev_entry(device,
-					    FU_DELL_K2_EC_DEV_TYPE_TBT,
-					    FU_DELL_K2_EC_DEV_TBT_SUBTYPE_GR,
+					    DELL_K2_EC_DEV_TYPE_TBT,
+					    DELL_K2_EC_DEV_TBT_SUBTYPE_GR,
 					    0) != NULL) {
-			self->base_sku = FU_K2_DOCK_SKU_TBT4;
+			self->base_sku = K2_DOCK_SKU_TBT4;
 			return TRUE;
 		}
-		self->base_sku = FU_K2_DOCK_SKU_DPALT;
+		self->base_sku = K2_DOCK_SKU_DPALT;
 		return TRUE;
 	default:
 		g_set_error(error,
@@ -668,7 +674,7 @@ guint32
 fu_dell_k2_ec_get_pd_version(FuDevice *device, guint8 sub_type, guint8 instance)
 {
 	struct FuDellK2EcQueryEntry *dev_entry = NULL;
-	FuDellK2EcDevType dev_type = FU_DELL_K2_EC_DEV_TYPE_PD;
+	DellK2EcDevType dev_type = DELL_K2_EC_DEV_TYPE_PD;
 
 	dev_entry = fu_dell_k2_ec_dev_entry(device, dev_type, sub_type, instance);
 	return (dev_entry == NULL) ? 0 : dev_entry->version.version_32;
@@ -678,7 +684,7 @@ guint32
 fu_dell_k2_ec_get_ilan_version(FuDevice *device)
 {
 	struct FuDellK2EcQueryEntry *dev_entry = NULL;
-	FuDellK2EcDevType dev_type = FU_DELL_K2_EC_DEV_TYPE_LAN;
+	DellK2EcDevType dev_type = DELL_K2_EC_DEV_TYPE_LAN;
 
 	dev_entry = fu_dell_k2_ec_dev_entry(device, dev_type, 0, 0);
 	return (dev_entry == NULL) ? 0 : dev_entry->version.version_32;
@@ -688,7 +694,7 @@ guint32
 fu_dell_k2_ec_get_wtpd_version(FuDevice *device)
 {
 	struct FuDellK2EcQueryEntry *dev_entry = NULL;
-	FuDellK2EcDevType dev_type = FU_DELL_K2_EC_DEV_TYPE_WTPD;
+	DellK2EcDevType dev_type = DELL_K2_EC_DEV_TYPE_WTPD;
 
 	dev_entry = fu_dell_k2_ec_dev_entry(device, dev_type, 0, 0);
 	return (dev_entry == NULL) ? 0 : dev_entry->version.version_32;
@@ -698,7 +704,7 @@ guint32
 fu_dell_k2_ec_get_dpmux_version(FuDevice *device)
 {
 	struct FuDellK2EcQueryEntry *dev_entry = NULL;
-	FuDellK2EcDevType dev_type = FU_DELL_K2_EC_DEV_TYPE_DP_MUX;
+	DellK2EcDevType dev_type = DELL_K2_EC_DEV_TYPE_DP_MUX;
 
 	dev_entry = fu_dell_k2_ec_dev_entry(device, dev_type, 0, 0);
 	return (dev_entry == NULL) ? 0 : dev_entry->version.version_32;
@@ -708,7 +714,7 @@ guint32
 fu_dell_k2_ec_get_rmm_version(FuDevice *device)
 {
 	struct FuDellK2EcQueryEntry *dev_entry = NULL;
-	FuDellK2EcDevType dev_type = FU_DELL_K2_EC_DEV_TYPE_RMM;
+	DellK2EcDevType dev_type = DELL_K2_EC_DEV_TYPE_RMM;
 
 	dev_entry = fu_dell_k2_ec_dev_entry(device, dev_type, 0, 0);
 	return (dev_entry == NULL) ? 0 : dev_entry->version.version_32;
@@ -718,7 +724,7 @@ static guint32
 fu_dell_k2_ec_get_ec_version(FuDevice *device)
 {
 	struct FuDellK2EcQueryEntry *dev_entry = NULL;
-	FuDellK2EcDevType dev_type = FU_DELL_K2_EC_DEV_TYPE_MAIN_EC;
+	DellK2EcDevType dev_type = DELL_K2_EC_DEV_TYPE_MAIN_EC;
 
 	dev_entry = fu_dell_k2_ec_dev_entry(device, dev_type, 0, 0);
 	return (dev_entry == NULL) ? 0 : dev_entry->version.version_32;
@@ -744,13 +750,13 @@ fu_dell_k2_ec_commit_package(FuDevice *device, GBytes *blob_fw, GError **error)
 	if (length != sizeof(FuDellK2DockFWVersion)) {
 		g_set_error(error,
 			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "Invalid package size %" G_GSIZE_FORMAT,
 			    length);
 		return FALSE;
 	}
 
-	fu_byte_array_append_uint8(req, FU_DELL_K2_EC_HID_CMD_SET_DOCK_PKG);
+	fu_byte_array_append_uint8(req, DELL_K2_EC_HID_CMD_SET_DOCK_PKG);
 	fu_byte_array_append_uint8(req, length); // length of data
 	fu_byte_array_append_bytes(req, blob_fw);
 	fu_dump_raw(G_LOG_DOMAIN, "->PACKAGE", req->data, req->len);
@@ -793,10 +799,10 @@ fu_dell_k2_ec_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* construct writing buffer */
-	fw_whdr = fu_dell_k2_ec_hid_fwup_pkg_new(fw, FU_DELL_K2_EC_DEV_TYPE_MAIN_EC, 0);
+	fw_whdr = fu_dell_k2_ec_hid_fwup_pkg_new(fw, DELL_K2_EC_DEV_TYPE_MAIN_EC, 0);
 
 	/* prepare the chunks */
-	chunks = fu_chunk_array_new_from_bytes(fw_whdr, 0, FU_DELL_K2_EC_HID_DATA_PAGE_SZ);
+	chunks = fu_chunk_array_new_from_bytes(fw_whdr, 0, DELL_K2_EC_HID_DATA_PAGE_SZ);
 
 	/* erase */
 	if (!fu_dell_k2_ec_hid_erase_bank(device, 0xff, error))
@@ -805,8 +811,9 @@ fu_dell_k2_ec_write_firmware(FuDevice *device,
 
 	/* write to device */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 
+		chk = fu_chunk_array_index(chunks, i, error);
 		if (chk == NULL)
 			return FALSE;
 
@@ -936,9 +943,10 @@ fu_dell_k2_ec_init(FuDellK2Ec *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SKIPS_RESTART);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_RETRY_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_NO_AUTO_REMOVE_CHILDREN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_EXPLICIT_ORDER);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_RETRY_OPEN);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_QUAD);
 }
 
@@ -964,8 +972,7 @@ fu_dell_k2_ec_new(FuDevice *device)
 	FuContext *ctx = fu_device_get_context(device);
 
 	self = g_object_new(FU_TYPE_DELL_K2_EC, "context", ctx, NULL);
-	fu_device_incorporate(FU_DEVICE(self), device);
-	fu_device_set_physical_id(FU_DEVICE(self), fu_device_get_physical_id(device));
+	fu_device_incorporate(FU_DEVICE(self), device, FU_DEVICE_INCORPORATE_FLAG_ALL);
 	fu_device_set_logical_id(FU_DEVICE(self), "ec");
 	return self;
 }

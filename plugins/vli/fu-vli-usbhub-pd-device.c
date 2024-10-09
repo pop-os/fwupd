@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2017 VIA Corporation
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 VIA Corporation
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -26,15 +26,18 @@ static void
 fu_vli_usbhub_pd_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuVliUsbhubPdDevice *self = FU_VLI_USBHUB_PD_DEVICE(device);
-	fu_string_append(str, idt, "DeviceKind", fu_vli_device_kind_to_string(self->device_kind));
-	fu_string_append_kx(str,
-			    idt,
-			    "FwOffset",
-			    fu_vli_common_device_kind_get_offset(self->device_kind));
-	fu_string_append_kx(str,
-			    idt,
-			    "FwSize",
-			    fu_vli_common_device_kind_get_size(self->device_kind));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "DeviceKind",
+				  fu_vli_device_kind_to_string(self->device_kind));
+	fwupd_codec_string_append_hex(str,
+				      idt,
+				      "FwOffset",
+				      fu_vli_common_device_kind_get_offset(self->device_kind));
+	fwupd_codec_string_append_hex(str,
+				      idt,
+				      "FwSize",
+				      fu_vli_common_device_kind_get_size(self->device_kind));
 }
 
 static gboolean
@@ -101,7 +104,7 @@ fu_vli_usbhub_pd_device_setup(FuDevice *device, GError **error)
 	fu_device_set_name(device, name);
 
 	/* use header to populate device info */
-	fu_device_set_version_u32(device, fwver);
+	fu_device_set_version_raw(device, fwver);
 
 	/* add standard GUIDs in order of priority */
 	fu_device_add_instance_u16(device, "VID", fu_struct_vli_pd_hdr_get_vid(st));
@@ -145,7 +148,8 @@ fu_vli_usbhub_pd_device_reload(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_vli_usbhub_pd_device_prepare_firmware(FuDevice *device,
-					 GBytes *fw,
+					 GInputStream *stream,
+					 FuProgress *progress,
 					 FwupdInstallFlags flags,
 					 GError **error)
 {
@@ -154,7 +158,7 @@ fu_vli_usbhub_pd_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware = fu_vli_pd_firmware_new();
 
 	/* check is compatible with firmware */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	device_kind = fu_vli_pd_firmware_get_kind(FU_VLI_PD_FIRMWARE(firmware));
 	if (self->device_kind != device_kind) {
@@ -261,7 +265,7 @@ static gboolean
 fu_vli_usbhub_pd_device_probe(FuDevice *device, GError **error)
 {
 	FuVliUsbhubDevice *parent = FU_VLI_USBHUB_DEVICE(fu_device_get_parent(device));
-	fu_device_set_physical_id(device, fu_device_get_physical_id(FU_DEVICE(parent)));
+	fu_device_incorporate(device, FU_DEVICE(parent), FU_DEVICE_INCORPORATE_FLAG_PHYSICAL_ID);
 	return TRUE;
 }
 
@@ -274,6 +278,12 @@ fu_vli_usbhub_pd_device_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
+}
+
+static gchar *
+fu_vli_usbhub_pd_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
 }
 
 static void
@@ -292,16 +302,17 @@ fu_vli_usbhub_pd_device_init(FuVliUsbhubPdDevice *self)
 static void
 fu_vli_usbhub_pd_device_class_init(FuVliUsbhubPdDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_vli_usbhub_pd_device_to_string;
-	klass_device->probe = fu_vli_usbhub_pd_device_probe;
-	klass_device->setup = fu_vli_usbhub_pd_device_setup;
-	klass_device->reload = fu_vli_usbhub_pd_device_reload;
-	klass_device->attach = fu_vli_usbhub_pd_device_attach;
-	klass_device->dump_firmware = fu_vli_usbhub_pd_device_dump_firmware;
-	klass_device->write_firmware = fu_vli_usbhub_pd_device_write_firmware;
-	klass_device->prepare_firmware = fu_vli_usbhub_pd_device_prepare_firmware;
-	klass_device->set_progress = fu_vli_usbhub_pd_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_vli_usbhub_pd_device_to_string;
+	device_class->probe = fu_vli_usbhub_pd_device_probe;
+	device_class->setup = fu_vli_usbhub_pd_device_setup;
+	device_class->reload = fu_vli_usbhub_pd_device_reload;
+	device_class->attach = fu_vli_usbhub_pd_device_attach;
+	device_class->dump_firmware = fu_vli_usbhub_pd_device_dump_firmware;
+	device_class->write_firmware = fu_vli_usbhub_pd_device_write_firmware;
+	device_class->prepare_firmware = fu_vli_usbhub_pd_device_prepare_firmware;
+	device_class->convert_version = fu_vli_usbhub_pd_device_convert_version;
+	device_class->set_progress = fu_vli_usbhub_pd_device_set_progress;
 }
 
 FuDevice *

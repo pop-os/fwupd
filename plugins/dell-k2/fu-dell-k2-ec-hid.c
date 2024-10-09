@@ -59,7 +59,7 @@ fu_dell_k2_ec_hid_write(FuDevice *device, GBytes *buf, GError **error)
 					0x0,
 					data,
 					data_sz,
-					FU_DELL_K2_EC_HID_TIMEOUT,
+					DELL_K2_EC_HID_TIMEOUT,
 					FU_HID_DEVICE_FLAG_RETRY_FAILURE,
 					error);
 }
@@ -71,12 +71,12 @@ fu_dell_k2_ec_hid_fwup_pkg_new(GBytes *fw, guint8 dev_type, guint8 dev_identifie
 	gsize fw_size = g_bytes_get_size(fw);
 
 	/* header */
-	fu_byte_array_append_uint8(fwbuf, FU_DELL_K2_EC_HID_CMD_FWUPDATE);
-	fu_byte_array_append_uint8(fwbuf, FU_DELL_K2_EC_HID_EXT_FWUPDATE);
+	fu_byte_array_append_uint8(fwbuf, DELL_K2_EC_HID_CMD_FWUPDATE);
+	fu_byte_array_append_uint8(fwbuf, DELL_K2_EC_HID_EXT_FWUPDATE);
 	fu_byte_array_append_uint32(fwbuf, 7 + fw_size, G_BIG_ENDIAN); // 7 = sizeof(command)
 
 	/* command */
-	fu_byte_array_append_uint8(fwbuf, FU_DELL_K2_EC_HID_SUBCMD_FWUPDATE);
+	fu_byte_array_append_uint8(fwbuf, DELL_K2_EC_HID_SUBCMD_FWUPDATE);
 	fu_byte_array_append_uint8(fwbuf, dev_type);
 	fu_byte_array_append_uint8(fwbuf, dev_identifier);
 	fu_byte_array_append_uint32(fwbuf, fw_size, G_BIG_ENDIAN);
@@ -95,7 +95,7 @@ fu_dell_k2_ec_hid_set_report_cb(FuDevice *self, gpointer user_data, GError **err
 					0x0,
 					outbuffer,
 					192,
-					FU_DELL_K2_EC_HID_TIMEOUT * 3,
+					DELL_K2_EC_HID_TIMEOUT * 3,
 					FU_HID_DEVICE_FLAG_NONE,
 					error);
 }
@@ -105,7 +105,7 @@ fu_dell_k2_ec_hid_set_report(FuDevice *self, guint8 *outbuffer, GError **error)
 {
 	return fu_device_retry(self,
 			       fu_dell_k2_ec_hid_set_report_cb,
-			       FU_DELL_K2_EC_HID_MAX_RETRIES,
+			       DELL_K2_EC_HID_MAX_RETRIES,
 			       outbuffer,
 			       error);
 }
@@ -118,7 +118,7 @@ fu_dell_k2_ec_hid_get_report_cb(FuDevice *self, gpointer user_data, GError **err
 					0x0,
 					inbuffer,
 					192,
-					FU_DELL_K2_EC_HID_TIMEOUT,
+					DELL_K2_EC_HID_TIMEOUT,
 					FU_HID_DEVICE_FLAG_NONE,
 					error);
 }
@@ -128,7 +128,7 @@ fu_dell_k2_ec_hid_get_report(FuDevice *self, guint8 *inbuffer, GError **error)
 {
 	return fu_device_retry(self,
 			       fu_dell_k2_ec_hid_get_report_cb,
-			       FU_DELL_K2_EC_HID_MAX_RETRIES,
+			       DELL_K2_EC_HID_MAX_RETRIES,
 			       inbuffer,
 			       error);
 }

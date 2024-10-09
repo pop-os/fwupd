@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -31,7 +31,7 @@ fu_nitrokey_perform_crc32(const guint8 *data, gsize size)
 	guint32 crc = 0xffffffff;
 	g_autofree guint32 *data_aligned = NULL;
 	data_aligned = g_new0(guint32, (size / 4) + 1);
-	memcpy(data_aligned, data, size);
+	memcpy(data_aligned, data, size); /* nocheck:blocked */
 	for (gsize idx = 0; idx * 4 < size; idx++) {
 		guint32 data_aligned_le = GUINT32_FROM_LE(data_aligned[idx]);
 		crc = fu_nitrokey_perform_crc32_mutate(crc, data_aligned_le);

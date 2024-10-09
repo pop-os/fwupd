@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuFirmware"
@@ -180,8 +180,8 @@ fu_srec_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 	/* sanity check */
 	if (token_idx > FU_SREC_FIRMWARE_TOKENS_MAX) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "file has too many lines");
 		return FALSE;
 	}
@@ -371,18 +371,17 @@ fu_srec_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 }
 
 static gboolean
-fu_srec_firmware_tokenize(FuFirmware *firmware, GBytes *fw, FwupdInstallFlags flags, GError **error)
+fu_srec_firmware_tokenize(FuFirmware *firmware,
+			  GInputStream *stream,
+			  gsize offset,
+			  FwupdInstallFlags flags,
+			  GError **error)
 {
 	FuSrecFirmware *self = FU_SREC_FIRMWARE(firmware);
 	FuSrecFirmwareTokenHelper helper = {.self = self, .flags = flags, .got_eof = FALSE};
 
 	/* parse records */
-	if (!fu_strsplit_full(g_bytes_get_data(fw, NULL),
-			      g_bytes_get_size(fw),
-			      "\n",
-			      fu_srec_firmware_tokenize_cb,
-			      &helper,
-			      error))
+	if (!fu_strsplit_stream(stream, offset, "\n", fu_srec_firmware_tokenize_cb, &helper, error))
 		return FALSE;
 
 	/* no EOF */
@@ -398,7 +397,7 @@ fu_srec_firmware_tokenize(FuFirmware *firmware, GBytes *fw, FwupdInstallFlags fl
 
 static gboolean
 fu_srec_firmware_parse(FuFirmware *firmware,
-		       GBytes *fw,
+		       GInputStream *stream,
 		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
@@ -626,7 +625,12 @@ fu_srec_firmware_write(FuFirmware *firmware, GError **error)
 		g_autoptr(FuChunkArray) chunks =
 		    fu_chunk_array_new_from_bytes(buf_blob, fu_firmware_get_addr(firmware), 64);
 		for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-			g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+			g_autoptr(FuChunk) chk = NULL;
+
+			/* prepare chunk */
+			chk = fu_chunk_array_index(chunks, i, error);
+			if (chk == NULL)
+				return NULL;
 			fu_srec_firmware_write_line(str,
 						    kind_data,
 						    fu_chunk_get_address(chk),
@@ -668,11 +672,11 @@ static void
 fu_srec_firmware_class_init(FuSrecFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_srec_firmware_finalize;
-	klass_firmware->parse = fu_srec_firmware_parse;
-	klass_firmware->tokenize = fu_srec_firmware_tokenize;
-	klass_firmware->write = fu_srec_firmware_write;
+	firmware_class->parse = fu_srec_firmware_parse;
+	firmware_class->tokenize = fu_srec_firmware_tokenize;
+	firmware_class->write = fu_srec_firmware_write;
 }
 
 /**

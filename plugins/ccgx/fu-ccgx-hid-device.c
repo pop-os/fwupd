@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2020 Cypress Semiconductor Corporation.
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Cypress Semiconductor Corporation.
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -95,15 +95,15 @@ fu_ccgx_hid_device_init(FuCcgxHidDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_WILL_DISAPPEAR);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_retry_set_delay(FU_DEVICE(self), FU_CCGX_HID_DEVICE_RETRY_DELAY);
 }
 
 static void
 fu_ccgx_hid_device_class_init(FuCcgxHidDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->detach = fu_ccgx_hid_device_detach;
-	klass_device->setup = fu_ccgx_hid_device_setup;
-	klass_device->set_progress = fu_ccgx_hid_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->detach = fu_ccgx_hid_device_detach;
+	device_class->setup = fu_ccgx_hid_device_setup;
+	device_class->set_progress = fu_ccgx_hid_device_set_progress;
 }

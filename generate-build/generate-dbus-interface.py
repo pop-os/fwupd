@@ -1,9 +1,9 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-docstring
 #
-# Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+# Copyright 2022 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import sys
 import argparse
@@ -11,7 +11,6 @@ import xml.etree.ElementTree as ET
 
 
 def _remove_docs(parent):
-
     namespaces = {"doc": "http://www.freedesktop.org/dbus/1.0/doc.dtd"}
     for node in parent.findall("doc:doc", namespaces):
         parent.remove(node)
@@ -19,7 +18,6 @@ def _remove_docs(parent):
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("src", action="store", type=str, help="metainfo source")
     parser.add_argument("dst", action="store", type=str, help="metainfo destination")

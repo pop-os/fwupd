@@ -1,13 +1,13 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
 
-#include <glib-object.h>
+#include <gio/gio.h>
 
 #include "fu-archive-struct.h"
 
@@ -48,6 +48,10 @@ typedef gboolean (*FuArchiveIterateFunc)(FuArchive *self,
 
 FuArchive *
 fu_archive_new(GBytes *data, FuArchiveFlags flags, GError **error) G_GNUC_WARN_UNUSED_RESULT;
+FuArchive *
+fu_archive_new_stream(GInputStream *stream,
+		      FuArchiveFlags flags,
+		      GError **error) G_GNUC_WARN_UNUSED_RESULT;
 void
 fu_archive_add_entry(FuArchive *self, const gchar *fn, GBytes *blob) G_GNUC_NON_NULL(1, 2);
 GBytes *

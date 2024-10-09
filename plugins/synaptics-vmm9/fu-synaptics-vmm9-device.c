@@ -10,8 +10,7 @@
 #include "fu-synaptics-vmm9-firmware.h"
 #include "fu-synaptics-vmm9-struct.h"
 
-/* flags */
-#define FU_SYNAPTICS_VMM9_DEVICE_FLAG_MANUAL_RESTART_REQUIRED (1 << 0)
+#define FU_SYNAPTICS_VMM9_DEVICE_FLAG_MANUAL_RESTART_REQUIRED "manual-restart-required"
 
 struct _FuSynapticsVmm9Device {
 	FuHidDevice parent_instance;
@@ -44,9 +43,9 @@ static void
 fu_synaptics_vmm9_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuSynapticsVmm9Device *self = FU_SYNAPTICS_VMM9_DEVICE(device);
-	fu_string_append_kx(str, idt, "BoardId", self->board_id);
-	fu_string_append_kx(str, idt, "CustomerId", self->customer_id);
-	fu_string_append_kx(str, idt, "ActiveBank", self->active_bank);
+	fwupd_codec_string_append_hex(str, idt, "BoardId", self->board_id);
+	fwupd_codec_string_append_hex(str, idt, "CustomerId", self->customer_id);
+	fwupd_codec_string_append_hex(str, idt, "ActiveBank", self->active_bank);
 }
 
 typedef enum {
@@ -67,8 +66,8 @@ fu_synaptics_vmm9_device_command_cb(FuDevice *self, gpointer user_data, GError *
 	FuSynapticsVmm9DeviceCommandHelper *helper =
 	    (FuSynapticsVmm9DeviceCommandHelper *)user_data;
 	guint8 buf[FU_SYNAPTICS_VMM9_DEVICE_REPORT_SIZE] = {0};
-	g_autoptr(GByteArray) st = NULL;
-	g_autoptr(GByteArray) st_payload = NULL;
+	g_autoptr(FuStructHidGetCommand) st = NULL;
+	g_autoptr(FuStructHidPayload) st_payload = NULL;
 
 	/* get, and parse */
 	if (!fu_hid_device_get_report(FU_HID_DEVICE(self),
@@ -90,8 +89,8 @@ fu_synaptics_vmm9_device_command_cb(FuDevice *self, gpointer user_data, GError *
 	if (fu_struct_hid_payload_get_sts(st_payload) != FU_SYNAPTICS_VMM9_RC_STS_SUCCESS) {
 		g_set_error(
 		    error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_INVALID_DATA,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_INVALID_DATA,
 		    "sts is %s [0x%x]",
 		    fu_synaptics_vmm9_rc_sts_to_string(fu_struct_hid_payload_get_sts(st_payload)),
 		    fu_struct_hid_payload_get_sts(st_payload));
@@ -100,7 +99,7 @@ fu_synaptics_vmm9_device_command_cb(FuDevice *self, gpointer user_data, GError *
 
 	/* check the busy status */
 	if (fu_struct_hid_payload_get_ctrl(st_payload) & FU_SYNAPTICS_VMM9_CTRL_BUSY_MASK) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "is busy");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "is busy");
 		return FALSE;
 	}
 
@@ -137,8 +136,8 @@ fu_synaptics_vmm9_device_command(FuSynapticsVmm9Device *self,
 	FuSynapticsVmm9DeviceCommandHelper helper = {.buf = dst_buf, .bufsz = dst_bufsz};
 	guint8 checksum;
 	g_autofree gchar *str = NULL;
-	g_autoptr(GByteArray) st_payload = fu_struct_hid_payload_new();
-	g_autoptr(GByteArray) st = fu_struct_hid_set_command_new();
+	g_autoptr(FuStructHidPayload) st_payload = fu_struct_hid_payload_new();
+	g_autoptr(FuStructHidSetCommand) st = fu_struct_hid_set_command_new();
 	g_autoptr(GError) error_local = NULL;
 
 	/* payload */
@@ -216,7 +215,7 @@ fu_synaptics_vmm9_device_setup(FuDevice *device, GError **error)
 	guint8 buf[4] = {0x0};
 	g_autofree gchar *serial = NULL;
 	g_autofree gchar *bootloader_version = NULL;
-	g_autoptr(GByteArray) st_getid = NULL;
+	g_autoptr(FuStructSynapticsUpdGetId) st_getid = NULL;
 
 	/* read chip serial number */
 	if (!fu_synaptics_vmm9_device_command(self,
@@ -255,10 +254,10 @@ fu_synaptics_vmm9_device_setup(FuDevice *device, GError **error)
 
 	/* whitebox customers */
 	if (self->customer_id == 0x0) {
-		fu_device_add_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_ENFORCE_REQUIRES);
+		fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_ENFORCE_REQUIRES);
 	} else {
-		g_autofree gchar *vendor_id = g_strdup_printf("SYNA:0x%02X", self->customer_id);
-		fu_device_add_vendor_id(device, vendor_id);
+		g_autofree gchar *vendor_id = g_strdup_printf("0x%02X", self->customer_id);
+		fu_device_build_vendor_id(device, "SYNA", vendor_id);
 	}
 
 	/* read version */
@@ -377,19 +376,23 @@ fu_synaptics_vmm9_device_close(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_synaptics_vmm9_device_prepare_firmware(FuDevice *device,
-					  GBytes *fw,
+					  GInputStream *stream,
+					  FuProgress *progress,
 					  FwupdInstallFlags flags,
 					  GError **error)
 {
 	FuSynapticsVmm9Device *self = FU_SYNAPTICS_VMM9_DEVICE(device);
 	g_autoptr(FuFirmware) firmware = fu_synaptics_vmm9_firmware_new();
-	g_autoptr(GBytes) fw_partial = NULL;
+	g_autoptr(GInputStream) stream_partial = NULL;
 
 	/* parse */
-	fw_partial = fu_bytes_new_offset(fw, 0x0, fu_device_get_firmware_size_min(device), error);
-	if (fw_partial == NULL)
+	stream_partial = fu_partial_input_stream_new(stream,
+						     0x0,
+						     fu_device_get_firmware_size_min(device),
+						     error);
+	if (stream_partial == NULL)
 		return NULL;
-	if (!fu_firmware_parse(firmware, fw_partial, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream_partial, 0x0, flags, error))
 		return NULL;
 
 	/* verify this firmware is for this hardware */
@@ -435,7 +438,10 @@ fu_synaptics_vmm9_device_write_blocks(FuSynapticsVmm9Device *self,
 		g_autoptr(FuChunk) chk = NULL;
 
 		/* prepare chunk */
-		chk = fu_chunk_array_index(chunks, i);
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
+
 		if (!fu_synaptics_vmm9_device_command(self,
 						      FU_SYNAPTICS_VMM9_RC_CTRL_WRITE_FLASH_DATA,
 						      fu_chunk_get_address(chk),
@@ -533,7 +539,7 @@ fu_synaptics_vmm9_device_write_firmware(FuDevice *device,
 					GError **error)
 {
 	FuSynapticsVmm9Device *self = FU_SYNAPTICS_VMM9_DEVICE(device);
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* progress */
@@ -555,10 +561,13 @@ fu_synaptics_vmm9_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* write each block */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, FU_STRUCT_HID_PAYLOAD_SIZE_FIFO);
+	chunks =
+	    fu_chunk_array_new_from_stream(stream, 0x0, FU_STRUCT_HID_PAYLOAD_SIZE_FIFO, error);
+	if (chunks == NULL)
+		return FALSE;
 	if (!fu_synaptics_vmm9_device_write_blocks(self,
 						   chunks,
 						   fu_progress_get_child(progress),
@@ -647,10 +656,9 @@ fu_synaptics_vmm9_device_init(FuSynapticsVmm9Device *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_SYNAPTICS_VMM9_DEVICE_FLAG_MANUAL_RESTART_REQUIRED,
-					"manual-restart-required");
+					FU_SYNAPTICS_VMM9_DEVICE_FLAG_MANUAL_RESTART_REQUIRED);
 }
 
 static void

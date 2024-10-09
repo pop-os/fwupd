@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -36,7 +36,7 @@ fu_uefi_backend_to_string(FuBackend *backend, guint idt, GString *str)
 {
 	FuUefiBackend *self = FU_UEFI_BACKEND(backend);
 	FuUefiBackendPrivate *priv = GET_PRIVATE(self);
-	fu_string_append(str, idt, "DeviceGType", g_type_name(priv->device_gtype));
+	fwupd_codec_string_append(str, idt, "DeviceGType", g_type_name(priv->device_gtype));
 }
 
 /* create virtual object not backed by an ESRT entry */
@@ -61,20 +61,7 @@ fu_uefi_backend_device_new_from_dev(FuUefiBackend *self, FuDevice *dev)
 			 "fw-version",
 			 fu_device_get_metadata_integer(dev, FU_DEVICE_METADATA_UEFI_FW_VERSION),
 			 NULL);
-	fu_device_incorporate(FU_DEVICE(device), dev);
-	return device;
-}
-
-FuUefiDevice *
-fu_uefi_backend_device_new_from_guid(FuUefiBackend *self, const gchar *guid)
-{
-	FuUefiDevice *device;
-	FuUefiBackendPrivate *priv = GET_PRIVATE(self);
-
-	g_return_val_if_fail(guid != NULL, NULL);
-
-	device = g_object_new(priv->device_gtype, "fw-class", guid, NULL);
-	fu_device_set_version_format(FU_DEVICE(device), FWUPD_VERSION_FORMAT_NUMBER);
+	fu_device_incorporate(FU_DEVICE(device), dev, FU_DEVICE_INCORPORATE_FLAG_ALL);
 	return device;
 }
 
@@ -88,6 +75,6 @@ fu_uefi_backend_init(FuUefiBackend *self)
 static void
 fu_uefi_backend_class_init(FuUefiBackendClass *klass)
 {
-	FuBackendClass *klass_backend = FU_BACKEND_CLASS(klass);
-	klass_backend->to_string = fu_uefi_backend_to_string;
+	FuBackendClass *backend_class = FU_BACKEND_CLASS(klass);
+	backend_class->to_string = fu_uefi_backend_to_string;
 }

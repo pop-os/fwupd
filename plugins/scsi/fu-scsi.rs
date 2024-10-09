@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
-enum ScsiSenseKey {
+enum FuScsiSenseKey {
     NoSense = 0x00,
     RecoveredError = 0x01,
     NotReady = 0x02,

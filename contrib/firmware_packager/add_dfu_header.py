@@ -1,9 +1,8 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
+#!/usr/bin/env python3
 #
-# Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+# Copyright 2020 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import struct
 import zlib
@@ -11,7 +10,6 @@ import argparse
 
 
 def main(bin_fn, dfu_fn, pad, vid, pid, rev):
-
     # read binary file
     with open(bin_fn, "rb") as f:
         blob = f.read()
@@ -40,7 +38,6 @@ def main(bin_fn, dfu_fn, pad, vid, pid, rev):
 
 
 if __name__ == "__main__":
-
     # parse args
     parser = argparse.ArgumentParser(description="Add DFU footer on firmware")
     parser.add_argument("--bin", help="Path to the .bin file", required=True)

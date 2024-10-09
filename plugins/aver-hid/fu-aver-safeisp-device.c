@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -59,25 +59,6 @@ fu_aver_safeisp_device_transfer(FuAverSafeispDevice *self,
 }
 
 static gboolean
-fu_aver_safeisp_device_poll(FuDevice *device, GError **error)
-{
-	FuAverSafeispDevice *self = FU_AVER_SAFEISP_DEVICE(device);
-	g_autoptr(FuDeviceLocker) locker = NULL;
-	g_autoptr(GByteArray) req = fu_struct_aver_safeisp_req_new();
-	g_autoptr(GByteArray) res = fu_struct_aver_safeisp_res_new();
-
-	locker = fu_device_locker_new(device, error);
-	if (locker == NULL)
-		return FALSE;
-
-	fu_struct_aver_safeisp_req_set_custom_cmd(req, FU_AVER_SAFEISP_CUSTOM_CMD_GET_VERSION);
-	if (!fu_aver_safeisp_device_transfer(self, req, res, error))
-		return FALSE;
-
-	return TRUE;
-}
-
-static gboolean
 fu_aver_safeisp_device_ensure_version(FuAverSafeispDevice *self, GError **error)
 {
 	g_autofree gchar *ver = NULL;
@@ -103,11 +84,6 @@ fu_aver_safeisp_device_setup(FuDevice *device, GError **error)
 	/* HidDevice->setup */
 	if (!FU_DEVICE_CLASS(fu_aver_safeisp_device_parent_class)->setup(device, error))
 		return FALSE;
-
-	/* using isp status requests as polling device requests */
-	if (!fu_aver_safeisp_device_poll(device, error))
-		return FALSE;
-
 	/* get the version from the hardware while open */
 	if (!fu_aver_safeisp_device_ensure_version(self, error))
 		return FALSE;
@@ -186,16 +162,9 @@ fu_aver_safeisp_device_upload(FuAverSafeispDevice *self,
 		g_autoptr(GByteArray) res = fu_struct_aver_safeisp_res_new();
 
 		/* prepare chunk */
-		chk = fu_chunk_array_index(chunks, i);
-		if (chk == NULL) {
-			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_ARGUMENT,
-				    "invalid chunk %u for argument %u",
-				    i,
-				    partition);
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
 			return FALSE;
-		}
 
 		/* copy in payload */
 		if (partition == ISP_CX3) {
@@ -208,8 +177,8 @@ fu_aver_safeisp_device_upload(FuAverSafeispDevice *self,
 			    FU_AVER_SAFEISP_CUSTOM_CMD_UPLOAD_TO_M12MO);
 		} else {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_ARGUMENT,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "invalid argument %u",
 				    partition);
 			return FALSE;
@@ -300,8 +269,8 @@ fu_aver_safeisp_device_write_firmware(FuDevice *device,
 	g_autoptr(FuArchive) archive = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 	g_autoptr(GBytes) cx3_fw = NULL;
-	g_autoptr(GBytes) fw = NULL;
 	g_autoptr(GBytes) m12_fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -313,12 +282,12 @@ fu_aver_safeisp_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 34, NULL);
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* decompress */
-	archive = fu_archive_new(fw, FU_ARCHIVE_FLAG_NONE, error);
+	archive = fu_archive_new_stream(stream, FU_ARCHIVE_FLAG_NONE, error);
 	if (archive == NULL)
 		return FALSE;
 	cx3_fw = fu_archive_lookup_by_fn(archive, "update/cx3uvc.img", error);
@@ -332,8 +301,8 @@ fu_aver_safeisp_device_write_firmware(FuDevice *device,
 	cx3_fw_buf = g_bytes_get_data(cx3_fw, &cx3_fw_size);
 	if (cx3_fw_size > 256 * 1024) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "cx3 file size is invalid: 0x%x",
 			    (guint)cx3_fw_size);
 
@@ -346,8 +315,8 @@ fu_aver_safeisp_device_write_firmware(FuDevice *device,
 	m12_fw_buf = g_bytes_get_data(m12_fw, &m12_fw_size);
 	if (m12_fw_size > 3 * 1024 * 1024) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "m12 file size is invalid: 0x%x",
 			    (guint)m12_fw_size);
 		return FALSE;
@@ -437,9 +406,8 @@ fu_aver_safeisp_device_init(FuAverSafeispDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING);
-	fu_device_set_poll_interval(FU_DEVICE(self), FU_AVER_SAFEISP_DEVICE_POLL_INTERVAL);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_AUTO_PAUSE_POLLING);
 	fu_device_set_remove_delay(FU_DEVICE(self), 150000);
 	fu_hid_device_add_flag(FU_HID_DEVICE(self), FU_HID_DEVICE_FLAG_RETRY_FAILURE);
 	fu_hid_device_add_flag(FU_HID_DEVICE(self), FU_HID_DEVICE_FLAG_AUTODETECT_EPS);
@@ -448,9 +416,8 @@ fu_aver_safeisp_device_init(FuAverSafeispDevice *self)
 static void
 fu_aver_safeisp_device_class_init(FuAverSafeispDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->poll = fu_aver_safeisp_device_poll;
-	klass_device->setup = fu_aver_safeisp_device_setup;
-	klass_device->write_firmware = fu_aver_safeisp_device_write_firmware;
-	klass_device->set_progress = fu_aver_safeisp_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_aver_safeisp_device_setup;
+	device_class->write_firmware = fu_aver_safeisp_device_write_firmware;
+	device_class->set_progress = fu_aver_safeisp_device_set_progress;
 }

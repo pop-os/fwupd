@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuSecurityAttrs"
@@ -30,7 +30,13 @@ struct _FuSecurityAttrs {
 /* probably sane to *not* make this part of the ABI */
 #define FWUPD_SECURITY_ATTR_ID_DOC_URL "https://fwupd.github.io/libfwupdplugin/hsi.html"
 
-G_DEFINE_TYPE(FuSecurityAttrs, fu_security_attrs, G_TYPE_OBJECT)
+static void
+fu_security_attrs_codec_iface_init(FwupdCodecInterface *iface);
+
+G_DEFINE_TYPE_WITH_CODE(FuSecurityAttrs,
+			fu_security_attrs,
+			G_TYPE_OBJECT,
+			G_IMPLEMENT_INTERFACE(FWUPD_TYPE_CODEC, fu_security_attrs_codec_iface_init))
 
 static void
 fu_security_attrs_finalize(GObject *obj)
@@ -127,8 +133,8 @@ fu_security_attrs_get_by_appstream_id(FuSecurityAttrs *self,
 	g_return_val_if_fail(FU_IS_SECURITY_ATTRS(self), NULL);
 	if (self->attrs->len == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_FOUND,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "no attributes are loaded");
 		return NULL;
 	}
@@ -137,7 +143,7 @@ fu_security_attrs_get_by_appstream_id(FuSecurityAttrs *self,
 		if (g_strcmp0(fwupd_security_attr_get_appstream_id(attr), appstream_id) == 0)
 			return g_object_ref(attr);
 	}
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "no attr with ID %s", appstream_id);
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no attr with ID %s", appstream_id);
 	return NULL;
 }
 
@@ -163,7 +169,9 @@ fu_security_attrs_to_variant(FuSecurityAttrs *self)
 		FwupdSecurityAttr *attr = g_ptr_array_index(self->attrs, i);
 		if (fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_OBSOLETED))
 			continue;
-		g_variant_builder_add_value(&builder, fwupd_security_attr_to_variant(attr));
+		g_variant_builder_add_value(
+		    &builder,
+		    fwupd_codec_to_variant(FWUPD_CODEC(attr), FWUPD_CODEC_FLAG_NONE));
 	}
 	return g_variant_new("(aa{sv})", &builder);
 }
@@ -339,10 +347,10 @@ static struct {
     {FWUPD_SECURITY_ATTR_ID_INTEL_BOOTGUARD_OTP, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT},
     {FWUPD_SECURITY_ATTR_ID_INTEL_BOOTGUARD_POLICY, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL},
     {FWUPD_SECURITY_ATTR_ID_INTEL_BOOTGUARD_VERIFIED, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT},
-    {FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL},
-    {FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL},
+    {FWUPD_SECURITY_ATTR_ID_CET_ACTIVE, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL},
+    {FWUPD_SECURITY_ATTR_ID_CET_ENABLED, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL},
     {FWUPD_SECURITY_ATTR_ID_INTEL_GDS, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT},
-    {FWUPD_SECURITY_ATTR_ID_INTEL_SMAP, FWUPD_SECURITY_ATTR_LEVEL_SYSTEM_PROTECTION},
+    {FWUPD_SECURITY_ATTR_ID_SMAP, FWUPD_SECURITY_ATTR_LEVEL_SYSTEM_PROTECTION},
     {FWUPD_SECURITY_ATTR_ID_IOMMU, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT},
     {FWUPD_SECURITY_ATTR_ID_MEI_MANUFACTURING_MODE, FWUPD_SECURITY_ATTR_LEVEL_CRITICAL},
     {FWUPD_SECURITY_ATTR_ID_MEI_OVERRIDE_STRAP, FWUPD_SECURITY_ATTR_LEVEL_CRITICAL},
@@ -483,11 +491,11 @@ fu_security_attrs_depsolve(FuSecurityAttrs *self)
 }
 
 static void
-fu_security_attrs_to_json(FuSecurityAttrs *self, JsonBuilder *builder)
+fu_security_attrs_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags flags)
 {
+	FuSecurityAttrs *self = FU_SECURITY_ATTRS(codec);
 	g_autoptr(GPtrArray) items = NULL;
 
-	json_builder_begin_object(builder);
 	json_builder_set_member_name(builder, "SecurityAttributes");
 	json_builder_begin_array(builder);
 	items = fu_security_attrs_get_all(self);
@@ -496,87 +504,28 @@ fu_security_attrs_to_json(FuSecurityAttrs *self, JsonBuilder *builder)
 		guint64 created = fwupd_security_attr_get_created(attr);
 		if (fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_OBSOLETED))
 			continue;
-		json_builder_begin_object(builder);
 		fwupd_security_attr_set_created(attr, 0);
-		fwupd_security_attr_to_json(attr, builder);
-		fwupd_security_attr_set_created(attr, created);
+		json_builder_begin_object(builder);
+		fwupd_codec_to_json(FWUPD_CODEC(attr), builder, FWUPD_CODEC_FLAG_NONE);
 		json_builder_end_object(builder);
+		fwupd_security_attr_set_created(attr, created);
 	}
 	json_builder_end_array(builder);
-	json_builder_end_object(builder);
 }
 
-/**
- * fu_security_attrs_to_json_string:
- * @self: a pointer for a FuSecurityAttrs data structure.
- * @error: (nullable): optional return location for an error
- *
- * Convert security attribute to JSON string. e.g.:
- *    {
- *      "SecurityAttributes": [
- *        {
- *          "name": "aaa",
- *          "value": "bbb"
- *        }
- *      ]
- *    }
- *
- * Returns: (transfer full): JSON string
- *
- * Since: 1.9.2
- */
-gchar *
-fu_security_attrs_to_json_string(FuSecurityAttrs *self, GError **error)
+static gboolean
+fu_security_attrs_from_json(FwupdCodec *codec, JsonNode *json_node, GError **error)
 {
-	g_autofree gchar *data = NULL;
-	g_autoptr(JsonGenerator) json_generator = NULL;
-	g_autoptr(JsonBuilder) builder = json_builder_new();
-	g_autoptr(JsonNode) json_root = NULL;
-
-	g_return_val_if_fail(FU_IS_SECURITY_ATTRS(self), NULL);
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	fu_security_attrs_to_json(self, builder);
-	json_root = json_builder_get_root(builder);
-	json_generator = json_generator_new();
-	json_generator_set_pretty(json_generator, TRUE);
-	json_generator_set_root(json_generator, json_root);
-	data = json_generator_to_data(json_generator, NULL);
-	if (data == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "Failed to convert security attribute to json.");
-		return NULL;
-	}
-	return g_steal_pointer(&data);
-}
-
-/**
- * fu_security_attrs_from_json:
- * @self: a #FuSecurityAttrs
- * @json_node: a #JsonNode
- * @error: (nullable): optional return location for an error
- *
- * Imports a JSON node.
- *
- * Returns: %TRUE on success
- *
- * Since: 1.9.2
- */
-gboolean
-fu_security_attrs_from_json(FuSecurityAttrs *self, JsonNode *json_node, GError **error)
-{
+	FuSecurityAttrs *self = FU_SECURITY_ATTRS(codec);
 	JsonArray *array;
 	JsonObject *obj;
 
-	g_return_val_if_fail(FU_IS_SECURITY_ATTRS(self), FALSE);
-	g_return_val_if_fail(json_node != NULL, FALSE);
-	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
-
 	/* sanity check */
 	if (!JSON_NODE_HOLDS_OBJECT(json_node)) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "not JSON object");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "not JSON object");
 		return FALSE;
 	}
 	obj = json_node_get_object(json_node);
@@ -584,8 +533,8 @@ fu_security_attrs_from_json(FuSecurityAttrs *self, JsonNode *json_node, GError *
 	/* this has to exist */
 	if (!json_object_has_member(obj, "SecurityAttributes")) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "no SecurityAttributes property in object");
 		return FALSE;
 	}
@@ -593,7 +542,7 @@ fu_security_attrs_from_json(FuSecurityAttrs *self, JsonNode *json_node, GError *
 	for (guint i = 0; i < json_array_get_length(array); i++) {
 		JsonNode *node_tmp = json_array_get_element(array, i);
 		g_autoptr(FwupdSecurityAttr) attr = fwupd_security_attr_new(NULL);
-		if (!fwupd_security_attr_from_json(attr, node_tmp, error))
+		if (!fwupd_codec_from_json(FWUPD_CODEC(attr), node_tmp, error))
 			return FALSE;
 		if (fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_OBSOLETED))
 			continue;
@@ -602,6 +551,13 @@ fu_security_attrs_from_json(FuSecurityAttrs *self, JsonNode *json_node, GError *
 
 	/* success */
 	return TRUE;
+}
+
+static void
+fu_security_attrs_codec_iface_init(FwupdCodecInterface *iface)
+{
+	iface->add_json = fu_security_attrs_add_json;
+	iface->from_json = fu_security_attrs_from_json;
 }
 
 /**

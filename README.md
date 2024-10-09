@@ -5,6 +5,9 @@
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/10744/badge.svg)](https://scan.coverity.com/projects/10744)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/fwupd.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:fwupd)
 [![CircleCI](https://circleci.com/gh/fwupd/fwupd/tree/main.svg?style=svg)](https://circleci.com/gh/fwupd/fwupd/tree/main)
+[![Coverage Status](https://coveralls.io/repos/github/fwupd/fwupd/badge.svg)](https://coveralls.io/github/fwupd/fwupd)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/fwupd/fwupd/badge)](https://securityscorecards.dev/viewer/?uri=github.com/fwupd/fwupd)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8751/badge)](https://www.bestpractices.dev/projects/8751)
 
 This project aims to make updating firmware on Linux automatic, safe, and reliable.
 
@@ -42,7 +45,7 @@ distro-provided system version.
 analysis plugin built to analyze GLib code. It can be installed and then run using:
 
     mkdir build-tartan
-    CC=clang meson ../
+    CC=clang-17 meson ../
     SCANBUILD=../contrib/tartan.sh ninja scan-build
 
 ## LVFS
@@ -82,6 +85,18 @@ This will download and apply all updates for your system.
 
 You can find more information about the update workflow in the end
 users section of the [fwupd website](https://fwupd.org).
+
+## Passim
+
+If the [Passim](https://github.com/hughsie/passim/blob/main/README.md) project is also installed
+and enabled, fwupd will re-publish the downloaded metadata file to be served on `0.0.0.0:27500`
+by default.
+
+Other clients on the same network can make use of this via mDNS/LLMNR to reduce network bandwidth
+to configured remotes.
+
+To disable this functionality either set `P2pPolicy=none` in `/etc/fwupd/daemon.conf`, uninstall
+the passim package or use `systemctl mask passim.service` on the terminal.
 
 ## Reporting status
 

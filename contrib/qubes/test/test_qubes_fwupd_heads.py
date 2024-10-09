@@ -1,10 +1,10 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # The Qubes OS Project, http://www.qubes-os.org
 #
-# Copyright (C) 2021  Norbert Kamiński  <norbert.kaminski@3mdeb.com>
+# Copyright 2021 Norbert Kamiński <norbert.kaminski@3mdeb.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 
 import io

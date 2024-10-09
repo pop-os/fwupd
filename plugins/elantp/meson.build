@@ -1,9 +1,12 @@
-if gudev.found()
+if enable_udev
 cargs = ['-DG_LOG_DOMAIN="FuPluginElantp"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
 plugin_quirks += files('elantp.quirk')
 plugin_builtin_elantp = static_library('fu_plugin_elantp',
+  rustgen.process(
+    'fu-elantp.rs',         # fuzzing
+  ),
   sources: [
     'fu-elantp-plugin.c',
     'fu-elantp-firmware.c',   # fuzzing

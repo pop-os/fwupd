@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuFirmware"
@@ -14,6 +14,7 @@
 #include "fu-dump.h"
 #include "fu-fdt-image.h"
 #include "fu-fit-firmware.h"
+#include "fu-input-stream.h"
 #include "fu-mem.h"
 
 /**
@@ -99,11 +100,13 @@ fu_fit_firmware_verify_crc32(FuFirmware *firmware,
 				       &value,
 				       error))
 		return FALSE;
-	value_calc = fu_crc32(g_bytes_get_data(blob, NULL), g_bytes_get_size(blob));
+	value_calc = fu_crc32(FU_CRC_KIND_B32_STANDARD,
+			      g_bytes_get_data(blob, NULL),
+			      g_bytes_get_size(blob));
 	if (value_calc != value) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "%s CRC did not match, got 0x%x, expected 0x%x",
 			    fu_firmware_get_id(img),
 			    value,
@@ -136,8 +139,8 @@ fu_fit_firmware_verify_checksum(FuFirmware *firmware,
 		return FALSE;
 	if (g_bytes_get_size(value) != digest_len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "%s invalid hash value size, got 0x%x, expected 0x%x",
 			    fu_firmware_get_id(img),
 			    (guint)g_bytes_get_size(value),
@@ -207,7 +210,7 @@ fu_fit_firmware_verify_hash(FuFirmware *firmware,
 
 static gboolean
 fu_fit_firmware_verify_image(FuFirmware *firmware,
-			     GBytes *fw,
+			     GInputStream *stream,
 			     FuFirmware *img,
 			     FwupdInstallFlags flags,
 			     GError **error)
@@ -237,7 +240,7 @@ fu_fit_firmware_verify_image(FuFirmware *firmware,
 					       &data_size,
 					       error))
 			return FALSE;
-		blob = fu_bytes_new_offset(fw, data_offset, data_size, error);
+		blob = fu_input_stream_read_bytes(stream, data_offset, data_size, error);
 		if (blob == NULL)
 			return FALSE;
 	}
@@ -250,8 +253,8 @@ fu_fit_firmware_verify_image(FuFirmware *firmware,
 			FuFirmware *img_hash = g_ptr_array_index(img_hashes, i);
 			if (fu_firmware_get_id(img_hash) == NULL) {
 				g_set_error_literal(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_INVALID_DATA,
+						    FWUPD_ERROR,
+						    FWUPD_ERROR_INVALID_DATA,
 						    "no ID for image hash");
 				return FALSE;
 			}
@@ -289,7 +292,7 @@ fu_fit_firmware_verify_configuration(FuFirmware *firmware,
 
 static gboolean
 fu_fit_firmware_parse(FuFirmware *firmware,
-		      GBytes *fw,
+		      GInputStream *stream,
 		      gsize offset,
 		      FwupdInstallFlags flags,
 		      GError **error)
@@ -302,7 +305,7 @@ fu_fit_firmware_parse(FuFirmware *firmware,
 
 	/* FuFdtFirmware->parse */
 	if (!FU_FIRMWARE_CLASS(fu_fit_firmware_parent_class)
-		 ->parse(firmware, fw, offset, flags, error))
+		 ->parse(firmware, stream, offset, flags, error))
 		return FALSE;
 
 	/* sanity check */
@@ -322,7 +325,7 @@ fu_fit_firmware_parse(FuFirmware *firmware,
 	img_images_array = fu_firmware_get_images(img_images);
 	for (guint i = 0; i < img_images_array->len; i++) {
 		FuFirmware *img = g_ptr_array_index(img_images_array, i);
-		if (!fu_fit_firmware_verify_image(firmware, fw, img, flags, error))
+		if (!fu_fit_firmware_verify_image(firmware, stream, img, flags, error))
 			return FALSE;
 	}
 
@@ -350,8 +353,8 @@ fu_fit_firmware_init(FuFitFirmware *self)
 static void
 fu_fit_firmware_class_init(FuFitFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_fit_firmware_parse;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_fit_firmware_parse;
 }
 
 /**

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -22,7 +22,7 @@ G_DEFINE_TYPE(FuAverHidDevice, fu_aver_hid_device, FU_TYPE_HID_DEVICE)
 #define FU_AVER_HID_DEVICE_ISP_RETRY_COUNT	    300
 #define FU_AVER_HID_DEVICE_ISP_UNTAR_WAIT_COUNT	    600
 
-#define FU_AVER_HID_FLAG_DUAL_ISP (1 << 0)
+#define FU_AVER_HID_FLAG_DUAL_ISP "dual-isp"
 
 static gboolean
 fu_aver_hid_device_transfer(FuAverHidDevice *self, GByteArray *req, GByteArray *res, GError **error)
@@ -71,8 +71,8 @@ fu_aver_hid_device_ensure_status(FuAverHidDevice *self, GError **error)
 		return FALSE;
 	if (fu_struct_aver_hid_res_isp_status_get_status(res) == FU_AVER_HID_STATUS_BUSY) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_BUSY,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BUSY,
 			    "device has status %s",
 			    fu_aver_hid_status_to_string(
 				fu_struct_aver_hid_res_isp_status_get_status(res)));
@@ -90,9 +90,7 @@ fu_aver_hid_device_ensure_version(FuAverHidDevice *self, GError **error)
 	g_autoptr(GError) error_local = NULL;
 
 	if (!fu_aver_hid_device_transfer(self, req, res, &error_local)) {
-		if (g_error_matches(error_local,
-				    G_USB_DEVICE_ERROR,
-				    G_USB_DEVICE_ERROR_TIMED_OUT)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT)) {
 			g_debug("ignoring %s", error_local->message);
 			fu_device_set_version(FU_DEVICE(self), "0.0.0000.00");
 			return TRUE;
@@ -131,12 +129,13 @@ fu_aver_hid_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_aver_hid_device_prepare_firmware(FuDevice *device,
-				    GBytes *fw,
+				    GInputStream *stream,
+				    FuProgress *progress,
 				    FwupdInstallFlags flags,
 				    GError **error)
 {
 	g_autoptr(FuFirmware) firmware = fu_aver_hid_firmware_new();
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	return g_steal_pointer(&firmware);
 }
@@ -151,9 +150,14 @@ fu_aver_hid_device_isp_file_dnload(FuAverHidDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) req = fu_struct_aver_hid_req_isp_file_dnload_new();
 		g_autoptr(GByteArray) res = fu_struct_aver_hid_res_isp_status_new();
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* copy in payload */
 		if (fu_device_has_private_flag(FU_DEVICE(self), FU_AVER_HID_FLAG_DUAL_ISP)) {
@@ -188,8 +192,8 @@ fu_aver_hid_device_isp_file_dnload(FuAverHidDevice *self,
 		if (fu_struct_aver_hid_res_isp_status_get_status(res) ==
 		    FU_AVER_HID_STATUS_FILEERR) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_BUSY,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_BUSY,
 				    "device has status %s",
 				    fu_aver_hid_status_to_string(
 					fu_struct_aver_hid_res_isp_status_get_status(res)));
@@ -218,8 +222,8 @@ fu_aver_hid_device_wait_for_ready_cb(FuDevice *device, gpointer user_data, GErro
 		return FALSE;
 	if (fu_struct_aver_hid_res_isp_status_get_status(res) != FU_AVER_HID_STATUS_READY) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_BUSY,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BUSY,
 			    "device has status %s",
 			    fu_aver_hid_status_to_string(
 				fu_struct_aver_hid_res_isp_status_get_status(res)));
@@ -297,8 +301,8 @@ fu_aver_hid_device_wait_for_untar_cb(FuDevice *device, gpointer user_data, GErro
 	       fu_aver_hid_status_to_string(fu_struct_aver_hid_res_isp_status_get_status(res)));
 	if (fu_struct_aver_hid_res_isp_status_get_status(res) != FU_AVER_HID_STATUS_WAITUSR) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_BUSY,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BUSY,
 			    "device has status %s",
 			    fu_aver_hid_status_to_string(
 				fu_struct_aver_hid_res_isp_status_get_status(res)));
@@ -353,8 +357,8 @@ fu_aver_hid_device_wait_for_reboot_cb(FuDevice *device, gpointer user_data, GErr
 		if (percentage < 100)
 			fu_progress_set_percentage(progress, percentage);
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_BUSY,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BUSY,
 			    "device has status %s",
 			    fu_aver_hid_status_to_string(
 				fu_struct_aver_hid_res_isp_status_get_status(res)));
@@ -362,8 +366,8 @@ fu_aver_hid_device_wait_for_reboot_cb(FuDevice *device, gpointer user_data, GErr
 	}
 	if (fu_struct_aver_hid_res_isp_status_get_status(res) != FU_AVER_HID_STATUS_REBOOT) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_BUSY,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BUSY,
 			    "device has status %s",
 			    fu_aver_hid_status_to_string(
 				fu_struct_aver_hid_res_isp_status_get_status(res)));
@@ -384,7 +388,7 @@ fu_aver_hid_device_write_firmware(FuDevice *device,
 	gsize fw_size;
 	g_autoptr(FuArchive) archive = NULL;
 	g_autoptr(GBytes) aver_fw = NULL;
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* progress */
@@ -397,12 +401,12 @@ fu_aver_hid_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 15, NULL);
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* decompress */
-	archive = fu_archive_new(fw, FU_ARCHIVE_FLAG_NONE, error);
+	archive = fu_archive_new_stream(stream, FU_ARCHIVE_FLAG_NONE, error);
 	if (archive == NULL)
 		return FALSE;
 	aver_fw_name = fu_firmware_get_filename(firmware);
@@ -496,21 +500,23 @@ fu_aver_hid_device_init(FuAverHidDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_AUTO_PAUSE_POLLING);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_AUTO_PAUSE_POLLING);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_RETRY_OPEN);
 	fu_device_set_poll_interval(FU_DEVICE(self), FU_AVER_HID_DEVICE_POLL_INTERVAL);
 	fu_device_set_remove_delay(FU_DEVICE(self), 150000);
+	fu_usb_device_set_claim_retry_count(FU_USB_DEVICE(self), 5);
 	fu_hid_device_add_flag(FU_HID_DEVICE(self), FU_HID_DEVICE_FLAG_RETRY_FAILURE);
 	fu_hid_device_add_flag(FU_HID_DEVICE(self), FU_HID_DEVICE_FLAG_AUTODETECT_EPS);
-	fu_device_register_private_flag(FU_DEVICE(self), FU_AVER_HID_FLAG_DUAL_ISP, "dual-isp");
+	fu_device_register_private_flag(FU_DEVICE(self), FU_AVER_HID_FLAG_DUAL_ISP);
 }
 
 static void
 fu_aver_hid_device_class_init(FuAverHidDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_aver_hid_device_setup;
-	klass_device->prepare_firmware = fu_aver_hid_device_prepare_firmware;
-	klass_device->write_firmware = fu_aver_hid_device_write_firmware;
-	klass_device->set_progress = fu_aver_hid_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_aver_hid_device_setup;
+	device_class->prepare_firmware = fu_aver_hid_device_prepare_firmware;
+	device_class->write_firmware = fu_aver_hid_device_write_firmware;
+	device_class->set_progress = fu_aver_hid_device_set_progress;
 }

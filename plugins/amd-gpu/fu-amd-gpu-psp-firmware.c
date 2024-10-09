@@ -1,12 +1,12 @@
 /*
- * Copyright (C) 2023 Advanced Micro Devices Inc.
+ * Copyright 2023 Advanced Micro Devices Inc.
  * All rights reserved.
  *
  * This file is provided under a dual MIT/LGPLv2 license.  When using or
  * redistributing this file, you may do so under either license.
  * AMD Chooses the MIT license part of Dual MIT/LGPLv2 license agreement.
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR MIT
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
  */
 
 #include "config.h"
@@ -47,62 +47,68 @@ fu_amd_gpu_psp_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags
 }
 
 static gboolean
-fu_amd_gpu_psp_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_amd_gpu_psp_firmware_validate(FuFirmware *firmware,
+				 GInputStream *stream,
+				 gsize offset,
+				 GError **error)
 {
 	g_autoptr(GByteArray) efs = NULL;
 
-	efs = fu_struct_efs_parse_bytes(fw, 0, error);
+	efs = fu_struct_efs_parse_stream(stream, 0, error);
 	if (efs == NULL)
 		return FALSE;
-	return fu_struct_psp_dir_validate_bytes(fw, fu_struct_efs_get_psp_dir_loc(efs), error);
+	return fu_struct_psp_dir_validate_stream(stream, fu_struct_efs_get_psp_dir_loc(efs), error);
 }
 
 static gboolean
-fu_amd_gpu_psp_firmware_parse_l2(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_amd_gpu_psp_firmware_parse_l2(FuFirmware *firmware,
+				 GInputStream *stream,
+				 gsize offset,
+				 GError **error)
 {
-	guint i;
-	g_autoptr(GByteArray) l2 = NULL;
-
-	l2 = fu_struct_psp_dir_table_parse_bytes(fw, offset, error);
-	if (l2 == NULL)
-		return FALSE;
+	g_autoptr(FuStructPspDirTable) l2 = NULL;
 
 	/* parse the L2 entries */
-	for (i = 0; i < fu_struct_psp_dir_get_total_entries(l2); i++) {
-		g_autoptr(GByteArray) l2_entry = NULL;
-		gint idx = FU_STRUCT_PSP_DIR_TABLE_SIZE + offset + i * FU_STRUCT_PSP_DIR_TABLE_SIZE;
-
-		l2_entry = fu_struct_psp_dir_table_parse_bytes(fw, idx, error);
+	l2 = fu_struct_psp_dir_table_parse_stream(stream, offset, error);
+	if (l2 == NULL)
+		return FALSE;
+	offset += l2->len;
+	for (guint i = 0; i < fu_struct_psp_dir_get_total_entries(l2); i++) {
+		g_autoptr(FuStructPspDirTable) l2_entry = NULL;
+		l2_entry = fu_struct_psp_dir_table_parse_stream(stream, offset, error);
 		if (l2_entry == NULL)
 			return FALSE;
+		offset += l2_entry->len;
 	}
 
+	/* success */
 	return TRUE;
 }
 
 static gboolean
-fu_amd_gpu_psp_firmware_parse_l1(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_amd_gpu_psp_firmware_parse_l1(FuFirmware *firmware,
+				 GInputStream *stream,
+				 gsize offset,
+				 GError **error)
 {
-	g_autoptr(GByteArray) l1 = NULL;
+	g_autoptr(FuStructPspDir) l1 = NULL;
 
 	/* parse the L1 entries */
-	l1 = fu_struct_psp_dir_table_parse_bytes(fw, offset, error);
+	l1 = fu_struct_psp_dir_parse_stream(stream, offset, error);
 	if (l1 == NULL)
 		return FALSE;
+	offset += l1->len;
 	for (guint i = 0; i < fu_struct_psp_dir_get_total_entries(l1); i++) {
-		gint idx = FU_STRUCT_PSP_DIR_TABLE_SIZE + offset + i * FU_STRUCT_PSP_DIR_TABLE_SIZE;
 		guint loc;
 		guint sz;
-		FuFirmwareClass *klass_firmware;
-		g_autoptr(GByteArray) l1_entry = NULL;
-		g_autoptr(GByteArray) ish = NULL;
+		g_autoptr(FuStructPspDirTable) l1_entry = NULL;
+		g_autoptr(FuStructImageSlotHeader) ish = NULL;
 		g_autoptr(FuFirmware) ish_img = fu_firmware_new();
 		g_autoptr(FuFirmware) csm_img = fu_amd_gpu_atom_firmware_new();
 		g_autoptr(FuFirmware) l2_img = fu_firmware_new();
-		g_autoptr(GBytes) l1_blob = NULL;
-		g_autoptr(GBytes) l2_blob = NULL;
+		g_autoptr(GInputStream) l2_stream = NULL;
 
-		l1_entry = fu_struct_psp_dir_table_parse_bytes(fw, idx, error);
+		l1_entry = fu_struct_psp_dir_table_parse_stream(stream, offset, error);
 		if (l1_entry == NULL)
 			return FALSE;
 
@@ -115,8 +121,8 @@ fu_amd_gpu_psp_firmware_parse_l1(FuFirmware *firmware, GBytes *fw, gsize offset,
 			break;
 		default:
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "Unknown ISH FWID: %x",
 				    fu_struct_psp_dir_table_get_fw_id(l1_entry));
 			return FALSE;
@@ -124,21 +130,18 @@ fu_amd_gpu_psp_firmware_parse_l1(FuFirmware *firmware, GBytes *fw, gsize offset,
 
 		/* parse the image slot header */
 		loc = fu_struct_psp_dir_table_get_loc(l1_entry);
-		ish = fu_struct_image_slot_header_parse_bytes(fw, loc, error);
+		ish = fu_struct_image_slot_header_parse_stream(stream, loc, error);
 		if (ish == NULL)
 			return FALSE;
-		l1_blob = fu_bytes_new_offset(fw, loc, FU_STRUCT_IMAGE_SLOT_HEADER_SIZE, error);
-		if (l1_blob == NULL)
+		if (!fu_firmware_parse_stream(ish_img, stream, loc, FWUPD_INSTALL_FLAG_NONE, error))
 			return FALSE;
 		fu_firmware_set_addr(ish_img, loc);
-		fu_firmware_set_bytes(ish_img, l1_blob);
 		fu_firmware_add_image(firmware, ish_img);
 
 		/* parse the csm image */
 		loc = fu_struct_image_slot_header_get_loc_csm(ish);
-		klass_firmware = FU_FIRMWARE_GET_CLASS(csm_img);
 		fu_firmware_set_addr(csm_img, loc);
-		if (!klass_firmware->parse(csm_img, fw, loc, FWUPD_INSTALL_FLAG_NONE, error))
+		if (!fu_firmware_parse_stream(csm_img, stream, loc, FWUPD_INSTALL_FLAG_NONE, error))
 			return FALSE;
 
 		loc = fu_struct_image_slot_header_get_loc(ish);
@@ -154,24 +157,32 @@ fu_amd_gpu_psp_firmware_parse_l1(FuFirmware *firmware, GBytes *fw, gsize offset,
 			break;
 		default:
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
-				    "Unknown Partition FWID: %x",
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "unknown Partition FWID: %x",
 				    fu_struct_image_slot_header_get_fw_id(ish));
 			return FALSE;
 		}
 		fu_firmware_add_image(l2_img, csm_img);
 
-		l2_blob = fu_bytes_new_offset(fw, loc, sz, error);
-		if (l2_blob == NULL)
+		l2_stream = fu_partial_input_stream_new(stream, loc, sz, error);
+		if (l2_stream == NULL)
 			return FALSE;
 		fu_firmware_set_addr(l2_img, loc);
-		fu_firmware_set_bytes(l2_img, l2_blob);
+		if (!fu_firmware_parse_stream(l2_img,
+					      l2_stream,
+					      0x0,
+					      FWUPD_INSTALL_FLAG_NONE,
+					      error))
+			return FALSE;
 		fu_firmware_add_image(ish_img, l2_img);
 
 		/* parse the partition */
-		if (!fu_amd_gpu_psp_firmware_parse_l2(l2_img, fw, loc, error))
+		if (!fu_amd_gpu_psp_firmware_parse_l2(l2_img, stream, loc, error))
 			return FALSE;
+
+		/* next entry */
+		offset += l1_entry->len;
 	}
 
 	return TRUE;
@@ -179,7 +190,7 @@ fu_amd_gpu_psp_firmware_parse_l1(FuFirmware *firmware, GBytes *fw, gsize offset,
 
 static gboolean
 fu_amd_gpu_psp_firmware_parse(FuFirmware *firmware,
-			      GBytes *fw,
+			      GInputStream *stream,
 			      gsize offset,
 			      FwupdInstallFlags flags,
 			      GError **error)
@@ -187,12 +198,12 @@ fu_amd_gpu_psp_firmware_parse(FuFirmware *firmware,
 	FuAmdGpuPspFirmware *self = FU_AMD_GPU_PSP_FIRMWARE(firmware);
 	g_autoptr(GByteArray) efs = NULL;
 
-	efs = fu_struct_efs_parse_bytes(fw, 0, error);
+	efs = fu_struct_efs_parse_stream(stream, 0, error);
 	if (efs == NULL)
 		return FALSE;
 	self->dir_location = fu_struct_efs_get_psp_dir_loc(efs);
 
-	return fu_amd_gpu_psp_firmware_parse_l1(firmware, fw, self->dir_location, error);
+	return fu_amd_gpu_psp_firmware_parse_l1(firmware, stream, self->dir_location, error);
 }
 
 static void
@@ -203,10 +214,10 @@ fu_amd_gpu_psp_firmware_init(FuAmdGpuPspFirmware *self)
 static void
 fu_amd_gpu_psp_firmware_class_init(FuAmdGpuPspFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_amd_gpu_psp_firmware_check_magic;
-	klass_firmware->parse = fu_amd_gpu_psp_firmware_parse;
-	klass_firmware->export = fu_amd_gpu_psp_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_amd_gpu_psp_firmware_validate;
+	firmware_class->parse = fu_amd_gpu_psp_firmware_parse;
+	firmware_class->export = fu_amd_gpu_psp_firmware_export;
 }
 
 /**

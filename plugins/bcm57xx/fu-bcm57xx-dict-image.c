@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -29,21 +29,31 @@ fu_bcm57xx_dict_image_export(FuFirmware *firmware, FuFirmwareExportFlags flags, 
 
 static gboolean
 fu_bcm57xx_dict_image_parse(FuFirmware *firmware,
-			    GBytes *fw,
+			    GInputStream *stream,
 			    gsize offset,
 			    FwupdInstallFlags flags,
 			    GError **error)
 {
-	g_autoptr(GBytes) fw_nocrc = NULL;
+	g_autoptr(GInputStream) stream_nocrc = NULL;
+	gsize streamsz = 0;
+
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (streamsz < sizeof(guint32)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "dict image is too small");
+		return FALSE;
+	}
 	if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
-		if (!fu_bcm57xx_verify_crc(fw, error))
+		if (!fu_bcm57xx_verify_crc(stream, error))
 			return FALSE;
 	}
-	fw_nocrc = fu_bytes_new_offset(fw, 0x0, g_bytes_get_size(fw) - sizeof(guint32), error);
-	if (fw_nocrc == NULL)
+	stream_nocrc = fu_partial_input_stream_new(stream, 0x0, streamsz - sizeof(guint32), error);
+	if (stream_nocrc == NULL)
 		return FALSE;
-	fu_firmware_set_bytes(firmware, fw_nocrc);
-	return TRUE;
+	return fu_firmware_set_stream(firmware, stream_nocrc, error);
 }
 
 static GByteArray *
@@ -66,7 +76,7 @@ fu_bcm57xx_dict_image_write(FuFirmware *firmware, GError **error)
 	fu_byte_array_append_bytes(blob, fw_nocrc);
 
 	/* add CRC */
-	crc = fu_bcm57xx_nvram_crc(buf, bufsz);
+	crc = fu_crc32(FU_CRC_KIND_B32_STANDARD, buf, bufsz);
 	fu_byte_array_append_uint32(blob, crc, G_LITTLE_ENDIAN);
 	return g_steal_pointer(&blob);
 }
@@ -156,11 +166,11 @@ fu_bcm57xx_dict_image_init(FuBcm57xxDictImage *self)
 static void
 fu_bcm57xx_dict_image_class_init(FuBcm57xxDictImageClass *klass)
 {
-	FuFirmwareClass *klass_image = FU_FIRMWARE_CLASS(klass);
-	klass_image->parse = fu_bcm57xx_dict_image_parse;
-	klass_image->write = fu_bcm57xx_dict_image_write;
-	klass_image->build = fu_bcm57xx_dict_image_build;
-	klass_image->export = fu_bcm57xx_dict_image_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_bcm57xx_dict_image_parse;
+	firmware_class->write = fu_bcm57xx_dict_image_write;
+	firmware_class->build = fu_bcm57xx_dict_image_build;
+	firmware_class->export = fu_bcm57xx_dict_image_export;
 }
 
 FuFirmware *

@@ -1,5 +1,8 @@
-#!/usr/bin/python3
-# SPDX-License-Identifier: LGPL-2.1+
+#!/usr/bin/env python3
+#
+# Copyright 2019 Richard Hughes <richard@hughsie.com>
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import sys
 import os

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Evan Lojewski
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Evan Lojewski
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -67,7 +67,7 @@ typedef union {
 		guint32 WriteEnableCommand : 1;
 		guint32 WriteDisableCommand : 1;
 		guint32 reserved_31_18 : 14;
-	} __attribute__((packed)) bits;
+	} __attribute__((packed)) bits; /* nocheck:blocked */
 } BcmRegNVMCommand;
 
 typedef union {
@@ -90,7 +90,7 @@ typedef union {
 		guint32 Req2 : 1;
 		guint32 Req3 : 1;
 		guint32 reserved_31_16 : 16;
-	} __attribute__((packed)) bits;
+	} __attribute__((packed)) bits; /* nocheck:blocked */
 } BcmRegNVMSoftwareArbitration;
 
 typedef union {
@@ -99,7 +99,7 @@ typedef union {
 		guint32 Enable : 1;
 		guint32 WriteEnable : 1;
 		guint32 reserved_31_2 : 30;
-	} __attribute__((packed)) bits;
+	} __attribute__((packed)) bits; /* nocheck:blocked */
 } BcmRegNVMAccess;
 
 typedef union {
@@ -126,7 +126,7 @@ typedef union {
 		guint32 reserved_29_20 : 10;
 		guint32 Channel1Enable : 1;
 		guint32 Channel3Enable : 1;
-	} __attribute__((packed)) bits;
+	} __attribute__((packed)) bits; /* nocheck:blocked */
 } BcmRegAPEMode;
 
 G_DEFINE_TYPE(FuBcm57xxRecoveryDevice, fu_bcm57xx_recovery_device, FU_TYPE_UDEV_DEVICE)
@@ -280,8 +280,8 @@ fu_bcm57xx_recovery_device_nvram_acquire_lock(FuBcm57xxRecoveryDevice *self, GEr
 
 	/* timed out */
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_TIMED_OUT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_TIMED_OUT,
 			    "timed out trying to acquire lock #1");
 	return FALSE;
 }
@@ -318,7 +318,7 @@ fu_bcm57xx_recovery_device_nvram_wait_done(FuBcm57xxRecoveryDevice *self, GError
 	} while (TRUE);
 
 	/* timed out */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT, "timed out");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT, "timed out");
 	return FALSE;
 }
 
@@ -539,7 +539,8 @@ fu_bcm57xx_recovery_device_dump_firmware(FuDevice *device, FuProgress *progress,
 
 static FuFirmware *
 fu_bcm57xx_recovery_device_prepare_firmware(FuDevice *device,
-					    GBytes *fw,
+					    GInputStream *stream,
+					    FuProgress *progress,
 					    FwupdInstallFlags flags,
 					    GError **error)
 {
@@ -547,7 +548,7 @@ fu_bcm57xx_recovery_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware_tmp = fu_bcm57xx_firmware_new();
 
 	/* check is a NVRAM backup */
-	if (!fu_firmware_parse(firmware_tmp, fw, flags, error)) {
+	if (!fu_firmware_parse_stream(firmware_tmp, stream, 0x0, flags, error)) {
 		g_prefix_error(error, "failed to parse new firmware: ");
 		return NULL;
 	}
@@ -558,7 +559,7 @@ fu_bcm57xx_recovery_device_prepare_firmware(FuDevice *device,
 				    "can only recover with backup firmware");
 		return NULL;
 	}
-	if (!fu_firmware_parse(firmware_bin, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware_bin, stream, 0x0, flags, error))
 		return NULL;
 	return g_steal_pointer(&firmware_bin);
 }
@@ -688,7 +689,7 @@ fu_bcm57xx_recovery_device_setup(FuDevice *device, GError **error)
 	if (fwversion != 0x0) {
 		/* this is only set on the OSS firmware */
 		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
-		fu_device_set_version_u32(device, GUINT32_FROM_BE(fwversion));
+		fu_device_set_version_raw(device, GUINT32_FROM_BE(fwversion));
 		fu_device_set_branch(device, BCM_FW_BRANCH_OSS_FIRMWARE);
 		fu_progress_step_done(progress);
 		fu_progress_step_done(progress);
@@ -720,7 +721,7 @@ fu_bcm57xx_recovery_device_setup(FuDevice *device, GError **error)
 		fu_progress_step_done(progress);
 		veritem = fu_bcm57xx_veritem_new((guint8 *)bufver, sizeof(bufver));
 		if (veritem != NULL) {
-			fu_device_set_version(device, veritem->version);
+			fu_device_set_version(device, veritem->version); /* nocheck:set-version */
 			fu_device_set_branch(device, veritem->branch);
 			fu_device_set_version_format(device, veritem->verfmt);
 		}
@@ -742,8 +743,8 @@ fu_bcm57xx_recovery_device_open(FuDevice *device, GError **error)
 	/* this can't work */
 	if (RUNNING_ON_VALGRIND) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "cannot mmap'ing BARs when using valgrind");
 		return FALSE;
 	}
@@ -763,16 +764,16 @@ fu_bcm57xx_recovery_device_open(FuDevice *device, GError **error)
 		memfd = open(fn, O_RDWR | O_SYNC);
 		if (memfd < 0) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_FOUND,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "error opening %s",
 				    fn);
 			return FALSE;
 		}
 		if (fstat(memfd, &st) < 0) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "could not stat %s",
 				    fn);
 			close(memfd);
@@ -787,8 +788,8 @@ fu_bcm57xx_recovery_device_open(FuDevice *device, GError **error)
 		close(memfd);
 		if (self->bar[i].buf == MAP_FAILED) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "could not mmap %s: %s",
 				    fn,
 				    g_strerror(errno));
@@ -800,8 +801,8 @@ fu_bcm57xx_recovery_device_open(FuDevice *device, GError **error)
 	return TRUE;
 #else
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "mmap() not supported as sys/mman.h not available");
 	return FALSE;
 #endif
@@ -827,8 +828,8 @@ fu_bcm57xx_recovery_device_close(FuDevice *device, GError **error)
 	return TRUE;
 #else
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "munmap() not supported as sys/mman.h not available");
 	return FALSE;
 #endif
@@ -845,6 +846,12 @@ fu_bcm57xx_recovery_device_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
+static gchar *
+fu_bcm57xx_recovery_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_bcm57xx_recovery_device_init(FuBcm57xxRecoveryDevice *self)
 {
@@ -852,7 +859,6 @@ fu_bcm57xx_recovery_device_init(FuBcm57xxRecoveryDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_BACKUP_BEFORE_INSTALL);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_IGNORE_VALIDATION);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_protocol(FU_DEVICE(self), "com.broadcom.bcm57xx");
 	fu_device_add_icon(FU_DEVICE(self), "network-wired");
@@ -877,24 +883,18 @@ fu_bcm57xx_recovery_device_probe(FuDevice *device, GError **error)
 static void
 fu_bcm57xx_recovery_device_class_init(FuBcm57xxRecoveryDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->activate = fu_bcm57xx_recovery_device_activate;
-	klass_device->prepare_firmware = fu_bcm57xx_recovery_device_prepare_firmware;
-	klass_device->setup = fu_bcm57xx_recovery_device_setup;
-	klass_device->reload = fu_bcm57xx_recovery_device_setup;
-	klass_device->open = fu_bcm57xx_recovery_device_open;
-	klass_device->close = fu_bcm57xx_recovery_device_close;
-	klass_device->write_firmware = fu_bcm57xx_recovery_device_write_firmware;
-	klass_device->dump_firmware = fu_bcm57xx_recovery_device_dump_firmware;
-	klass_device->attach = fu_bcm57xx_recovery_device_attach;
-	klass_device->detach = fu_bcm57xx_recovery_device_detach;
-	klass_device->probe = fu_bcm57xx_recovery_device_probe;
-	klass_device->set_progress = fu_bcm57xx_recovery_device_set_progress;
-}
-
-FuBcm57xxRecoveryDevice *
-fu_bcm57xx_recovery_device_new(void)
-{
-	FuUdevDevice *self = g_object_new(FU_TYPE_BCM57XX_RECOVERY_DEVICE, NULL);
-	return FU_BCM57XX_RECOVERY_DEVICE(self);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->activate = fu_bcm57xx_recovery_device_activate;
+	device_class->prepare_firmware = fu_bcm57xx_recovery_device_prepare_firmware;
+	device_class->setup = fu_bcm57xx_recovery_device_setup;
+	device_class->reload = fu_bcm57xx_recovery_device_setup;
+	device_class->open = fu_bcm57xx_recovery_device_open;
+	device_class->close = fu_bcm57xx_recovery_device_close;
+	device_class->write_firmware = fu_bcm57xx_recovery_device_write_firmware;
+	device_class->dump_firmware = fu_bcm57xx_recovery_device_dump_firmware;
+	device_class->attach = fu_bcm57xx_recovery_device_attach;
+	device_class->detach = fu_bcm57xx_recovery_device_detach;
+	device_class->probe = fu_bcm57xx_recovery_device_probe;
+	device_class->set_progress = fu_bcm57xx_recovery_device_set_progress;
+	device_class->convert_version = fu_bcm57xx_recovery_device_convert_version;
 }

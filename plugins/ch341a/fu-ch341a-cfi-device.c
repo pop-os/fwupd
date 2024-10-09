@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -137,7 +137,7 @@ fu_ch341a_cfi_device_setup(FuDevice *device, GError **error)
 
 	/* this is a generic SPI chip */
 	fu_device_add_instance_id(device, "SPI");
-	fu_device_add_vendor_id(device, "SPI:*");
+	fu_device_build_vendor_id(device, "SPI", "*");
 
 	/* FuCfiDevice->setup */
 	return FU_DEVICE_CLASS(fu_ch341a_cfi_device_parent_class)->setup(device, error);
@@ -221,8 +221,13 @@ fu_ch341a_cfi_device_write_page(FuCh341aCfiDevice *self, FuChunk *page, GError *
 	/* send data */
 	chunks = fu_chunk_array_new_from_bytes(page_blob, 0x0, CH341A_PAYLOAD_SIZE);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		guint8 buf2[CH341A_PAYLOAD_SIZE] = {0x0};
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_memcpy_safe(buf2,
 				    sizeof(buf2),
 				    0x0, /* dst */
@@ -252,7 +257,9 @@ fu_ch341a_cfi_device_write_pages(FuCh341aCfiDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(pages));
 	for (guint i = 0; i < fu_chunk_array_length(pages); i++) {
-		g_autoptr(FuChunk) page = fu_chunk_array_index(pages, i);
+		g_autoptr(FuChunk) page = fu_chunk_array_index(pages, i, error);
+		if (page == NULL)
+			return FALSE;
 		if (!fu_ch341a_cfi_device_write_page(self, page, error))
 			return FALSE;
 		fu_progress_step_done(progress);
@@ -429,13 +436,13 @@ fu_ch341a_cfi_device_init(FuCh341aCfiDevice *self)
 static void
 fu_ch341a_cfi_device_class_init(FuCh341aCfiDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	FuCfiDeviceClass *klass_cfi = FU_CFI_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	FuCfiDeviceClass *cfi_class = FU_CFI_DEVICE_CLASS(klass);
 
-	klass_cfi->chip_select = fu_ch341a_cfi_device_chip_select;
+	cfi_class->chip_select = fu_ch341a_cfi_device_chip_select;
 
-	klass_device->setup = fu_ch341a_cfi_device_setup;
-	klass_device->write_firmware = fu_ch341a_cfi_device_write_firmware;
-	klass_device->dump_firmware = fu_ch341a_cfi_device_dump_firmware;
-	klass_device->set_progress = fu_ch341a_cfi_device_set_progress;
+	device_class->setup = fu_ch341a_cfi_device_setup;
+	device_class->write_firmware = fu_ch341a_cfi_device_write_firmware;
+	device_class->dump_firmware = fu_ch341a_cfi_device_dump_firmware;
+	device_class->set_progress = fu_ch341a_cfi_device_set_progress;
 }

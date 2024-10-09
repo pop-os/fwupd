@@ -12,6 +12,12 @@ pacman -Syu --noconfirm
 #install anything missing from the container
 ./contrib/ci/fwupd_setup_helpers.py install-dependencies -o arch
 
+# check that we got the bare minimum
+if [ ! -f /usr/bin/git ]; then
+    echo "git not found, pacman possibly failed?"
+    exit 1
+fi
+
 # prepare the build tree
 rm -rf build
 mkdir build && pushd build
@@ -35,17 +41,9 @@ tpm2_startup -c
 tpm2_pcrextend 0:sha1=f1d2d2f924e986ac86fdf7b36c94bcdf32beec15
 export TPM_SERVER_RUNNING=1
 
-# build the package and install it
-sudo -E -u nobody PKGEXT='.pkg.tar' makepkg -e --noconfirm
-pacman -U --noconfirm *.pkg.*
+# build the package
+sudo -E -u nobody PKGEXT='.pkg.tar' makepkg -e --noconfirm --nocheck
 
-#run the CI tests for Qt5
-pacman -S --noconfirm qt5-base
-meson qt5-thread-test ../contrib/ci/qt5-thread-test
-ninja -C qt5-thread-test test
-
-# move the package to working dir
+# move the package to artifact dir
 mkdir -p ../dist
 mv *.pkg.* ../dist
-
-# no testing here because gnome-desktop-testing isn’t available in Arch

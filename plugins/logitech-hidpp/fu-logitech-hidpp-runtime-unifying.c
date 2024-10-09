@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -36,7 +36,7 @@ fu_logitech_hidpp_runtime_unifying_detach(FuDevice *device, FuProgress *progress
 	msg->data[2] = 'P';
 	msg->hidpp_version = 1;
 	msg->flags = FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_LONGER_TIMEOUT;
-	if (!fu_logitech_hidpp_send(fu_logitech_hidpp_runtime_get_io_channel(self),
+	if (!fu_logitech_hidpp_send(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
 				    msg,
 				    FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
 				    &error_local)) {
@@ -75,7 +75,7 @@ fu_logitech_hidpp_runtime_unifying_setup_internal(FuDevice *device, GError **err
 		msg->function_id = FU_LOGITECH_HIDPP_REGISTER_DEVICE_FIRMWARE_INFORMATION;
 		msg->data[0] = i;
 		msg->hidpp_version = 1;
-		if (!fu_logitech_hidpp_transfer(fu_logitech_hidpp_runtime_get_io_channel(self),
+		if (!fu_logitech_hidpp_transfer(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
 						msg,
 						error)) {
 			g_prefix_error(error, "failed to read device config: ");
@@ -145,7 +145,7 @@ fu_logitech_hidpp_runtime_unifying_setup(FuDevice *device, GError **error)
 		fu_device_sleep(device, 200); /* ms */
 		if (fu_logitech_hidpp_runtime_unifying_setup_internal(device, &error_local))
 			return TRUE;
-		if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_DATA)) {
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA)) {
 			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
 		}
@@ -167,11 +167,11 @@ fu_logitech_hidpp_runtime_unifying_set_progress(FuDevice *self, FuProgress *prog
 static void
 fu_logitech_hidpp_runtime_unifying_class_init(FuLogitechHidppRuntimeUnifyingClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
-	klass_device->detach = fu_logitech_hidpp_runtime_unifying_detach;
-	klass_device->setup = fu_logitech_hidpp_runtime_unifying_setup;
-	klass_device->set_progress = fu_logitech_hidpp_runtime_unifying_set_progress;
+	device_class->detach = fu_logitech_hidpp_runtime_unifying_detach;
+	device_class->setup = fu_logitech_hidpp_runtime_unifying_setup;
+	device_class->set_progress = fu_logitech_hidpp_runtime_unifying_set_progress;
 }
 
 static void

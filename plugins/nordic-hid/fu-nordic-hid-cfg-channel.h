@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Ricardo Cañuelo <ricardo.canuelo@collabora.com>
+ * Copyright 2021 Ricardo Cañuelo <ricardo.canuelo@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -13,4 +13,4 @@ G_DECLARE_FINAL_TYPE(FuNordicHidCfgChannel,
 		     fu_nordic_hid_cfg_channel,
 		     FU,
 		     NORDIC_HID_CFG_CHANNEL,
-		     FuUdevDevice)
+		     FuHidrawDevice)

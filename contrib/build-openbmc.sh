@@ -7,15 +7,14 @@ meson setup build-openbmc \
     -Ddocs=disabled \
     -Dpolkit=disabled \
     -Dbash_completion=false \
-    -Dcompat_cli=false \
     -Dfish_completion=false \
     -Dfirmware-packager=false \
     -Dhsi=disabled \
     -Dman=false \
     -Dmetainfo=false \
     -Dtests=true \
-    -Dudevdir=/tmp \
     -Dsystemd_root_prefix=/tmp \
+    -Dlibxmlb:gtkdoc=false \
     $@
 
 ninja install -C build-openbmc

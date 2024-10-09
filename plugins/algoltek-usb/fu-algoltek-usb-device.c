@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2024 Algoltek, Inc.
+ * Copyright 2024 Algoltek, Inc.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -19,7 +19,7 @@ G_DEFINE_TYPE(FuAlgoltekUsbDevice, fu_algoltek_usb_device, FU_TYPE_USB_DEVICE)
 
 static gboolean
 fu_algoltek_usb_device_ctrl_transfer(FuAlgoltekUsbDevice *self,
-				     GUsbDeviceDirection direction,
+				     FuUsbDirection direction,
 				     FuAlgoltekCmd algoltek_cmd,
 				     guint16 value,
 				     guint16 index,
@@ -27,24 +27,19 @@ fu_algoltek_usb_device_ctrl_transfer(FuAlgoltekUsbDevice *self,
 				     guint8 len,
 				     GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
-
-	if (!g_usb_device_control_transfer(usb_device,
-					   direction,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_INTERFACE,
-					   algoltek_cmd,
-					   value,
-					   index,
-					   buf->data,
-					   len,
-					   NULL,
-					   ALGOLTEK_DEVICE_USB_TIMEOUT,
-					   NULL,
-					   error))
-		return FALSE;
-
-	return TRUE;
+	return fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					      direction,
+					      FU_USB_REQUEST_TYPE_VENDOR,
+					      FU_USB_RECIPIENT_INTERFACE,
+					      algoltek_cmd,
+					      value,
+					      index,
+					      buf->data,
+					      len,
+					      NULL,
+					      ALGOLTEK_DEVICE_USB_TIMEOUT,
+					      NULL,
+					      error);
 }
 
 static GByteArray *
@@ -58,7 +53,7 @@ fu_algoltek_usb_device_rdr(FuAlgoltekUsbDevice *self, int address, GError **erro
 	fu_struct_algoltek_cmd_address_pkt_set_checksum(st, ~fu_sum8(st->data, st->len) + 1);
 
 	if (!fu_algoltek_usb_device_ctrl_transfer(self,
-						  G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+						  FU_USB_DIRECTION_DEVICE_TO_HOST,
 						  FU_ALGOLTEK_CMD_RDR,
 						  address,
 						  0xFFFF,
@@ -83,7 +78,7 @@ fu_algoltek_usb_device_rdv(FuAlgoltekUsbDevice *self, GError **error)
 	fu_struct_algoltek_cmd_transfer_pkt_set_checksum(st, ~fu_sum8(st->data, st->len) + 1);
 
 	if (!fu_algoltek_usb_device_ctrl_transfer(self,
-						  G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
+						  FU_USB_DIRECTION_DEVICE_TO_HOST,
 						  FU_ALGOLTEK_CMD_RDV,
 						  0xFFFF,
 						  0xFFFF,
@@ -132,7 +127,7 @@ fu_algoltek_usb_device_en(FuAlgoltekUsbDevice *self, GError **error)
 	fu_struct_algoltek_cmd_address_pkt_set_checksum(st, ~fu_sum8(st->data, st->len) + 1);
 
 	if (!fu_algoltek_usb_device_ctrl_transfer(self,
-						  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						  FU_USB_DIRECTION_HOST_TO_DEVICE,
 						  FU_ALGOLTEK_CMD_EN,
 						  0,
 						  0,
@@ -158,15 +153,15 @@ fu_algoltek_usb_device_rst(FuAlgoltekUsbDevice *self, guint16 address, GError **
 
 	if (st->data[0] > st->len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "rst length invalid, 0x%x > 0x%x",
 			    st->data[0],
 			    st->len);
 		return FALSE;
 	}
 	if (!fu_algoltek_usb_device_ctrl_transfer(self,
-						  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						  FU_USB_DIRECTION_HOST_TO_DEVICE,
 						  FU_ALGOLTEK_CMD_RST,
 						  0,
 						  0,
@@ -193,15 +188,15 @@ fu_algoltek_usb_device_wrr(FuAlgoltekUsbDevice *self, int address, int value, GE
 
 	if (st->data[0] > st->len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "wrr length invalid, 0x%x > 0x%x",
 			    st->data[0],
 			    st->len);
 		return FALSE;
 	}
 	if (!fu_algoltek_usb_device_ctrl_transfer(self,
-						  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						  FU_USB_DIRECTION_HOST_TO_DEVICE,
 						  FU_ALGOLTEK_CMD_WRR,
 						  0,
 						  0,
@@ -217,27 +212,27 @@ fu_algoltek_usb_device_wrr(FuAlgoltekUsbDevice *self, int address, int value, GE
 
 static gboolean
 fu_algoltek_usb_device_isp(FuAlgoltekUsbDevice *self,
-			   GBytes *blob_isp,
+			   GInputStream *stream,
 			   guint address,
 			   FuProgress *progress,
 			   GError **error)
 {
-	const guint8 *isp_data = NULL;
-	gsize isp_data_size = 0;
 	guint8 basic_data_size = 5;
-	g_autoptr(GPtrArray) chunks_isp = NULL;
+	g_autoptr(FuChunkArray) chunks = NULL;
 
-	isp_data = g_bytes_get_data(blob_isp, &isp_data_size);
-	chunks_isp =
-	    fu_chunk_array_new(isp_data, isp_data_size, address, 0x0, 64 - basic_data_size);
-
+	chunks = fu_chunk_array_new_from_stream(stream, address, 64 - basic_data_size, error);
+	if (chunks == NULL)
+		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_set_steps(progress, chunks_isp->len);
+	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 
-	for (guint i = 0; i < chunks_isp->len; i++) {
-		FuChunk *chk = g_ptr_array_index(chunks_isp, i);
+	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) st = fu_struct_algoltek_cmd_transfer_pkt_new();
 
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		fu_struct_algoltek_cmd_transfer_pkt_set_len(st,
 							    basic_data_size +
 								fu_chunk_get_data_sz(chk));
@@ -254,15 +249,15 @@ fu_algoltek_usb_device_isp(FuAlgoltekUsbDevice *self,
 								 ~fu_sum8(st->data, st->len) + 1);
 		if (st->data[0] > st->len) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "isp length invalid, 0x%x > 0x%x",
 				    st->data[0],
 				    st->len);
 			return FALSE;
 		}
 		if (!fu_algoltek_usb_device_ctrl_transfer(self,
-							  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+							  FU_USB_DIRECTION_HOST_TO_DEVICE,
 							  FU_ALGOLTEK_CMD_ISP,
 							  0,
 							  0,
@@ -290,15 +285,15 @@ fu_algoltek_usb_device_bot(FuAlgoltekUsbDevice *self, int address, GError **erro
 
 	if (st->data[0] > st->len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "bot length invalid, 0x%x > 0x%x",
 			    st->data[0],
 			    st->len);
 		return FALSE;
 	}
 	if (!fu_algoltek_usb_device_ctrl_transfer(self,
-						  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						  FU_USB_DIRECTION_HOST_TO_DEVICE,
 						  FU_ALGOLTEK_CMD_BOT,
 						  0,
 						  0,
@@ -327,7 +322,7 @@ fu_algoltek_usb_device_ers(FuAlgoltekUsbDevice *self,
 
 	value = (erase_type << 8) | sector;
 	if (!fu_algoltek_usb_device_ctrl_transfer(self,
-						  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+						  FU_USB_DIRECTION_HOST_TO_DEVICE,
 						  FU_ALGOLTEK_CMD_ERS,
 						  value,
 						  0,
@@ -359,8 +354,8 @@ fu_algoltek_usb_device_status_check_cb(FuDevice *self, gpointer user_data, GErro
 	case AG_UPDATE_FAIL:
 	default:
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "update procedure is failed.");
 		return FALSE;
 	}
@@ -369,27 +364,27 @@ fu_algoltek_usb_device_status_check_cb(FuDevice *self, gpointer user_data, GErro
 
 static gboolean
 fu_algoltek_usb_device_wrf(FuAlgoltekUsbDevice *self,
-			   GBytes *blob_payload,
+			   GInputStream *stream,
 			   FuProgress *progress,
 			   GError **error)
 {
-	const guint8 *fw_data = NULL;
-	gsize fw_data_size = 0;
-	guint16 value;
-	guint16 index;
+	g_autoptr(FuChunkArray) chunks = NULL;
 	g_autoptr(GByteArray) buf_parameter = g_byte_array_new();
-	g_autoptr(GPtrArray) chunks_payload = NULL;
 
-	fw_data = g_bytes_get_data(blob_payload, &fw_data_size);
-	chunks_payload = fu_chunk_array_new(fw_data, fw_data_size, 0x0, 0x0, 64);
-
+	chunks = fu_chunk_array_new_from_stream(stream, 0x0, 64, error);
+	if (chunks == NULL)
+		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_set_steps(progress, chunks_payload->len);
-
-	for (guint i = 0; i < chunks_payload->len; i++) {
-		FuChunk *chk = g_ptr_array_index(chunks_payload, i);
+	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
+	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
+		guint16 value;
+		guint16 index;
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) buf = g_byte_array_new();
 
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		g_byte_array_append(buf, fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 
 		fu_byte_array_set_size(buf_parameter, 4, 0);
@@ -406,7 +401,7 @@ fu_algoltek_usb_device_wrf(FuAlgoltekUsbDevice *self,
 		index = fu_memread_uint16(buf_parameter->data + 2, G_BIG_ENDIAN);
 
 		if (!fu_algoltek_usb_device_ctrl_transfer(self,
-							  G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
+							  FU_USB_DIRECTION_HOST_TO_DEVICE,
 							  FU_ALGOLTEK_CMD_WRF,
 							  value,
 							  index,
@@ -417,7 +412,7 @@ fu_algoltek_usb_device_wrf(FuAlgoltekUsbDevice *self,
 			return FALSE;
 		}
 
-		if ((i + 1) % 4 == 0 || (i + 1) == chunks_payload->len) {
+		if ((i + 1) % 4 == 0 || (i + 1) == fu_chunk_array_length(chunks)) {
 			if (!fu_device_retry_full(FU_DEVICE(self),
 						  fu_algoltek_usb_device_status_check_cb,
 						  10,
@@ -461,8 +456,8 @@ fu_algoltek_usb_device_write_firmware(FuDevice *device,
 				      GError **error)
 {
 	FuAlgoltekUsbDevice *self = FU_ALGOLTEK_USB_DEVICE(device);
-	g_autoptr(GBytes) blob_isp = NULL;
-	g_autoptr(GBytes) blob_payload = NULL;
+	g_autoptr(GInputStream) stream_isp = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -505,11 +500,11 @@ fu_algoltek_usb_device_write_firmware(FuDevice *device,
 	fu_device_sleep(FU_DEVICE(self), 500);
 
 	/* get ISP image */
-	blob_isp = fu_firmware_get_image_by_id_bytes(firmware, "isp", error);
-	if (blob_isp == NULL)
+	stream_isp = fu_firmware_get_image_by_id_stream(firmware, "isp", error);
+	if (stream_isp == NULL)
 		return FALSE;
 	if (!fu_algoltek_usb_device_isp(self,
-					blob_isp,
+					stream_isp,
 					AG_ISP_ADDR,
 					fu_progress_get_child(progress),
 					error))
@@ -535,10 +530,14 @@ fu_algoltek_usb_device_write_firmware(FuDevice *device,
 	fu_device_sleep(FU_DEVICE(self), 500);
 
 	/* get payload image */
-	blob_payload = fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_PAYLOAD, error);
-	if (blob_payload == NULL)
+	stream_payload =
+	    fu_firmware_get_image_by_id_stream(firmware, FU_FIRMWARE_ID_PAYLOAD, error);
+	if (stream_payload == NULL)
 		return FALSE;
-	if (!fu_algoltek_usb_device_wrf(self, blob_payload, fu_progress_get_child(progress), error))
+	if (!fu_algoltek_usb_device_wrf(self,
+					stream_payload,
+					fu_progress_get_child(progress),
+					error))
 		return FALSE;
 
 	fu_progress_step_done(progress);
@@ -571,7 +570,7 @@ fu_algoltek_usb_device_init(FuAlgoltekUsbDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_ALGOLTEK_USB_FIRMWARE);
 	fu_device_set_remove_delay(FU_DEVICE(self), 10000);
 }
@@ -579,8 +578,8 @@ fu_algoltek_usb_device_init(FuAlgoltekUsbDevice *self)
 static void
 fu_algoltek_usb_device_class_init(FuAlgoltekUsbDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_algoltek_usb_device_setup;
-	klass_device->write_firmware = fu_algoltek_usb_device_write_firmware;
-	klass_device->set_progress = fu_algoltek_usb_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_algoltek_usb_device_setup;
+	device_class->write_firmware = fu_algoltek_usb_device_write_firmware;
+	device_class->set_progress = fu_algoltek_usb_device_set_progress;
 }

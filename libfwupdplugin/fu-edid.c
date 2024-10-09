@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuEdid"
@@ -9,6 +9,7 @@
 #include "config.h"
 
 #include "fu-byte-array.h"
+#include "fu-common.h"
 #include "fu-edid-struct.h"
 #include "fu-edid.h"
 #include "fu-string.h"
@@ -182,13 +183,13 @@ fu_edid_strsafe(const guint8 *buf, gsize bufsz)
 }
 
 static gboolean
-fu_edid_parse_descriptor(FuEdid *self, GBytes *fw, gsize offset, GError **error)
+fu_edid_parse_descriptor(FuEdid *self, GInputStream *stream, gsize offset, GError **error)
 {
 	gsize buf2sz = 0;
 	const guint8 *buf2;
 	g_autoptr(GByteArray) st = NULL;
 
-	st = fu_struct_edid_descriptor_parse_bytes(fw, offset, error);
+	st = fu_struct_edid_descriptor_parse_stream(stream, offset, error);
 	if (st == NULL)
 		return FALSE;
 
@@ -217,7 +218,7 @@ fu_edid_parse_descriptor(FuEdid *self, GBytes *fw, gsize offset, GError **error)
 
 static gboolean
 fu_edid_parse(FuFirmware *firmware,
-	      GBytes *fw,
+	      GInputStream *stream,
 	      gsize offset,
 	      FwupdInstallFlags flags,
 	      GError **error)
@@ -228,7 +229,7 @@ fu_edid_parse(FuFirmware *firmware,
 	g_autoptr(GByteArray) st = NULL;
 
 	/* parse header */
-	st = fu_struct_edid_parse_bytes(fw, offset, error);
+	st = fu_struct_edid_parse_stream(stream, offset, error);
 	if (st == NULL)
 		return FALSE;
 
@@ -254,7 +255,7 @@ fu_edid_parse(FuFirmware *firmware,
 	/* parse 4x18 byte sections */
 	offset += FU_STRUCT_EDID_OFFSET_DATA_BLOCKS;
 	for (guint i = 0; i < 4; i++) {
-		if (!fu_edid_parse_descriptor(self, fw, offset, error))
+		if (!fu_edid_parse_descriptor(self, stream, offset, error))
 			return FALSE;
 		offset += FU_STRUCT_EDID_DESCRIPTOR_SIZE;
 	}
@@ -274,7 +275,12 @@ fu_edid_write(FuFirmware *firmware, GError **error)
 	fu_struct_edid_set_product_code(st, self->product_code);
 
 	/* if this is a integer, store it in the header rather than in a descriptor */
-	if (fu_strtoull(self->serial_number, &serial_number, 0, G_MAXUINT32, NULL))
+	if (fu_strtoull(self->serial_number,
+			&serial_number,
+			0,
+			G_MAXUINT32,
+			FU_INTEGER_BASE_AUTO,
+			NULL))
 		fu_struct_edid_set_serial_number(st, serial_number);
 
 	/* store descriptors */
@@ -289,7 +295,7 @@ fu_edid_write(FuFirmware *firmware, GError **error)
 			g_prefix_error(error, "cannot write product name: ");
 			return NULL;
 		}
-		memcpy(st->data + offset_desc, st_desc->data, st_desc->len);
+		memcpy(st->data + offset_desc, st_desc->data, st_desc->len); /* nocheck:blocked */
 		offset_desc += st_desc->len;
 	}
 	if (self->serial_number != NULL) {
@@ -304,7 +310,7 @@ fu_edid_write(FuFirmware *firmware, GError **error)
 			g_prefix_error(error, "cannot write serial number: ");
 			return NULL;
 		}
-		memcpy(st->data + offset_desc, st_desc->data, st_desc->len);
+		memcpy(st->data + offset_desc, st_desc->data, st_desc->len); /* nocheck:blocked */
 		offset_desc += st_desc->len;
 	}
 	if (self->eisa_id != NULL) {
@@ -318,7 +324,7 @@ fu_edid_write(FuFirmware *firmware, GError **error)
 			g_prefix_error(error, "cannot write EISA ID: ");
 			return NULL;
 		}
-		memcpy(st->data + offset_desc, st_desc->data, st_desc->len);
+		memcpy(st->data + offset_desc, st_desc->data, st_desc->len); /* nocheck:blocked */
 		offset_desc += st_desc->len;
 	}
 
@@ -378,7 +384,7 @@ fu_edid_build(FuFirmware *firmware, XbNode *n, GError **error)
 	value = xb_node_query_text(n, "product_code", NULL);
 	if (value != NULL) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		fu_edid_set_product_code(self, tmp);
 	}
@@ -413,12 +419,12 @@ static void
 fu_edid_class_init(FuEdidClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_edid_finalize;
-	klass_firmware->parse = fu_edid_parse;
-	klass_firmware->write = fu_edid_write;
-	klass_firmware->build = fu_edid_build;
-	klass_firmware->export = fu_edid_export;
+	firmware_class->parse = fu_edid_parse;
+	firmware_class->write = fu_edid_write;
+	firmware_class->build = fu_edid_build;
+	firmware_class->export = fu_edid_export;
 }
 
 static void

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuFirmware"
@@ -55,7 +55,7 @@ fu_archive_firmware_parse_cb(FuArchive *self,
 
 static gboolean
 fu_archive_firmware_parse(FuFirmware *firmware,
-			  GBytes *fw,
+			  GInputStream *stream,
 			  gsize offset,
 			  FwupdInstallFlags flags,
 			  GError **error)
@@ -63,7 +63,7 @@ fu_archive_firmware_parse(FuFirmware *firmware,
 	g_autoptr(FuArchive) archive = NULL;
 
 	/* load archive */
-	archive = fu_archive_new(fw, FU_ARCHIVE_FLAG_IGNORE_PATH, error);
+	archive = fu_archive_new_stream(stream, FU_ARCHIVE_FLAG_IGNORE_PATH, error);
 	if (archive == NULL)
 		return FALSE;
 
@@ -171,8 +171,8 @@ fu_archive_firmware_get_image_fnmatch(FuArchiveFirmware *self, const gchar *patt
 			continue;
 		if (img_match != NULL) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_ARGUMENT,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "multiple images matched %s",
 				    pattern);
 			return NULL;
@@ -181,8 +181,8 @@ fu_archive_firmware_get_image_fnmatch(FuArchiveFirmware *self, const gchar *patt
 	}
 	if (img_match == NULL) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_FOUND,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
 			    "no image matched %s",
 			    pattern);
 		return NULL;
@@ -282,11 +282,11 @@ fu_archive_firmware_init(FuArchiveFirmware *self)
 static void
 fu_archive_firmware_class_init(FuArchiveFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_archive_firmware_parse;
-	klass_firmware->write = fu_archive_firmware_write;
-	klass_firmware->build = fu_archive_firmware_build;
-	klass_firmware->export = fu_archive_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_archive_firmware_parse;
+	firmware_class->write = fu_archive_firmware_write;
+	firmware_class->build = fu_archive_firmware_build;
+	firmware_class->export = fu_archive_firmware_export;
 }
 
 /**

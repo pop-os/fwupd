@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -49,12 +49,17 @@ fu_synaptics_mst_firmware_export(FuFirmware *firmware,
 }
 
 static gboolean
-fu_synaptics_mst_firmware_detect_family(FuSynapticsMstFirmware *self, GBytes *fw, GError **error)
+fu_synaptics_mst_firmware_detect_family(FuSynapticsMstFirmware *self,
+					GInputStream *stream,
+					gsize offset,
+					GError **error)
 {
 	guint16 addrs[] = {ADDR_CONFIG_TESLA, ADDR_CONFIG_CAYENNE, ADDR_CONFIG_CARRERA};
 	for (guint i = 0; i < G_N_ELEMENTS(addrs); i++) {
 		g_autoptr(GByteArray) st = NULL;
-		st = fu_struct_synaptics_firmware_config_parse_bytes(fw, addrs[i], error);
+		st = fu_struct_synaptics_firmware_config_parse_stream(stream,
+								      offset + addrs[i],
+								      error);
 		if (st == NULL)
 			return FALSE;
 		if ((fu_struct_synaptics_firmware_config_get_magic1(st) & 0x80) &&
@@ -72,19 +77,17 @@ fu_synaptics_mst_firmware_detect_family(FuSynapticsMstFirmware *self, GBytes *fw
 
 static gboolean
 fu_synaptics_mst_firmware_parse(FuFirmware *firmware,
-				GBytes *fw,
+				GInputStream *stream,
 				gsize offset,
 				FwupdInstallFlags flags,
 				GError **error)
 {
 	FuSynapticsMstFirmware *self = FU_SYNAPTICS_MST_FIRMWARE(firmware);
-	const guint8 *buf;
-	gsize bufsz;
 	guint16 addr;
 
 	/* if device family not specified by caller, try to get from firmware file */
 	if (self->family == FU_SYNAPTICS_MST_FAMILY_UNKNOWN) {
-		if (!fu_synaptics_mst_firmware_detect_family(self, fw, error))
+		if (!fu_synaptics_mst_firmware_detect_family(self, stream, offset, error))
 			return FALSE;
 	}
 
@@ -109,8 +112,7 @@ fu_synaptics_mst_firmware_parse(FuFirmware *firmware,
 			    fu_synaptics_mst_family_to_string(self->family));
 		return FALSE;
 	}
-	buf = g_bytes_get_data(fw, &bufsz);
-	if (!fu_memread_uint16_safe(buf, bufsz, addr, &self->board_id, G_BIG_ENDIAN, error))
+	if (!fu_input_stream_read_u16(stream, offset + addr, &self->board_id, G_BIG_ENDIAN, error))
 		return FALSE;
 
 	/* success */
@@ -166,7 +168,7 @@ fu_synaptics_mst_firmware_write(FuFirmware *firmware, GError **error)
 }
 
 static gboolean
-fu_synaptics_rmi_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
+fu_synaptics_mst_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 {
 	FuSynapticsMstFirmware *self = FU_SYNAPTICS_MST_FIRMWARE(firmware);
 	guint64 tmp;
@@ -175,6 +177,9 @@ fu_synaptics_rmi_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 	tmp = xb_node_query_text_as_uint(n, "board_id", NULL);
 	if (tmp != G_MAXUINT64)
 		self->board_id = tmp;
+	tmp = xb_node_query_text_as_uint(n, "family", NULL);
+	if (tmp != G_MAXUINT64)
+		self->family = tmp;
 
 	/* success */
 	return TRUE;
@@ -190,11 +195,11 @@ fu_synaptics_mst_firmware_init(FuSynapticsMstFirmware *self)
 static void
 fu_synaptics_mst_firmware_class_init(FuSynapticsMstFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_synaptics_mst_firmware_parse;
-	klass_firmware->export = fu_synaptics_mst_firmware_export;
-	klass_firmware->write = fu_synaptics_mst_firmware_write;
-	klass_firmware->build = fu_synaptics_rmi_firmware_build;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_synaptics_mst_firmware_parse;
+	firmware_class->export = fu_synaptics_mst_firmware_export;
+	firmware_class->write = fu_synaptics_mst_firmware_write;
+	firmware_class->build = fu_synaptics_mst_firmware_build;
 }
 
 FuFirmware *

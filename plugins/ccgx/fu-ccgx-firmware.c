@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2020 Cypress Semiconductor Corporation.
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Cypress Semiconductor Corporation.
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -247,7 +247,6 @@ fu_ccgx_firmware_parse_md_block(FuCcgxFirmware *self, FwupdInstallFlags flags, G
 	/* get version if enough data */
 	rcd_version_idx = CCGX_APP_VERSION_OFFSET / bufsz;
 	if (rcd_version_idx < self->records->len) {
-		g_autofree gchar *version_str = NULL;
 		const guint8 *buf;
 		rcd = g_ptr_array_index(self->records, rcd_version_idx);
 		buf = g_bytes_get_data(rcd->data, &bufsz);
@@ -266,8 +265,6 @@ fu_ccgx_firmware_parse_md_block(FuCcgxFirmware *self, FwupdInstallFlags flags, G
 					    error))
 			return FALSE;
 		self->app_type = version & 0xffff;
-		version_str = fu_ccgx_version_to_string(version);
-		fu_firmware_set_version(FU_FIRMWARE(self), version_str);
 		fu_firmware_set_version_raw(FU_FIRMWARE(self), version);
 	}
 
@@ -296,8 +293,8 @@ fu_ccgx_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 	/* sanity check */
 	if (token_idx > FU_CCGX_FIRMWARE_TOKENS_MAX) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "file has too many lines");
 		return FALSE;
 	}
@@ -347,7 +344,7 @@ fu_ccgx_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 
 static gboolean
 fu_ccgx_firmware_parse(FuFirmware *firmware,
-		       GBytes *fw,
+		       GInputStream *stream,
 		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
@@ -356,12 +353,7 @@ fu_ccgx_firmware_parse(FuFirmware *firmware,
 	FuCcgxFirmwareTokenHelper helper = {.self = self, .flags = flags};
 
 	/* tokenize */
-	if (!fu_strsplit_full(g_bytes_get_data(fw, NULL),
-			      g_bytes_get_size(fw),
-			      "\n",
-			      fu_ccgx_firmware_tokenize_cb,
-			      &helper,
-			      error))
+	if (!fu_strsplit_stream(stream, offset, "\n", fu_ccgx_firmware_tokenize_cb, &helper, error))
 		return FALSE;
 
 	/* address is first data entry */
@@ -438,7 +430,12 @@ fu_ccgx_firmware_write(FuFirmware *firmware, GError **error)
 		return NULL;
 	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, 0x100);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return NULL;
 		fu_ccgx_firmware_write_record(str,
 					      0x0,
 					      i,
@@ -493,12 +490,19 @@ fu_ccgx_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 	return TRUE;
 }
 
+static gchar *
+fu_ccgx_firmware_convert_version(FuFirmware *firmware, guint64 version_raw)
+{
+	return fu_ccgx_version_to_string(version_raw);
+}
+
 static void
 fu_ccgx_firmware_init(FuCcgxFirmware *self)
 {
 	self->records = g_ptr_array_new_with_free_func((GFreeFunc)fu_ccgx_firmware_record_free);
 	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_CHECKSUM);
 	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_VID_PID);
+	fu_firmware_set_version_format(FU_FIRMWARE(self), FWUPD_VERSION_FORMAT_TRIPLET);
 }
 
 static void
@@ -513,12 +517,13 @@ static void
 fu_ccgx_firmware_class_init(FuCcgxFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->convert_version = fu_ccgx_firmware_convert_version;
 	object_class->finalize = fu_ccgx_firmware_finalize;
-	klass_firmware->parse = fu_ccgx_firmware_parse;
-	klass_firmware->write = fu_ccgx_firmware_write;
-	klass_firmware->build = fu_ccgx_firmware_build;
-	klass_firmware->export = fu_ccgx_firmware_export;
+	firmware_class->parse = fu_ccgx_firmware_parse;
+	firmware_class->write = fu_ccgx_firmware_write;
+	firmware_class->build = fu_ccgx_firmware_build;
+	firmware_class->export = fu_ccgx_firmware_export;
 }
 
 FuFirmware *

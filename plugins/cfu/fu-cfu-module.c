@@ -1,7 +1,7 @@
 /*#
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -21,8 +21,8 @@ static void
 fu_cfu_module_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCfuModule *self = FU_CFU_MODULE(device);
-	fu_string_append_kx(str, idt, "ComponentId", self->component_id);
-	fu_string_append_kx(str, idt, "Bank", self->bank);
+	fwupd_codec_string_append_hex(str, idt, "ComponentId", self->component_id);
+	fwupd_codec_string_append_hex(str, idt, "Bank", self->bank);
 }
 
 guint8
@@ -69,7 +69,7 @@ fu_cfu_module_setup(FuCfuModule *self, const guint8 *buf, gsize bufsz, gsize off
 	}
 
 	/* version */
-	fu_device_set_version_u32(device,
+	fu_device_set_version_raw(device,
 				  fu_struct_cfu_get_version_rsp_component_get_fw_version(st));
 
 	/* logical ID */
@@ -82,7 +82,8 @@ fu_cfu_module_setup(FuCfuModule *self, const guint8 *buf, gsize bufsz, gsize off
 
 static FuFirmware *
 fu_cfu_module_prepare_firmware(FuDevice *device,
-			       GBytes *fw,
+			       GInputStream *stream,
+			       FuProgress *progress,
 			       FwupdInstallFlags flags,
 			       GError **error)
 {
@@ -96,7 +97,7 @@ fu_cfu_module_prepare_firmware(FuDevice *device,
 	g_autoptr(GBytes) blob_payload = NULL;
 
 	/* parse archive */
-	if (!fu_firmware_parse(firmware_archive, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware_archive, stream, 0x0, flags, error))
 		return NULL;
 
 	/* offer */
@@ -139,19 +140,19 @@ fu_cfu_module_write_firmware(FuDevice *device,
 			     GError **error)
 {
 	FuDevice *proxy;
-	FuDeviceClass *klass_proxy;
+	FuDeviceClass *device_class;
 
 	/* process by the parent */
 	proxy = fu_device_get_proxy(device);
 	if (proxy == NULL) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "no proxy device assigned");
 		return FALSE;
 	}
-	klass_proxy = FU_DEVICE_GET_CLASS(proxy);
-	return klass_proxy->write_firmware(proxy, firmware, progress, flags, error);
+	device_class = FU_DEVICE_GET_CLASS(proxy);
+	return device_class->write_firmware(proxy, firmware, progress, flags, error);
 }
 
 static void
@@ -165,6 +166,12 @@ fu_cfu_module_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
+static gchar *
+fu_cfu_module_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_cfu_module_init(FuCfuModule *self)
 {
@@ -173,18 +180,19 @@ fu_cfu_module_init(FuCfuModule *self)
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_ARCHIVE_FIRMWARE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_PARENT_FOR_OPEN);
 }
 
 static void
 fu_cfu_module_class_init(FuCfuModuleClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_cfu_module_to_string;
-	klass_device->prepare_firmware = fu_cfu_module_prepare_firmware;
-	klass_device->write_firmware = fu_cfu_module_write_firmware;
-	klass_device->set_progress = fu_cfu_module_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_cfu_module_to_string;
+	device_class->prepare_firmware = fu_cfu_module_prepare_firmware;
+	device_class->write_firmware = fu_cfu_module_write_firmware;
+	device_class->set_progress = fu_cfu_module_set_progress;
+	device_class->convert_version = fu_cfu_module_convert_version;
 }
 
 FuCfuModule *

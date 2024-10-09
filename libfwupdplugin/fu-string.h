@@ -1,30 +1,39 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
 
-#include "fu-common.h"
+#include <fwupd.h>
 
-void
-fu_string_append(GString *str, guint idt, const gchar *key, const gchar *value) G_GNUC_NON_NULL(1);
-void
-fu_string_append_ku(GString *str, guint idt, const gchar *key, guint64 value) G_GNUC_NON_NULL(1);
-void
-fu_string_append_kx(GString *str, guint idt, const gchar *key, guint64 value) G_GNUC_NON_NULL(1);
-void
-fu_string_append_kb(GString *str, guint idt, const gchar *key, gboolean value) G_GNUC_NON_NULL(1);
+#include "fu-endian.h"
+
+typedef enum {
+	FU_INTEGER_BASE_AUTO = 0,
+	FU_INTEGER_BASE_10 = 10,
+	FU_INTEGER_BASE_16 = 16,
+} FuIntegerBase;
 
 gchar *
 fu_strsafe(const gchar *str, gsize maxsz);
 gchar *
 fu_strpassmask(const gchar *str) G_GNUC_NON_NULL(1);
 gboolean
-fu_strtoull(const gchar *str, guint64 *value, guint64 min, guint64 max, GError **error);
+fu_strtoull(const gchar *str,
+	    guint64 *value,
+	    guint64 min,
+	    guint64 max,
+	    FuIntegerBase base,
+	    GError **error);
 gboolean
-fu_strtoll(const gchar *str, gint64 *value, gint64 min, gint64 max, GError **error);
+fu_strtoll(const gchar *str,
+	   gint64 *value,
+	   gint64 min,
+	   gint64 max,
+	   FuIntegerBase base,
+	   GError **error);
 gboolean
 fu_strtobool(const gchar *str, gboolean *value, GError **error);
 gchar *
@@ -58,6 +67,13 @@ fu_strsplit_full(const gchar *str,
 		 FuStrsplitFunc callback,
 		 gpointer user_data,
 		 GError **error) G_GNUC_NON_NULL(1, 3);
+gboolean
+fu_strsplit_stream(GInputStream *stream,
+		   gsize offset,
+		   const gchar *delimiter,
+		   FuStrsplitFunc callback,
+		   gpointer user_data,
+		   GError **error) G_GNUC_NON_NULL(1, 3);
 
 /**
  * FuUtfConvertFlags:

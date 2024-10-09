@@ -19,7 +19,7 @@ G_DEFINE_TYPE(FuDellK2IlanFirmware, fu_dell_k2_ilan_firmware, FU_TYPE_FIRMWARE)
 
 static gboolean
 fu_dell_k2_ilan_firmware_parse(FuFirmware *firmware,
-			       GBytes *fw,
+			       GInputStream *stream,
 			       gsize offset,
 			       FwupdInstallFlags flags,
 			       GError **error)
@@ -27,16 +27,13 @@ fu_dell_k2_ilan_firmware_parse(FuFirmware *firmware,
 	guint16 version_raw = 0;
 	guint8 version_major;
 	guint8 version_minor;
-	gsize bufsz = 0;
 	g_autofree gchar *version_str = NULL;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    DOCK_ILAN_VERSION_OFFSET,
-				    &version_raw,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u16(stream,
+				      DOCK_ILAN_VERSION_OFFSET,
+				      &version_raw,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
 
 	version_major = (version_raw >> 12) & 0xff;

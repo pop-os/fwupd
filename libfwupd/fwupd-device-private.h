@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -12,19 +12,9 @@
 
 G_BEGIN_DECLS
 
-GVariant *
-fwupd_device_to_variant(FwupdDevice *self) G_GNUC_NON_NULL(1);
-GVariant *
-fwupd_device_to_variant_full(FwupdDevice *self, FwupdDeviceFlags flags) G_GNUC_NON_NULL(1);
 void
 fwupd_device_incorporate(FwupdDevice *self, FwupdDevice *donor) G_GNUC_NON_NULL(1, 2);
 void
-fwupd_device_to_json(FwupdDevice *self, JsonBuilder *builder) G_GNUC_NON_NULL(1, 2);
-void
-fwupd_device_to_json_full(FwupdDevice *self, JsonBuilder *builder, FwupdDeviceFlags flags)
-    G_GNUC_NON_NULL(1, 2);
-gboolean
-fwupd_device_from_json(FwupdDevice *self, JsonNode *json_node, GError **error)
-    G_GNUC_NON_NULL(1, 2);
+fwupd_device_remove_children(FwupdDevice *self) G_GNUC_NON_NULL(1);
 
 G_END_DECLS

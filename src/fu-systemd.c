@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -87,29 +87,6 @@ fu_systemd_unit_get_proxy(GDBusProxy *proxy_manager, const gchar *unit, GError *
 		return NULL;
 	}
 	return g_steal_pointer(&proxy_unit);
-}
-
-gchar *
-fu_systemd_get_default_target(GError **error)
-{
-	const gchar *path = NULL;
-	g_autoptr(GDBusProxy) proxy_manager = NULL;
-	g_autoptr(GVariant) val = NULL;
-
-	proxy_manager = fu_systemd_get_manager(error);
-	if (proxy_manager == NULL)
-		return NULL;
-	val = g_dbus_proxy_call_sync(proxy_manager,
-				     "GetDefaultTarget",
-				     NULL,
-				     G_DBUS_CALL_FLAGS_NONE,
-				     -1,
-				     NULL,
-				     error);
-	if (val == NULL)
-		return NULL;
-	g_variant_get(val, "(&s)", &path);
-	return g_strdup(path);
 }
 
 gboolean

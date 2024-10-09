@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 Intel Corporation.
- * Copyright (C) 2021 Dell Inc.
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Intel Corporation.
+ * Copyright 2021 Dell Inc.
  * All rights reserved.
  *
  * This software and associated documentation (if any) is furnished
@@ -12,7 +12,7 @@
  * redistributing this file, you may do so under either license.
  * Dell Chooses the MIT license part of Dual MIT/LGPLv2 license agreement.
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR MIT
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
  */
 
 #include "config.h"
@@ -77,21 +77,19 @@ fu_intel_usb4_device_get_mmio(FuDevice *device,
 			      gsize bufsz,
 			      GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-
-	if (!g_usb_device_control_transfer(usb_device,
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   REQ_HUB_GET_MMIO, /* request */
-					   MBOX_ACCESS,	     /* value */
-					   mbox_reg,	     /* index */
-					   buf,
-					   bufsz,
-					   NULL, /* actual length */
-					   MBOX_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(device),
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    REQ_HUB_GET_MMIO, /* request */
+					    MBOX_ACCESS,      /* value */
+					    mbox_reg,	      /* index */
+					    buf,
+					    bufsz,
+					    NULL, /* actual length */
+					    MBOX_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error,
 			       "GET_MMIO failed to set control on mbox register index [0x%x]: ",
 			       mbox_reg);
@@ -108,8 +106,8 @@ fu_intel_usb4_device_get_mmio(FuDevice *device,
 		/* error status bit */
 		if (fu_struct_intel_usb4_mbox_get_status(st_regex) & MBOX_ERROR) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
 				    "GET_MMIO opcode [0x%x] nonzero error bit in status [0x%x]",
 				    fu_struct_intel_usb4_mbox_get_opcode(st_regex),
 				    fu_struct_intel_usb4_mbox_get_status(st_regex));
@@ -119,8 +117,8 @@ fu_intel_usb4_device_get_mmio(FuDevice *device,
 		/* operation valid (OV) bit should be 0'b */
 		if (fu_struct_intel_usb4_mbox_get_status(st_regex) & MBOX_OPVALID) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "GET_MMIO opcode [0x%x] nonzero OV bit in status [0x%x]",
 				    fu_struct_intel_usb4_mbox_get_opcode(st_regex),
 				    fu_struct_intel_usb4_mbox_get_status(st_regex));
@@ -137,21 +135,19 @@ fu_intel_usb4_device_set_mmio(FuDevice *device,
 			      gsize bufsz,
 			      GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-
-	if (!g_usb_device_control_transfer(usb_device,
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   REQ_HUB_SET_MMIO, /* request */
-					   MBOX_ACCESS,	     /* value */
-					   mbox_reg,	     /* index */
-					   buf,
-					   bufsz,
-					   NULL, /* actual length */
-					   MBOX_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(device),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    REQ_HUB_SET_MMIO, /* request */
+					    MBOX_ACCESS,      /* value */
+					    mbox_reg,	      /* index */
+					    buf,
+					    bufsz,
+					    NULL, /* actual length */
+					    MBOX_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "failed to set mmio 0x%x: ", mbox_reg);
 		return FALSE;
 	}
@@ -171,8 +167,8 @@ fu_intel_usb4_device_mbox_data_read(FuDevice *device, guint8 *data, guint8 lengt
 
 	if (length > 64 || length % 4) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid firmware data read length %u",
 			    length);
 		return FALSE;
@@ -203,8 +199,8 @@ fu_intel_usb4_device_mbox_data_write(FuDevice *device,
 
 	if (length > 64 || length % 4) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_WRITE,
 			    "invalid firmware data write length %u",
 			    length);
 		return FALSE;
@@ -238,8 +234,8 @@ fu_intel_usb4_device_operation(FuDevice *device,
 	case FU_INTEL_USB4_OPCODE_DROM_READ:
 		if (metadata == NULL) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "hub opcode 0x%x requires metadata",
 				    opcode);
 			return FALSE;
@@ -255,8 +251,8 @@ fu_intel_usb4_device_operation(FuDevice *device,
 		break;
 	default:
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "invalid hub opcode: 0x%x",
 			    opcode);
 		return FALSE;
@@ -397,7 +393,12 @@ fu_intel_usb4_device_nvm_write(FuDevice *device,
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* write data to mbox data regs */
 		if (!fu_intel_usb4_device_mbox_data_write(device,
@@ -446,7 +447,8 @@ fu_intel_usb4_device_activate(FuDevice *device, FuProgress *progress, GError **e
 
 static FuFirmware *
 fu_intel_usb4_device_prepare_firmware(FuDevice *device,
-				      GBytes *fw,
+				      GInputStream *stream,
+				      FuProgress *progress,
 				      FwupdInstallFlags flags,
 				      GError **error)
 {
@@ -456,7 +458,7 @@ fu_intel_usb4_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware = fu_intel_thunderbolt_firmware_new();
 
 	/* get vid:pid:rev */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 
 	/* check is compatible */
@@ -507,7 +509,7 @@ fu_intel_usb4_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* success, but needs activation */
-	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_SKIPS_RESTART)) {
+	if (fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART)) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION);
 		fu_device_set_version(device, fu_firmware_get_version(firmware));
 		return TRUE;
@@ -564,13 +566,13 @@ static void
 fu_intel_usb4_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuIntelUsb4Device *self = FU_INTEL_USB4_DEVICE(device);
-	fu_string_append_kx(str, idt, "NvmVendorId", self->nvm_vendor_id);
-	fu_string_append_kx(str, idt, "NvmModelId", self->nvm_model_id);
-	fu_string_append_kx(str, idt, "NvmDeviceId", self->nvm_device_id);
+	fwupd_codec_string_append_hex(str, idt, "NvmVendorId", self->nvm_vendor_id);
+	fwupd_codec_string_append_hex(str, idt, "NvmModelId", self->nvm_model_id);
+	fwupd_codec_string_append_hex(str, idt, "NvmDeviceId", self->nvm_device_id);
 }
 
 static void
-fu_thunderbolt_device_set_progress(FuDevice *self, FuProgress *progress)
+fu_intel_usb4_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
@@ -588,21 +590,21 @@ fu_intel_usb4_device_init(FuIntelUsb4Device *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_INHERIT_ACTIVATION);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_NAME_CATEGORY);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NO_GENERIC_GUIDS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_INHERIT_ACTIVATION);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_NAME_CATEGORY);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_NO_GENERIC_GUIDS);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_INTEL_USB4_DEVICE_REMOVE_DELAY);
 }
 
 static void
 fu_intel_usb4_device_class_init(FuIntelUsb4DeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_intel_usb4_device_to_string;
-	klass_device->setup = fu_intel_usb4_device_setup;
-	klass_device->prepare_firmware = fu_intel_usb4_device_prepare_firmware;
-	klass_device->write_firmware = fu_intel_usb4_device_write_firmware;
-	klass_device->activate = fu_intel_usb4_device_activate;
-	klass_device->set_progress = fu_thunderbolt_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_intel_usb4_device_to_string;
+	device_class->setup = fu_intel_usb4_device_setup;
+	device_class->prepare_firmware = fu_intel_usb4_device_prepare_firmware;
+	device_class->write_firmware = fu_intel_usb4_device_write_firmware;
+	device_class->activate = fu_intel_usb4_device_activate;
+	device_class->set_progress = fu_intel_usb4_device_set_progress;
 }

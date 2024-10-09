@@ -1,7 +1,7 @@
 default_stages: [commit]
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
     -   id: no-commit-to-branch
         args: [--branch, main, --pattern, 1_.*_X]
@@ -30,15 +30,11 @@ repos:
     -   id: codespell
         args: ['--config', './contrib/codespell.cfg', --write-changes]
 -   repo: https://github.com/ambv/black
-    rev: 22.12.0
+    rev: 23.12.1
     hooks:
     - id: black
 -   repo: local
     hooks:
-    - id: check-deprecated
-      name: check for use of any deprecated items
-      language: script
-      entry: ./contrib/ci/check-deprecated.sh
     - id: check-null-false-returns
       name: check for null / false return mismatch
       language: script
@@ -70,8 +66,8 @@ repos:
       types: [shell]
     - id: run-tests
       name: run tests before pushing
-      language: script
-      entry: ./contrib/run-tests.sh
+      language: system
+      entry: "test-fwupd"
       stages: [push]
     - id: clang-format
       name: clang-format
@@ -84,7 +80,11 @@ repos:
       language: script
       entry: ./contrib/ci/check-license.py
 -   repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.33.0
+    rev: v0.38.0
     hooks:
     - id: markdownlint
       args: ['--fix', '--ignore', '.github']
+-   repo: https://github.com/gitleaks/gitleaks
+    rev: v8.16.3
+    hooks:
+    -   id: gitleaks

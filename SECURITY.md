@@ -1,27 +1,27 @@
 # Security Policy
 
 Due to the nature of what we are doing, fwupd takes security very seriously.
-If you have any concerns please let us know.
+If you have any concerns please [let us know](https://github.com/fwupd/fwupd/security/advisories/new).
 
 ## Supported Versions
 
-The `main`, and `1.8.x`, branches are fully supported by the upstream authors
-with all unstable code belonging in `wip` branches.
-Additionally, the `1.6.x` and `1.7.x` branches are supported for security fixes.
+The `main`, and `1.9.x`, branches are fully supported by the upstream authors.
+Additionally, the `1.8.x` branch is supported just for security fixes.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.9.x   | :heavy_check_mark: |
-| 1.8.x   | :heavy_check_mark: |
-| 1.7.x   | :white_check_mark: |
-| 1.6.x   | :white_check_mark: |
-| 1.5.x   | :x: EOL 2022-01-01 |
-| 1.4.x   | :x: EOL 2021-05-01 |
-| 1.3.x   | :x: EOL 2020-07-01 |
-| 1.2.x   | :x: EOL 2019-12-01 |
-| 1.1.x   | :x: EOL 2018-11-01 |
-| 1.0.x   | :x: EOL 2018-10-01 |
-| 0.9.x   | :x: EOL 2018-02-01 |
+| Version | Supported          | EOL        |
+| ------- | ------------------ | ---------- |
+| 2.0.x   | :heavy_check_mark: | 2028-01-01 |
+| 1.9.x   | :heavy_check_mark: | 2027-01-01 |
+| 1.8.x   | :white_check_mark: | 2025-01-01 |
+| 1.7.x   | :x:                | 2024-06-01 |
+| 1.6.x   | :x:                | 2024-01-01 |
+| 1.5.x   | :x:                | 2022-01-01 |
+| 1.4.x   | :x:                | 2021-05-01 |
+| 1.3.x   | :x:                | 2020-07-01 |
+| 1.2.x   | :x:                | 2019-12-01 |
+| 1.1.x   | :x:                | 2018-11-01 |
+| 1.0.x   | :x:                | 2018-10-01 |
+| 0.9.x   | :x:                | 2018-02-01 |
 
 Older releases than this are unsupported by upstream but may be supported by
 your distributor or distribution. If you open an issue with one of these older
@@ -31,9 +31,10 @@ is unwilling to update to a supported version.
 
 ## Reporting a Vulnerability
 
-If you find a vulnerability in fwupd your first thing you should do is email
-all the maintainers, which are currently listed in the `MAINTAINERS` file in
-this repository.
+If you find a vulnerability in fwupd you should let us know using a
+[private vulnerability disclosure](https://github.com/fwupd/fwupd/security/advisories/new) on GitHub,
+with a description of the issue, the steps you took to create the issue, affected
+versions, and, if known, mitigations for the issue.
 
 Failing that, please report the issue against the `fwupd` component in Red Hat
 bugzilla, with the security checkbox set. You should get a response within 3
@@ -69,8 +70,8 @@ Important things to note:
       CDN -- "md.[xml|jcat] 🔒" --> User
       LVFS -- "embargo.[xml|jcat] 🔒" --> User
       LVFS -- "fw.cab 🔒" --> User
-      User -. report.json .-> LVFS
-      User -. hsi.json .-> LVFS
+      User -. "report.json" .-> LVFS
+      User -. "hsi.json" .-> LVFS
       QA(QA Teams) -- "report.json 🔒" --> LVFS
       OEM(Device Vendor) -- "fw.cab" --> LVFS
       ODM(Device Manufacturer) -- "fw.[bin|cab]" --> OEM

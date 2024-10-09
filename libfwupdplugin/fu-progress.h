@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -66,5 +66,3 @@ void
 fu_progress_sleep(FuProgress *self, guint delay_ms) G_GNUC_NON_NULL(1);
 gchar *
 fu_progress_traceback(FuProgress *self) G_GNUC_NON_NULL(1);
-gchar *
-fu_progress_to_string(FuProgress *self) G_GNUC_NON_NULL(1);

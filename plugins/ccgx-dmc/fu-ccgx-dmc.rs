@@ -1,14 +1,14 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-enum CcgxDmcImgType {
+enum FuCcgxDmcImgType {
     Invalid = 0,
     Image0,
     Image1,
 }
 
 #[derive(ToString)]
-enum CcgxDmcImgStatus {
+enum FuCcgxDmcImgStatus {
     Unknown = 0,
     Valid,
     Invalid,
@@ -20,9 +20,9 @@ enum CcgxDmcImgStatus {
 // flash architecture
 #[derive(ToString)]
 #[repr(u8)]
-enum CcgxDmcImgMode {
+enum FuCcgxDmcImgMode {
     // indicates that the device has a single image
-    SingleImg = 0,
+    SingleImg,
     // the device supports symmetric boot. In symmetric mode the bootloader
     // boots the image with higher version, when they are valid
     DualImgSym,
@@ -31,13 +31,12 @@ enum CcgxDmcImgMode {
     // image. Secondary acts as recovery
     DualImgAsym,
     SingleImgWithRamImg,
-    Last,
 }
 
 // dock status
 #[derive(ToString)]
 #[repr(u8)]
-enum CcgxDmcDeviceStatus {
+enum FuCcgxDmcDeviceStatus {
     // status code indicating DOCK IDLE state. SUCCESS: no malfunctioning
     // no outstanding request or event
     Idle = 0,
@@ -77,7 +76,7 @@ enum CcgxDmcDeviceStatus {
 
 #[derive(ToString)]
 #[repr(u8)]
-enum CcgxDmcDevxDeviceType {
+enum FuCcgxDmcDevxDeviceType {
     Invalid = 0x00,
     Ccg3 = 0x01,
     Dmc = 0x02,
@@ -90,7 +89,7 @@ enum CcgxDmcDevxDeviceType {
 }
 
 // request codes for vendor interface
-enum CcgxDmcRqtCode {
+enum FuCcgxDmcRqtCode {
     UpgradeStart = 0xD0,
     Reserv0,
     FwctWrite,
@@ -107,7 +106,7 @@ enum CcgxDmcRqtCode {
 // opcode of interrupt read
 #[derive(ToString)]
 #[repr(u8)]
-enum CcgxDmcIntOpcode {
+enum FuCcgxDmcIntOpcode {
     FwUpgradeRqt = 1,
     FwUpgradeStatus = 0x80,
     ImgWriteStatus,
@@ -117,7 +116,7 @@ enum CcgxDmcIntOpcode {
 
 // fwct analysis status
 #[derive(ToString)]
-enum CcgxDmcFwctAnalysisStatus {
+enum FuCcgxDmcFwctAnalysisStatus {
     InvalidFwct = 0,
     InvalidDockIdentity,
     InvalidCompositeVersion,
@@ -127,7 +126,7 @@ enum CcgxDmcFwctAnalysisStatus {
 }
 
 #[derive(ToString)]
-enum CcgxDmcUpdateModel {
+enum FuCcgxDmcUpdateModel {
     None = 0,
     DownloadTrigger, // need to trigger after updating FW
     PendingReset,    // need to set soft reset after updating FW
@@ -135,7 +134,7 @@ enum CcgxDmcUpdateModel {
 
 // fields of data returned when reading dock_identity for new firmware
 #[derive(New, Getters)]
-struct CcgxDmcDockIdentity {
+struct FuStructCcgxDmcDockIdentity {
     // this field indicates both validity and structure version
     // 0 : invalid
     // 1 : old structure
@@ -159,14 +158,14 @@ struct CcgxDmcDockIdentity {
 
 // fields of status of a specific device
 #[derive(Parse)]
-struct CcgxDmcDevxStatus {
+struct FuStructCcgxDmcDevxStatus {
     // device ID of the device
-    device_type: CcgxDmcDevxDeviceType,
+    device_type: FuCcgxDmcDevxDeviceType,
     // component ID of the device
     component_id: u8,
     // image mode of the device - single image/ dual symmetric/ dual
     // asymmetric image >
-    image_mode: CcgxDmcImgMode,
+    image_mode: FuCcgxDmcImgMode,
     // current running image
     current_image: u8,
     // image status
@@ -186,8 +185,8 @@ struct CcgxDmcDevxStatus {
 
 // fields of data returned when reading dock_status
 #[derive(New, Getters)]
-struct CcgxDmcDockStatus {
-    device_status: CcgxDmcDeviceStatus,
+struct FuStructCcgxDmcDockStatus {
+    device_status: FuCcgxDmcDeviceStatus,
     device_count: u8,
     status_length: u16le, // including dock_status, devx_status for each device
     composite_version: u32le, // dock composite version m_fwct_info
@@ -196,15 +195,15 @@ struct CcgxDmcDockStatus {
 
 // fields of data returned when reading an interrupt from DMC
 #[derive(New, Getters)]
-struct CcgxDmcIntRqt {
-    opcode: CcgxDmcIntOpcode,
+struct FuStructCcgxDmcIntRqt {
+    opcode: FuCcgxDmcIntOpcode,
     length: u8,
     data: [u8; 8],
 }
 
 // header structure of FWCT
-#[derive(New, Parse, ValidateBytes)]
-struct CcgxDmcFwctInfo {
+#[derive(New, ParseStream, ValidateStream)]
+struct FuStructCcgxDmcFwctInfo {
     signature: u32le == 0x54435746, // 'F' 'W' 'C' 'T'
     size: u16le,
     checksum: u8,
@@ -220,8 +219,8 @@ struct CcgxDmcFwctInfo {
     _reserv1: [u8; 3],
 }
 
-#[derive(New, Parse)]
-struct CcgxDmcFwctImageInfo {
+#[derive(New, ParseStream)]
+struct FuStructCcgxDmcFwctImageInfo {
     device_type: u8,
     img_type: u8,
     comp_id: u8,
@@ -236,8 +235,8 @@ struct CcgxDmcFwctImageInfo {
     _reserv1: [u8; 3],
 }
 
-#[derive(New, Parse)]
-struct CcgxDmcFwctSegmentationInfo {
+#[derive(New, ParseStream)]
+struct FuStructCcgxDmcFwctSegmentationInfo {
     img_id: u8,
     type: u8,
     start_row: u16le,

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -51,9 +51,8 @@ fu_intel_me_mkhi_device_setup(FuDevice *device, GError **error)
 		if (!fu_intel_me_mkhi_device_add_checksum_for_filename(self,
 								       fns[i],
 								       &error_local)) {
-			if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED))
 				continue;
-			}
 			g_warning("failed to get public key using %s: %s",
 				  fns[i],
 				  error_local->message);
@@ -78,14 +77,14 @@ fu_intel_me_mkhi_device_init(FuIntelMeMkhiDevice *self)
 {
 	fu_device_set_logical_id(FU_DEVICE(self), "MKHI");
 	fu_device_set_name(FU_DEVICE(self), "BootGuard Configuration");
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_HOST_FIRMWARE_CHILD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE_CHILD);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_ONLY_CHECKSUM);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_FLAGS);
 }
 
 static void
 fu_intel_me_mkhi_device_class_init(FuIntelMeMkhiDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_intel_me_mkhi_device_setup;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_intel_me_mkhi_device_setup;
 }

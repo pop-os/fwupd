@@ -1,9 +1,9 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-docstring
 #
-# Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+# Copyright 2022 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # pylint: disable=consider-using-f-string
 
@@ -15,7 +15,6 @@ from typing import List
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-b",
@@ -45,7 +44,7 @@ if __name__ == "__main__":
         if len(sections) != 1:
             print("Multiple devices found, use --instance-id to choose between:")
             for section in sections:
-                print(" • {}".format(section))
+                print(f" • {section}")
             sys.exit(1)
         args.instance_id = sections[0]
 
@@ -54,12 +53,12 @@ if __name__ == "__main__":
     try:
         for key in config[args.instance_id]:
             if key in ["Inhibit", "Issue"]:
-                print("WARNING: skipping key {}".format(key))
+                print(f"WARNING: skipping key {key}")
                 continue
             value = config[args.instance_id][key]
-            lines.append("{}={}".format(key, value))
+            lines.append(f"{key}={value}")
     except KeyError:
-        print("No {} section".format(args.instance_id))
+        print(f"No {args.instance_id} section")
         sys.exit(1)
 
     # pad to the buffer size
@@ -71,5 +70,5 @@ if __name__ == "__main__":
 
     # success
     print("DS20 descriptor control transfer data:")
-    print(" ".join(["{:02x}".format(val) for val in list(buf)]))
+    print(" ".join([f"{val:02x}" for val in list(buf)]))
     print(base64.b64encode(buf).decode())

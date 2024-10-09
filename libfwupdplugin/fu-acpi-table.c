@@ -1,13 +1,15 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-acpi-table-struct.h"
 #include "fu-acpi-table.h"
+#include "fu-common.h"
+#include "fu-input-stream.h"
 #include "fu-sum.h"
 
 /**
@@ -114,21 +116,20 @@ fu_acpi_table_get_oem_revision(FuAcpiTable *self)
 
 static gboolean
 fu_acpi_table_parse(FuFirmware *firmware,
-		    GBytes *fw,
+		    GInputStream *stream,
 		    gsize offset,
 		    FwupdInstallFlags flags,
 		    GError **error)
 {
 	FuAcpiTable *self = FU_ACPI_TABLE(firmware);
 	FuAcpiTablePrivate *priv = GET_PRIVATE(self);
-	gsize bufsz = 0;
+	gsize streamsz = 0;
 	guint32 length;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autofree gchar *id = NULL;
-	g_autoptr(GByteArray) st = NULL;
+	g_autoptr(FuStructAcpiTable) st = NULL;
 
 	/* parse */
-	st = fu_struct_acpi_table_parse(buf, bufsz, offset, error);
+	st = fu_struct_acpi_table_parse_stream(stream, offset, error);
 	if (st == NULL)
 		return FALSE;
 	id = fu_struct_acpi_table_get_signature(st);
@@ -140,12 +141,14 @@ fu_acpi_table_parse(FuFirmware *firmware,
 
 	/* length */
 	length = fu_struct_acpi_table_get_length(st);
-	if (length > bufsz || length < st->len) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (length > streamsz || length < st->len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "table length not valid: got 0x%x but expected 0x%x",
-			    (guint)bufsz,
+			    (guint)streamsz,
 			    (guint)length);
 		return FALSE;
 	}
@@ -153,7 +156,9 @@ fu_acpi_table_parse(FuFirmware *firmware,
 
 	/* checksum */
 	if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
-		guint8 checksum_actual = fu_sum8(buf, length);
+		guint8 checksum_actual = 0;
+		if (!fu_input_stream_compute_sum8(stream, &checksum_actual, error))
+			return FALSE;
 		if (checksum_actual != 0x0) {
 			guint8 checksum = fu_struct_acpi_table_get_checksum(st);
 			g_set_error(error,
@@ -190,10 +195,10 @@ static void
 fu_acpi_table_class_init(FuAcpiTableClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_acpi_table_finalize;
-	klass_firmware->parse = fu_acpi_table_parse;
-	klass_firmware->export = fu_acpi_table_export;
+	firmware_class->parse = fu_acpi_table_parse;
+	firmware_class->export = fu_acpi_table_export;
 }
 
 /**

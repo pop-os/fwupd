@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -30,7 +30,7 @@ G_DEFINE_TYPE(FuCfuDevice, fu_cfu_device, FU_TYPE_HID_DEVICE)
 
 #define FU_CFU_DEVICE_TIMEOUT 5000 /* ms */
 
-#define FU_CFU_DEVICE_FLAG_SEND_OFFER_INFO (1 << 0)
+#define FU_CFU_DEVICE_FLAG_SEND_OFFER_INFO "send-offer-info"
 
 static void
 fu_cfu_device_map_to_string(GString *str, guint idt, FuCfuDeviceMap *map, const gchar *title)
@@ -38,20 +38,16 @@ fu_cfu_device_map_to_string(GString *str, guint idt, FuCfuDeviceMap *map, const 
 	g_autofree gchar *title_op = g_strdup_printf("%sOp", title);
 	g_autofree gchar *title_id = g_strdup_printf("%sId", title);
 	g_autofree gchar *title_ct = g_strdup_printf("%sCt", title);
-	fu_string_append_kx(str, idt, title_op, map->op);
-	fu_string_append_kx(str, idt, title_id, map->id);
-	fu_string_append_kx(str, idt, title_ct, map->ct);
+	fwupd_codec_string_append_hex(str, idt, title_op, map->op);
+	fwupd_codec_string_append_hex(str, idt, title_id, map->id);
+	fwupd_codec_string_append_hex(str, idt, title_ct, map->ct);
 }
 
 static void
 fu_cfu_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCfuDevice *self = FU_CFU_DEVICE(device);
-
-	/* FuUdevDevice->to_string */
-	FU_DEVICE_CLASS(fu_cfu_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append_kx(str, idt, "ProtocolVersion", self->protocol_version);
+	fwupd_codec_string_append_hex(str, idt, "ProtocolVersion", self->protocol_version);
 	fu_cfu_device_map_to_string(str, idt, &self->version_get_report, "VersionGetReport");
 	fu_cfu_device_map_to_string(str, idt, &self->offer_set_report, "OfferSetReport");
 	fu_cfu_device_map_to_string(str, idt, &self->offer_get_report, "OfferGetReport");
@@ -106,8 +102,8 @@ fu_cfu_device_send_offer_info(FuCfuDevice *self, FuCfuOfferInfoCode info_code, G
 	if (fu_struct_cfu_offer_rsp_get_token(st_res) !=
 	    FU_STRUCT_CFU_OFFER_INFO_REQ_DEFAULT_TOKEN) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "token invalid: got 0x%x and expected 0x%x",
 			    fu_struct_cfu_offer_rsp_get_token(st_res),
 			    (guint)FU_STRUCT_CFU_OFFER_INFO_REQ_DEFAULT_TOKEN);
@@ -116,8 +112,8 @@ fu_cfu_device_send_offer_info(FuCfuDevice *self, FuCfuOfferInfoCode info_code, G
 	if (fu_struct_cfu_offer_rsp_get_status(st_res) != FU_CFU_OFFER_STATUS_ACCEPT) {
 		g_set_error(
 		    error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_SUPPORTED,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "offer info %s not supported: %s",
 		    fu_cfu_offer_info_code_to_string(info_code),
 		    fu_cfu_offer_status_to_string(fu_struct_cfu_offer_rsp_get_status(st_res)));
@@ -181,8 +177,8 @@ fu_cfu_device_send_offer(FuCfuDevice *self,
 	if (fu_struct_cfu_offer_rsp_get_token(st) !=
 	    fu_cfu_offer_get_token(FU_CFU_OFFER(firmware))) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "offer token invalid: got %02x but expected %02x",
 			    fu_struct_cfu_offer_rsp_get_token(st),
 			    fu_cfu_offer_get_token(FU_CFU_OFFER(firmware)));
@@ -190,8 +186,8 @@ fu_cfu_device_send_offer(FuCfuDevice *self,
 	}
 	if (fu_struct_cfu_offer_rsp_get_status(st) != FU_CFU_OFFER_STATUS_ACCEPT) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "offer not supported: %s: %s",
 			    fu_cfu_offer_status_to_string(fu_struct_cfu_offer_rsp_get_status(st)),
 			    fu_cfu_rr_code_to_string(fu_struct_cfu_offer_rsp_get_rr_code(st)));
@@ -272,8 +268,8 @@ fu_cfu_device_send_payload(FuCfuDevice *self,
 		if (fu_struct_cfu_content_rsp_get_seq_number(st_rsp) !=
 		    fu_struct_cfu_content_req_get_seq_number(st_req)) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "sequence number invalid 0x%x: expected 0x%x",
 				    fu_struct_cfu_content_rsp_get_seq_number(st_rsp),
 				    fu_struct_cfu_content_req_get_seq_number(st_req));
@@ -281,8 +277,8 @@ fu_cfu_device_send_payload(FuCfuDevice *self,
 		}
 		if (fu_struct_cfu_content_rsp_get_status(st_rsp) != FU_CFU_CONTENT_STATUS_SUCCESS) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to send chunk %u: %s",
 				    i + 1,
 				    fu_cfu_content_status_to_string(
@@ -384,6 +380,32 @@ fu_cfu_device_ensure_map_item(FuHidDescriptor *descriptor, FuCfuDeviceMap *map, 
 }
 
 static gboolean
+fu_cfu_device_verify_descriptor(FuCfuDevice *self, FuHidDescriptor *descriptor, GError **error)
+{
+	if (!fu_cfu_device_ensure_map_item(descriptor, &self->version_get_report, error)) {
+		g_prefix_error(error, "invalid version-get-report: ");
+		return FALSE;
+	}
+	if (!fu_cfu_device_ensure_map_item(descriptor, &self->offer_set_report, error)) {
+		g_prefix_error(error, "invalid offer-set-report: ");
+		return FALSE;
+	}
+	if (!fu_cfu_device_ensure_map_item(descriptor, &self->offer_get_report, error)) {
+		g_prefix_error(error, "invalid offer-get-report: ");
+		return FALSE;
+	}
+	if (!fu_cfu_device_ensure_map_item(descriptor, &self->content_set_report, error)) {
+		g_prefix_error(error, "invalid content-set-report: ");
+		return FALSE;
+	}
+	if (!fu_cfu_device_ensure_map_item(descriptor, &self->content_get_report, error)) {
+		g_prefix_error(error, "invalid content-get-report: ");
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static gboolean
 fu_cfu_device_setup(FuDevice *device, GError **error)
 {
 	FuCfuDevice *self = FU_CFU_DEVICE(device);
@@ -392,7 +414,8 @@ fu_cfu_device_setup(FuDevice *device, GError **error)
 	g_autoptr(GHashTable) modules_by_cid = NULL;
 	g_autoptr(GByteArray) st = NULL;
 	g_autoptr(GByteArray) buf = g_byte_array_new();
-	g_autoptr(FuHidDescriptor) descriptor = NULL;
+	g_autoptr(GPtrArray) descriptors = NULL;
+	g_autoptr(GString) descriptors_error = g_string_new(NULL);
 
 	/* FuHidDevice->setup */
 	if (!FU_DEVICE_CLASS(fu_cfu_device_parent_class)->setup(device, error))
@@ -404,19 +427,32 @@ fu_cfu_device_setup(FuDevice *device, GError **error)
 					      fu_hid_device_get_ep_addr_in(FU_HID_DEVICE(device)));
 	}
 
-	descriptor = fu_hid_device_parse_descriptor(FU_HID_DEVICE(device), error);
-	if (descriptor == NULL)
+	/* try to parse each HID descriptor -- trying to find a CFU section */
+	descriptors = fu_hid_device_parse_descriptors(FU_HID_DEVICE(device), error);
+	if (descriptors == NULL)
 		return FALSE;
-	if (!fu_cfu_device_ensure_map_item(descriptor, &self->version_get_report, error))
+	for (guint i = 0; i < descriptors->len; i++) {
+		FuHidDescriptor *descriptor = g_ptr_array_index(descriptors, i);
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_cfu_device_verify_descriptor(self, descriptor, &error_local)) {
+			if (descriptors_error->len > 0) {
+				g_string_append(descriptors_error, ", ");
+			}
+			g_string_append_printf(descriptors_error,
+					       "descriptor 0x%x: %s",
+					       i,
+					       error_local->message);
+			continue;
+		}
+	}
+	if (self->content_get_report.ct == 0) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no CFU descriptor found: %s",
+			    descriptors_error->str);
 		return FALSE;
-	if (!fu_cfu_device_ensure_map_item(descriptor, &self->offer_set_report, error))
-		return FALSE;
-	if (!fu_cfu_device_ensure_map_item(descriptor, &self->offer_get_report, error))
-		return FALSE;
-	if (!fu_cfu_device_ensure_map_item(descriptor, &self->content_set_report, error))
-		return FALSE;
-	if (!fu_cfu_device_ensure_map_item(descriptor, &self->content_get_report, error))
-		return FALSE;
+	}
 
 	/* get version */
 	fu_byte_array_append_uint8(buf, self->version_get_report.id);
@@ -477,42 +513,45 @@ fu_cfu_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 	/* load from quirks */
 	if (g_strcmp0(key, "CfuVersionGetReport") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->version_get_report.op = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CfuOfferSetReport") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->offer_set_report.op = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CfuOfferGetReport") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->offer_get_report.op = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CfuContentSetReport") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->content_set_report.op = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CfuContentGetReport") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0x0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->content_get_report.op = tmp;
 		return TRUE;
 	}
 
 	/* failed */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -526,17 +565,15 @@ fu_cfu_device_init(FuCfuDevice *self)
 	self->content_set_report.op = 0x61;
 	self->content_get_report.op = 0x66;
 	fu_hid_device_add_flag(FU_HID_DEVICE(self), FU_HID_DEVICE_FLAG_AUTODETECT_EPS);
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_CFU_DEVICE_FLAG_SEND_OFFER_INFO,
-					"send-offer-info");
+	fu_device_register_private_flag(FU_DEVICE(self), FU_CFU_DEVICE_FLAG_SEND_OFFER_INFO);
 }
 
 static void
 fu_cfu_device_class_init(FuCfuDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_cfu_device_setup;
-	klass_device->to_string = fu_cfu_device_to_string;
-	klass_device->write_firmware = fu_cfu_device_write_firmware;
-	klass_device->set_quirk_kv = fu_cfu_device_set_quirk_kv;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_cfu_device_setup;
+	device_class->to_string = fu_cfu_device_to_string;
+	device_class->write_firmware = fu_cfu_device_write_firmware;
+	device_class->set_quirk_kv = fu_cfu_device_set_quirk_kv;
 }

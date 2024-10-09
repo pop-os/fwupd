@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCommon"
@@ -14,8 +14,8 @@
 #include <sys/utsname.h>
 #endif
 
-#include "fu-bytes.h"
 #include "fu-common.h"
+#include "fu-input-stream.h"
 #include "fu-kernel.h"
 #include "fu-path.h"
 #include "fu-string.h"
@@ -157,60 +157,19 @@ fu_kernel_get_firmware_search_path(GError **error)
 gboolean
 fu_kernel_set_firmware_search_path(const gchar *path, GError **error)
 {
-#if GLIB_CHECK_VERSION(2, 66, 0)
 	g_autofree gchar *sys_fw_search_path_prm = NULL;
 
 	g_return_val_if_fail(path != NULL, FALSE);
 	g_return_val_if_fail(strlen(path) < PATH_MAX, FALSE);
 
-	sys_fw_search_path_prm = fu_path_from_kind(FU_PATH_KIND_FIRMWARE_SEARCH);
-
 	g_debug("writing firmware search path (%" G_GSIZE_FORMAT "): %s", strlen(path), path);
-
+	sys_fw_search_path_prm = fu_path_from_kind(FU_PATH_KIND_FIRMWARE_SEARCH);
 	return g_file_set_contents_full(sys_fw_search_path_prm,
 					path,
 					strlen(path),
 					G_FILE_SET_CONTENTS_NONE,
 					0644,
 					error);
-#else
-	FILE *fd;
-	gsize res;
-	g_autofree gchar *sys_fw_search_path_prm = NULL;
-
-	g_return_val_if_fail(path != NULL, FALSE);
-	g_return_val_if_fail(strlen(path) < PATH_MAX, FALSE);
-
-	sys_fw_search_path_prm = fu_path_from_kind(FU_PATH_KIND_FIRMWARE_SEARCH);
-	/* g_file_set_contents will try to create backup files in sysfs, so use fopen here */
-	fd = fopen(sys_fw_search_path_prm, "w");
-	if (fd == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_PERMISSION_DENIED,
-			    "Failed to open %s: %s",
-			    sys_fw_search_path_prm,
-			    g_strerror(errno));
-		return FALSE;
-	}
-
-	g_debug("writing firmware search path (%" G_GSIZE_FORMAT "): %s", strlen(path), path);
-
-	res = fwrite(path, sizeof(gchar), strlen(path), fd);
-
-	fclose(fd);
-
-	if (res != strlen(path)) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_WRITE,
-			    "Failed to write firmware search path: %s",
-			    g_strerror(errno));
-		return FALSE;
-	}
-
-	return TRUE;
-#endif
 }
 
 /**
@@ -251,8 +210,8 @@ fu_kernel_parse_config_line_cb(GString *token, guint token_idx, gpointer user_da
 	kv = g_strsplit(token->str, "=", 2);
 	if (g_strv_length(kv) != 2) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid format for '%s'",
 			    token->str);
 		return FALSE;
@@ -369,7 +328,7 @@ fu_kernel_get_config(GError **error)
 			return NULL;
 		conv = G_CONVERTER(g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_GZIP));
 		istream2 = g_converter_input_stream_new(istream1, conv);
-		payload = fu_bytes_get_contents_stream(istream2, G_MAXSIZE, error);
+		payload = fu_input_stream_read_bytes(istream2, 0, G_MAXSIZE, error);
 		if (payload == NULL)
 			return NULL;
 		return fu_kernel_parse_config(g_bytes_get_data(payload, NULL),
@@ -505,8 +464,8 @@ fu_kernel_check_cmdline_mutable(GError **error)
 		}
 		if (!g_file_info_get_attribute_boolean(info, G_FILE_ATTRIBUTE_ACCESS_CAN_WRITE)) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "%s is not writable",
 				    config_files[i]);
 			return FALSE;

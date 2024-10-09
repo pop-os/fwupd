@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2020 Cypress Semiconductor Corporation.
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Cypress Semiconductor Corporation.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -74,7 +74,7 @@ fu_ccgx_dmc_devx_device_hexver_to_string(FuCcgxDmcDevxDevice *self,
 	g_autofree gchar *val =
 	    fu_version_from_uint64(fu_memread_uint64(fw_version + offset, G_LITTLE_ENDIAN),
 				   FWUPD_VERSION_FORMAT_HEX);
-	fu_string_append(str, idt, key, val);
+	fwupd_codec_string_append(str, idt, key, val);
 }
 
 static void
@@ -86,7 +86,7 @@ fu_ccgx_dmc_devx_device_hx3ver_to_string(FuCcgxDmcDevxDevice *self,
 {
 	g_autofree gchar *key = g_strdup_printf("FwVersion[%s]", kind);
 	g_autofree gchar *val = fu_ccgx_dmc_devx_device_version_hx3(self, offset);
-	fu_string_append(str, idt, key, val);
+	fwupd_codec_string_append(str, idt, key, val);
 }
 
 static void
@@ -100,7 +100,7 @@ fu_ccgx_dmc_devx_device_dmcver_to_string(FuCcgxDmcDevxDevice *self,
 	g_autofree gchar *bfw_val = fu_ccgx_dmc_devx_device_version_dmc_bfw(self, offset);
 	g_autofree gchar *app_val = fu_ccgx_dmc_devx_device_version_dmc_app(self, offset);
 	g_autofree gchar *tmp = g_strdup_printf("base:%s\tapp:%s", bfw_val, app_val);
-	fu_string_append(str, idt, key, tmp);
+	fwupd_codec_string_append(str, idt, key, tmp);
 }
 
 static FuCcgxDmcDevxDeviceType
@@ -129,31 +129,32 @@ fu_ccgx_dmc_devx_device_to_string(FuDevice *device, guint idt, GString *str)
 
 	if (device_type_str != NULL) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%x [%s]", device_type, device_type_str);
-		fu_string_append(str, idt, "DeviceType", tmp);
+		fwupd_codec_string_append(str, idt, "DeviceType", tmp);
 	} else {
-		fu_string_append_kx(str, idt, "DeviceType", device_type);
+		fwupd_codec_string_append_hex(str, idt, "DeviceType", device_type);
 	}
 	if (image_mode < FU_CCGX_DMC_IMG_MODE_LAST) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%x [%s]",
 							image_mode,
 							fu_ccgx_dmc_img_mode_to_string(image_mode));
-		fu_string_append(str, idt, "ImageMode", tmp);
+		fwupd_codec_string_append(str, idt, "ImageMode", tmp);
 	} else {
-		fu_string_append_kx(str, idt, "ImageMode", image_mode);
+		fwupd_codec_string_append_hex(str, idt, "ImageMode", image_mode);
 	}
 
-	fu_string_append_kx(str,
-			    idt,
-			    "CurrentImage",
-			    fu_struct_ccgx_dmc_devx_status_get_current_image(self->status));
-	fu_string_append(str,
-			 idt,
-			 "ImgStatus1",
-			 fu_ccgx_dmc_img_status_to_string(img_status & 0x0F));
-	fu_string_append(str,
-			 idt,
-			 "ImgStatus2",
-			 fu_ccgx_dmc_img_status_to_string((img_status >> 4) & 0x0F));
+	fwupd_codec_string_append_hex(
+	    str,
+	    idt,
+	    "CurrentImage",
+	    fu_struct_ccgx_dmc_devx_status_get_current_image(self->status));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "ImgStatus1",
+				  fu_ccgx_dmc_img_status_to_string(img_status & 0x0F));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "ImgStatus2",
+				  fu_ccgx_dmc_img_status_to_string((img_status >> 4) & 0x0F));
 
 	/* versions */
 	if (device_version_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_DMC) {
@@ -183,18 +184,18 @@ fu_ccgx_dmc_devx_device_set_quirk_kv(FuDevice *device,
 	if (g_strcmp0(key, "CcgxDmcCompositeVersion") == 0) {
 		guint64 tmp = 0;
 		FuDevice *proxy = fu_device_get_proxy(device);
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		if (fu_device_get_version_raw(proxy) != tmp) {
 			g_debug("overriding composite version from %u to %u from %s",
 				(guint)fu_device_get_version_raw(proxy),
 				(guint)tmp,
 				fu_device_get_id(device));
-			fu_device_set_version_u32(proxy, tmp);
+			fu_device_set_version_raw(proxy, tmp);
 		}
 		return TRUE;
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no supported");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no supported");
 	return FALSE;
 }
 
@@ -267,10 +268,9 @@ fu_ccgx_dmc_devx_device_probe(FuDevice *device, GError **error)
 	} else if (device_version_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_HX3) {
 		version = fu_ccgx_dmc_devx_device_version_hx3(self, offset);
 		fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_TRIPLET);
-		fu_device_set_version(device, version);
 	}
 	if (version != NULL) {
-		fu_device_set_version(device, version);
+		fu_device_set_version(device, version); /* nocheck:set-version */
 		fu_device_add_instance_strsafe(device, "VER", version);
 	}
 
@@ -281,8 +281,8 @@ fu_ccgx_dmc_devx_device_probe(FuDevice *device, GError **error)
 	fu_device_add_instance_u8(device,
 				  "CID",
 				  fu_struct_ccgx_dmc_devx_status_get_component_id(self->status));
-	fu_device_add_instance_u16(device, "VID", fu_usb_device_get_vid(FU_USB_DEVICE(proxy)));
-	fu_device_add_instance_u16(device, "PID", fu_usb_device_get_pid(FU_USB_DEVICE(proxy)));
+	fu_device_add_instance_u16(device, "VID", fu_device_get_vid(proxy));
+	fu_device_add_instance_u16(device, "PID", fu_device_get_pid(proxy));
 	fu_device_build_instance_id(device, NULL, "USB", "VID", "PID", "CID", NULL);
 	fu_device_build_instance_id_full(device,
 					 FU_DEVICE_INSTANCE_FLAG_QUIRKS,
@@ -307,6 +307,12 @@ fu_ccgx_dmc_devx_device_probe(FuDevice *device, GError **error)
 	return TRUE;
 }
 
+static gchar *
+fu_ccgx_dmc_devx_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_ccgx_dmc_devx_device_init(FuCcgxDmcDevxDevice *self)
 {
@@ -324,12 +330,13 @@ fu_ccgx_dmc_devx_device_finalize(GObject *object)
 static void
 fu_ccgx_dmc_devx_device_class_init(FuCcgxDmcDevxDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_ccgx_dmc_devx_device_finalize;
-	klass_device->probe = fu_ccgx_dmc_devx_device_probe;
-	klass_device->to_string = fu_ccgx_dmc_devx_device_to_string;
-	klass_device->set_quirk_kv = fu_ccgx_dmc_devx_device_set_quirk_kv;
+	device_class->probe = fu_ccgx_dmc_devx_device_probe;
+	device_class->to_string = fu_ccgx_dmc_devx_device_to_string;
+	device_class->set_quirk_kv = fu_ccgx_dmc_devx_device_set_quirk_kv;
+	device_class->convert_version = fu_ccgx_dmc_devx_device_convert_version;
 }
 
 FuCcgxDmcDevxDevice *

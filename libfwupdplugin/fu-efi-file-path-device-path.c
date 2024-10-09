@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuEfiDevicePath"
@@ -23,7 +23,15 @@ struct _FuEfiFilePathDevicePath {
 	FuEfiDevicePath parent_instance;
 };
 
-G_DEFINE_TYPE(FuEfiFilePathDevicePath, fu_efi_file_path_device_path, FU_TYPE_EFI_DEVICE_PATH)
+static void
+fu_efi_file_path_device_path_codec_iface_init(FwupdCodecInterface *iface);
+
+G_DEFINE_TYPE_EXTENDED(FuEfiFilePathDevicePath,
+		       fu_efi_file_path_device_path,
+		       FU_TYPE_EFI_DEVICE_PATH,
+		       0,
+		       G_IMPLEMENT_INTERFACE(FWUPD_TYPE_CODEC,
+					     fu_efi_file_path_device_path_codec_iface_init))
 
 /**
  * fu_efi_file_path_device_path_get_name:
@@ -105,6 +113,16 @@ fu_efi_file_path_device_path_export(FuFirmware *firmware,
 	fu_xmlb_builder_insert_kv(bn, "name", name);
 }
 
+static void
+fu_efi_file_path_device_path_add_json(FwupdCodec *codec,
+				      JsonBuilder *builder,
+				      FwupdCodecFlags flags)
+{
+	FuEfiFilePathDevicePath *self = FU_EFI_FILE_PATH_DEVICE_PATH(codec);
+	g_autofree gchar *name = fu_efi_file_path_device_path_get_name(self, NULL);
+	fwupd_codec_json_append(builder, "Name", name);
+}
+
 static gboolean
 fu_efi_file_path_device_path_build(FuFirmware *firmware, XbNode *n, GError **error)
 {
@@ -123,6 +141,12 @@ fu_efi_file_path_device_path_build(FuFirmware *firmware, XbNode *n, GError **err
 }
 
 static void
+fu_efi_file_path_device_path_codec_iface_init(FwupdCodecInterface *iface)
+{
+	iface->add_json = fu_efi_file_path_device_path_add_json;
+}
+
+static void
 fu_efi_file_path_device_path_init(FuEfiFilePathDevicePath *self)
 {
 	fu_firmware_set_idx(FU_FIRMWARE(self), FU_EFI_DEVICE_PATH_TYPE_MEDIA);
@@ -133,9 +157,9 @@ fu_efi_file_path_device_path_init(FuEfiFilePathDevicePath *self)
 static void
 fu_efi_file_path_device_path_class_init(FuEfiFilePathDevicePathClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->export = fu_efi_file_path_device_path_export;
-	klass_firmware->build = fu_efi_file_path_device_path_build;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->export = fu_efi_file_path_device_path_export;
+	firmware_class->build = fu_efi_file_path_device_path_build;
 }
 
 /**

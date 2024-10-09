@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Intel
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Intel
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuFirmware"
@@ -15,6 +15,7 @@
 #include "fu-bytes.h"
 #include "fu-ifwi-fpt-firmware.h"
 #include "fu-ifwi-struct.h"
+#include "fu-partial-input-stream.h"
 #include "fu-string.h"
 
 /**
@@ -31,17 +32,20 @@
 
 G_DEFINE_TYPE(FuIfwiFptFirmware, fu_ifwi_fpt_firmware, FU_TYPE_FIRMWARE)
 
-#define FU_IFWI_FPT_MAX_ENTRIES	   56
+#define FU_IFWI_FPT_MAX_ENTRIES 56
 
 static gboolean
-fu_ifwi_fpt_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_ifwi_fpt_firmware_validate(FuFirmware *firmware,
+			      GInputStream *stream,
+			      gsize offset,
+			      GError **error)
 {
-	return fu_struct_ifwi_fpt_validate_bytes(fw, offset, error);
+	return fu_struct_ifwi_fpt_validate_stream(stream, offset, error);
 }
 
 static gboolean
 fu_ifwi_fpt_firmware_parse(FuFirmware *firmware,
-			   GBytes *fw,
+			   GInputStream *stream,
 			   gsize offset,
 			   FwupdInstallFlags flags,
 			   GError **error)
@@ -50,14 +54,14 @@ fu_ifwi_fpt_firmware_parse(FuFirmware *firmware,
 	g_autoptr(GByteArray) st_hdr = NULL;
 
 	/* sanity check */
-	st_hdr = fu_struct_ifwi_fpt_parse_bytes(fw, offset, error);
+	st_hdr = fu_struct_ifwi_fpt_parse_stream(stream, offset, error);
 	if (st_hdr == NULL)
 		return FALSE;
 	num_of_entries = fu_struct_ifwi_fpt_get_num_of_entries(st_hdr);
 	if (num_of_entries > FU_IFWI_FPT_MAX_ENTRIES) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid FPT number of entries %u",
 			    num_of_entries);
 		return FALSE;
@@ -65,8 +69,8 @@ fu_ifwi_fpt_firmware_parse(FuFirmware *firmware,
 	if (fu_struct_ifwi_fpt_get_header_version(st_hdr) <
 	    FU_STRUCT_IFWI_FPT_DEFAULT_HEADER_VERSION) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid FPT header version: 0x%x",
 			    fu_struct_ifwi_fpt_get_header_version(st_hdr));
 		return FALSE;
@@ -84,7 +88,7 @@ fu_ifwi_fpt_firmware_parse(FuFirmware *firmware,
 		g_autoptr(GByteArray) st_ent = NULL;
 
 		/* read IDX */
-		st_ent = fu_struct_ifwi_fpt_entry_parse_bytes(fw, offset, error);
+		st_ent = fu_struct_ifwi_fpt_entry_parse_stream(stream, offset, error);
 		if (st_ent == NULL)
 			return FALSE;
 		partition_name = fu_struct_ifwi_fpt_entry_get_partition_name(st_ent);
@@ -98,12 +102,14 @@ fu_ifwi_fpt_firmware_parse(FuFirmware *firmware,
 		/* get data at offset using zero-copy */
 		data_length = fu_struct_ifwi_fpt_entry_get_length(st_ent);
 		if (data_length != 0x0) {
-			g_autoptr(GBytes) blob = NULL;
 			guint32 data_offset = fu_struct_ifwi_fpt_entry_get_offset(st_ent);
-			blob = fu_bytes_new_offset(fw, data_offset, data_length, error);
-			if (blob == NULL)
+			g_autoptr(GInputStream) partial_stream = NULL;
+			partial_stream =
+			    fu_partial_input_stream_new(stream, data_offset, data_length, error);
+			if (partial_stream == NULL)
 				return FALSE;
-			fu_firmware_set_bytes(img, blob);
+			if (!fu_firmware_parse_stream(img, partial_stream, 0x0, flags, error))
+				return FALSE;
 			fu_firmware_set_offset(img, data_offset);
 		}
 		if (!fu_firmware_add_image_full(firmware, img, error))
@@ -175,10 +181,10 @@ fu_ifwi_fpt_firmware_init(FuIfwiFptFirmware *self)
 static void
 fu_ifwi_fpt_firmware_class_init(FuIfwiFptFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_ifwi_fpt_firmware_check_magic;
-	klass_firmware->parse = fu_ifwi_fpt_firmware_parse;
-	klass_firmware->write = fu_ifwi_fpt_firmware_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_ifwi_fpt_firmware_validate;
+	firmware_class->parse = fu_ifwi_fpt_firmware_parse;
+	firmware_class->write = fu_ifwi_fpt_firmware_write;
 }
 
 /**

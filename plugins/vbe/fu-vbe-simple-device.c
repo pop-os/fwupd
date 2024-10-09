@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Google LLC
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Google LLC
  * Written by Simon Glass <sjg@chromium.org>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -39,18 +39,11 @@ static void
 fu_vbe_simple_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuVbeSimpleDevice *self = FU_VBE_SIMPLE_DEVICE(device);
-
-	/* FuVbeDevice->to_string */
-	FU_DEVICE_CLASS(fu_vbe_simple_device_parent_class)->to_string(device, idt, str);
-
-	if (self->storage != NULL)
-		fu_string_append(str, idt, "Storage", self->storage);
-	if (self->devname != NULL)
-		fu_string_append(str, idt, "Devname", self->devname);
-	fu_string_append_kx(str, idt, "AreaStart", self->area_start);
-	fu_string_append_kx(str, idt, "AreaSize", self->area_size);
-	if (self->skip_offset != 0)
-		fu_string_append_kx(str, idt, "SkipOffset", self->skip_offset);
+	fwupd_codec_string_append(str, idt, "Storage", self->storage);
+	fwupd_codec_string_append(str, idt, "Devname", self->devname);
+	fwupd_codec_string_append_hex(str, idt, "AreaStart", self->area_start);
+	fwupd_codec_string_append_hex(str, idt, "AreaSize", self->area_size);
+	fwupd_codec_string_append_hex(str, idt, "SkipOffset", self->skip_offset);
 }
 
 static gboolean
@@ -63,7 +56,7 @@ fu_vbe_simple_device_parse_devnum(const gchar *str, guint *value, GError **error
 		str++;
 
 	/* convert to uint */
-	if (!fu_strtoull(str, &val64, 0x0, G_MAXUINT, error))
+	if (!fu_strtoull(str, &val64, 0x0, G_MAXUINT, FU_INTEGER_BASE_AUTO, error))
 		return FALSE;
 	if (value != NULL)
 		*value = val64;
@@ -211,13 +204,18 @@ fu_vbe_simple_device_get_cfg_compatible(FuVbeSimpleDevice *self,
 
 	/* failure */
 	str = g_strjoinv(", ", device_compatible);
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "no images found that match %s", str);
+	g_set_error(error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_FOUND,
+		    "no images found that match %s",
+		    str);
 	return NULL;
 }
 
 static FuFirmware *
 fu_vbe_simple_device_prepare_firmware(FuDevice *device,
-				      GBytes *fw,
+				      GInputStream *stream,
+				      FuProgress *progress,
 				      FwupdInstallFlags flags,
 				      GError **error)
 {
@@ -229,7 +227,7 @@ fu_vbe_simple_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware_container = fu_firmware_new();
 
 	/* parse all images */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 
 	/* look for a compatible configuration */
@@ -431,7 +429,7 @@ fu_vbe_simple_device_upload(FuDevice *device, FuProgress *progress, GError **err
 				    FWUPD_ERROR_READ,
 				    "incomplete read of %s @0x%x",
 				    self->devname,
-				    fu_chunk_get_address(chk));
+				    (guint)fu_chunk_get_address(chk));
 			return NULL;
 		}
 		g_byte_array_append(buf, tmpbuf, fu_chunk_get_data_sz(chk));
@@ -457,7 +455,7 @@ fu_vbe_simple_device_init(FuVbeSimpleDevice *self)
 {
 	fu_device_set_name(FU_DEVICE(self), "simple");
 	fu_device_set_vendor(FU_DEVICE(self), "U-Boot");
-	fu_device_add_vendor_id(FU_DEVICE(self), "VBE:U-Boot");
+	fu_device_build_vendor_id(FU_DEVICE(self), "VBE", "U-Boot");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_set_version_lowest(FU_DEVICE(self), "0.0.1");
 }
@@ -482,15 +480,15 @@ static void
 fu_vbe_simple_device_class_init(FuVbeSimpleDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->constructed = fu_vbe_simple_device_constructed;
 	object_class->finalize = fu_vbe_simple_device_finalize;
-	klass_device->to_string = fu_vbe_simple_device_to_string;
-	klass_device->probe = fu_vbe_simple_device_probe;
-	klass_device->open = fu_vbe_simple_device_open;
-	klass_device->close = fu_vbe_simple_device_close;
-	klass_device->set_progress = fu_vbe_simple_device_set_progress;
-	klass_device->prepare_firmware = fu_vbe_simple_device_prepare_firmware;
-	klass_device->write_firmware = fu_vbe_simple_device_write_firmware;
-	klass_device->dump_firmware = fu_vbe_simple_device_upload;
+	device_class->to_string = fu_vbe_simple_device_to_string;
+	device_class->probe = fu_vbe_simple_device_probe;
+	device_class->open = fu_vbe_simple_device_open;
+	device_class->close = fu_vbe_simple_device_close;
+	device_class->set_progress = fu_vbe_simple_device_set_progress;
+	device_class->prepare_firmware = fu_vbe_simple_device_prepare_firmware;
+	device_class->write_firmware = fu_vbe_simple_device_write_firmware;
+	device_class->dump_firmware = fu_vbe_simple_device_upload;
 }

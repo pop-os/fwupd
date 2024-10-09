@@ -1,10 +1,10 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2016 Mario Limonciello <mario.limonciello@dell.com>
- * Copyright (C) 2021 Jeffrey Lin <jlin@kinet-ic.com>
- * Copyright (C) 2022 Hai Su <hsu@kinet-ic.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2021 Jeffrey Lin <jlin@kinet-ic.com>
+ * Copyright 2022 Hai Su <hsu@kinet-ic.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -27,11 +27,14 @@ fu_kinetic_dp_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuKineticDpDevice *self = FU_KINETIC_DP_DEVICE(device);
 	FuKineticDpDevicePrivate *priv = GET_PRIVATE(self);
-	fu_string_append(str, idt, "Family", fu_kinetic_dp_family_to_string(priv->family));
-	fu_string_append(str, idt, "ChipId", fu_kinetic_dp_chip_to_string(priv->chip_id));
-	fu_string_append(str, idt, "FwState", fu_kinetic_dp_fw_state_to_string(priv->fw_state));
-	fu_string_append_kx(str, idt, "CustomerId", priv->customer_id);
-	fu_string_append_kx(str, idt, "CustomerBoard", priv->customer_board);
+	fwupd_codec_string_append(str, idt, "Family", fu_kinetic_dp_family_to_string(priv->family));
+	fwupd_codec_string_append(str, idt, "ChipId", fu_kinetic_dp_chip_to_string(priv->chip_id));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "FwState",
+				  fu_kinetic_dp_fw_state_to_string(priv->fw_state));
+	fwupd_codec_string_append_hex(str, idt, "CustomerId", priv->customer_id);
+	fwupd_codec_string_append_hex(str, idt, "CustomerBoard", priv->customer_board);
 }
 
 void
@@ -87,8 +90,8 @@ fu_kinetic_dp_device_dpcd_read_oui(FuKineticDpDevice *self,
 {
 	if (bufsz < DPCD_SIZE_IEEE_OUI) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "aux dpcd read buffer size [0x%x] is too small to read IEEE OUI",
 			    (guint)bufsz);
 		return FALSE;
@@ -160,8 +163,8 @@ fu_kinetic_dp_device_ensure_customer(FuKineticDpDevice *self, GError **error)
 
 	/* Kinetic EV board */
 	if (priv->customer_id == 0x0) {
-		fu_device_add_internal_flag(FU_DEVICE(self),
-					    FU_DEVICE_INTERNAL_FLAG_ENFORCE_REQUIRES);
+		fu_device_add_private_flag(FU_DEVICE(self),
+					   FU_DEVICE_PRIVATE_FLAG_ENFORCE_REQUIRES);
 	}
 
 	/* success */
@@ -188,7 +191,10 @@ fu_kinetic_dp_device_setup(FuDevice *device, GError **error)
 
 	/* sanity check */
 	if (fu_dpaux_device_get_dpcd_ieee_oui(FU_DPAUX_DEVICE(device)) == 0x0) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no IEEE OUI set");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "no IEEE OUI set");
 		return FALSE;
 	}
 
@@ -230,9 +236,9 @@ fu_kinetic_dp_device_setup(FuDevice *device, GError **error)
 static void
 fu_kinetic_dp_device_class_init(FuKineticDpDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_kinetic_dp_device_setup;
-	klass_device->to_string = fu_kinetic_dp_device_to_string;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_kinetic_dp_device_setup;
+	device_class->to_string = fu_kinetic_dp_device_to_string;
 }
 
 static void
@@ -240,12 +246,12 @@ fu_kinetic_dp_device_init(FuKineticDpDevice *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.kinet-ic.dp");
 	fu_device_set_vendor(FU_DEVICE(self), "Kinetic Technologies");
-	fu_device_add_vendor_id(FU_DEVICE(self), "DRM_DP_AUX_DEV:0x329A");
+	fu_device_build_vendor_id_u16(FU_DEVICE(self), "DRM_DP_AUX_DEV", 0x329A);
 	fu_device_set_summary(FU_DEVICE(self), "DisplayPort Protocol Converter");
 	fu_device_add_icon(FU_DEVICE(self), "video-display");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_TRIPLET);
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),
-				 FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
 }

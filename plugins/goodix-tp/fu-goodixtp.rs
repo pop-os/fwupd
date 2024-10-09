@@ -1,7 +1,7 @@
-// Copyright (C) 2023 Goodix.inc <xulinkun@goodix.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Goodix.inc <xulinkun@goodix.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-enum GoodixtpIcType {
+enum FuGoodixtpIcType {
     None,
     Phoenix,
     TypeNanjing,
@@ -11,8 +11,8 @@ enum GoodixtpIcType {
     Yellowstone,
 }
 
-#[derive(ParseBytes)]
-struct GoodixBrlbHdr {
+#[derive(ParseStream)]
+struct FuStructGoodixBrlbHdr {
     firmware_size: u32le,
     checksum: u32le,
     _unknown: [u8; 19],
@@ -21,16 +21,16 @@ struct GoodixBrlbHdr {
     _unknown: [u8; 12],
 }
 
-#[derive(ParseBytes)]
-struct GoodixBrlbImg {
+#[derive(ParseStream)]
+struct FuStructGoodixBrlbImg {
     kind: u8,
     size: u32le,
     addr: u32le,
     _unknown: [u8; 1],
 }
 
-#[derive(ParseBytes)]
-struct GoodixGtx8Hdr {
+#[derive(ParseStream)]
+struct FuStructGoodixGtx8Hdr {
     firmware_size: u32be,
     checksum: u16be,
     _unknown: [u8; 19],
@@ -39,8 +39,8 @@ struct GoodixGtx8Hdr {
     _unknown: [u8; 4],
 }
 
-#[derive(ParseBytes)]
-struct GoodixGtx8Img {
+#[derive(ParseStream)]
+struct FuStructGoodixGtx8Img {
     kind: u8,
     size: u32be,
     addr: u16be,

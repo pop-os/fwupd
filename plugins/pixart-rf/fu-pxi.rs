@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
-enum PxiOtaSpecCheckResult {
+enum FuPxiOtaSpecCheckResult {
     Ok = 1,
     FwOutOfBounds = 2,
     ProcessIllegal = 3,
@@ -12,7 +12,7 @@ enum PxiOtaSpecCheckResult {
 }
 
 #[derive(ToString)]
-enum PxiWirelessModuleOtaRspCode {
+enum FuPxiWirelessModuleOtaRspCode {
     Ok,
     Finish,
     Fail,

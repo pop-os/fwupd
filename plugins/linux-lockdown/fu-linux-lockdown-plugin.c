@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -86,9 +86,14 @@ fu_linux_lockdown_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError 
 }
 
 static gboolean
-fu_linux_lockdown_plugin_ensure_security_attr_flags(FwupdSecurityAttr *attr, GError **error)
+fu_linux_lockdown_plugin_ensure_security_attr_flags(FuLinuxLockdownPlugin *self,
+						    FwupdSecurityAttr *attr,
+						    GError **error)
 {
+	FuContext *ctx = fu_plugin_get_context(FU_PLUGIN(self));
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	const gchar *value;
+	gboolean secureboot_enabled = FALSE;
 	g_autoptr(GHashTable) cmdline = NULL;
 	g_autoptr(GHashTable) config = NULL;
 
@@ -107,19 +112,21 @@ fu_linux_lockdown_plugin_ensure_security_attr_flags(FwupdSecurityAttr *attr, GEr
 		return FALSE;
 	if (!g_hash_table_contains(config, "CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE")) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "config does not have CONFIG_LOCK_DOWN_KERNEL_FORCE_NONE");
 		return FALSE;
 	}
 
 	/* we cannot change this */
+	if (!fu_efivars_get_secure_boot(efivars, &secureboot_enabled, error))
+		return FALSE;
 	if (g_hash_table_contains(config, "CONFIG_LOCK_DOWN_IN_EFI_SECURE_BOOT") &&
-	    fu_efivar_secure_boot_enabled(NULL)) {
+	    secureboot_enabled) {
 		g_set_error_literal(
 		    error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_INVALID_ARGUMENT,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "kernel lockdown cannot be changed when secure boot is enabled");
 		return FALSE;
 	}
@@ -151,7 +158,7 @@ fu_linux_lockdown_plugin_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *a
 	fu_security_attrs_append(attrs, attr);
 
 	/* we might be able to fix this */
-	if (!fu_linux_lockdown_plugin_ensure_security_attr_flags(attr, &error_local))
+	if (!fu_linux_lockdown_plugin_ensure_security_attr_flags(self, attr, &error_local))
 		g_info("failed to ensure attribute fix flags: %s", error_local->message);
 
 	if (self->lockdown == FU_LINUX_LOCKDOWN_UNKNOWN) {
@@ -178,7 +185,10 @@ static void
 fu_linux_lockdown_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 {
 	FuLinuxLockdownPlugin *self = FU_LINUX_LOCKDOWN_PLUGIN(plugin);
-	fu_string_append(str, idt, "Lockdown", fu_linux_lockdown_to_string(self->lockdown));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "Lockdown",
+				  fu_linux_lockdown_to_string(self->lockdown));
 }
 
 static void
@@ -187,7 +197,7 @@ fu_linux_lockdown_plugin_init(FuLinuxLockdownPlugin *self)
 }
 
 static void
-fu_linux_lockdown_finalize(GObject *obj)
+fu_linux_lockdown_plugin_finalize(GObject *obj)
 {
 	FuLinuxLockdownPlugin *self = FU_LINUX_LOCKDOWN_PLUGIN(obj);
 	if (self->file != NULL)
@@ -221,7 +231,7 @@ fu_linux_lockdown_plugin_class_init(FuLinuxLockdownPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->finalize = fu_linux_lockdown_finalize;
+	object_class->finalize = fu_linux_lockdown_plugin_finalize;
 	plugin_class->to_string = fu_linux_lockdown_plugin_to_string;
 	plugin_class->startup = fu_linux_lockdown_plugin_startup;
 	plugin_class->add_security_attrs = fu_linux_lockdown_plugin_add_security_attrs;

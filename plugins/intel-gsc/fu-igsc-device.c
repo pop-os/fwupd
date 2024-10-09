@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2022 Intel, Inc
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Intel, Inc
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR Apache-2.0
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR Apache-2.0
  */
 
 #include "config.h"
@@ -22,11 +22,12 @@ struct _FuIgscDevice {
 	gboolean oprom_code_devid_enforcement;
 };
 
-#define FU_IGSC_DEVICE_FLAG_HAS_AUX   (1 << 0)
-#define FU_IGSC_DEVICE_FLAG_HAS_OPROM (1 << 1)
+#define FU_IGSC_DEVICE_FLAG_HAS_AUX   "has-aux"
+#define FU_IGSC_DEVICE_FLAG_HAS_OPROM "has-oprom"
 
-#define FU_IGSC_DEVICE_MEI_WRITE_TIMEOUT 60000	/* 60 sec */
-#define FU_IGSC_DEVICE_MEI_READ_TIMEOUT	 480000 /* 480 sec */
+#define FU_IGSC_DEVICE_POWER_WRITE_TIMEOUT 1500	  /* ms */
+#define FU_IGSC_DEVICE_MEI_WRITE_TIMEOUT   60000  /* 60 sec */
+#define FU_IGSC_DEVICE_MEI_READ_TIMEOUT	   480000 /* 480 sec */
 
 G_DEFINE_TYPE(FuIgscDevice, fu_igsc_device, FU_TYPE_MEI_DEVICE)
 
@@ -44,15 +45,14 @@ static void
 fu_igsc_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuIgscDevice *self = FU_IGSC_DEVICE(device);
-	FU_DEVICE_CLASS(fu_igsc_device_parent_class)->to_string(device, idt, str);
-	fu_string_append(str, idt, "Project", self->project);
-	fu_string_append_kx(str, idt, "HwSku", self->hw_sku);
-	fu_string_append_kx(str, idt, "SubsystemVendor", self->subsystem_vendor);
-	fu_string_append_kx(str, idt, "SubsystemModel", self->subsystem_model);
-	fu_string_append_kb(str,
-			    idt,
-			    "OpromCodeDevidEnforcement",
-			    self->oprom_code_devid_enforcement);
+	fwupd_codec_string_append(str, idt, "Project", self->project);
+	fwupd_codec_string_append_hex(str, idt, "HwSku", self->hw_sku);
+	fwupd_codec_string_append_hex(str, idt, "SubsystemVendor", self->subsystem_vendor);
+	fwupd_codec_string_append_hex(str, idt, "SubsystemModel", self->subsystem_model);
+	fwupd_codec_string_append_bool(str,
+				       idt,
+				       "OpromCodeDevidEnforcement",
+				       self->oprom_code_devid_enforcement);
 }
 
 gboolean
@@ -84,14 +84,14 @@ fu_igsc_device_heci_validate_response_header(FuIgscDevice *self,
 {
 	if (resp_header->header.command_id != command_id) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid command ID (%d): ",
 			    resp_header->header.command_id);
 		return FALSE;
 	}
 	if (!resp_header->header.is_response) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "not a response");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "not a response");
 		return FALSE;
 	}
 	if (resp_header->status != GSC_FWU_STATUS_SUCCESS) {
@@ -119,8 +119,8 @@ fu_igsc_device_heci_validate_response_header(FuIgscDevice *self,
 			break;
 		}
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "HECI message failed: %s [0x%x]: ",
 			    msg,
 			    resp_header->status);
@@ -128,8 +128,8 @@ fu_igsc_device_heci_validate_response_header(FuIgscDevice *self,
 	}
 	if (resp_header->reserved != 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "HECI message response is leaking data");
 		return FALSE;
 	}
@@ -162,8 +162,8 @@ fu_igsc_device_command(FuIgscDevice *self,
 		return FALSE;
 	if (resp_readsz != resp_bufsz) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "read 0x%x bytes but expected 0x%x",
 			    (guint)resp_readsz,
 			    (guint)resp_bufsz);
@@ -201,16 +201,16 @@ fu_igsc_device_get_version_raw(FuIgscDevice *self,
 		return FALSE;
 	if (res->partition != partition) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid HECI message response payload: 0x%x: ",
 			    res->partition);
 		return FALSE;
 	}
 	if (bufsz > 0 && res->version_length != bufsz) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid HECI message response version_length: 0x%x, expected 0x%x: ",
 			    res->version_length,
 			    (guint)bufsz);
@@ -326,8 +326,8 @@ fu_igsc_device_get_config(FuIgscDevice *self, GError **error)
 		return FALSE;
 	if (res.format_version != GSC_FWU_GET_CONFIG_FORMAT_VERSION) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid config version 0x%x, expected 0x%x",
 			    res.format_version,
 			    (guint)GSC_FWU_GET_CONFIG_FORMAT_VERSION);
@@ -343,8 +343,8 @@ fu_igsc_device_get_config(FuIgscDevice *self, GError **error)
 		self->hw_sku = GSC_IFWI_TAG_SOC2_SKU_BIT;
 	} else {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid hw sku 0x%x, expected 0..2",
 			    res.hw_sku);
 		return FALSE;
@@ -440,7 +440,7 @@ fu_igsc_device_get_fw_status(FuIgscDevice *self, guint line, guint32 *fw_status,
 		return FALSE;
 	}
 	hex = g_strdup_printf("0x%s", tmp);
-	if (!fu_strtoull(hex, &tmp64, 0x1, G_MAXUINT32 - 0x1, error)) {
+	if (!fu_strtoull(hex, &tmp64, 0x1, G_MAXUINT32 - 0x1, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "fw_status %s is invalid: ", tmp);
 		return FALSE;
 	}
@@ -476,7 +476,8 @@ fu_igsc_device_probe(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_igsc_device_prepare_firmware(FuDevice *device,
-				GBytes *fw,
+				GInputStream *stream,
+				FuProgress *progress,
 				FwupdInstallFlags flags,
 				GError **error)
 {
@@ -484,7 +485,7 @@ fu_igsc_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware = fu_igsc_code_firmware_new();
 
 	/* check project code */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	if (g_strcmp0(self->project, fu_firmware_get_id(firmware)) != 0) {
 		g_set_error(error,
@@ -521,7 +522,7 @@ fu_igsc_device_update_end(FuIgscDevice *self, GError **error)
 }
 
 static gboolean
-fu_igsc_device_update_data(FuIgscDevice *self, const guint8 *data, guint32 length, GError **error)
+fu_igsc_device_update_data(FuIgscDevice *self, const guint8 *data, gsize length, GError **error)
 {
 	struct gsc_fwu_heci_data_req req = {.header.command_id = GSC_FWU_HECI_COMMAND_ID_DATA,
 					    .data_length = length};
@@ -542,15 +543,19 @@ static gboolean
 fu_igsc_device_update_start(FuIgscDevice *self,
 			    guint32 payload_type,
 			    GBytes *fw_info,
-			    GBytes *fw,
+			    GInputStream *fw,
 			    GError **error)
 {
+	gsize streamsz = 0;
 	struct gsc_fwu_heci_start_req req = {.header.command_id = GSC_FWU_HECI_COMMAND_ID_START,
 					     .payload_type = payload_type,
-					     .update_img_length = g_bytes_get_size(fw),
 					     .flags = {0}};
 	struct gsc_fwu_heci_start_resp res = {0x0};
 	g_autoptr(GByteArray) buf = g_byte_array_new();
+
+	if (!fu_input_stream_size(fw, &streamsz, error))
+		return FALSE;
+	req.update_img_length = streamsz;
 
 	g_byte_array_append(buf, (const guint8 *)&req, sizeof(req));
 	if (fw_info != NULL)
@@ -584,7 +589,12 @@ fu_igsc_device_write_chunks(FuIgscDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_igsc_device_update_data(self,
 						fu_chunk_get_data(chk),
 						fu_chunk_get_data_sz(chk),
@@ -592,7 +602,7 @@ fu_igsc_device_write_chunks(FuIgscDevice *self,
 			g_prefix_error(error,
 				       "failed on chunk %u (@0x%x): ",
 				       i,
-				       fu_chunk_get_address(chk));
+				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 		fu_progress_step_done(progress);
@@ -614,7 +624,7 @@ fu_igsc_device_wait_for_reset(FuIgscDevice *self, GError **error)
 			return TRUE;
 		fu_device_sleep(FU_DEVICE(self), 100);
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT, "device did not reset");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT, "device did not reset");
 	return FALSE;
 }
 
@@ -628,7 +638,7 @@ gboolean
 fu_igsc_device_write_blob(FuIgscDevice *self,
 			  enum gsc_fwu_heci_payload_type payload_type,
 			  GBytes *fw_info,
-			  GBytes *fw,
+			  GInputStream *fw,
 			  FuProgress *progress,
 			  GError **error)
 {
@@ -671,7 +681,9 @@ fu_igsc_device_write_blob(FuIgscDevice *self,
 	fu_progress_step_done(progress);
 
 	/* data */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, payloadsz);
+	chunks = fu_chunk_array_new_from_stream(fw, 0x0, payloadsz, error);
+	if (chunks == NULL)
+		return FALSE;
 	if (!fu_igsc_device_write_chunks(self, chunks, fu_progress_get_child(progress), error))
 		return FALSE;
 	fu_progress_step_done(progress);
@@ -725,21 +737,21 @@ fu_igsc_device_write_firmware(FuDevice *device,
 {
 	FuIgscDevice *self = FU_IGSC_DEVICE(device);
 	g_autoptr(GBytes) fw_info = NULL;
-	g_autoptr(GBytes) fw_payload = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 
 	/* get image, and install on ourself */
 	fw_info =
 	    fu_firmware_get_image_by_idx_bytes(firmware, FU_IFWI_FPT_FIRMWARE_IDX_INFO, error);
 	if (fw_info == NULL)
 		return FALSE;
-	fw_payload =
-	    fu_firmware_get_image_by_idx_bytes(firmware, FU_IFWI_FPT_FIRMWARE_IDX_FWIM, error);
-	if (fw_payload == NULL)
+	stream_payload =
+	    fu_firmware_get_image_by_idx_stream(firmware, FU_IFWI_FPT_FIRMWARE_IDX_FWIM, error);
+	if (stream_payload == NULL)
 		return FALSE;
 	return fu_igsc_device_write_blob(self,
 					 GSC_FWU_HECI_PAYLOAD_TYPE_GFX_FW,
 					 fw_info,
-					 fw_payload,
+					 stream_payload,
 					 progress,
 					 error);
 }
@@ -747,15 +759,17 @@ fu_igsc_device_write_firmware(FuDevice *device,
 static gboolean
 fu_igsc_device_set_pci_power_policy(FuIgscDevice *self, const gchar *val, GError **error)
 {
-	g_autoptr(FuUdevDevice) parent = NULL;
+	g_autoptr(FuDevice) parent = NULL;
 
 	/* get PCI parent */
-	parent = fu_udev_device_get_parent_with_subsystem(FU_UDEV_DEVICE(self), "pci");
-	if (parent == NULL) {
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no PCI parent");
+	parent = fu_device_get_backend_parent_with_subsystem(FU_DEVICE(self), "pci", error);
+	if (parent == NULL)
 		return FALSE;
-	}
-	return fu_udev_device_write_sysfs(parent, "power/control", val, error);
+	return fu_udev_device_write_sysfs(FU_UDEV_DEVICE(parent),
+					  "power/control",
+					  val,
+					  FU_IGSC_DEVICE_POWER_WRITE_TIMEOUT,
+					  error);
 }
 
 static gboolean
@@ -803,10 +817,8 @@ fu_igsc_device_init(FuIgscDevice *self)
 	fu_device_add_icon(FU_DEVICE(self), "gpu");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_set_remove_delay(FU_DEVICE(self), 60000);
-	fu_device_register_private_flag(FU_DEVICE(self), FU_IGSC_DEVICE_FLAG_HAS_AUX, "has-aux");
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_IGSC_DEVICE_FLAG_HAS_OPROM,
-					"has-oprom");
+	fu_device_register_private_flag(FU_DEVICE(self), FU_IGSC_DEVICE_FLAG_HAS_AUX);
+	fu_device_register_private_flag(FU_DEVICE(self), FU_IGSC_DEVICE_FLAG_HAS_OPROM);
 }
 
 static void
@@ -822,16 +834,16 @@ fu_igsc_device_finalize(GObject *object)
 static void
 fu_igsc_device_class_init(FuIgscDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_igsc_device_finalize;
-	klass_device->set_progress = fu_igsc_device_set_progress;
-	klass_device->to_string = fu_igsc_device_to_string;
-	klass_device->open = fu_igsc_device_open;
-	klass_device->setup = fu_igsc_device_setup;
-	klass_device->probe = fu_igsc_device_probe;
-	klass_device->prepare = fu_igsc_device_prepare;
-	klass_device->cleanup = fu_igsc_device_cleanup;
-	klass_device->prepare_firmware = fu_igsc_device_prepare_firmware;
-	klass_device->write_firmware = fu_igsc_device_write_firmware;
+	device_class->set_progress = fu_igsc_device_set_progress;
+	device_class->to_string = fu_igsc_device_to_string;
+	device_class->open = fu_igsc_device_open;
+	device_class->setup = fu_igsc_device_setup;
+	device_class->probe = fu_igsc_device_probe;
+	device_class->prepare = fu_igsc_device_prepare;
+	device_class->cleanup = fu_igsc_device_cleanup;
+	device_class->prepare_firmware = fu_igsc_device_prepare_firmware;
+	device_class->write_firmware = fu_igsc_device_write_firmware;
 }

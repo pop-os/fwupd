@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2020 boger wang <boger@goodix.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 boger wang <boger@goodix.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -55,7 +55,7 @@ typedef enum {
 	GX_PKG_TYPE_EOP = 0,
 } GxPkgType;
 
-typedef struct __attribute__((__packed__)) {
+typedef struct __attribute__((__packed__)) { /* nocheck:blocked */
 	guint8 cmd0;
 	guint8 cmd1;
 	guint8 pkg_flag;

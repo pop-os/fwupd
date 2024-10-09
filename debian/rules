@@ -13,7 +13,7 @@ endif
 CONFARGS =
 
 ifneq ($(CI),)
-	CONFARGS += --werror
+	CONFARGS += --werror -Db_coverage=true
 endif
 
 ifneq ($(DEB_HOST_ARCH_CPU),ia64)
@@ -36,7 +36,7 @@ ifneq ($(filter nodoc,$(DEB_BUILD_PROFILES)),)
 	CONFARGS += -Ddocs=disabled
 endif
 
-CONFARGS += -Dplugin_powerd=disabled -Dsupported_build=enabled -Dplugin_modem_manager=enabled -Defi_binary=false
+CONFARGS += -Dplugin_powerd=disabled -Dsupported_build=enabled -Dplugin_modem_manager=enabled
 
 %:
 	dh $@ --with gir
@@ -53,7 +53,6 @@ override_dh_install:
 	sed -i 's,wheel,sudo,' debian/tmp/usr/share/polkit-1/rules.d/org.freedesktop.fwupd.rules
 	dh_install
 	dh_install -pfwupd $$(pkg-config --variable=systemdsystemunitdir systemd | sed s,^/,,)
-	dh_install -pfwupd $$(pkg-config --variable=udevdir udev | sed s,^/,,)/rules.d
 	#install MSR conf if needed (depending on distro)
 	[ ! -d debian/tmp/usr/lib/modules-load.d ] || dh_install -pfwupd usr/lib/modules-load.d
 	[ ! -d debian/tmp/lib/modules-load.d ] || dh_install -pfwupd lib/modules-load.d

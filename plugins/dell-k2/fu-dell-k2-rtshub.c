@@ -23,9 +23,9 @@ static void
 fu_dell_k2_rtshub_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuDellK2RtsHub *self = FU_DELL_K2_RTSHUB(device);
-	fu_string_append_kb(str, idt, "FwAuth", self->fw_auth);
-	fu_string_append_kb(str, idt, "DualBank", self->dual_bank);
-	fu_string_append_kx(str, idt, "DockType", self->dock_type);
+	fwupd_codec_string_append_bool(str, idt, "FwAuth", self->fw_auth);
+	fwupd_codec_string_append_bool(str, idt, "DualBank", self->dual_bank);
+	fwupd_codec_string_append_hex(str, idt, "DockType", self->dock_type);
 }
 
 static gboolean
@@ -214,7 +214,7 @@ fu_dell_k2_rtshub_write_firmware(FuDevice *device,
 				 GError **error)
 {
 	FuDellK2RtsHub *self = FU_DELL_K2_RTSHUB(device);
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* progress */
@@ -228,11 +228,12 @@ fu_dell_k2_rtshub_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
-	chunks = fu_chunk_array_new_from_bytes(fw, 0, DELL_K2_RTSHUB_TRANSFER_BLOCK_SIZE);
+	chunks =
+	    fu_chunk_array_new_from_stream(stream, 0x00, DELL_K2_RTSHUB_TRANSFER_BLOCK_SIZE, error);
 	if (chunks == NULL)
 		return FALSE;
 
@@ -243,8 +244,10 @@ fu_dell_k2_rtshub_write_firmware(FuDevice *device,
 
 	/* write each block */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
 		if (chk == NULL)
 			return FALSE;
 
@@ -353,22 +356,20 @@ fu_dell_k2_rtshub_probe(FuDevice *device, GError **error)
 {
 	g_autofree const gchar *logical_id = NULL;
 	FuDellK2RtsHub *self = FU_DELL_K2_RTSHUB(device);
-	guint16 vid = fu_usb_device_get_vid(FU_USB_DEVICE(device));
-	guint16 pid = fu_usb_device_get_pid(FU_USB_DEVICE(device));
 
 	/* not interesting */
-	if (vid != DELL_VID) {
+	if (fu_device_get_vid(device) != DELL_VID) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "device vid not dell, expected: 0x%04x, got: 0x%04x",
 			    (guint)DELL_VID,
-			    vid);
+			    fu_device_get_vid(device));
 		return FALSE;
 	}
 
 	/* caring for my family back home after fw reset */
-	switch (pid) {
+	switch (fu_device_get_pid(device)) {
 	case DELL_K2_USB_RTS5480_GEN1_PID:
 		fu_device_set_name(device, "RTS5480 Gen 1 USB Hub");
 		break;
@@ -383,12 +384,12 @@ fu_dell_k2_rtshub_probe(FuDevice *device, GError **error)
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "device pid '%04x' is not supported",
-			    pid);
+			    fu_device_get_pid(device));
 		return FALSE;
 	}
 
 	/* build logical id */
-	logical_id = g_strdup_printf("RTSHUB_%04X", pid);
+	logical_id = g_strdup_printf("RTSHUB_%04X", fu_device_get_pid(device));
 	fu_device_set_logical_id(device, logical_id);
 
 	/* build instance id */
@@ -428,9 +429,9 @@ fu_dell_k2_rtshub_init(FuDellK2RtsHub *self)
 	fu_device_add_icon(FU_DEVICE(self), "dock-usb");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SKIPS_RESTART);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_RETRY_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_EXPLICIT_ORDER);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_RETRY_OPEN);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_DELL_K2_RTSHUB_FIRMWARE);
 	fu_device_retry_set_delay(FU_DEVICE(self), 1000);
@@ -453,7 +454,7 @@ fu_dell_k2_rtshub_new(FuUsbDevice *device, FuDellK2BaseType dock_type)
 {
 	FuDellK2RtsHub *self = g_object_new(FU_TYPE_DELL_K2_RTSHUB, NULL);
 
-	fu_device_incorporate(FU_DEVICE(self), FU_DEVICE(device));
+	fu_device_incorporate(FU_DEVICE(self), FU_DEVICE(device), FU_DEVICE_INCORPORATE_FLAG_ALL);
 	self->dock_type = dock_type;
 	return self;
 }

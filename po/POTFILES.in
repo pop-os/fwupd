@@ -3,16 +3,13 @@ data/remotes.d/lvfs-testing.metainfo.xml
 libfwupdplugin/fu-bios-settings.c
 libfwupdplugin/tests/bios-attrs/dell-xps13-9310/strings.txt
 policy/org.freedesktop.fwupd.policy.in
-plugins/dfu/fu-dfu-tool.c
 plugins/tpm/fu-tpm-eventlog.c
 plugins/uefi-capsule/fu-uefi-capsule-plugin.c
-plugins/uefi-capsule/fu-uefi-tool.c
 plugins/uefi-dbx/fu-dbxtool.c
 src/fu-console.c
 src/fu-debug.c
 src/fu-engine-helper.c
 src/fu-main.c
-src/fu-offline.c
 src/fu-remote-list.c
 src/fu-security-attr-common.c
 src/fu-tool.c

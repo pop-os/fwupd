@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 1999-2021 Logitech, Inc.
+ * Copyright 1999-2021 Logitech, Inc.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -20,7 +20,7 @@ static void
 fu_logitech_bulkcontroller_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 {
 	FuLogitechBulkcontrollerPlugin *self = FU_LOGITECH_BULKCONTROLLER_PLUGIN(plugin);
-	fu_string_append_kb(str, idt, "PostInstall", self->post_install);
+	fwupd_codec_string_append_bool(str, idt, "PostInstall", self->post_install);
 }
 
 static void
@@ -31,7 +31,7 @@ fu_logitech_bulkcontroller_plugin_init(FuLogitechBulkcontrollerPlugin *self)
 static gboolean
 fu_logitech_bulkcontroller_plugin_write_firmware(FuPlugin *plugin,
 						 FuDevice *device,
-						 GBytes *blob_fw,
+						 GInputStream *stream,
 						 FuProgress *progress,
 						 FwupdInstallFlags flags,
 						 GError **error)
@@ -42,7 +42,7 @@ fu_logitech_bulkcontroller_plugin_write_firmware(FuPlugin *plugin,
 	locker = fu_device_locker_new(device, error);
 	if (locker == NULL)
 		return FALSE;
-	if (!fu_device_write_firmware(device, blob_fw, progress, flags, error))
+	if (!fu_device_write_firmware(device, stream, progress, flags, error))
 		return FALSE;
 	self->post_install = TRUE;
 	return TRUE;

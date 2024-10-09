@@ -1,14 +1,15 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(Parse)]
-struct VliPdHdr {
+#[derive(Parse, ParseStream)]
+struct FuStructVliPdHdr {
     fwver: u32be,
     vid: u16le,
     pid: u16le,
 }
-#[derive(New, Parse, ToString)]
-struct VliUsbhubHdr {
+
+#[derive(New, Parse, ParseStream, ToString)]
+struct FuStructVliUsbhubHdr {
     dev_id: u16be,
     strapping1: u8,
     strapping2: u8,
@@ -27,8 +28,9 @@ struct VliUsbhubHdr {
     variant: u8,
     checksum: u8,
 }
+
 #[derive(ToString, FromString)]
-enum VliDeviceKind {
+enum FuVliDeviceKind {
     Unknown = 0x0,
     Vl100 = 0x0100,
     Vl101 = 0x0101,

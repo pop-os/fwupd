@@ -1,8 +1,8 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
-# Copyright (C) 2017 Dell, Inc.
+# Copyright 2017 Dell, Inc.
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 from base64 import b64decode
 import io
@@ -302,7 +302,7 @@ def run_installation(directory, verbose, allow_reinstall, allow_older, uninstall
     minimum_path = os.path.join(directory, "minimum")
     minimum = None
     if os.path.exists(minimum_path):
-        with open(minimum_path, "r") as rfd:
+        with open(minimum_path) as rfd:
             minimum = rfd.read()
 
     if not use_included_version(minimum):

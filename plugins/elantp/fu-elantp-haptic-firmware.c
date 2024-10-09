@@ -1,13 +1,14 @@
 /*
- * Copyright (C) 2022 Jingle Wu <jingle.wu@emc.com.tw>
+ * Copyright 2022 Jingle Wu <jingle.wu@emc.com.tw>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-elantp-common.h"
 #include "fu-elantp-haptic-firmware.h"
+#include "fu-elantp-struct.h"
 
 struct _FuElantpHapticFirmware {
 	FuFirmwareClass parent_instance;
@@ -15,8 +16,6 @@ struct _FuElantpHapticFirmware {
 };
 
 G_DEFINE_TYPE(FuElantpHapticFirmware, fu_elantp_haptic_firmware, FU_TYPE_FIRMWARE)
-
-const guint8 elantp_haptic_signature_ictype02[] = {0xFF, 0x40, 0xA2, 0x5B};
 
 guint16
 fu_elantp_haptic_firmware_get_driver_ic(FuElantpHapticFirmware *self)
@@ -35,58 +34,36 @@ fu_elantp_haptic_firmware_export(FuFirmware *firmware,
 }
 
 static gboolean
-fu_elantp_haptic_firmware_check_magic(FuFirmware *firmware,
-				      GBytes *fw,
-				      gsize offset,
-				      GError **error)
+fu_elantp_haptic_firmware_validate(FuFirmware *firmware,
+				   GInputStream *stream,
+				   gsize offset,
+				   GError **error)
 {
-	gsize bufsz = g_bytes_get_size(fw);
-	const guint8 *buf = g_bytes_get_data(fw, NULL);
-
-	for (gsize i = 0; i < sizeof(elantp_haptic_signature_ictype02); i++) {
-		guint8 tmp = 0x0;
-		if (!fu_memread_uint8_safe(buf, bufsz, i + offset, &tmp, error))
-			return FALSE;
-		if (tmp != elantp_haptic_signature_ictype02[i]) {
-			g_set_error(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "signature[%u] invalid: got 0x%2x, expected 0x%02x",
-				    (guint)i,
-				    tmp,
-				    elantp_haptic_signature_ictype02[i]);
-			return FALSE;
-		}
-	}
-	return TRUE;
+	return fu_struct_elantp_haptic_firmware_hdr_validate_stream(stream, offset, error);
 }
 
 static gboolean
 fu_elantp_haptic_firmware_parse(FuFirmware *firmware,
-				GBytes *fw,
+				GInputStream *stream,
 				gsize offset,
 				FwupdInstallFlags flags,
 				GError **error)
 {
 	FuElantpHapticFirmware *self = FU_ELANTP_HAPTIC_FIRMWARE(firmware);
-	gsize bufsz = 0;
 	guint8 v_s = 0;
 	guint8 v_d = 0;
 	guint8 v_m = 0;
 	guint8 v_y = 0;
 	guint8 tmp = 0;
 	g_autofree gchar *version_str = NULL;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
-	g_return_val_if_fail(fw != NULL, FALSE);
-
-	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x4, &tmp, error))
+	if (!fu_input_stream_read_u8(stream, offset + 0x4, &tmp, error))
 		return FALSE;
 	v_m = tmp & 0xF;
 	v_s = (tmp & 0xF0) >> 4;
-	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x5, &v_d, error))
+	if (!fu_input_stream_read_u8(stream, offset + 0x5, &v_d, error))
 		return FALSE;
-	if (!fu_memread_uint8_safe(buf, bufsz, offset + 0x6, &v_y, error))
+	if (!fu_input_stream_read_u8(stream, offset + 0x6, &v_y, error))
 		return FALSE;
 	if (v_y == 0xFF || v_d == 0xFF || v_m == 0xF) {
 		g_set_error(error,
@@ -116,10 +93,10 @@ fu_elantp_haptic_firmware_init(FuElantpHapticFirmware *self)
 static void
 fu_elantp_haptic_firmware_class_init(FuElantpHapticFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_elantp_haptic_firmware_check_magic;
-	klass_firmware->parse = fu_elantp_haptic_firmware_parse;
-	klass_firmware->export = fu_elantp_haptic_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_elantp_haptic_firmware_validate;
+	firmware_class->parse = fu_elantp_haptic_firmware_parse;
+	firmware_class->export = fu_elantp_haptic_firmware_export;
 }
 
 FuFirmware *

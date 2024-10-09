@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(New, ParseBytes)]
-struct CcgxMetadataHdr {
+struct FuStructCcgxMetadataHdr {
     fw_checksum: u8,
     fw_entry: u32le,
     last_boot_row: u16le,   // last flash row of bootloader or previous firmware
@@ -15,22 +15,23 @@ struct CcgxMetadataHdr {
 }
 
 #[derive(ToString, FromString)]
-enum CcgxImageType {
+enum FuCcgxImageType {
     Unknown,
     Single,
     DualSymmetric,          // A/B runtime
     DualAsymmetric,         // A=bootloader (fixed) B=runtime
     DualAsymmetricVariable, // A=bootloader (variable) B=runtime
 }
+
 #[derive(ToString)]
-enum CcgxFwMode {
+enum FuCcgxFwMode {
     Boot,
     Fw1,
     Fw2,
-    Last,
 }
+
 #[derive(ToString)]
-enum CcgxPdResp {
+enum FuCcgxPdResp {
     // responses
     NoResponse,
     Success = 0x02,

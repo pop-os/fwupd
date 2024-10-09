@@ -1,4 +1,4 @@
-if gudev.found() and gusb.found()
+if enable_udev
 cargs = ['-DG_LOG_DOMAIN="FuPluginLogitechRallysystem"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 

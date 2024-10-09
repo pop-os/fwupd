@@ -114,16 +114,8 @@ msgid "Devices that were not updated correctly:"
 msgstr "Toestelle wat nie korrek bygewerk is nie:"
 
 #. TRANSLATORS: success
-#. success
 msgid "Done!"
 msgstr "Klaar!"
-
-#. TRANSLATORS: the first replacement is a display name
-#. * e.g. "ColorHugALS" and the second and third are
-#. * version numbers e.g. "1.2.3"
-#, c-format
-msgid "Downgrading %s from %s to %s... "
-msgstr "Gradeer tans %s af vanaf %s na %s… "
 
 #. TRANSLATORS: %1 is a device name
 #, c-format
@@ -134,7 +126,6 @@ msgstr "Gradeer tans %s af…"
 msgid "Downloading…"
 msgstr "Laai tans af…"
 
-#. TRANSLATORS: Plugin is active and in use
 #. TRANSLATORS: if the remote is enabled
 #. TRANSLATORS: Suffix: the HSI result
 msgid "Enabled"
@@ -157,11 +148,6 @@ msgid "Found"
 msgstr "Gevind"
 
 #. TRANSLATORS: command argument: uppercase, spaces->dashes
-msgctxt "A single GUID"
-msgid "GUID"
-msgstr "GUID"
-
-#. TRANSLATORS: command argument: uppercase, spaces->dashes
 msgctxt "command-argument"
 msgid "GUID"
 msgstr "GUID"
@@ -174,10 +160,6 @@ msgstr "Ledig…"
 #, c-format
 msgid "Installing on %s…"
 msgstr "Installeer tans op %s…"
-
-#. TRANSLATORS: keyring type, e.g. GPG or PKCS7
-msgid "Keyring"
-msgstr "Sleutelring"
 
 #. TRANSLATORS: time remaining for completing firmware flash
 msgid "Less than one minute remaining"
@@ -199,9 +181,6 @@ msgstr "Goed"
 msgid "Password"
 msgstr "Wagwoord"
 
-msgid "Print the version number"
-msgstr "Druk die weergawenommer"
-
 #. TRANSLATORS: the numeric priority
 msgid "Priority"
 msgstr "Prioriteit"
@@ -212,13 +191,6 @@ msgstr "Gaan voort met oplaai?"
 #. TRANSLATORS: reading from the flash chips
 msgid "Reading…"
 msgstr "Lees tans…"
-
-#. TRANSLATORS: the first replacement is a display name
-#. * e.g. "ColorHugALS" and the second is a version number
-#. * e.g. "1.2.3"
-#, c-format
-msgid "Reinstalling %s with %s... "
-msgstr "Herinstalleer tans %s met %s… "
 
 #. TRANSLATORS: metadata is downloaded
 msgid "Requires internet connection"
@@ -232,10 +204,6 @@ msgstr "Herbegin nou?"
 msgid "Restarting device…"
 msgstr "Herbegin tans toestel…"
 
-#. TRANSLATORS: command line option
-msgid "Schedule installation for next reboot when possible"
-msgstr "Skeduleer die installasie vir die volgende herbegin indien moontlik"
-
 #. TRANSLATORS: scheduling an update to be done on the next boot
 msgid "Scheduling…"
 msgstr "Skeduleer tans…"
@@ -248,6 +216,7 @@ msgstr "Wys toestelle wat nie bygewerk kan word nie"
 msgid "Summary"
 msgstr "Opsomming"
 
+#. show the user the entire data blob
 msgid "Target"
 msgstr "Teiken"
 
@@ -265,13 +234,6 @@ msgstr "Onbekend"
 #. TRANSLATORS: ask if we can update metadata
 msgid "Update now?"
 msgstr "Werk nou by?"
-
-#. TRANSLATORS: the first replacement is a display name
-#. * e.g. "ColorHugALS" and the second and third are
-#. * version numbers e.g. "1.2.3"
-#, c-format
-msgid "Updating %s from %s to %s... "
-msgstr "Werk tans %s by vanaf %s na %s… "
 
 #. TRANSLATORS: %1 is a device name
 #, c-format

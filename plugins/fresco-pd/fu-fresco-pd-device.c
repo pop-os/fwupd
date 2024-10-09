@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2020 Fresco Logic
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Fresco Logic
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -22,7 +22,7 @@ static void
 fu_fresco_pd_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuFrescoPdDevice *self = FU_FRESCO_PD_DEVICE(device);
-	fu_string_append_ku(str, idt, "CustomerID", self->customer_id);
+	fwupd_codec_string_append_int(str, idt, "CustomerID", self->customer_id);
 }
 
 static gboolean
@@ -32,7 +32,6 @@ fu_fresco_pd_device_transfer_read(FuFrescoPdDevice *self,
 				  guint16 bufsz,
 				  GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length = 0;
 
 	g_return_val_if_fail(buf != NULL, FALSE);
@@ -40,20 +39,21 @@ fu_fresco_pd_device_transfer_read(FuFrescoPdDevice *self,
 
 	/* to device */
 	fu_dump_raw(G_LOG_DOMAIN, "read", buf, bufsz);
-	if (!g_usb_device_control_transfer(usb_device,
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   0x40,
-					   0x0,
-					   offset,
-					   buf,
-					   bufsz,
-					   &actual_length,
-					   5000,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    0x40,
+					    0x0,
+					    offset,
+					    buf,
+					    bufsz,
+					    &actual_length,
+					    5000,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "failed to read from offset 0x%x: ", offset);
+		fu_error_convert(error);
 		return FALSE;
 	}
 	if (bufsz != actual_length) {
@@ -77,7 +77,6 @@ fu_fresco_pd_device_transfer_write(FuFrescoPdDevice *self,
 				   guint16 bufsz,
 				   GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length = 0;
 
 	g_return_val_if_fail(buf != NULL, FALSE);
@@ -85,19 +84,19 @@ fu_fresco_pd_device_transfer_write(FuFrescoPdDevice *self,
 
 	/* to device */
 	fu_dump_raw(G_LOG_DOMAIN, "write", buf, bufsz);
-	if (!g_usb_device_control_transfer(usb_device,
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   0x41,
-					   0x0,
-					   offset,
-					   buf,
-					   bufsz,
-					   &actual_length,
-					   5000,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    0x41,
+					    0x0,
+					    offset,
+					    buf,
+					    bufsz,
+					    &actual_length,
+					    5000,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "failed to write offset 0x%x: ", offset);
 		return FALSE;
 	}
@@ -189,7 +188,8 @@ fu_fresco_pd_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_fresco_pd_device_prepare_firmware(FuDevice *device,
-				     GBytes *fw,
+				     GInputStream *stream,
+				     FuProgress *progress,
 				     FwupdInstallFlags flags,
 				     GError **error)
 {
@@ -198,7 +198,7 @@ fu_fresco_pd_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware = fu_fresco_pd_firmware_new();
 
 	/* check firmware is suitable */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	customer_id = fu_fresco_pd_firmware_get_customer_id(FU_FRESCO_PD_FIRMWARE(firmware));
 	if (customer_id != self->customer_id) {
@@ -222,7 +222,7 @@ fu_fresco_pd_device_panther_reset_device(FuFrescoPdDevice *self, GError **error)
 
 	/* ignore when the device reset before completing the transaction */
 	if (!fu_fresco_pd_device_or_byte(self, 0xA003, 1 << 3, &error_local)) {
-		if (g_error_matches(error_local, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_FAILED)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_INTERNAL)) {
 			g_debug("ignoring %s", error_local->message);
 			return TRUE;
 		}
@@ -428,10 +428,10 @@ fu_fresco_pd_device_init(FuFrescoPdDevice *self)
 static void
 fu_fresco_pd_device_class_init(FuFrescoPdDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_fresco_pd_device_to_string;
-	klass_device->setup = fu_fresco_pd_device_setup;
-	klass_device->write_firmware = fu_fresco_pd_device_write_firmware;
-	klass_device->prepare_firmware = fu_fresco_pd_device_prepare_firmware;
-	klass_device->set_progress = fu_fresco_pd_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_fresco_pd_device_to_string;
+	device_class->setup = fu_fresco_pd_device_setup;
+	device_class->write_firmware = fu_fresco_pd_device_write_firmware;
+	device_class->prepare_firmware = fu_fresco_pd_device_prepare_firmware;
+	device_class->set_progress = fu_fresco_pd_device_set_progress;
 }

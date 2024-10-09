@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2021 Michael Cheng <michael.cheng@emc.com.tw>
+ * Copyright 2021 Michael Cheng <michael.cheng@emc.com.tw>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-elanfp-firmware.h"
+#include "fu-elanfp-struct.h"
 
 struct _FuElanfpFirmware {
 	FuFirmwareClass parent_instance;
@@ -14,8 +15,6 @@ struct _FuElanfpFirmware {
 };
 
 G_DEFINE_TYPE(FuElanfpFirmware, fu_elanfp_firmware, FU_TYPE_FIRMWARE)
-
-#define FU_ELANFP_FIRMWARE_HEADER_MAGIC 0x46325354
 
 static void
 fu_elanfp_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuilderNode *bn)
@@ -40,52 +39,29 @@ fu_elanfp_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 }
 
 static gboolean
-fu_elanfp_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_elanfp_firmware_validate(FuFirmware *firmware,
+			    GInputStream *stream,
+			    gsize offset,
+			    GError **error)
 {
-	guint32 magic = 0;
-
-	if (!fu_memread_uint32_safe(g_bytes_get_data(fw, NULL),
-				    g_bytes_get_size(fw),
-				    offset,
-				    &magic,
-				    G_LITTLE_ENDIAN,
-				    error)) {
-		g_prefix_error(error, "failed to read magic: ");
-		return FALSE;
-	}
-	if (magic != FU_ELANFP_FIRMWARE_HEADER_MAGIC) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_FILE,
-			    "invalid magic, expected 0x%04X got 0x%04X",
-			    (guint32)FU_ELANFP_FIRMWARE_HEADER_MAGIC,
-			    magic);
-		return FALSE;
-	}
-
-	/* success */
-	return TRUE;
+	return fu_struct_elanfp_firmware_hdr_validate_stream(stream, offset, error);
 }
 
 static gboolean
 fu_elanfp_firmware_parse(FuFirmware *firmware,
-			 GBytes *fw,
+			 GInputStream *stream,
 			 gsize offset,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuElanfpFirmware *self = FU_ELANFP_FIRMWARE(firmware);
-	const guint8 *buf;
-	gsize bufsz;
 
 	/* file format version */
-	buf = g_bytes_get_data(fw, &bufsz);
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz,
-				    offset + 0x4,
-				    &self->format_version,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u32(stream,
+				      offset + 0x4,
+				      &self->format_version,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
 
 	/* read indexes */
@@ -94,16 +70,15 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 		guint32 start_addr = 0;
 		guint32 length = 0;
 		guint32 fwtype = 0;
-		g_autoptr(GBytes) blob = NULL;
 		g_autoptr(FuFirmware) img = NULL;
+		g_autoptr(GInputStream) stream_tmp = NULL;
 
 		/* type, reserved, start-addr, len */
-		if (!fu_memread_uint32_safe(buf,
-					    bufsz,
-					    offset + 0x0,
-					    &fwtype,
-					    G_LITTLE_ENDIAN,
-					    error))
+		if (!fu_input_stream_read_u32(stream,
+					      offset + 0x0,
+					      &fwtype,
+					      G_LITTLE_ENDIAN,
+					      error))
 			return FALSE;
 
 		/* check not already added */
@@ -134,20 +109,18 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 			break;
 		}
 		fu_firmware_set_idx(img, fwtype);
-		if (!fu_memread_uint32_safe(buf,
-					    bufsz,
-					    offset + 0x8,
-					    &start_addr,
-					    G_LITTLE_ENDIAN,
-					    error))
+		if (!fu_input_stream_read_u32(stream,
+					      offset + 0x8,
+					      &start_addr,
+					      G_LITTLE_ENDIAN,
+					      error))
 			return FALSE;
 		fu_firmware_set_addr(img, start_addr);
-		if (!fu_memread_uint32_safe(buf,
-					    bufsz,
-					    offset + 0xC,
-					    &length,
-					    G_LITTLE_ENDIAN,
-					    error))
+		if (!fu_input_stream_read_u32(stream,
+					      offset + 0xC,
+					      &length,
+					      G_LITTLE_ENDIAN,
+					      error))
 			return FALSE;
 		if (length == 0) {
 			g_set_error(error,
@@ -157,10 +130,15 @@ fu_elanfp_firmware_parse(FuFirmware *firmware,
 				    fwtype);
 			return FALSE;
 		}
-		blob = fu_bytes_new_offset(fw, start_addr, length, error);
-		if (blob == NULL)
+
+		stream_tmp = fu_partial_input_stream_new(stream, start_addr, length, error);
+		if (stream_tmp == NULL)
 			return FALSE;
-		if (!fu_firmware_parse(img, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error))
+		if (!fu_firmware_parse_stream(img,
+					      stream_tmp,
+					      0x0,
+					      flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      error))
 			return FALSE;
 		if (!fu_firmware_add_image_full(firmware, img, error))
 			return FALSE;
@@ -223,15 +201,17 @@ static void
 fu_elanfp_firmware_init(FuElanfpFirmware *self)
 {
 	fu_firmware_set_images_max(FU_FIRMWARE(self), 256);
+	g_type_ensure(FU_TYPE_CFU_OFFER);
+	g_type_ensure(FU_TYPE_CFU_PAYLOAD);
 }
 
 static void
 fu_elanfp_firmware_class_init(FuElanfpFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_elanfp_firmware_check_magic;
-	klass_firmware->parse = fu_elanfp_firmware_parse;
-	klass_firmware->write = fu_elanfp_firmware_write;
-	klass_firmware->export = fu_elanfp_firmware_export;
-	klass_firmware->build = fu_elanfp_firmware_build;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_elanfp_firmware_validate;
+	firmware_class->parse = fu_elanfp_firmware_parse;
+	firmware_class->write = fu_elanfp_firmware_write;
+	firmware_class->export = fu_elanfp_firmware_export;
+	firmware_class->build = fu_elanfp_firmware_build;
 }

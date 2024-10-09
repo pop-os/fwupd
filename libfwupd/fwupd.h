@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -12,6 +12,7 @@
 #include <libfwupd/fwupd-build.h>
 #include <libfwupd/fwupd-client-sync.h>
 #include <libfwupd/fwupd-client.h>
+#include <libfwupd/fwupd-codec.h>
 #include <libfwupd/fwupd-common.h>
 #include <libfwupd/fwupd-device.h>
 #include <libfwupd/fwupd-enums.h>

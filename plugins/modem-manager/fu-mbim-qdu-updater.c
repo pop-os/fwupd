@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Jarvis Jiang <jarvis.w.jiang@gmail.com>
+ * Copyright 2021 Jarvis Jiang <jarvis.w.jiang@gmail.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -11,7 +11,6 @@
 #include <sys/stat.h>
 
 #include "fu-mbim-qdu-updater.h"
-#include "fu-mm-utils.h"
 
 #define FU_MBIM_QDU_MAX_OPEN_ATTEMPTS 8
 
@@ -40,7 +39,13 @@ fu_mbim_qdu_updater_mbim_device_open_ready(GObject *mbim_device,
 {
 	OpenContext *ctx = (OpenContext *)user_data;
 
-	g_assert(ctx->open_attempts > 0);
+	if (ctx->open_attempts == 0) {
+		g_set_error_literal(&ctx->error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "no open attempts");
+		return;
+	}
 
 	if (!mbim_device_open_full_finish(MBIM_DEVICE(mbim_device), res, &ctx->error)) {
 		ctx->open_attempts--;
@@ -295,8 +300,16 @@ fu_mbim_qdu_updater_file_write_ready(MbimDevice *device, GAsyncResult *res, gpoi
 					(gsize)ctx->chunk_sent,
 					(gsize)fu_chunk_array_length(ctx->chunks));
 	if (ctx->chunk_sent < fu_chunk_array_length(ctx->chunks)) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(ctx->chunks, ctx->chunk_sent);
-		g_autoptr(MbimMessage) request =
+		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(MbimMessage) request = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(ctx->chunks, ctx->chunk_sent, &ctx->error);
+		if (chk == NULL) {
+			g_main_loop_quit(ctx->mainloop);
+			return;
+		}
+		request =
 		    mbim_message_qdu_file_write_set_new(fu_chunk_get_data_sz(chk),
 							(const guint8 *)fu_chunk_get_data(chk),
 							NULL);
@@ -341,7 +354,11 @@ fu_mbim_qdu_updater_file_open_ready(MbimDevice *device, GAsyncResult *res, gpoin
 	}
 
 	ctx->chunks = fu_chunk_array_new_from_bytes(ctx->blob, 0x00, out_max_transfer_size);
-	chk = fu_chunk_array_index(ctx->chunks, 0);
+	chk = fu_chunk_array_index(ctx->chunks, 0, &ctx->error);
+	if (chk == NULL) {
+		g_main_loop_quit(ctx->mainloop);
+		return;
+	}
 	request = mbim_message_qdu_file_write_set_new(fu_chunk_get_data_sz(chk),
 						      (const guint8 *)fu_chunk_get_data(chk),
 						      NULL);

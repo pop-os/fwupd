@@ -1,15 +1,10 @@
 /*
- * Copyright (C) 2023 Goodix.inc <xulinkun@goodix.com>
+ * Copyright 2023 Goodix.inc <xulinkun@goodix.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
-
-#ifdef HAVE_HIDRAW_H
-#include <linux/hidraw.h>
-#include <linux/input.h>
-#endif
 
 #include "fu-goodixtp-common.h"
 #include "fu-goodixtp-firmware.h"
@@ -22,10 +17,8 @@ typedef struct {
 	guint8 cfg_ver;
 } FuGoodixtpHidDevicePrivate;
 
-G_DEFINE_TYPE_WITH_PRIVATE(FuGoodixtpHidDevice, fu_goodixtp_hid_device, FU_TYPE_UDEV_DEVICE)
+G_DEFINE_TYPE_WITH_PRIVATE(FuGoodixtpHidDevice, fu_goodixtp_hid_device, FU_TYPE_HIDRAW_DEVICE)
 #define GET_PRIVATE(o) (fu_goodixtp_hid_device_get_instance_private(o))
-
-#define GOODIX_DEVICE_IOCTL_TIMEOUT 5000
 
 void
 fu_goodixtp_hid_device_set_patch_pid(FuGoodixtpHidDevice *self, const gchar *patch_pid)
@@ -67,35 +60,33 @@ fu_goodixtp_hid_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuGoodixtpHidDevice *self = FU_GOODIXTP_HID_DEVICE(device);
 	FuGoodixtpHidDevicePrivate *priv = GET_PRIVATE(self);
-	fu_string_append(str, idt, "patch_pid", priv->patch_pid);
-	fu_string_append(str, idt, "patch_vid", priv->patch_vid);
-	fu_string_append_kx(str, idt, "sensor_id", priv->sensor_id);
-	fu_string_append_kx(str, idt, "cfg_ver", priv->cfg_ver);
+	fwupd_codec_string_append(str, idt, "patch_pid", priv->patch_pid);
+	fwupd_codec_string_append(str, idt, "patch_vid", priv->patch_vid);
+	fwupd_codec_string_append_hex(str, idt, "sensor_id", priv->sensor_id);
+	fwupd_codec_string_append_hex(str, idt, "cfg_ver", priv->cfg_ver);
 }
 
 gboolean
 fu_goodixtp_hid_device_get_report(FuGoodixtpHidDevice *self,
 				  guint8 *buf,
-				  guint32 bufsz,
+				  gsize bufsz,
 				  GError **error)
 {
-#ifdef HAVE_HIDRAW_H
 	guint8 rcv_buf[PACKAGE_LEN + 1] = {0};
 
 	rcv_buf[0] = REPORT_ID;
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCGFEATURE(PACKAGE_LEN),
-				  rcv_buf,
-				  NULL,
-				  GOODIX_DEVICE_IOCTL_TIMEOUT,
-				  error)) {
+	if (!fu_hidraw_device_get_feature(FU_HIDRAW_DEVICE(self),
+					  rcv_buf,
+					  sizeof(rcv_buf),
+					  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					  error)) {
 		g_prefix_error(error, "failed get report: ");
 		return FALSE;
 	}
 	if (rcv_buf[0] != REPORT_ID) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "rcv_buf[0]:%02x != 0x0E",
 			    rcv_buf[0]);
 		return FALSE;
@@ -104,56 +95,23 @@ fu_goodixtp_hid_device_get_report(FuGoodixtpHidDevice *self,
 	if (!fu_memcpy_safe(buf, bufsz, 0, rcv_buf, sizeof(rcv_buf), 0, PACKAGE_LEN, error))
 		return FALSE;
 	return TRUE;
-#else
-	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
-			    "<linux/hidraw.h> not available");
-	return FALSE;
-#endif
 }
 
 gboolean
 fu_goodixtp_hid_device_set_report(FuGoodixtpHidDevice *self,
 				  guint8 *buf,
-				  guint32 len,
+				  gsize bufsz,
 				  GError **error)
 {
-#ifdef HAVE_HIDRAW_H
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCSFEATURE(len),
-				  buf,
-				  NULL,
-				  GOODIX_DEVICE_IOCTL_TIMEOUT,
-				  error)) {
+	if (!fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(self),
+					  buf,
+					  bufsz,
+					  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					  error)) {
 		g_prefix_error(error, "failed set report: ");
 		return FALSE;
 	}
 	return TRUE;
-#else
-	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
-			    "<linux/hidraw.h> not available");
-	return FALSE;
-#endif
-}
-
-static gboolean
-fu_goodixtp_hid_device_probe(FuDevice *device, GError **error)
-{
-	/* check is valid */
-	if (g_strcmp0(fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)), "hidraw") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "is not correct subsystem=%s, expected hidraw",
-			    fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)));
-		return FALSE;
-	}
-
-	/* set the physical ID */
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error);
 }
 
 static void
@@ -165,6 +123,12 @@ fu_goodixtp_hid_device_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
+}
+
+static gchar *
+fu_goodixtp_hid_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
 }
 
 static void
@@ -180,9 +144,9 @@ fu_goodixtp_hid_device_init(FuGoodixtpHidDevice *self)
 	fu_device_set_vendor(FU_DEVICE(self), "Goodix inc.");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_HEX);
 	fu_device_set_priority(FU_DEVICE(self), 1); /* better than i2c */
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),
-				 FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE |
-				     FU_UDEV_DEVICE_FLAG_OPEN_NONBLOCK);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_NONBLOCK);
 }
 
 static void
@@ -199,10 +163,10 @@ static void
 fu_goodixtp_hid_device_class_init(FuGoodixtpHidDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
 	object_class->finalize = fu_goodixtp_hid_device_finalize;
-	klass_device->to_string = fu_goodixtp_hid_device_to_string;
-	klass_device->probe = fu_goodixtp_hid_device_probe;
-	klass_device->set_progress = fu_goodixtp_hid_device_set_progress;
+	device_class->to_string = fu_goodixtp_hid_device_to_string;
+	device_class->set_progress = fu_goodixtp_hid_device_set_progress;
+	device_class->convert_version = fu_goodixtp_hid_device_convert_version;
 }

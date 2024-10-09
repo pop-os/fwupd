@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2018 Realtek Semiconductor Corporation
- * Copyright (C) 2018 Dell Inc.
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Realtek Semiconductor Corporation
+ * Copyright 2018 Dell Inc.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -16,13 +16,13 @@
 /* [vendor-cmd:64] [data-payload:128] */
 #define FU_RTS54HID_CMD_BUFFER_OFFSET_DATA 0x40
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint8 target_addr;
 	guint8 data_sz;
 	guint8 speed;
 } FuRts54HidI2cParameters;
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint8 cmd;
 	guint8 ext;
 	union {

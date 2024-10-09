@@ -39,8 +39,8 @@ fu_dell_k2_plugin_device_add(FuPlugin *plugin, FuDevice *device, GError **error)
 {
 	FuDellK2BaseType dock_type;
 	FuDevice *ec_device = fu_plugin_cache_lookup(plugin, "ec");
-	guint16 vid = fu_usb_device_get_vid(FU_USB_DEVICE(device));
-	guint16 pid = fu_usb_device_get_pid(FU_USB_DEVICE(device));
+	guint16 vid = fu_device_get_vid(device);
+	guint16 pid = fu_device_get_pid(device);
 
 	/* cache this device until dock type is seen */
 	if (ec_device == NULL) {
@@ -141,15 +141,14 @@ fu_dell_k2_plugin_backend_device_added(FuPlugin *plugin,
 				       GError **error)
 {
 	guint16 vid, pid;
-	g_autofree const gchar *instance_id = NULL;
 
 	/* not interesting */
 	if (!FU_IS_USB_DEVICE(device))
 		return TRUE;
 
 	/* VID and PID */
-	vid = fu_usb_device_get_vid(FU_USB_DEVICE(device));
-	pid = fu_usb_device_get_pid(FU_USB_DEVICE(device));
+	vid = fu_device_get_vid(device);
+	pid = fu_device_get_pid(device);
 
 	/* USB HUB HID bridge device */
 	if ((vid == DELL_VID && pid == DELL_K2_HID_PID)) {
@@ -194,24 +193,24 @@ fu_dell_k2_plugin_config_mst_dev(FuPlugin *plugin)
 {
 	FuDevice *device_ec = fu_plugin_cache_lookup(plugin, "ec");
 	FuDevice *device_mst = fu_plugin_cache_lookup(plugin, "mst");
-	FuDellK2EcDevType mst_devtype = FU_DELL_K2_EC_DEV_TYPE_MST;
-	FuDellK2EcDevMstSubtype mst_subtype;
+	DellK2EcDevType mst_devtype = DELL_K2_EC_DEV_TYPE_MST;
+	DellK2EcDevMstSubtype mst_subtype;
 	const gchar *devname = NULL;
 
 	if (device_ec == NULL || device_mst == NULL)
 		return;
 
 	/* run only once */
-	if (fu_device_has_internal_flag(device_mst, FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER))
+	if (fu_device_has_private_flag(device_mst, FU_DEVICE_PRIVATE_FLAG_EXPLICIT_ORDER))
 		return;
 
 	/* vmm8430 */
-	mst_subtype = FU_DELL_K2_EC_DEV_MST_SUBTYPE_VMM8430;
+	mst_subtype = DELL_K2_EC_DEV_MST_SUBTYPE_VMM8430;
 	if (fu_dell_k2_ec_is_dev_present(device_ec, mst_devtype, mst_subtype, 0))
 		devname = fu_dell_k2_ec_devicetype_to_str(mst_devtype, mst_subtype, 0);
 
 	/* vmm9430 */
-	mst_subtype = FU_DELL_K2_EC_DEV_MST_SUBTYPE_VMM9430;
+	mst_subtype = DELL_K2_EC_DEV_MST_SUBTYPE_VMM9430;
 	if (fu_dell_k2_ec_is_dev_present(device_ec, mst_devtype, mst_subtype, 0))
 		devname = fu_dell_k2_ec_devicetype_to_str(mst_devtype, mst_subtype, 0);
 
@@ -223,7 +222,7 @@ fu_dell_k2_plugin_config_mst_dev(FuPlugin *plugin)
 	fu_device_set_name(device_mst, devname);
 
 	/* flags */
-	fu_device_add_internal_flag(device_mst, FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER);
+	fu_device_add_private_flag(device_mst, FU_DEVICE_PRIVATE_FLAG_EXPLICIT_ORDER);
 	return;
 }
 
@@ -248,9 +247,6 @@ fu_dell_k2_plugin_config_parentship(FuPlugin *plugin)
 static void
 fu_dell_k2_plugin_device_registered(FuPlugin *plugin, FuDevice *device)
 {
-	guint16 vid = 0;
-	guint16 pid = 0;
-
 	/* usb device of interset */
 	if (!FU_IS_USB_DEVICE(device))
 		return;
@@ -265,14 +261,13 @@ fu_dell_k2_plugin_device_registered(FuPlugin *plugin, FuDevice *device)
 			fu_device_inhibit(device, "hidden", msg);
 			return;
 		}
-		fu_device_add_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER);
+		fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_EXPLICIT_ORDER);
 		fu_plugin_cache_add(plugin, "usb4", device);
 	}
 
 	/* leverage synaptics_vmm9 plugin for the mst device */
-	vid = fu_usb_device_get_vid(FU_USB_DEVICE(device));
-	pid = fu_usb_device_get_pid(FU_USB_DEVICE(device));
-	if ((vid == MST_VMM89430_USB_VID && pid == MST_VMM89430_USB_PID))
+	if (fu_device_get_vid(device) == MST_VMM89430_USB_VID &&
+	    fu_device_get_pid(device) == MST_VMM89430_USB_PID)
 		fu_plugin_cache_add(plugin, "mst", device);
 
 	/* add ec to cache */
@@ -323,7 +318,7 @@ fu_dell_k2_plugin_prepare(FuPlugin *plugin,
 
 	/* usb4 device reboot is suppressed, let ec handle it in passive update */
 	if (fu_device_has_guid(device, DELL_K2_TBT4) || fu_device_has_guid(device, DELL_K2_TBT5)) {
-		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SKIPS_RESTART);
+		fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
 	}
 
 	g_debug("plugin prepared for (%s) successfully", fu_device_get_name(device));

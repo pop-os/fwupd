@@ -1,13 +1,14 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuUsbDeviceDs20"
 
 #include "config.h"
 
+#include "fu-input-stream.h"
 #include "fu-usb-device-ds20-struct.h"
 #include "fu-usb-device-ms-ds20.h"
 
@@ -28,7 +29,7 @@ G_DEFINE_TYPE(FuUsbDeviceMsDs20, fu_usb_device_ms_ds20, FU_TYPE_USB_DEVICE_DS20)
 #define USB_OS_20_FEATURE_VENDOR_REVISION     0x08
 
 static const gchar *
-fu_usb_device_os20_type_to_string(guint16 type)
+fu_usb_device_ms_ds20_type_to_string(guint16 type)
 {
 	if (type == USB_OS_20_SET_HEADER_DESCRIPTOR)
 		return "set-header-descriptor";
@@ -53,17 +54,21 @@ fu_usb_device_os20_type_to_string(guint16 type)
 
 static gboolean
 fu_usb_device_ms_ds20_parse(FuUsbDeviceDs20 *self,
-			    GBytes *blob,
+			    GInputStream *stream,
 			    FuUsbDevice *device,
 			    GError **error)
 {
+	gsize streamsz = 0;
+
 	/* get length and type only */
-	for (gsize offset = 0; offset < g_bytes_get_size(blob);) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	for (gsize offset = 0; offset < streamsz;) {
 		guint16 desc_sz;
 		guint16 desc_type;
-		g_autoptr(GByteArray) st = NULL;
+		g_autoptr(FuStructMsDs20) st = NULL;
 
-		st = fu_struct_ms_ds20_parse_bytes(blob, offset, error);
+		st = fu_struct_ms_ds20_parse_stream(stream, offset, error);
 		if (st == NULL)
 			return FALSE;
 		desc_sz = fu_struct_ms_ds20_get_size(st);
@@ -72,7 +77,7 @@ fu_usb_device_ms_ds20_parse(FuUsbDeviceDs20 *self,
 		desc_type = fu_struct_ms_ds20_get_type(st);
 		g_debug("USB OS descriptor type 0x%04x [%s], length 0x%04x",
 			desc_type,
-			fu_usb_device_os20_type_to_string(desc_type),
+			fu_usb_device_ms_ds20_type_to_string(desc_type),
 			desc_sz);
 		offset += desc_sz;
 	}
@@ -84,8 +89,8 @@ fu_usb_device_ms_ds20_parse(FuUsbDeviceDs20 *self,
 static void
 fu_usb_device_ms_ds20_class_init(FuUsbDeviceMsDs20Class *klass)
 {
-	FuUsbDeviceDs20Class *usb_device_ds20_klass = FU_USB_DEVICE_DS20_CLASS(klass);
-	usb_device_ds20_klass->parse = fu_usb_device_ms_ds20_parse;
+	FuUsbDeviceDs20Class *usb_device_ds20_class = FU_USB_DEVICE_DS20_CLASS(klass);
+	usb_device_ds20_class->parse = fu_usb_device_ms_ds20_parse;
 }
 
 static void

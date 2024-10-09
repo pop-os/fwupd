@@ -1,17 +1,18 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuUsbDeviceDs20"
 
 #include "config.h"
 
+#include "fu-bytes.h"
 #include "fu-device-private.h"
+#include "fu-input-stream.h"
 #include "fu-string.h"
 #include "fu-usb-device-fw-ds20.h"
-#include "fu-version.h"
 
 struct _FuUsbDeviceFwDs20 {
 	FuUsbDeviceDs20 parent_instance;
@@ -21,25 +22,32 @@ G_DEFINE_TYPE(FuUsbDeviceFwDs20, fu_usb_device_fw_ds20, FU_TYPE_USB_DEVICE_DS20)
 
 #define DS20_VERSION_LOWEST ((1u << 16) | (8u << 8) | 5u)
 #define DS20_VERSION_CURRENT                                                                       \
-	((((guint32)FU_MAJOR_VERSION) << 16) | (((guint32)FU_MINOR_VERSION) << 8) |                \
-	 ((guint)FU_MICRO_VERSION))
+	((((guint32)FWUPD_MAJOR_VERSION) << 16) | (((guint32)FWUPD_MINOR_VERSION) << 8) |          \
+	 ((guint)FWUPD_MICRO_VERSION))
 
 static gboolean
 fu_usb_device_fw_ds20_parse(FuUsbDeviceDs20 *self,
-			    GBytes *blob,
+			    GInputStream *stream,
 			    FuUsbDevice *device,
 			    GError **error)
 {
 	gsize bufsz = 0;
 	gsize bufsz_safe = 0;
-	const guint8 *buf = g_bytes_get_data(blob, &bufsz);
+	const guint8 *buf;
 	g_auto(GStrv) lines = NULL;
+	g_autoptr(GBytes) blob = NULL;
+
+	/* convert to blob */
+	blob = fu_input_stream_read_bytes(stream, 0, G_MAXSIZE, error);
+	if (blob == NULL)
+		return FALSE;
 
 	/* only accept Linux line-endings */
+	buf = g_bytes_get_data(blob, &bufsz);
 	if (g_strstr_len((const gchar *)buf, bufsz, "\r") != NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "Windows line endings are not supported");
 		return FALSE;
 	}
@@ -58,8 +66,8 @@ fu_usb_device_fw_ds20_parse(FuUsbDeviceDs20 *self,
 
 	if (!g_utf8_validate((const gchar *)buf, (gssize)bufsz_safe, NULL)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "DS20 descriptor is not valid UTF-8");
 		return FALSE;
 	}
@@ -83,8 +91,8 @@ fu_usb_device_fw_ds20_parse(FuUsbDeviceDs20 *self,
 		kv = g_strsplit(lines[i], "=", 2);
 		if (g_strv_length(kv) < 2) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "expected key=value for '%s'",
 				    lines[i]);
 			return FALSE;
@@ -110,8 +118,8 @@ fu_usb_device_fw_ds20_parse(FuUsbDeviceDs20 *self,
 static void
 fu_usb_device_fw_ds20_class_init(FuUsbDeviceFwDs20Class *klass)
 {
-	FuUsbDeviceDs20Class *usb_device_ds20_klass = FU_USB_DEVICE_DS20_CLASS(klass);
-	usb_device_ds20_klass->parse = fu_usb_device_fw_ds20_parse;
+	FuUsbDeviceDs20Class *usb_device_ds20_class = FU_USB_DEVICE_DS20_CLASS(klass);
+	usb_device_ds20_class->parse = fu_usb_device_fw_ds20_parse;
 }
 
 static void

@@ -1,9 +1,9 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
 #[repr(u16le)]
-enum RmiPartitionId {
+enum FuRmiPartitionId {
     None = 0x00,
     Bootloader = 0x01,
     DeviceConfig,
@@ -22,14 +22,15 @@ enum RmiPartitionId {
 }
 
 #[derive(Parse)]
-struct RmiPartitionTbl {
-    partition_id: RmiPartitionId,
+struct FuStructRmiPartitionTbl {
+    partition_id: FuRmiPartitionId,
     partition_len: u16le,
     partition_addr: u16le,
     partition_prop: u16le,
 }
-#[derive(New, ParseBytes)]
-struct RmiImg {
+
+#[derive(New, ParseStream)]
+struct FuStructRmiImg {
     checksum: u32le,
     _reserved1: [u8; 2],
     io_offset: u8,
@@ -46,7 +47,7 @@ struct RmiImg {
 
 #[derive(ToString)]
 #[repr(u16le)]
-enum RmiContainerId {
+enum FuRmiContainerId {
     TopLevel,
     Ui,
     UiConfig,
@@ -74,10 +75,10 @@ enum RmiContainerId {
     FixedLocationData = 27,
 }
 
-#[derive(New, ParseBytes)]
-struct RmiContainerDescriptor {
+#[derive(New, ParseStream)]
+struct FuStructRmiContainerDescriptor {
     content_checksum: u32le,
-    container_id: RmiContainerId,
+    container_id: FuRmiContainerId,
     minor_version: u8,
     major_version: u8,
     signature_size: u32le,

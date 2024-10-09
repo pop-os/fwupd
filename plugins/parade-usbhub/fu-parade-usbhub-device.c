@@ -42,16 +42,11 @@ G_DEFINE_TYPE(FuParadeUsbhubDevice, fu_parade_usbhub_device, FU_TYPE_USB_DEVICE)
 #define FU_PARADE_USBHUB_DEVICE_SPI_RETRY_COUNT 100
 #define FU_PARADE_USBHUB_DEVICE_SPI_RETRY_DELAY 50 /* ms */
 
-#define BIT_SET(_DATA_, _BIT_)	    (_DATA_ |= (1 << _BIT_))
-#define BIT_CLEAR(_DATA_, _BIT_)    (_DATA_ &= ~(1 << _BIT_))
-#define IS_BIT_SET(_DATA_, _BIT_)   (_DATA_ & (1 << _BIT_))
-#define IS_BIT_CLEAR(_DATA_, _BIT_) (!IS_BIT_SET(_DATA_, _BIT_))
-
 static void
 fu_parade_usbhub_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuParadeUsbhubDevice *self = FU_PARADE_USBHUB_DEVICE(device);
-	fu_string_append_kx(str, idt, "SpiAddress", self->spi_address);
+	fwupd_codec_string_append_hex(str, idt, "SpiAddress", self->spi_address);
 }
 
 static gboolean
@@ -60,20 +55,19 @@ fu_parade_usbhub_device_mmio_read_u8(FuParadeUsbhubDevice *self,
 				     guint8 *data,
 				     GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
-	return g_usb_device_control_transfer(usb_device,
-					     G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					     G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					     G_USB_DEVICE_RECIPIENT_DEVICE,
-					     FU_PARADE_USBHUB_DEVICE_REQUEST_READ,
-					     0x0, /* always 0 */
-					     address,
-					     data,
-					     sizeof(*data),
-					     NULL,
-					     FU_PARADE_USBHUB_DEVICE_TIMEOUT,
-					     NULL,
-					     error);
+	return fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					      FU_USB_DIRECTION_DEVICE_TO_HOST,
+					      FU_USB_REQUEST_TYPE_VENDOR,
+					      FU_USB_RECIPIENT_DEVICE,
+					      FU_PARADE_USBHUB_DEVICE_REQUEST_READ,
+					      0x0, /* always 0 */
+					      address,
+					      data,
+					      sizeof(*data),
+					      NULL,
+					      FU_PARADE_USBHUB_DEVICE_TIMEOUT,
+					      NULL,
+					      error);
 }
 
 static gboolean
@@ -97,20 +91,19 @@ fu_parade_usbhub_device_mmio_write_raw(FuParadeUsbhubDevice *self,
 				       gsize bufsz,
 				       GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
-	return g_usb_device_control_transfer(usb_device,
-					     G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					     G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					     G_USB_DEVICE_RECIPIENT_DEVICE,
-					     FU_PARADE_USBHUB_DEVICE_REQUEST_WRITE,
-					     0x0, /* always 0 */
-					     address,
-					     buf,
-					     bufsz,
-					     NULL,
-					     FU_PARADE_USBHUB_DEVICE_TIMEOUT,
-					     NULL,
-					     error);
+	return fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					      FU_USB_DIRECTION_HOST_TO_DEVICE,
+					      FU_USB_REQUEST_TYPE_VENDOR,
+					      FU_USB_RECIPIENT_DEVICE,
+					      FU_PARADE_USBHUB_DEVICE_REQUEST_WRITE,
+					      0x0, /* always 0 */
+					      address,
+					      buf,
+					      bufsz,
+					      NULL,
+					      FU_PARADE_USBHUB_DEVICE_TIMEOUT,
+					      NULL,
+					      error);
 }
 
 static gboolean
@@ -171,7 +164,7 @@ fu_parade_usbhub_device_mmio_set_bit(FuParadeUsbhubDevice *self,
 	guint8 val = 0;
 	if (!fu_parade_usbhub_device_mmio_read_u8(self, address, &val, error))
 		return FALSE;
-	val |= (1 << bit_offset);
+	FU_BIT_SET(val, bit_offset);
 	return fu_parade_usbhub_device_mmio_write_u8(self, address, val, error);
 }
 
@@ -184,7 +177,7 @@ fu_parade_usbhub_device_mmio_clear_bit(FuParadeUsbhubDevice *self,
 	guint8 val = 0;
 	if (!fu_parade_usbhub_device_mmio_read_u8(self, address, &val, error))
 		return FALSE;
-	val &= ~(1 << bit_offset);
+	FU_BIT_CLEAR(val, bit_offset);
 	return fu_parade_usbhub_device_mmio_write_u8(self, address, val, error);
 }
 
@@ -199,7 +192,7 @@ fu_parade_usbhub_device_spi_rom_wait_done_cb(FuDevice *device, gpointer user_dat
 						  error))
 		return FALSE;
 	if ((val & FU_PARADE_USBHUB_DEVICE_STATUS_FLAG_SPI_DONE) == 0) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "not done");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "not done");
 		return FALSE;
 	}
 	return TRUE;
@@ -529,7 +522,7 @@ fu_parade_usbhub_device_spi_wait_status_cb(FuDevice *device, gpointer user_data,
 						   error))
 		return FALSE;
 	if (val & 0b1) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "status invalid");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "status invalid");
 		return FALSE;
 	}
 
@@ -582,12 +575,12 @@ fu_parade_usbhub_device_spi_rom_chip_unprotect(FuParadeUsbhubDevice *self, GErro
 						   error))
 		return FALSE;
 
-	if (IS_BIT_CLEAR(status, 2) && IS_BIT_CLEAR(status, 3) && IS_BIT_CLEAR(status, 7))
+	if (FU_BIT_IS_CLEAR(status, 2) && FU_BIT_IS_CLEAR(status, 3) && FU_BIT_IS_CLEAR(status, 7))
 		return TRUE;
 
-	BIT_CLEAR(status, 2); /* BP0 */
-	BIT_CLEAR(status, 3); /* BP1 */
-	BIT_CLEAR(status, 7); /* SRWD */
+	FU_BIT_CLEAR(status, 2); /* BP0 */
+	FU_BIT_CLEAR(status, 3); /* BP1 */
+	FU_BIT_CLEAR(status, 7); /* SRWD */
 
 	/* write enable */
 	if (!fu_cfi_device_get_cmd(self->cfi_device,
@@ -622,8 +615,8 @@ fu_parade_usbhub_device_spi_rom_chip_unprotect(FuParadeUsbhubDevice *self, GErro
 		return FALSE;
 	if (status_new != status) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "status was 0x%x, expected 0x%x",
 			    status_new,
 			    status);
@@ -645,8 +638,8 @@ fu_parade_usbhub_device_spi_rom_erase_sector(FuParadeUsbhubDevice *self,
 	/* has to be aligned */
 	if (spi_address % FU_PARADE_USBHUB_SPI_ROM_ERASE_SIZE != 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "SPI address 0x%x not aligned to 0x%x",
 			    spi_address,
 			    FU_PARADE_USBHUB_SPI_ROM_ERASE_SIZE);
@@ -868,12 +861,12 @@ fu_parade_usbhub_device_spi_rom_chip_protect(FuParadeUsbhubDevice *self, GError 
 						   sizeof(status),
 						   error))
 		return FALSE;
-	if (IS_BIT_SET(status, 2) && IS_BIT_SET(status, 3) && IS_BIT_CLEAR(status, 7))
+	if (FU_BIT_IS_SET(status, 2) && FU_BIT_IS_SET(status, 3) && FU_BIT_IS_CLEAR(status, 7))
 		return TRUE;
 
-	BIT_SET(status, 2);   /* BP0 */
-	BIT_SET(status, 3);   /* BP1 */
-	BIT_CLEAR(status, 7); /* SRWD */
+	FU_BIT_SET(status, 2);	 /* BP0 */
+	FU_BIT_SET(status, 3);	 /* BP1 */
+	FU_BIT_CLEAR(status, 7); /* SRWD */
 
 	/* write enable */
 	if (!fu_cfi_device_get_cmd(self->cfi_device,
@@ -908,13 +901,82 @@ fu_parade_usbhub_device_spi_rom_chip_protect(FuParadeUsbhubDevice *self, GError 
 		return FALSE;
 	if (status_new != status) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "status was 0x%x, expected 0x%x",
 			    status_new,
 			    status);
 		return FALSE;
 	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_parade_usbhub_device_calculate_checksum(FuParadeUsbhubDevice *self,
+					   guint32 spi_address,
+					   gsize size,
+					   GError **error)
+{
+	if (!fu_parade_usbhub_device_mmio_write_u24(self,
+						    FU_PARADE_USBHUB_DEVICE_ADDR_SPI_ADDR,
+						    spi_address,
+						    error))
+		return FALSE;
+	if (!fu_parade_usbhub_device_mmio_write_u16(self,
+						    FU_PARADE_USBHUB_DEVICE_ADDR_DMA_SIZE,
+						    size,
+						    error))
+		return FALSE;
+	if (!fu_parade_usbhub_device_mmio_write_u8(
+		self,
+		FU_PARADE_USBHUB_DEVICE_ADDR_STATUS,
+		FU_PARADE_USBHUB_DEVICE_STATUS_FLAG_CHECKSUM |
+		    FU_PARADE_USBHUB_DEVICE_STATUS_FLAG_TRIGGER_SPI,
+		error))
+		return FALSE;
+	return fu_parade_usbhub_device_spi_rom_wait_done(self, error);
+}
+
+static gboolean
+fu_parade_usbhub_device_spi_rom_checksum(FuParadeUsbhubDevice *self,
+					 gsize size,
+					 guint32 *checksum,
+					 GError **error)
+{
+	guint8 buf_csum[4] = {0};
+	g_autoptr(GPtrArray) chunks = NULL;
+
+	/* acquire and enable SPI master after internal reset */
+	if (!fu_parade_usbhub_device_acquire_spi_master(self, error))
+		return FALSE;
+	if (!fu_parade_usbhub_device_enable_spi_master(self, error))
+		return FALSE;
+
+	/* calculate checksum internally */
+	chunks = fu_chunk_array_new(NULL,
+				    size,
+				    self->spi_address,
+				    0x0,
+				    FU_PARADE_USBHUB_SPI_ROM_CHECKSUM_BUFFER_SIZE);
+	for (guint i = 0; i < chunks->len; i++) {
+		FuChunk *chk = g_ptr_array_index(chunks, i);
+		if (!fu_parade_usbhub_device_calculate_checksum(self,
+								fu_chunk_get_address(chk),
+								fu_chunk_get_data_sz(chk),
+								error))
+			return FALSE;
+	}
+
+	/* read calculated checksum */
+	if (!fu_parade_usbhub_device_mmio_read(self,
+					       FU_PARADE_USBHUB_DEVICE_ADDR_DATA,
+					       buf_csum,
+					       sizeof(buf_csum),
+					       error))
+		return FALSE;
+	*checksum = fu_memread_uint32(buf_csum, G_LITTLE_ENDIAN);
 
 	/* success */
 	return TRUE;
@@ -1062,12 +1124,13 @@ fu_parade_usbhub_device_cleanup(FuDevice *device,
 
 static FuFirmware *
 fu_parade_usbhub_device_prepare_firmware(FuDevice *device,
-					 GBytes *fw,
+					 GInputStream *stream,
+					 FuProgress *progress,
 					 FwupdInstallFlags flags,
 					 GError **error)
 {
 	g_autoptr(FuFirmware) firmware = fu_parade_usbhub_firmware_new();
-	if (!fu_firmware_parse_full(firmware, fw, 0x0, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	return g_steal_pointer(&firmware);
 }
@@ -1080,26 +1143,29 @@ fu_parade_usbhub_device_write_firmware(FuDevice *device,
 				       GError **error)
 {
 	FuParadeUsbhubDevice *self = FU_PARADE_USBHUB_DEVICE(device);
-	g_autoptr(GBytes) fw = NULL;
-	g_autoptr(GBytes) fw_partial = NULL;
-	g_autoptr(GByteArray) blob = g_byte_array_new();
+	g_autoptr(GInputStream) stream = NULL;
+	g_autoptr(GByteArray) blob = NULL;
+	guint32 checksum;
+	guint32 checksum_new;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 33, NULL);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 66, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 1, NULL);
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* get bank 4 slice */
-	fw_partial =
-	    fu_bytes_new_offset(fw, self->spi_address, FU_PARADE_USBHUB_SPI_ROM_BANK_SIZE, error);
-	if (fw_partial == NULL)
+	blob = fu_input_stream_read_byte_array(stream,
+					       self->spi_address,
+					       FU_PARADE_USBHUB_SPI_ROM_BANK_SIZE,
+					       error);
+	if (blob == NULL)
 		return FALSE;
-	fu_byte_array_append_bytes(blob, fw_partial);
 
 	/* SPI ROM update */
 	if (!fu_parade_usbhub_device_spi_rom_erase(self,
@@ -1113,6 +1179,23 @@ fu_parade_usbhub_device_write_firmware(FuDevice *device,
 						   fu_progress_get_child(progress),
 						   error))
 		return FALSE;
+	fu_progress_step_done(progress);
+
+	/* compare checksum */
+	if (!fu_parade_usbhub_device_spi_rom_checksum(self, blob->len, &checksum_new, error)) {
+		g_prefix_error(error, "failed to get ROM checksum: ");
+		return FALSE;
+	}
+	checksum = fu_crc32(FU_CRC_KIND_B32_MPEG2, blob->data, blob->len);
+	if (checksum != checksum_new) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
+			    "checksum was 0x%x, expected 0x%x",
+			    checksum_new,
+			    checksum);
+		return FALSE;
+	}
 	fu_progress_step_done(progress);
 
 	/* success! */
@@ -1148,7 +1231,7 @@ fu_parade_usbhub_device_init(FuParadeUsbhubDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_add_request_flag(FU_DEVICE(self), FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
 	fu_usb_device_add_interface(FU_USB_DEVICE(self), 0);
 }

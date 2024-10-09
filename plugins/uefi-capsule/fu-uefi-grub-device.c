@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Mario Limonciello <mario.limonciello@amd.com>
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Mario Limonciello <mario.limonciello@amd.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -36,8 +36,8 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 		argv_mkconfig[2] = "/boot/grub2/grub.cfg";
 	if (!g_file_test(argv_mkconfig[2], G_FILE_TEST_EXISTS)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "could not find grub.conf");
 		return FALSE;
 	}
@@ -48,8 +48,8 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 		grub_mkconfig = fu_path_find_program("grub2-mkconfig", NULL);
 	if (grub_mkconfig == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "could not find grub-mkconfig");
 		return FALSE;
 	}
@@ -60,8 +60,8 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 		grub_reboot = fu_path_find_program("grub2-reboot", NULL);
 	if (grub_reboot == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "could not find grub-reboot");
 		return FALSE;
 	}
@@ -110,6 +110,8 @@ fu_uefi_grub_device_write_firmware(FuDevice *device,
 				   FwupdInstallFlags flags,
 				   GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	FuUefiDevice *self = FU_UEFI_DEVICE(device);
 	FuVolume *esp = fu_uefi_device_get_esp(self);
 	const gchar *fw_class = fu_uefi_device_get_guid(self);
@@ -139,7 +141,7 @@ fu_uefi_grub_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* save the blob to the ESP */
-	directory = fu_uefi_get_esp_path_for_os();
+	directory = fu_uefi_get_esp_path_for_os(esp_path);
 	basename = g_strdup_printf("fwupd-%s.cap", fw_class);
 	capsule_path = g_build_filename(directory, "fw", basename, NULL);
 	fn = g_build_filename(esp_path, capsule_path, NULL);
@@ -160,8 +162,11 @@ fu_uefi_grub_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* delete the old log to save space */
-	if (fu_efivar_exists(FU_EFIVAR_GUID_FWUPDATE, "FWUPDATE_DEBUG_LOG")) {
-		if (!fu_efivar_delete(FU_EFIVAR_GUID_FWUPDATE, "FWUPDATE_DEBUG_LOG", error))
+	if (fu_efivars_exists(efivars, FU_EFIVARS_GUID_FWUPDATE, "FWUPDATE_DEBUG_LOG")) {
+		if (!fu_efivars_delete(efivars,
+				       FU_EFIVARS_GUID_FWUPDATE,
+				       "FWUPDATE_DEBUG_LOG",
+				       error))
 			return FALSE;
 	}
 
@@ -170,12 +175,12 @@ fu_uefi_grub_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* if secure boot was turned on this might need to be installed separately */
-	source_app = fu_uefi_get_built_app_path("fwupd", error);
+	source_app = fu_uefi_get_built_app_path(efivars, "fwupd", error);
 	if (source_app == NULL)
 		return FALSE;
 
 	/* test if correct asset in place */
-	target_app = fu_uefi_get_esp_app_path("fwupd", error);
+	target_app = fu_uefi_get_esp_app_path(esp_path, "fwupd", error);
 	if (target_app == NULL)
 		return FALSE;
 	if (!fu_uefi_esp_target_verify(source_app, esp, target_app)) {
@@ -205,7 +210,7 @@ fu_uefi_grub_device_init(FuUefiGrubDevice *self)
 static void
 fu_uefi_grub_device_class_init(FuUefiGrubDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_uefi_grub_device_write_firmware;
-	klass_device->report_metadata_pre = fu_uefi_grub_device_report_metadata_pre;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_uefi_grub_device_write_firmware;
+	device_class->report_metadata_pre = fu_uefi_grub_device_report_metadata_pre;
 }

@@ -38,24 +38,103 @@
     <binary>fwupdtool</binary>
   </provides>
   <releases>
-    <release version="1.9.25" date="2024-09-25">
+    <release version="2.0.0" date="2024-10-01">
       <description>
+        <p>
+          This new major release beaks the libfwupd ABI to make the following changes:
+        </p>
+        <ul>
+          <li>Drop legacy signing formats for verification of metadata and firmware</li>
+          <li>Reduce the runtime memory usage and CPU startup cost significantly</li>
+          <li>Remove all the long-deprecated legacy CLI tools</li>
+          <li>Remove libgusb and GUdev from plugins and use libusb and sysfs instead</li>
+          <li>Stream firmware binaries over a file descriptor rather than into memory</li>
+        </ul>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Add a config option to ignore firmware requirements for development</li>
+          <li>Add a device problem when the device needs a reboot</li>
+          <li>Add API to allow uploading reports in gnome-firmware</li>
+          <li>Add Darwin support to the build helper</li>
+          <li>Add HSI tests for Arrow and Meteor Lake CSME</li>
+          <li>Add support for fwupdtool esp-list --json</li>
+          <li>Add support for more modify-config options</li>
+          <li>Add the privacy policy URL in the remote config</li>
+          <li>Allow device flags to be loaded from the local cab archive</li>
+          <li>Allow overriding the detected EFI framebuffer size in the config file</li>
+          <li>Allow specifying devices to emulate in the config file</li>
+          <li>Apply revocations to SbatLevelRT when required</li>
+          <li>Choose the ESP correctly in more cases when using UEFI capsule updates</li>
+          <li>Detect BlueTooth devices by GATT service UUID</li>
+          <li>Drop the SuperIO plugin as it will not work without rawio</li>
+          <li>Listen to the netlink udev socket rather than using GUdev</li>
+          <li>Parse EFI LZ77 compressed sections when required</li>
+          <li>Support large sections in EFI FFS3 volumes</li>
+          <li>Support more CRC-32 and CRC-16 types</li>
+        </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
-          <li>Fix checking new Synaptics MST firmware size</li>
-          <li>Make another ModemManager instance ID visible for firmware matching</li>
-          <li>Never set a zero-length device name when matching the vendor name</li>
+          <li>Abstract out the D-Bus IPC layer to allow using Android Binder in the future</li>
+          <li>Apply systemd hardening to the service files</li>
+          <li>Coldplug udev devices with a predictable order</li>
+          <li>Completely deallocate devices when physically removed</li>
+          <li>Create the fuzzing corpus at build time to avoid shipping binary test blobs</li>
+          <li>Do not add counterpart IDs as visible firmware-matchable GUIDs</li>
+          <li>Do not allow system suspend during a composite update</li>
+          <li>Do not assume all block devices are backed by USB devices</li>
+          <li>Do not create a FuSynapticsMstDevice for every DPAUX device</li>
+          <li>Do not read OptionROM on Apple hardware</li>
+          <li>Do not run the quirk query multiple times on the same device</li>
+          <li>Do not set a zero-length device name when matching the vendor name</li>
+          <li>Do not skip closing the USB device if the HID interface is not found</li>
+          <li>Do not skip the first EFI_FILE in the EFI_FILESYSTEM</li>
+          <li>Do not verify the SSL hostname when using DISABLE_SSL_STRICT=1</li>
+          <li>Do SG_IO INQUIRY_CMD directly rather than relying on the udev prober</li>
+          <li>Emit a signal when a request is no longer valid</li>
+          <li>Fix several 'underflowed constants' found using Coverity</li>
+          <li>Get the DT-provided 'BIOS version' correctly</li>
+          <li>Get the new bluetooth revision after deploying the update</li>
+          <li>Keep polling Redfish even when encountering task errors</li>
+          <li>Only generate the client certificate when required</li>
+          <li>Only read back the thunderbolt firmware if we can parse the NVM</li>
+          <li>Pass emulation data using a file descriptor</li>
           <li>Recalculate the device supported flag when reparenting devices</li>
-          <li>Reduce idle power consumption of paired logitech-hidpp devices</li>
-          <li>Retry the open action to fix BC901 NVMe reload</li>
+          <li>Reduce memory allocations by ~2Mb when loading the BGRT image</li>
+          <li>Remove the polling for Logitech Unifying receivers to improve battery life</li>
+          <li>Require a DPCD OUI to match DPAUX devices</li>
+          <li>Respect the device priority when matching in the device list</li>
+          <li>Respect the interface retry count when using an auto-detected FuHidDevice</li>
+          <li>Retry the post-update NVMe open action to fix BC901 reload</li>
+          <li>Save the metadata with a more predictable name so we can use jcat-tool</li>
+          <li>Upload reports from fwupd-refresh if AutomaticReports is true</li>
+          <li>Use a more standard ATA OUI vendor name match</li>
+          <li>Use the first preferred CRTC screen resolution if not using efifb</li>
+          <li>Use /usr/bin/env for wider Python compatibility</li>
+          <li>Warn users needing to fwupdmgr activate before uploading signed reports</li>
         </ul>
         <p>This release adds support for the following hardware:</p>
         <ul>
-          <li>Algoltek devices supporting sector erase</li>
-          <li>Dell K2 dock</li>
-          <li>Intel USB4 hub 5787</li>
-          <li>More MediaTek scaler devices</li>
-          <li>Nordic HID devices supporting DFUv1</li>
+          <li>Algoltek USB card readers</li>
+          <li>AMD Kria SoM</li>
+          <li>Cable Matters USB Hub</li>
+          <li>Cinterion fdl-based devices</li>
+          <li>CY6611 EZ-USB HX3PD</li>
+          <li>Dell K2 Dock</li>
+          <li>Elan 0C9F fingerprint devices</li>
+          <li>HP Fleetwood and Hendrix docks</li>
+          <li>Huddly L1, S1 and Crew</li>
+          <li>Jabra PanaCast</li>
+          <li>Lenovo Legion HID2 devices</li>
+          <li>Lenovo ThinkSmart Bar</li>
+          <li>Logitech Lemmy</li>
+          <li>Logitech Sight</li>
+          <li>Logitech Tap Touch Screen</li>
+          <li>MediaTek scaler devices</li>
+          <li>Parade PS185</li>
+          <li>Qualcomm S5gen2 BLE devices</li>
+          <li>Telink Dual Keyboard</li>
         </ul>
       </description>
     </release>

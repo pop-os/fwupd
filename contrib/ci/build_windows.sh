@@ -56,15 +56,11 @@ meson setup .. \
     -Dbash_completion=false \
     -Dfirmware-packager=false \
     -Dmetainfo=false \
-    -Dcompat_cli=false \
     -Dlibjcat:man=false \
     -Dlibjcat:gpg=false \
     -Dlibjcat:tests=false \
     -Dlibjcat:introspection=false \
-    -Dgusb:tests=false \
-    -Dgusb:docs=false \
-    -Dgusb:introspection=false \
-    -Dgusb:vapi=false $@
+    $@
 VERSION=$(meson introspect . --projectinfo | jq -r .version)
 ninja --verbose -C "$build" -v install
 
@@ -95,7 +91,6 @@ find $MINGW32BINDIR \
 	-o -name libgmp-10.dll \
 	-o -name libgnutls-30.dll \
 	-o -name libgobject-2.0-0.dll \
-	-o -name libgusb-2.dll \
 	-o -name "libhogweed-*.dll" \
 	-o -name libidn2-0.dll \
 	-o -name libintl-8.dll \

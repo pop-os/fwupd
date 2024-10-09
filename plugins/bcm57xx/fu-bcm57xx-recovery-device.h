@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -14,6 +14,3 @@ G_DECLARE_FINAL_TYPE(FuBcm57xxRecoveryDevice,
 		     FU,
 		     BCM57XX_RECOVERY_DEVICE,
 		     FuUdevDevice)
-
-FuBcm57xxRecoveryDevice *
-fu_bcm57xx_recovery_device_new(void);

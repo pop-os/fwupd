@@ -1,7 +1,7 @@
 /*#
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -220,7 +220,7 @@ fu_ep963x_device_wait_cb(FuDevice *device, gpointer user_data, GError **error)
 		return FALSE;
 	}
 	if (bufhw[2] != FU_EP963_USB_STATE_READY) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_BUSY, "hardware is not ready");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_BUSY, "hardware is not ready");
 		return FALSE;
 	}
 	return TRUE;
@@ -234,7 +234,7 @@ fu_ep963x_device_write_firmware(FuDevice *device,
 				GError **error)
 {
 	FuEp963xDevice *self = FU_EP963X_DEVICE(device);
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(FuChunkArray) blocks = NULL;
 
@@ -245,8 +245,8 @@ fu_ep963x_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 95, NULL);
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* reset the block index */
@@ -266,12 +266,14 @@ fu_ep963x_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* write each block */
-	blocks = fu_chunk_array_new_from_bytes(fw, 0x00, FU_EP963_TRANSFER_BLOCK_SIZE);
+	blocks = fu_chunk_array_new_from_stream(stream, 0x00, FU_EP963_TRANSFER_BLOCK_SIZE, error);
+	if (blocks == NULL)
+		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(blocks); i++) {
-		g_autoptr(FuChunk) chk2 = fu_chunk_array_index(blocks, i);
 		guint8 buf[] = {i};
 		g_autoptr(FuChunkArray) chunks = NULL;
-		g_autoptr(GBytes) chk_blob = fu_chunk_get_bytes(chk2);
+		g_autoptr(FuChunk) chk2 = NULL;
+		g_autoptr(GBytes) chk_blob = NULL;
 
 		/* set the block index */
 		if (!fu_ep963x_device_write(self,
@@ -289,12 +291,21 @@ fu_ep963x_device_write_firmware(FuDevice *device,
 		}
 
 		/* 4 byte chunks */
+		chk2 = fu_chunk_array_index(blocks, i, error);
+		if (chk2 == NULL)
+			return FALSE;
+		chk_blob = fu_chunk_get_bytes(chk2);
 		chunks = fu_chunk_array_new_from_bytes(chk_blob,
 						       fu_chunk_get_address(chk2),
 						       FU_EP963_TRANSFER_CHUNK_SIZE);
 		for (guint j = 0; j < fu_chunk_array_length(chunks); j++) {
-			g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, j);
+			g_autoptr(FuChunk) chk = NULL;
 			g_autoptr(GError) error_loop = NULL;
+
+			/* prepare chunk */
+			chk = fu_chunk_array_index(chunks, j, error);
+			if (chk == NULL)
+				return FALSE;
 
 			/* copy data and write */
 			if (!fu_ep963x_device_write(self,
@@ -371,10 +382,10 @@ fu_ep963x_device_init(FuEp963xDevice *self)
 static void
 fu_ep963x_device_class_init(FuEp963xDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_ep963x_device_write_firmware;
-	klass_device->attach = fu_ep963x_device_attach;
-	klass_device->detach = fu_ep963x_device_detach;
-	klass_device->setup = fu_ep963x_device_setup;
-	klass_device->set_progress = fu_ep963x_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_ep963x_device_write_firmware;
+	device_class->attach = fu_ep963x_device_attach;
+	device_class->detach = fu_ep963x_device_detach;
+	device_class->setup = fu_ep963x_device_setup;
+	device_class->set_progress = fu_ep963x_device_set_progress;
 }

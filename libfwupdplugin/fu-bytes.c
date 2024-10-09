@@ -1,21 +1,18 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCommon"
 
 #include "config.h"
 
-#ifdef HAVE_GIO_UNIX
-#include <gio/gunixinputstream.h>
-#endif
-
 #include "fwupd-error.h"
 
 #include "fu-bytes.h"
 #include "fu-common.h"
+#include "fu-input-stream.h"
 #include "fu-mem.h"
 
 /**
@@ -79,8 +76,10 @@ fu_bytes_get_contents(const gchar *filename, GError **error)
 	if (mapped_file == NULL || g_mapped_file_get_length(mapped_file) == 0) {
 		gchar *data = NULL;
 		gsize len = 0;
-		if (!g_file_get_contents(filename, &data, &len, error))
+		if (!g_file_get_contents(filename, &data, &len, error)) {
+			fwupd_error_convert(error);
 			return NULL;
+		}
 		g_debug("failed to read as mapped file, "
 			"so reading %s of size 0x%x: %s",
 			filename,
@@ -92,166 +91,6 @@ fu_bytes_get_contents(const gchar *filename, GError **error)
 		filename,
 		(guint)g_mapped_file_get_length(mapped_file));
 	return g_mapped_file_get_bytes(mapped_file);
-}
-
-/**
- * fu_bytes_get_contents_fd:
- * @fd: a file descriptor
- * @count: the maximum number of bytes to read
- * @error: (nullable): optional return location for an error
- *
- * Reads a blob from a specific file descriptor.
- *
- * Note: this will close the fd when done
- *
- * Returns: (transfer full): a #GBytes, or %NULL
- *
- * Since: 1.8.2
- **/
-GBytes *
-fu_bytes_get_contents_fd(gint fd, gsize count, GError **error)
-{
-#ifdef HAVE_GIO_UNIX
-	g_autoptr(GInputStream) stream = NULL;
-
-	g_return_val_if_fail(fd > 0, NULL);
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	/* read the entire fd to a data blob */
-	stream = g_unix_input_stream_new(fd, TRUE);
-	return fu_bytes_get_contents_stream(stream, count, error);
-#else
-	g_set_error_literal(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "Not supported as <glib-unix.h> is unavailable");
-	return NULL;
-#endif
-}
-
-/**
- * fu_bytes_get_contents_stream:
- * @stream: input stream
- * @count: the maximum number of bytes to read
- * @error: (nullable): optional return location for an error
- *
- * Reads a blob from a specific input stream.
- *
- * Returns: (transfer full): a #GBytes, or %NULL
- *
- * Since: 1.8.2
- **/
-GBytes *
-fu_bytes_get_contents_stream(GInputStream *stream, gsize count, GError **error)
-{
-	guint8 tmp[0x8000] = {0x0};
-	g_autoptr(GByteArray) buf = g_byte_array_new();
-	g_autoptr(GError) error_local = NULL;
-
-	g_return_val_if_fail(G_IS_INPUT_STREAM(stream), NULL);
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	/* this is invalid */
-	if (count == 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "A maximum read size must be specified");
-		return NULL;
-	}
-
-	/* read from stream in 32kB chunks */
-	while (TRUE) {
-		gssize sz;
-		sz = g_input_stream_read(stream, tmp, sizeof(tmp), NULL, &error_local);
-		if (sz == 0)
-			break;
-		if (sz < 0) {
-			g_set_error_literal(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_INVALID_FILE,
-					    error_local->message);
-			return NULL;
-		}
-		g_byte_array_append(buf, tmp, sz);
-		if (buf->len > count) {
-			g_set_error(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "cannot read from fd: 0x%x > 0x%x",
-				    buf->len,
-				    (guint)count);
-			return NULL;
-		}
-	}
-	return g_bytes_new(buf->data, buf->len);
-}
-
-/**
- * fu_bytes_get_contents_stream_full:
- * @stream: input stream
- * @offset: the offset to read from
- * @count: the maximum number of bytes to read up to
- * @error: (nullable): optional return location for an error
- *
- * Reads a blob from a specific input stream.
- *
- * NOTE: if the input stream can provide more data than @offset+@count it will be truncated.
- *
- * Returns: (transfer full): a #GBytes, or %NULL
- *
- * Since: 1.9.1
- **/
-GBytes *
-fu_bytes_get_contents_stream_full(GInputStream *stream, gsize offset, gsize count, GError **error)
-{
-	guint8 tmp[0x8000] = {0x0};
-	g_autoptr(GByteArray) buf = g_byte_array_new();
-	g_autoptr(GError) error_local = NULL;
-
-	g_return_val_if_fail(G_IS_INPUT_STREAM(stream), NULL);
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	/* this is invalid */
-	if (count == 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "A maximum read size must be specified");
-		return NULL;
-	}
-
-	/* seek */
-	if (offset > 0) {
-		if (!g_seekable_can_seek(G_SEEKABLE(stream))) {
-			g_set_error_literal(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_NOT_SUPPORTED,
-					    "input stream is not seekable");
-			return NULL;
-		}
-		if (!g_seekable_seek(G_SEEKABLE(stream), offset, G_SEEK_CUR, NULL, error))
-			return NULL;
-	}
-
-	/* read from stream in 32kB chunks */
-	while (TRUE) {
-		gssize sz;
-		sz = g_input_stream_read(stream, tmp, sizeof(tmp), NULL, &error_local);
-		if (sz == 0)
-			break;
-		if (sz < 0) {
-			g_set_error_literal(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_INVALID_FILE,
-					    error_local->message);
-			return NULL;
-		}
-		g_byte_array_append(buf, tmp, sz);
-		if (buf->len >= count)
-			break;
-	}
-	return g_bytes_new(buf->data, buf->len);
 }
 
 /**
@@ -281,7 +120,7 @@ fu_bytes_align(GBytes *bytes, gsize blksz, gchar padval)
 	if (sz % blksz != 0) {
 		gsize sz_align = ((sz / blksz) + 1) * blksz;
 		guint8 *data_align = g_malloc(sz_align);
-		memcpy(data_align, data, sz);
+		memcpy(data_align, data, sz); /* nocheck:blocked */
 		memset(data_align + sz, padval, sz_align - sz);
 		g_debug("aligning 0x%x bytes to 0x%x", (guint)sz, (guint)sz_align);
 		return g_bytes_new_take(data_align, sz_align);
@@ -367,7 +206,7 @@ fu_bytes_pad(GBytes *bytes, gsize sz)
 		const guint8 *data = g_bytes_get_data(bytes, NULL);
 		guint8 *data_new = g_malloc(sz);
 		if (data != NULL)
-			memcpy(data_new, data, bytes_sz);
+			memcpy(data_new, data, bytes_sz); /* nocheck:blocked */
 		memset(data_new + bytes_sz, 0xff, sz - bytes_sz);
 		return g_bytes_new_take(data_new, sz);
 	}
@@ -402,8 +241,8 @@ fu_bytes_new_offset(GBytes *bytes, gsize offset, gsize length, GError **error)
 	/* sanity check */
 	if (offset + length < length || offset + length > g_bytes_get_size(bytes)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "cannot create bytes @0x%02x for 0x%02x "
 			    "as buffer only 0x%04x bytes in size",
 			    (guint)offset,
@@ -437,7 +276,7 @@ fu_bytes_get_data_safe(GBytes *bytes, gsize *bufsz, GError **error)
 {
 	const guint8 *buf = g_bytes_get_data(bytes, bufsz);
 	if (buf == NULL) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "invalid data");
+		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "invalid data");
 		return NULL;
 	}
 	return buf;

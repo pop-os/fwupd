@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -14,15 +14,7 @@
 #include "fu-dfu-csr-struct.h"
 #include "fu-dfu-struct.h"
 
-/**
- * FU_DFU_CSR_DEVICE_FLAG_REQUIRE_DELAY:
- *
- * Respect the write timeout value when performing actions. This is sometimes
- * set to a huge amount of time, and so is not used by default.
- *
- * Since: 1.0.3
- */
-#define FU_DFU_CSR_DEVICE_FLAG_REQUIRE_DELAY (1 << 0)
+#define FU_DFU_CSR_DEVICE_FLAG_REQUIRE_DELAY "require-delay"
 
 struct _FuDfuCsrDevice {
 	FuHidDevice parent_instance;
@@ -44,8 +36,8 @@ static void
 fu_dfu_csr_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuDfuCsrDevice *self = FU_DFU_CSR_DEVICE(device);
-	fu_string_append(str, idt, "State", fu_dfu_state_to_string(self->dfu_state));
-	fu_string_append_ku(str, idt, "DownloadTimeout", self->dnload_timeout);
+	fwupd_codec_string_append(str, idt, "State", fu_dfu_state_to_string(self->dfu_state));
+	fwupd_codec_string_append_int(str, idt, "DownloadTimeout", self->dnload_timeout);
 }
 
 static gboolean
@@ -282,22 +274,25 @@ fu_dfu_csr_device_download(FuDevice *device,
 	FuDfuCsrDevice *self = FU_DFU_CSR_DEVICE(device);
 	guint idx;
 	g_autoptr(GBytes) blob_empty = NULL;
-	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* get default image */
-	blob = fu_firmware_get_bytes(firmware, error);
-	if (blob == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* notify UI */
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
 
 	/* create chunks */
-	chunks = fu_chunk_array_new_from_bytes(blob,
-					       0x0,
-					       FU_DFU_CSR_PACKET_DATA_SIZE -
-						   FU_STRUCT_DFU_CSR_COMMAND_HEADER_SIZE);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						0x0,
+						FU_DFU_CSR_PACKET_DATA_SIZE -
+						    FU_STRUCT_DFU_CSR_COMMAND_HEADER_SIZE,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 	if (fu_chunk_array_length(chunks) > G_MAXUINT16) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -311,10 +306,16 @@ fu_dfu_csr_device_download(FuDevice *device,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (idx = 0; idx < fu_chunk_array_length(chunks); idx++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, idx);
-		g_autoptr(GBytes) blob_tmp = fu_chunk_get_bytes(chk);
+		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(GBytes) blob_tmp = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, idx, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* send packet */
+		blob_tmp = fu_chunk_get_bytes(chk);
 		if (!fu_dfu_csr_device_download_chunk(self, idx, blob_tmp, error))
 			return FALSE;
 
@@ -360,22 +361,20 @@ fu_dfu_csr_device_init(FuDfuCsrDevice *self)
 	fu_device_add_protocol(FU_DEVICE(self), "com.qualcomm.dfu");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ADD_INSTANCE_ID_REV);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_DFU_FIRMWARE);
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_DFU_CSR_DEVICE_FLAG_REQUIRE_DELAY,
-					"require-delay");
+	fu_device_register_private_flag(FU_DEVICE(self), FU_DFU_CSR_DEVICE_FLAG_REQUIRE_DELAY);
 }
 
 static void
 fu_dfu_csr_device_class_init(FuDfuCsrDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_dfu_csr_device_to_string;
-	klass_device->write_firmware = fu_dfu_csr_device_download;
-	klass_device->dump_firmware = fu_dfu_csr_device_upload;
-	klass_device->attach = fu_dfu_csr_device_attach;
-	klass_device->setup = fu_dfu_csr_device_setup;
-	klass_device->set_progress = fu_dfu_csr_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_dfu_csr_device_to_string;
+	device_class->write_firmware = fu_dfu_csr_device_download;
+	device_class->dump_firmware = fu_dfu_csr_device_upload;
+	device_class->attach = fu_dfu_csr_device_attach;
+	device_class->setup = fu_dfu_csr_device_setup;
+	device_class->set_progress = fu_dfu_csr_device_set_progress;
 }

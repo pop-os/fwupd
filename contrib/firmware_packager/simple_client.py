@@ -1,5 +1,9 @@
-#!/usr/bin/python3
-# SPDX-License-Identifier: LGPL-2.1+
+#!/usr/bin/env python3
+#
+# Copyright 2019 Mario Limonciello <mario.limonciello@dell.com>
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
 """A simple fwupd frontend"""
 import sys
 import os
@@ -126,11 +130,11 @@ def device_changed(client, device, progress):  # pylint: disable=unused-argument
     progress.device_changed(device.get_name())
 
 
-def modify_config(client, key, value):
+def modify_config(client, section, key, value):
     """Use fwupd client to modify daemon configuration value"""
     try:
         print(f"setting configuration key {key} to {value}")
-        client.modify_config(key, value, None)
+        client.modify_config(section, key, value, None)
     except Exception as e:
         print(f"{str(e)}")
         sys.exit(1)

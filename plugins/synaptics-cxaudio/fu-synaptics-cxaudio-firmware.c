@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2005 Synaptics Incorporated
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2005 Synaptics Incorporated
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -153,7 +153,7 @@ fu_synaptics_cxaudio_firmware_avoid_badblocks(GPtrArray *badblocks, GPtrArray *r
 
 static gboolean
 fu_synaptics_cxaudio_firmware_parse(FuFirmware *firmware,
-				    GBytes *fw,
+				    GInputStream *stream,
 				    gsize offset,
 				    FwupdInstallFlags flags,
 				    GError **error)
@@ -360,9 +360,9 @@ fu_synaptics_cxaudio_firmware_init(FuSynapticsCxaudioFirmware *self)
 static void
 fu_synaptics_cxaudio_firmware_class_init(FuSynapticsCxaudioFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_synaptics_cxaudio_firmware_parse;
-	klass_firmware->export = fu_synaptics_cxaudio_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_synaptics_cxaudio_firmware_parse;
+	firmware_class->export = fu_synaptics_cxaudio_firmware_export;
 }
 
 FuFirmware *

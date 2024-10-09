@@ -1,13 +1,10 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
-
-#include <linux/hidraw.h>
-#include <sys/ioctl.h>
 
 #include "fu-wacom-common.h"
 #include "fu-wacom-device.h"
@@ -18,24 +15,18 @@ typedef struct {
 	guint32 flash_size;
 } FuWacomDevicePrivate;
 
-G_DEFINE_TYPE_WITH_PRIVATE(FuWacomDevice, fu_wacom_device, FU_TYPE_UDEV_DEVICE)
+G_DEFINE_TYPE_WITH_PRIVATE(FuWacomDevice, fu_wacom_device, FU_TYPE_HIDRAW_DEVICE)
 
 #define GET_PRIVATE(o) (fu_wacom_device_get_instance_private(o))
-
-#define FU_WACOM_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
 
 static void
 fu_wacom_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuWacomDevice *self = FU_WACOM_DEVICE(device);
 	FuWacomDevicePrivate *priv = GET_PRIVATE(self);
-
-	/* FuUdevDevice->to_string */
-	FU_DEVICE_CLASS(fu_wacom_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append_kx(str, idt, "FlashBlockSize", priv->flash_block_size);
-	fu_string_append_kx(str, idt, "FlashBaseAddr", priv->flash_base_addr);
-	fu_string_append_kx(str, idt, "FlashSize", priv->flash_size);
+	fwupd_codec_string_append_hex(str, idt, "FlashBlockSize", priv->flash_block_size);
+	fwupd_codec_string_append_hex(str, idt, "FlashBaseAddr", priv->flash_base_addr);
+	fwupd_codec_string_append_hex(str, idt, "FlashSize", priv->flash_size);
 }
 
 gsize
@@ -80,18 +71,11 @@ fu_wacom_device_check_mpu(FuWacomDevice *self, GError **error)
 
 	/* unsupported */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_FAILED,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "MPU is not W9013 or W9021: 0x%x",
 		    rsp.resp);
 	return FALSE;
-}
-
-static gboolean
-fu_wacom_device_probe(FuDevice *device, GError **error)
-{
-	/* set the physical ID */
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error);
 }
 
 static gboolean
@@ -146,8 +130,8 @@ fu_wacom_device_check_mode(FuWacomDevice *self, GError **error)
 	}
 	if (rsp.resp != 0x06) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "check mode failed, mode=0x%02x",
 			    rsp.resp);
 		return FALSE;
@@ -196,8 +180,8 @@ fu_wacom_device_write_firmware(FuDevice *device,
 	/* check start address and size */
 	if (fu_firmware_get_addr(firmware) != priv->flash_base_addr) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "base addr invalid: 0x%05x",
 			    (guint)fu_firmware_get_addr(firmware));
 		return FALSE;
@@ -207,8 +191,8 @@ fu_wacom_device_write_firmware(FuDevice *device,
 		return FALSE;
 	if (g_bytes_get_size(fw) > priv->flash_size) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "size is invalid: 0x%05x",
 			    (guint)g_bytes_get_size(fw));
 		return FALSE;
@@ -226,29 +210,23 @@ fu_wacom_device_write_firmware(FuDevice *device,
 }
 
 gboolean
-fu_wacom_device_set_feature(FuWacomDevice *self, const guint8 *data, guint datasz, GError **error)
+fu_wacom_device_get_feature(FuWacomDevice *self, guint8 *data, guint datasz, GError **error)
 {
-	fu_dump_raw(G_LOG_DOMAIN, "SetFeature", data, datasz);
-	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				    HIDIOCSFEATURE(datasz),
-				    (guint8 *)data,
-				    NULL,
-				    FU_WACOM_DEVICE_IOCTL_TIMEOUT,
-				    error);
+	return fu_hidraw_device_get_feature(FU_HIDRAW_DEVICE(self),
+					    data,
+					    datasz,
+					    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					    error);
 }
 
 gboolean
-fu_wacom_device_get_feature(FuWacomDevice *self, guint8 *data, guint datasz, GError **error)
+fu_wacom_device_set_feature(FuWacomDevice *self, const guint8 *data, guint datasz, GError **error)
 {
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCGFEATURE(datasz),
-				  data,
-				  NULL,
-				  FU_WACOM_DEVICE_IOCTL_TIMEOUT,
-				  error))
-		return FALSE;
-	fu_dump_raw(G_LOG_DOMAIN, "GetFeature", data, datasz);
-	return TRUE;
+	return fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(self),
+					    data,
+					    datasz,
+					    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					    error);
 }
 
 gboolean
@@ -299,24 +277,27 @@ fu_wacom_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *va
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "WacomI2cFlashBlockSize") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXSIZE, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXSIZE, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->flash_block_size = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "WacomI2cFlashBaseAddr") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->flash_base_addr = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "WacomI2cFlashSize") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->flash_size = tmp;
 		return TRUE;
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -351,24 +332,24 @@ fu_wacom_device_init(FuWacomDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_IHEX_FIRMWARE);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_WACOM_RAW_DEVICE_FLAG_REQUIRES_WAIT_FOR_REPLUG,
-					"requires-wait-for-replug");
+					FU_WACOM_RAW_DEVICE_FLAG_REQUIRES_WAIT_FOR_REPLUG);
 }
 
 static void
 fu_wacom_device_class_init(FuWacomDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_wacom_device_to_string;
-	klass_device->write_firmware = fu_wacom_device_write_firmware;
-	klass_device->detach = fu_wacom_device_detach;
-	klass_device->set_quirk_kv = fu_wacom_device_set_quirk_kv;
-	klass_device->probe = fu_wacom_device_probe;
-	klass_device->set_progress = fu_wacom_device_set_progress;
-	klass_device->replace = fu_wacom_device_replace;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_wacom_device_to_string;
+	device_class->write_firmware = fu_wacom_device_write_firmware;
+	device_class->detach = fu_wacom_device_detach;
+	device_class->set_quirk_kv = fu_wacom_device_set_quirk_kv;
+	device_class->set_progress = fu_wacom_device_set_progress;
+	device_class->replace = fu_wacom_device_replace;
 }

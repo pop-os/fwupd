@@ -44,6 +44,12 @@ To build the project a script is included that will configure and build the proj
 build-fwupd
 ```
 
+To run the project test suite a script is included:
+
+```shell
+test-fwupd
+```
+
 If you want to leave the development environment at any time you can run:
 
 ```shell
@@ -81,7 +87,7 @@ fwupd
 ```
 
 ```shell
-fwupdgmr get-devices
+fwupdmgr get-devices
 ```
 
 ## Using fwupdtool
@@ -168,9 +174,22 @@ fwupdmgr install ~/foo.cab
 
 This will send the firmware archive from the locally built `fwupdmgr` to the locally built daemon using a file descriptor, which will call the new plugin code with the firmware blob in the archive. The daemon terminal will also show lots of useful debugging during this process.
 
-## Debugging fwupd
+## Using Visual Studio code to build and test
 
-When setup using the virtualenv all 3 binaries have the ability be launched with a debugger attached as a **user** by using `DEBUG=1` in the environment.
+During build time a set of tasks will have been created for use with Visual Studio Code.
+
+The default build task which is triggered by using *ctrl-shift-b* will build the project with default settings.
+The default test task can be triggered from the command palette to run the test suite.
+Open the command palette with *ctrl-shift-p* and type **Run test task** and hit enter. This will launch the daemon in a terminal window.
+<img src="test_task.png" width="286" alt="test task screenshot">
+
+## Using Visual Studio Code to debug
+
+The [debugger](https://code.visualstudio.com/Docs/editor/debugging) that is part of [Visual Studio Code](https://code.visualstudio.com/) is really helpful for debugging issues.
+During build time a set of launch targets will have been created for use with Visual Studio Code.
+All 3 binaries have the ability be launched with a debugger attached as a **user** by using `DEBUG=1` in the environment.
+
+### debugging `fwupdtool` and `fwupdmgr`
 
 For example to debug `fwupdtool` you would launch it like this:
 
@@ -180,18 +199,28 @@ Process /home/u/fwupd/venv/bin/../dist/bin/fwupdtool created; pid = 595311
 Listening on port 9091
 ```
 
-Then the process will wait for a debugger to be attached to `localhost:9091`.
-
-One example is using the [debugger](https://code.visualstudio.com/Docs/editor/debugging) that is part of [Visual Studio Code](https://code.visualstudio.com/).
+This will configure `gdbserver` to listen on a local port waiting for a debugger to connect.
 
 Launch vscode in the same directory as the Git checkout. After it's launched, set a source breakpoint.
 
-<img src="debug_breakpoint.png" width="720">
+<img src="debug_breakpoint.png" width="720" alt="debug breakpoint screenshot">
 
 Then use the run and debug button (or *ctrl-shift-d*) to open up the debugger. From the debugger choose the tool to use.
 
-<img src="debug_tool_selector.png" width="720">
+<img src="debug_tool_selector.png" width="720" alt="debug tool selector screenshot">
 
 Press the green start button (or use *F5*) to start debugging. The debugger will attach to the process you launched and stop where you left off.
 
 ![debugger attached](debug_attached.png)
+
+### debugging fwupd (daemon)
+
+For debugging the daemon, a helper task is also included to launch the daemon with the `DEBUG` environment variable set within vscode.
+
+Open the command palette with *ctrl-shift-p* and type **Run task** and hit enter. Select the `gdbserver-fwupd` task.
+This will launch the daemon in a terminal window.
+<img src="debug_task.png" width="186" alt="debug task screenshot">
+
+Then use the run and debug button (or *ctrl-shift-d*) to open up the debugger. From the debugger choose `gdbserver (fwupd)`.
+
+<img src="debug_tool_selector.png" width="720" alt="debug tool selector screenshot">

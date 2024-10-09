@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -15,7 +15,5 @@ G_DECLARE_FINAL_TYPE(FuSynapticsMstDevice,
 		     SYNAPTICS_MST_DEVICE,
 		     FuDpauxDevice)
 
-FuSynapticsMstDevice *
-fu_synaptics_mst_device_new(FuDpauxDevice *device);
-void
-fu_synaptics_mst_device_set_system_type(FuSynapticsMstDevice *self, const gchar *system_type);
+/* FIXME remove when emulation works */
+#define FU_SYNAPTICS_MST_DEVICE_FLAG_IS_SOMEWHAT_EMULATED "is-somewhat-emulated"

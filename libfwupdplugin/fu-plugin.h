@@ -1,15 +1,12 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
 
 #include <gio/gio.h>
-#ifdef HAVE_GUSB
-#include <gusb.h>
-#endif
 
 #include "fu-bluez-device.h"
 #include "fu-common-guid.h"
@@ -20,14 +17,7 @@
 #include "fu-plugin.h"
 #include "fu-quirks.h"
 #include "fu-security-attrs.h"
-#include "fu-usb-device.h"
 #include "fu-version-common.h"
-//#include "fu-hid-device.h"
-#ifdef HAVE_GUDEV
-#include "fu-udev-device.h"
-#endif
-#include <libfwupd/fwupd-common.h>
-#include <libfwupd/fwupd-plugin.h>
 
 /* only until HSI is declared stable */
 #include "fwupd-security-attr-private.h"
@@ -249,7 +239,7 @@ struct _FuPluginClass {
 	 * write_firmware:
 	 * @self: a #FuPlugin
 	 * @dev: a device
-	 * @blob_fw: a data blob
+	 * @stream: a #GInputStream
 	 * @progress: a #FuProgress
 	 * @flags: install flags
 	 * @error: (nullable): optional return location for an error
@@ -260,7 +250,7 @@ struct _FuPluginClass {
 	 **/
 	gboolean (*write_firmware)(FuPlugin *self,
 				   FuDevice *device,
-				   GBytes *blob_fw,
+				   GInputStream *stream,
 				   FuProgress *progress,
 				   FwupdInstallFlags flags,
 				   GError **error);
@@ -424,6 +414,21 @@ struct _FuPluginClass {
 	 * Since: 1.9.7
 	 **/
 	gboolean (*reboot_cleanup)(FuPlugin *self, FuDevice *device, GError **error);
+	/**
+	 * modify_config:
+	 * @self: a #FuPlugin
+	 * @key: a config key
+	 * @value: a config value
+	 * @error: (nullable): optional return location for an error
+	 *
+	 * Sets a plugin config option, which may be allow-listed or value-checked.
+	 *
+	 * Since: 2.0.0
+	 **/
+	gboolean (*modify_config)(FuPlugin *self,
+				  const gchar *key,
+				  const gchar *value,
+				  GError **error);
 };
 
 /**

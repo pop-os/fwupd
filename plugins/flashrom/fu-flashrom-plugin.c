@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2019 9elements Agency GmbH <patrick.rudolph@9elements.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 9elements Agency GmbH <patrick.rudolph@9elements.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -27,8 +27,7 @@ static void
 fu_flashrom_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 {
 	FuFlashromPlugin *self = FU_FLASHROM_PLUGIN(plugin);
-	if (self->guid != NULL)
-		fu_string_append(str, idt, "Guid", self->guid);
+	fwupd_codec_string_append(str, idt, "Guid", self->guid);
 }
 
 static int
@@ -189,10 +188,7 @@ fu_flashrom_plugin_add_device(FuPlugin *plugin,
 
 	/* use same VendorID logic as with UEFI */
 	dmi_vendor = fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_BIOS_VENDOR);
-	if (dmi_vendor != NULL) {
-		g_autofree gchar *vendor_id = g_strdup_printf("DMI:%s", dmi_vendor);
-		fu_device_add_vendor_id(FU_DEVICE(device), vendor_id);
-	}
+	fu_device_build_vendor_id(FU_DEVICE(device), "DMI", dmi_vendor);
 	fu_flashrom_plugin_device_set_hwids(plugin, device);
 	fu_flashrom_plugin_device_set_version(plugin, device);
 	if (!fu_flashrom_plugin_device_set_bios_info(plugin, device, &error_local))

@@ -1,10 +1,10 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-module-docstring,missing-function-docstring
 #
-# Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
-# Copyright (C) 2021 Mario Limonciello <superm1@gmail.com>
+# Copyright 2021 Richard Hughes <richard@hughsie.com>
+# Copyright 2021 Mario Limonciello <superm1@gmail.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import glob
 import sys
@@ -14,7 +14,7 @@ from typing import List
 
 def __get_includes(fn: str) -> List[str]:
     includes: List[str] = []
-    with open(fn, "r") as f:
+    with open(fn) as f:
         for line in f.read().split("\n"):
             if line.find("#include") == -1:
                 continue
@@ -29,7 +29,6 @@ def __get_includes(fn: str) -> List[str]:
 
 
 def test_files() -> int:
-
     rc: int = 0
 
     lib_headers1 = glob.glob("libfwupd/*.h")
@@ -44,19 +43,13 @@ def test_files() -> int:
     lib_headers_nopath = [os.path.basename(fn) for fn in lib_headers]
 
     # test all C and H files
-    for fn in glob.glob("**/*.[c|h]", recursive=True):
-
+    for fn in (
+        glob.glob("libfwupd/*.[c|h]")
+        + glob.glob("libfwupdplugin/*.[c|h]")
+        + glob.glob("plugins/*/*.[c|h]")
+        + glob.glob("src/*.[c|h]")
+    ):
         # we do not care
-        if fn.startswith("subprojects"):
-            continue
-        if fn.startswith("build"):
-            continue
-        if fn.startswith("venv"):
-            continue
-        if fn.startswith("dist"):
-            continue
-        if fn.startswith("contrib/ci"):
-            continue
         if fn in [
             "libfwupd/fwupd-context-test.c",
             "libfwupd/fwupd-thread-test.c",
@@ -86,7 +79,6 @@ def test_files() -> int:
 
         # check for double top level headers
         for toplevel_header in toplevel_headers:
-
             toplevel_fn = os.path.basename(toplevel_header)
             toplevel_includes = __get_includes(toplevel_header)
             toplevel_includes_nopath = [
@@ -138,6 +130,5 @@ def test_files() -> int:
 
 
 if __name__ == "__main__":
-
     # all done!
     sys.exit(test_files())

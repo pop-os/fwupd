@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(New, ParseBytes)]
-struct SynapticsCapeHidHdr {
+#[derive(New, ParseStream)]
+struct FuStructSynapticsCapeHidHdr {
     vid: u32le,
     pid: u32le,
     update_type: u32le,
@@ -15,8 +15,8 @@ struct SynapticsCapeHidHdr {
     reserved: u32le,
 }
 
-#[derive(New, ParseBytes)]
-struct SynapticsCapeSnglHdr {
+#[derive(New, ParseStream)]
+struct FuStructSynapticsCapeSnglHdr {
     magic: u32le == 0x4C474E53, // "SNGL"
     file_crc: u32le,
     file_size: u32le,
@@ -33,14 +33,14 @@ struct SynapticsCapeSnglHdr {
     time_stamp: [char; 16],
 }
 
-struct SynapticsCapeSnglFile {
+struct FuStructSynapticsCapeSnglFile {
     Id: u32le,
     Crc: u32le,
     File: u32le,
     Size: u32le,
 }
 
-enum SynapticsCapeSnglImgTypeId {
+enum FuSynapticsCapeSnglImgTypeId {
     Hid0 = 0x30444948, // hid file for partition 0
     Hid1 = 0x31444948, // hid file for partition 1
     Hof0 = 0x30464F48, // hid + offer file for partition 0
@@ -50,7 +50,7 @@ enum SynapticsCapeSnglImgTypeId {
     Sign = 0x4e474953, // digital signature file
 }
 
-enum SynapticsCapeFirmwarePartition {
+enum FuSynapticsCapeFirmwarePartition {
     Auto,
     1,
     2,

@@ -49,7 +49,7 @@ Since: 1.2.4
 
 The device needs to replug into a bootloader mode.
 
-Since: 1.9.15
+Since: 1.9.14
 
 ## Update Behavior
 

@@ -1,10 +1,10 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # The Qubes OS Project, http://www.qubes-os.org
 #
-# Copyright (C) 2021  Norbert Kamiński  <norbert.kaminski@3mdeb.com>
+# Copyright 2021 Norbert Kamiński <norbert.kaminski@3mdeb.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 
 import subprocess
@@ -12,7 +12,6 @@ import tempfile
 import os
 import shutil
 import xml.etree.ElementTree as ET
-from packaging.version import Version
 from qubes_fwupd_common import EXIT_CODES, create_dirs, LooseVersion
 
 FWUPDTOOL = "/bin/fwupdtool"

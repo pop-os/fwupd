@@ -35,8 +35,8 @@ fu_coswid_read_string(cbor_item_t *item, GError **error)
 	if (cbor_isa_string(item)) {
 		if (cbor_string_handle(item) == NULL) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "item has no string set");
 			return NULL;
 		}
@@ -47,8 +47,8 @@ fu_coswid_read_string(cbor_item_t *item, GError **error)
 					    FWUPD_GUID_FLAG_NONE);
 	}
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "item is not a string or GUID bytestring");
 	return NULL;
 }
@@ -75,15 +75,15 @@ fu_coswid_read_byte_array(cbor_item_t *item, GError **error)
 
 	if (!cbor_isa_bytestring(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "item is not a bytestring");
 		return NULL;
 	}
 	if (cbor_string_handle(item) == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "item has no bytestring set");
 		return NULL;
 	}
@@ -114,16 +114,16 @@ fu_coswid_read_tag(cbor_item_t *item, FuCoswidTag *value, GError **error)
 
 	if (!cbor_isa_uint(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "tag item is not a uint");
 		return FALSE;
 	}
 	tmp = cbor_get_int(item);
 	if (tmp > G_MAXUINT8) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "0x%x is too large for tag",
 			    (guint)tmp);
 		return FALSE;
@@ -153,8 +153,8 @@ fu_coswid_read_version_scheme(cbor_item_t *item, FuCoswidVersionScheme *value, G
 
 	if (!cbor_isa_uint(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "version-scheme item is not a uint");
 		return FALSE;
 	}
@@ -185,16 +185,16 @@ fu_coswid_read_u8(cbor_item_t *item, guint8 *value, GError **error)
 
 	if (!cbor_isa_uint(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "value item is not a uint");
 		return FALSE;
 	}
 	tmp = cbor_get_int(item);
 	if (tmp > G_MAXUINT8) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "0x%x is too large for u8",
 			    (guint)tmp);
 		return FALSE;
@@ -226,16 +226,16 @@ fu_coswid_read_s8(cbor_item_t *item, gint8 *value, GError **error)
 
 	if (!cbor_is_int(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "value item is not a int");
 		return FALSE;
 	}
 	tmp = cbor_get_int(item);
 	if (tmp > 127) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "0x%x is too large for s8",
 			    (guint)tmp);
 		return FALSE;
@@ -265,8 +265,8 @@ fu_coswid_read_u64(cbor_item_t *item, guint64 *value, GError **error)
 
 	if (!cbor_isa_uint(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "value item is not a uint");
 		return FALSE;
 	}
@@ -458,8 +458,8 @@ fu_coswid_parse_one_or_many(cbor_item_t *item,
 			g_autoptr(cbor_item_t) value = cbor_array_get(item, j);
 			if (!cbor_isa_map(value)) {
 				g_set_error_literal(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_INVALID_DATA,
+						    FWUPD_ERROR,
+						    FWUPD_ERROR_INVALID_DATA,
 						    "not an array of a map");
 				return FALSE;
 			}
@@ -470,7 +470,10 @@ fu_coswid_parse_one_or_many(cbor_item_t *item,
 	}
 
 	/* not sure what to do */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "neither an array or map");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
+			    "neither an array or map");
 	return FALSE;
 }
 

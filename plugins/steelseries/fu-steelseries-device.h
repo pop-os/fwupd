@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 Denis Pynkin <denis.pynkin@collabora.com>
- * Copyright (C) 2022 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Denis Pynkin <denis.pynkin@collabora.com>
+ * Copyright 2022 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -24,14 +24,7 @@ struct _FuSteelseriesDeviceClass {
 #define STEELSERIES_BUFFER_CONTROL_SIZE 64
 #define STEELSERIES_TRANSACTION_TIMEOUT 5000
 
-/**
- * FU_STEELSERIES_DEVICE_FLAG_IS_RECEIVER:
- *
- * The device is a USB receiver.
- *
- * Since 1.8.1
- */
-#define FU_STEELSERIES_DEVICE_FLAG_IS_RECEIVER (1 << 0)
+#define FU_STEELSERIES_DEVICE_FLAG_IS_RECEIVER "is-receiver"
 
 void
 fu_steelseries_device_set_iface_idx_offset(FuSteelseriesDevice *self, gint iface_idx_offset);

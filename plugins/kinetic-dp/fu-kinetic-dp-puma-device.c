@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Hai Su <hsu@kinet-ic.com>
+ * Copyright 2022 Hai Su <hsu@kinet-ic.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -34,13 +34,9 @@ static void
 fu_kinetic_dp_puma_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuKineticDpPumaDevice *self = FU_KINETIC_DP_PUMA_DEVICE(device);
-
-	/* FuKineticDpDevice->to_string */
-	FU_DEVICE_CLASS(fu_kinetic_dp_puma_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append_kx(str, idt, "ReadFlashProgTime", self->read_flash_prog_time);
-	fu_string_append_kx(str, idt, "FlashId", self->flash_id);
-	fu_string_append_kx(str, idt, "FlashSize", self->flash_size);
+	fwupd_codec_string_append_hex(str, idt, "ReadFlashProgTime", self->read_flash_prog_time);
+	fwupd_codec_string_append_hex(str, idt, "FlashId", self->flash_id);
+	fwupd_codec_string_append_hex(str, idt, "FlashSize", self->flash_size);
 }
 
 static gboolean
@@ -63,8 +59,8 @@ fu_kinetic_dp_puma_device_wait_dpcd_cmd_status_cb(FuDevice *device,
 	}
 	if (status != status_want) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "flash mode was %s, wanted %s",
 			    fu_kinetic_dp_puma_mode_to_string(status),
 			    fu_kinetic_dp_puma_mode_to_string(status_want));
@@ -95,8 +91,8 @@ fu_kinetic_dp_puma_device_wait_dpcd_sink_mode_cb(FuDevice *device,
 	}
 	if (status != status_want) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "flash mode was %s, wanted %s",
 			    fu_kinetic_dp_puma_mode_to_string(status),
 			    fu_kinetic_dp_puma_mode_to_string(status_want));
@@ -148,14 +144,19 @@ fu_kinetic_dp_puma_device_send_chunk(FuKineticDpPumaDevice *self,
 {
 	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(fw, 0x0, 16);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_dpaux_device_write(FU_DPAUX_DEVICE(self),
 					   PUMA_DPCD_DATA_ADDR + fu_chunk_get_address(chk),
 					   fu_chunk_get_data(chk),
 					   fu_chunk_get_data_sz(chk),
 					   FU_KINETIC_DP_DEVICE_TIMEOUT,
 					   error)) {
-			g_prefix_error(error, "failed at 0x%x: ", fu_chunk_get_address(chk));
+			g_prefix_error(error, "failed at 0x%x: ", (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 	}
@@ -180,14 +181,20 @@ fu_kinetic_dp_puma_device_send_payload(FuKineticDpPumaDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
-		g_autoptr(GBytes) chk_blob = fu_chunk_get_bytes(chk);
+		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(GBytes) chk_blob = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* send a maximum 32KB chunk of payload to AUX window */
+		chk_blob = fu_chunk_get_bytes(chk);
 		if (!fu_kinetic_dp_puma_device_send_chunk(self, io_channel, chk_blob, error)) {
 			g_prefix_error(error,
 				       "failed to AUX write at 0x%x: ",
-				       fu_chunk_get_address(chk));
+				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 
@@ -274,14 +281,14 @@ fu_kinetic_dp_puma_device_send_isp_drv(FuKineticDpPumaDevice *self,
 	if (self->flash_size == 0) {
 		if (self->flash_id > 0) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_NOT_SUPPORTED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
 					    "SPI flash not supported");
 			return FALSE;
 		}
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "SPI flash not connected");
 		return FALSE;
 	}
@@ -345,14 +352,14 @@ fu_kinetic_dp_puma_device_enable_fw_update_mode(FuKineticDpPumaDevice *self,
 		if (self->flash_size == 0) {
 			if (self->flash_id > 0) {
 				g_set_error_literal(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_NOT_SUPPORTED,
+						    FWUPD_ERROR,
+						    FWUPD_ERROR_NOT_SUPPORTED,
 						    "SPI flash not supported");
 				return FALSE;
 			}
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_NOT_SUPPORTED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
 					    "SPI flash not connected");
 			return FALSE;
 		}
@@ -553,11 +560,11 @@ fu_kinetic_dp_puma_device_init(FuKineticDpPumaDevice *self)
 static void
 fu_kinetic_dp_puma_device_class_init(FuKineticDpPumaDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_kinetic_dp_puma_device_to_string;
-	klass_device->setup = fu_kinetic_dp_puma_device_setup;
-	klass_device->prepare = fu_kinetic_dp_puma_device_prepare;
-	klass_device->cleanup = fu_kinetic_dp_puma_device_cleanup;
-	klass_device->write_firmware = fu_kinetic_dp_puma_device_write_firmware;
-	klass_device->set_progress = fu_kinetic_dp_puma_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_kinetic_dp_puma_device_to_string;
+	device_class->setup = fu_kinetic_dp_puma_device_setup;
+	device_class->prepare = fu_kinetic_dp_puma_device_prepare;
+	device_class->cleanup = fu_kinetic_dp_puma_device_cleanup;
+	device_class->write_firmware = fu_kinetic_dp_puma_device_write_firmware;
+	device_class->set_progress = fu_kinetic_dp_puma_device_set_progress;
 }

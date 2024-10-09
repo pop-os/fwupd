@@ -21,6 +21,12 @@ struct _FuDellK2RtshubFirmware {
 
 G_DEFINE_TYPE(FuDellK2RtshubFirmware, fu_dell_k2_rtshub_firmware, FU_TYPE_FIRMWARE)
 
+static gchar *
+fu_dell_k2_rtshub_firmware_convert_version(FuFirmware *firmware, guint64 version_raw)
+{
+	return fu_version_from_uint32_hex(version_raw, fu_firmware_get_version_format(firmware));
+}
+
 static void
 fu_dell_k2_rtshub_firmware_export(FuFirmware *firmware,
 				  FuFirmwareExportFlags flags,
@@ -31,21 +37,18 @@ fu_dell_k2_rtshub_firmware_export(FuFirmware *firmware,
 }
 
 static gboolean
-fu_dell_k2_rtshub_firmware_set_offset(GBytes *fw,
+fu_dell_k2_rtshub_firmware_set_offset(GInputStream *stream,
 				      guint16 *version_offset,
 				      guint16 *pid_offset,
 				      GError **error)
 {
 	guint16 vid_raw = 0;
-	gsize bufsz = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    DOCK_RTSHUB_GEN1_VID_OFFSET,
-				    &vid_raw,
-				    G_BIG_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u16(stream,
+				      DOCK_RTSHUB_GEN1_VID_OFFSET,
+				      &vid_raw,
+				      G_BIG_ENDIAN,
+				      error))
 		return FALSE;
 
 	if (vid_raw == DELL_VID) {
@@ -59,7 +62,7 @@ fu_dell_k2_rtshub_firmware_set_offset(GBytes *fw,
 }
 static gboolean
 fu_dell_k2_rtshub_firmware_parse(FuFirmware *firmware,
-				 GBytes *fw,
+				 GInputStream *stream,
 				 gsize offset,
 				 FwupdInstallFlags flags,
 				 GError **error)
@@ -69,24 +72,20 @@ fu_dell_k2_rtshub_firmware_parse(FuFirmware *firmware,
 	guint16 version_offset = 0;
 	guint16 pid_raw = 0;
 	guint16 pid_offset = 0;
-	gsize bufsz = 0;
-	g_autofree gchar *version = NULL;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
 	/* match vid first */
-	if (!fu_dell_k2_rtshub_firmware_set_offset(fw, &version_offset, &pid_offset, error))
+	if (!fu_dell_k2_rtshub_firmware_set_offset(stream, &version_offset, &pid_offset, error))
 		return FALSE;
 
 	/* version */
-	if (!fu_memread_uint16_safe(buf, bufsz, version_offset, &version_raw, G_BIG_ENDIAN, error))
+	if (!fu_input_stream_read_u16(stream, version_offset, &version_raw, G_BIG_ENDIAN, error))
 		return FALSE;
 
-	version = fu_version_from_uint32_hex(version_raw, FWUPD_VERSION_FORMAT_PAIR);
-	fu_firmware_set_version(firmware, version);
+	fu_firmware_set_version_raw(firmware, version_raw);
 
 	/* pid */
 	if (pid_offset != 0) {
-		if (!fu_memread_uint16_safe(buf, bufsz, pid_offset, &pid_raw, G_BIG_ENDIAN, error))
+		if (!fu_input_stream_read_u16(stream, pid_offset, &pid_raw, G_BIG_ENDIAN, error))
 			return FALSE;
 		self->pid = pid_raw;
 	}
@@ -97,6 +96,7 @@ static void
 fu_dell_k2_rtshub_firmware_init(FuDellK2RtshubFirmware *self)
 {
 	self->pid = 0;
+	fu_firmware_set_version_format(FU_FIRMWARE(self), FWUPD_VERSION_FORMAT_PAIR);
 }
 
 static void
@@ -105,4 +105,5 @@ fu_dell_k2_rtshub_firmware_class_init(FuDellK2RtshubFirmwareClass *klass)
 	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	firmware_class->parse = fu_dell_k2_rtshub_firmware_parse;
 	firmware_class->export = fu_dell_k2_rtshub_firmware_export;
+	firmware_class->convert_version = fu_dell_k2_rtshub_firmware_convert_version;
 }

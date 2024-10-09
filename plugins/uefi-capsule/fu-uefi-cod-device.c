@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -20,6 +20,8 @@ G_DEFINE_TYPE(FuUefiCodDevice, fu_uefi_cod_device, FU_TYPE_UEFI_DEVICE)
 static gboolean
 fu_uefi_cod_device_get_results_for_idx(FuDevice *device, guint idx, GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	FuUefiDevice *device_uefi = FU_UEFI_DEVICE(device);
 	fwupd_guid_t guid = {0x0};
 	gsize bufsz = 0;
@@ -31,12 +33,13 @@ fu_uefi_cod_device_get_results_for_idx(FuDevice *device, guint idx, GError **err
 
 	/* read out result */
 	name = g_strdup_printf("Capsule%04u", idx);
-	if (!fu_efivar_get_data(FU_EFIVAR_GUID_EFI_CAPSULE_REPORT,
-				name,
-				&buf,
-				&bufsz,
-				NULL,
-				error)) {
+	if (!fu_efivars_get_data(efivars,
+				 FU_EFIVARS_GUID_EFI_CAPSULE_REPORT,
+				 name,
+				 &buf,
+				 &bufsz,
+				 NULL,
+				 error)) {
 		g_prefix_error(error, "failed to read %s: ", name);
 		return FALSE;
 	}
@@ -83,14 +86,23 @@ fu_uefi_cod_device_get_results_for_idx(FuDevice *device, guint idx, GError **err
 #define VARIABLE_IDX_SIZE 11 /* of CHAR16 */
 
 static gboolean
-fu_uefi_cod_device_get_variable_idx(const gchar *name, guint *value, GError **error)
+fu_uefi_cod_device_get_variable_idx(FuUefiCodDevice *self,
+				    const gchar *name,
+				    guint *value,
+				    GError **error)
 {
+	FuContext *ctx = fu_device_get_context(FU_DEVICE(self));
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	guint64 tmp = 0;
 	g_autofree gchar *str = NULL;
 	g_autoptr(GBytes) buf = NULL;
 
 	/* parse the value */
-	buf = fu_efivar_get_data_bytes(FU_EFIVAR_GUID_EFI_CAPSULE_REPORT, name, NULL, error);
+	buf = fu_efivars_get_data_bytes(efivars,
+					FU_EFIVARS_GUID_EFI_CAPSULE_REPORT,
+					name,
+					NULL,
+					error);
 	if (buf == NULL)
 		return FALSE;
 	str = fu_utf16_to_utf8_bytes(buf, G_LITTLE_ENDIAN, error);
@@ -98,13 +110,19 @@ fu_uefi_cod_device_get_variable_idx(const gchar *name, guint *value, GError **er
 		return FALSE;
 	if (!g_str_has_prefix(str, "Capsule")) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
-			    "wrong contents, got %s",
-			    str);
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
+			    "wrong contents, got '%s' for %s",
+			    str,
+			    name);
 		return FALSE;
 	}
-	if (!fu_strtoull(str + strlen("Capsule"), &tmp, 0, G_MAXUINT32, error))
+	if (!fu_strtoull(str + strlen("Capsule"),
+			 &tmp,
+			 0,
+			 G_MAXUINT32,
+			 FU_INTEGER_BASE_AUTO,
+			 error))
 		return FALSE;
 	if (value != NULL)
 		*value = tmp;
@@ -114,17 +132,17 @@ fu_uefi_cod_device_get_variable_idx(const gchar *name, guint *value, GError **er
 static gboolean
 fu_uefi_cod_device_get_results(FuDevice *device, GError **error)
 {
+	FuUefiCodDevice *self = FU_UEFI_COD_DEVICE(device);
 	guint capsule_last = 1024;
 
 	/* tell us where to stop */
-	if (!fu_uefi_cod_device_get_variable_idx("CapsuleLast", &capsule_last, error))
+	if (!fu_uefi_cod_device_get_variable_idx(self, "CapsuleLast", &capsule_last, error))
 		return FALSE;
 	for (guint i = 0; i <= capsule_last; i++) {
 		g_autoptr(GError) error_local = NULL;
 		if (fu_uefi_cod_device_get_results_for_idx(device, i, &error_local))
 			return TRUE;
-		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND) &&
-		    !g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)) {
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
 		}
@@ -185,6 +203,8 @@ fu_uefi_cod_device_write_firmware(FuDevice *device,
 				  FwupdInstallFlags flags,
 				  GError **error)
 {
+	FuContext *ctx = fu_device_get_context(device);
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	FuUefiDevice *self = FU_UEFI_DEVICE(device);
 	g_autofree gchar *cod_path = NULL;
 	g_autoptr(GBytes) fw = NULL;
@@ -224,12 +244,13 @@ fu_uefi_cod_device_write_firmware(FuDevice *device,
 		g_autoptr(GError) error_local = NULL;
 
 		/* the firmware does not normally populate OsIndications by default */
-		if (!fu_efivar_get_data(FU_EFIVAR_GUID_EFI_GLOBAL,
-					"OsIndications",
-					&buf,
-					&bufsz,
-					NULL,
-					&error_local)) {
+		if (!fu_efivars_get_data(efivars,
+					 FU_EFIVARS_GUID_EFI_GLOBAL,
+					 "OsIndications",
+					 &buf,
+					 &bufsz,
+					 NULL,
+					 &error_local)) {
 			g_debug("failed to read EFI variable: %s", error_local->message);
 		} else {
 			if (!fu_memread_uint64_safe(buf,
@@ -241,14 +262,15 @@ fu_uefi_cod_device_write_firmware(FuDevice *device,
 				return FALSE;
 		}
 		os_indications |= EFI_OS_INDICATIONS_FILE_CAPSULE_DELIVERY_SUPPORTED;
-		if (!fu_efivar_set_data(FU_EFIVAR_GUID_EFI_GLOBAL,
-					"OsIndications",
-					(guint8 *)&os_indications,
-					sizeof(os_indications),
-					FU_EFIVAR_ATTR_NON_VOLATILE |
-					    FU_EFIVAR_ATTR_BOOTSERVICE_ACCESS |
-					    FU_EFIVAR_ATTR_RUNTIME_ACCESS,
-					error)) {
+		if (!fu_efivars_set_data(efivars,
+					 FU_EFIVARS_GUID_EFI_GLOBAL,
+					 "OsIndications",
+					 (guint8 *)&os_indications,
+					 sizeof(os_indications),
+					 FU_EFIVARS_ATTR_NON_VOLATILE |
+					     FU_EFIVARS_ATTR_BOOTSERVICE_ACCESS |
+					     FU_EFIVARS_ATTR_RUNTIME_ACCESS,
+					 error)) {
 			g_prefix_error(error, "Could not set OsIndications: ");
 			return FALSE;
 		}
@@ -276,8 +298,8 @@ fu_uefi_cod_device_init(FuUefiCodDevice *self)
 static void
 fu_uefi_cod_device_class_init(FuUefiCodDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_uefi_cod_device_write_firmware;
-	klass_device->get_results = fu_uefi_cod_device_get_results;
-	klass_device->report_metadata_pre = fu_uefi_cod_device_report_metadata_pre;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_uefi_cod_device_write_firmware;
+	device_class->get_results = fu_uefi_cod_device_get_results;
+	device_class->report_metadata_pre = fu_uefi_cod_device_report_metadata_pre;
 }

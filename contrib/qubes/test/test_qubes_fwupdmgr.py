@@ -1,10 +1,10 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # The Qubes OS Project, http://www.qubes-os.org
 #
-# Copyright (C) 2021  Norbert Kamiński  <norbert.kaminski@3mdeb.com>
+# Copyright 2021 Norbert Kamiński <norbert.kaminski@3mdeb.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 
 import json
@@ -17,9 +17,8 @@ import io
 import platform
 import tempfile
 from packaging.version import Version
-from pathlib import Path
 from .fwupd_logs import UPDATE_INFO, GET_DEVICES, DMI_DECODE
-from .fwupd_logs import GET_DEVICES_NO_UPDATES, GET_DEVICES_NO_VERSION
+from .fwupd_logs import GET_DEVICES_NO_VERSION
 from unittest.mock import patch
 
 
@@ -243,7 +242,7 @@ class TestQubesFwupdmgr(unittest.TestCase):
         crawler_output = io.StringIO()
         sys.stdout = crawler_output
         self.q._output_crawler(json.loads(UPDATE_INFO), 0)
-        with open("test/logs/get_devices.log", "r") as get_devices:
+        with open("test/logs/get_devices.log") as get_devices:
             self.assertEqual(
                 get_devices.read(), crawler_output.getvalue().strip() + "\n"
             )
@@ -274,7 +273,7 @@ class TestQubesFwupdmgr(unittest.TestCase):
         help_output = io.StringIO()
         sys.stdout = help_output
         self.q.help()
-        with open("test/logs/help.log", "r") as help_log:
+        with open("test/logs/help.log") as help_log:
             self.assertEqual(help_log.read(), help_output.getvalue().strip() + "\n")
         sys.stdout = self.captured_output
 
@@ -287,7 +286,8 @@ class TestQubesFwupdmgr(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             arch_name = tmpdir + "/firmware.cab"
             subprocess.check_call(
-                ["gcab", "-c", arch_name, "firmware.metainfo.xml"], cwd="test/logs"
+                ["fwupdtool", "build-cabinet", arch_name, "firmware.metainfo.xml"],
+                cwd="test/logs",
             )
             self.q._verify_dmi(arch_name, "P1.1")
 
@@ -301,7 +301,7 @@ class TestQubesFwupdmgr(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdir:
                 arch_name = tmpdir + "/firmware.cab"
                 subprocess.check_call(
-                    ["gcab", "-c", arch_name, "firmware.metainfo.xml"],
+                    ["fwupdtool", "build-cabinet", arch_name, "firmware.metainfo.xml"],
                     cwd="test/logs/metainfo_name",
                 )
                 self.q._verify_dmi(arch_name, "P1.1")
@@ -317,7 +317,7 @@ class TestQubesFwupdmgr(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdir:
                 arch_name = tmpdir + "/firmware.cab"
                 subprocess.check_call(
-                    ["gcab", "-c", arch_name, "firmware.metainfo.xml"],
+                    ["fwupdtool", "build-cabinet", arch_name, "firmware.metainfo.xml"],
                     cwd="test/logs/metainfo_version",
                 )
                 self.q._verify_dmi(arch_name, "P0.1")

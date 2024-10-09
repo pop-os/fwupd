@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(New, Parse)]
-struct Uf2 {
+struct FuStructUf2 {
     magic0: u32le == 0x0A324655,
     magic1: u32le == 0x9E5D5157,
     flags: u32le,

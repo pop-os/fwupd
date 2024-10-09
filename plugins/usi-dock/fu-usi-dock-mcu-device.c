@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 Victor Cheng <victor_cheng@usiglobal.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Victor Cheng <victor_cheng@usiglobal.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -28,9 +28,9 @@ G_DEFINE_TYPE(FuUsiDockMcuDevice, fu_usi_dock_mcu_device, FU_TYPE_HID_DEVICE)
 
 #define W25Q16DV_PAGE_SIZE 256
 
-#define FU_USI_DOCK_DEVICE_FLAG_VERFMT_HP (1 << 0)
-#define FU_USI_DOCK_DEVICE_FLAG_SET_CHIP_TYPE (1 << 1)
-#define FU_USI_DOCK_DEVICE_FLAG_WAITING_FOR_UNPLUG (1 << 2)
+#define FU_USI_DOCK_DEVICE_FLAG_VERFMT_HP	   "verfmt-hp"
+#define FU_USI_DOCK_DEVICE_FLAG_SET_CHIP_TYPE	   "set-chip-type"
+#define FU_USI_DOCK_DEVICE_FLAG_WAITING_FOR_UNPLUG "waiting-for-unplug"
 
 static gboolean
 fu_usi_dock_mcu_device_tx(FuUsiDockMcuDevice *self,
@@ -136,11 +136,11 @@ fu_usi_dock_mcu_device_get_status(FuUsiDockMcuDevice *self, GError **error)
 		return FALSE;
 	}
 	if (response == 0x1) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_BUSY, "device is busy");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_BUSY, "device is busy");
 		return FALSE;
 	}
 	if (response == 0xFF) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT, "device timed out");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT, "device timed out");
 		return FALSE;
 	}
 
@@ -189,7 +189,7 @@ fu_usi_dock_mcu_device_enumerate_children(FuUsiDockMcuDevice *self, GError **err
 		g_autofree gchar *version = NULL;
 		g_autoptr(FuDevice) child = NULL;
 
-		child = fu_usi_dock_child_new(fu_device_get_context(FU_DEVICE(self)));
+		child = fu_usi_dock_child_device_new(fu_device_get_context(FU_DEVICE(self)));
 		if (g_strcmp0(components[i].name, "bcdVersion") == 0) {
 			if ((val[0] == 0x00 && val[1] == 0x00) ||
 			    (val[0] == 0xFF && val[1] == 0xFF)) {
@@ -355,12 +355,8 @@ fu_usi_dock_mcu_device_enumerate_children(FuUsiDockMcuDevice *self, GError **err
 		}
 
 		/* add virtual device */
-		fu_device_add_instance_u16(child,
-					   "VID",
-					   fu_usb_device_get_vid(FU_USB_DEVICE(self)));
-		fu_device_add_instance_u16(child,
-					   "PID",
-					   fu_usb_device_get_pid(FU_USB_DEVICE(self)));
+		fu_device_add_instance_u16(child, "VID", fu_device_get_vid(FU_DEVICE(self)));
+		fu_device_add_instance_u16(child, "PID", fu_device_get_pid(FU_DEVICE(self)));
 		fu_device_add_instance_str(child, "CID", components[i].name);
 		if (!fu_device_build_instance_id(child, error, "USB", "VID", "PID", "CID", NULL))
 			return FALSE;
@@ -434,7 +430,12 @@ fu_usi_dock_mcu_device_write_page(FuUsiDockMcuDevice *self, FuChunk *chk_page, G
 
 	chunks = fu_chunk_array_new_from_bytes(chk_blob, 0x0, FU_STRUCT_USI_DOCK_HID_REQ_SIZE_BUF);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_usi_dock_mcu_device_write_chunk(self, chk, error))
 			return FALSE;
 	}
@@ -450,7 +451,12 @@ fu_usi_dock_mcu_device_write_pages(FuUsiDockMcuDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_usi_dock_mcu_device_write_page(self, chk, error)) {
 			g_prefix_error(error, "failed to write chunk 0x%x: ", i);
 			return FALSE;
@@ -477,8 +483,8 @@ fu_usi_dock_mcu_device_wait_for_spi_ready_cb(FuDevice *device, gpointer user_dat
 		return FALSE;
 	if (val != FU_USI_DOCK_SPI_STATE_READY) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_BUSY,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BUSY,
 			    "SPI state is %s [0x%02x]",
 			    fu_usi_dock_spi_state_to_string(val),
 			    val);
@@ -508,8 +514,8 @@ fu_usi_dock_mcu_device_wait_for_spi_initial_ready_cb(FuDevice *device,
 		return FALSE;
 	if (val != FU_USI_DOCK_SPI_STATE_READY) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_BUSY,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BUSY,
 			    "SPI state is %s [0x%02x]",
 			    fu_usi_dock_spi_state_to_string(val),
 			    val);
@@ -545,7 +551,7 @@ fu_usi_dock_mcu_device_write_firmware_with_idx(FuUsiDockMcuDevice *self,
 					       GError **error)
 {
 	guint8 cmd;
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 	guint8 checksum = 0xFF;
 
@@ -599,10 +605,12 @@ fu_usi_dock_mcu_device_write_firmware_with_idx(FuUsiDockMcuDevice *self,
 					 error))
 		return FALSE;
 
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, W25Q16DV_PAGE_SIZE);
+	chunks = fu_chunk_array_new_from_stream(stream, 0x0, W25Q16DV_PAGE_SIZE, error);
+	if (chunks == NULL)
+		return FALSE;
 	if (!fu_usi_dock_mcu_device_write_pages(self,
 						chunks,
 						fu_progress_get_child(progress),
@@ -633,8 +641,8 @@ fu_usi_dock_mcu_device_write_firmware_with_idx(FuUsiDockMcuDevice *self,
 
 	if (checksum != 0x0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid checksum result for CMD_FWBUFER_CHECKSUM, got 0x%02x",
 			    checksum);
 		return FALSE;
@@ -726,7 +734,7 @@ fu_usi_dock_mcu_device_internal_flags_notify_cb(FuDevice *device,
 						GParamSpec *pspec,
 						gpointer user_data)
 {
-	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_UNCONNECTED) &&
+	if (fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_UNCONNECTED) &&
 	    fu_device_has_private_flag(device, FU_USI_DOCK_DEVICE_FLAG_WAITING_FOR_UNPLUG)) {
 		g_debug("starting 40s countdown");
 		g_timeout_add_seconds_full(G_PRIORITY_DEFAULT,
@@ -784,24 +792,19 @@ fu_usi_dock_mcu_device_init(FuUsiDockMcuDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_NO_SERIAL_NUMBER);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_INHIBIT_CHILDREN);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_NO_SERIAL_NUMBER);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_INHIBIT_CHILDREN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_add_request_flag(FU_DEVICE(self), FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
 	g_signal_connect(FWUPD_DEVICE(self),
-			 "notify::internal-flags",
+			 "notify::private-flags",
 			 G_CALLBACK(fu_usi_dock_mcu_device_internal_flags_notify_cb),
 			 NULL);
 
+	fu_device_register_private_flag(FU_DEVICE(self), FU_USI_DOCK_DEVICE_FLAG_VERFMT_HP);
+	fu_device_register_private_flag(FU_DEVICE(self), FU_USI_DOCK_DEVICE_FLAG_SET_CHIP_TYPE);
 	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_USI_DOCK_DEVICE_FLAG_VERFMT_HP,
-					"verfmt-hp");
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_USI_DOCK_DEVICE_FLAG_SET_CHIP_TYPE,
-					"set-chip-type");
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_USI_DOCK_DEVICE_FLAG_WAITING_FOR_UNPLUG,
-					"waiting-for-unplug");
+					FU_USI_DOCK_DEVICE_FLAG_WAITING_FOR_UNPLUG);
 	fu_hid_device_add_flag(FU_HID_DEVICE(self), FU_HID_DEVICE_FLAG_AUTODETECT_EPS);
 	fu_device_add_protocol(FU_DEVICE(self), "com.usi.dock");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_NUMBER);
@@ -813,13 +816,13 @@ fu_usi_dock_mcu_device_init(FuUsiDockMcuDevice *self)
 static void
 fu_usi_dock_mcu_device_class_init(FuUsiDockMcuDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
-	klass_device->write_firmware = fu_usi_dock_mcu_device_write_firmware;
-	klass_device->attach = fu_usi_dock_mcu_device_attach;
-	klass_device->setup = fu_usi_dock_mcu_device_setup;
-	klass_device->set_progress = fu_usi_dock_mcu_device_set_progress;
-	klass_device->cleanup = fu_usi_dock_mcu_device_cleanup;
-	klass_device->reload = fu_usi_dock_mcu_device_reload;
-	klass_device->replace = fu_usi_dock_mcu_device_replace;
+	device_class->write_firmware = fu_usi_dock_mcu_device_write_firmware;
+	device_class->attach = fu_usi_dock_mcu_device_attach;
+	device_class->setup = fu_usi_dock_mcu_device_setup;
+	device_class->set_progress = fu_usi_dock_mcu_device_set_progress;
+	device_class->cleanup = fu_usi_dock_mcu_device_cleanup;
+	device_class->reload = fu_usi_dock_mcu_device_reload;
+	device_class->replace = fu_usi_dock_mcu_device_replace;
 }

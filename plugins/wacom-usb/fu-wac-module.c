@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -29,9 +29,15 @@ fu_wac_module_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuWacModule *self = FU_WAC_MODULE(device);
 	FuWacModulePrivate *priv = GET_PRIVATE(self);
-	fu_string_append(str, idt, "FwType", fu_wac_module_fw_type_to_string(priv->fw_type));
-	fu_string_append(str, idt, "Status", fu_wac_module_status_to_string(priv->status));
-	fu_string_append(str, idt, "Command", fu_wac_module_command_to_string(priv->command));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "FwType",
+				  fu_wac_module_fw_type_to_string(priv->fw_type));
+	fwupd_codec_string_append(str, idt, "Status", fu_wac_module_status_to_string(priv->status));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "Command",
+				  fu_wac_module_command_to_string(priv->command));
 }
 
 static gboolean
@@ -48,6 +54,7 @@ fu_wac_module_refresh(FuWacModule *self, GError **error)
 					      FU_HID_DEVICE_FLAG_ALLOW_TRUNC,
 					      error)) {
 		g_prefix_error(error, "failed to refresh status: ");
+		fu_error_convert(error);
 		return FALSE;
 	}
 
@@ -84,7 +91,7 @@ fu_wac_module_refresh_cb(FuDevice *device, gpointer user_data, GError **error)
 	g_autoptr(GError) error_local = NULL;
 
 	if (!fu_wac_module_refresh(self, &error_local)) {
-		if (g_error_matches(error_local, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_NO_DEVICE))
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND))
 			return TRUE;
 		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
@@ -258,7 +265,7 @@ fu_wac_module_init(FuWacModule *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.wacom.usb");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_FLAGS);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_BCD);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 }
@@ -270,20 +277,18 @@ fu_wac_module_constructed(GObject *object)
 	FuWacModulePrivate *priv = GET_PRIVATE(self);
 	FuDevice *proxy = fu_device_get_proxy(FU_DEVICE(self));
 	g_autofree gchar *devid = NULL;
-	g_autofree gchar *vendor_id = NULL;
 
 	/* set vendor ID */
-	vendor_id = g_strdup_printf("USB:0x%04X", fu_usb_device_get_vid(FU_USB_DEVICE(proxy)));
-	fu_device_add_vendor_id(FU_DEVICE(self), vendor_id);
+	fu_device_build_vendor_id_u16(FU_DEVICE(self), "USB", fu_device_get_vid(FU_DEVICE(proxy)));
 
 	/* set USB physical and logical IDs */
-	fu_device_set_physical_id(FU_DEVICE(self), fu_device_get_physical_id(proxy));
+	fu_device_incorporate(FU_DEVICE(self), proxy, FU_DEVICE_INCORPORATE_FLAG_PHYSICAL_ID);
 	fu_device_set_logical_id(FU_DEVICE(self), fu_wac_module_fw_type_to_string(priv->fw_type));
 
 	/* append the firmware kind to the generated GUID */
 	devid = g_strdup_printf("USB\\VID_%04X&PID_%04X-%s",
-				fu_usb_device_get_vid(FU_USB_DEVICE(proxy)),
-				fu_usb_device_get_pid(FU_USB_DEVICE(proxy)),
+				fu_device_get_vid(proxy),
+				fu_device_get_pid(proxy),
 				fu_wac_module_fw_type_to_string(priv->fw_type));
 	fu_device_add_instance_id(FU_DEVICE(self), devid);
 
@@ -305,7 +310,7 @@ fu_wac_module_class_init(FuWacModuleClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	GParamSpec *pspec;
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
 	/* properties */
 	object_class->get_property = fu_wac_module_get_property;
@@ -326,8 +331,8 @@ fu_wac_module_class_init(FuWacModuleClass *klass)
 	g_object_class_install_property(object_class, PROP_FW_TYPE, pspec);
 
 	object_class->constructed = fu_wac_module_constructed;
-	klass_device->to_string = fu_wac_module_to_string;
-	klass_device->cleanup = fu_wac_module_cleanup;
-	klass_device->set_progress = fu_wac_module_set_progress;
-	klass_device->convert_version = fu_wac_module_convert_version;
+	device_class->to_string = fu_wac_module_to_string;
+	device_class->cleanup = fu_wac_module_cleanup;
+	device_class->set_progress = fu_wac_module_set_progress;
+	device_class->convert_version = fu_wac_module_convert_version;
 }

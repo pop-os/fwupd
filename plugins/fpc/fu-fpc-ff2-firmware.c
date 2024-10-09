@@ -26,22 +26,25 @@ fu_fpc_ff2_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, Xb
 }
 
 static gboolean
-fu_fpc_ff2_validate(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_fpc_ff2_firmware_validate(FuFirmware *firmware,
+			     GInputStream *stream,
+			     gsize offset,
+			     GError **error)
 {
-	return fu_struct_fpc_ff2_hdr_validate_bytes(fw, offset, error);
+	return fu_struct_fpc_ff2_hdr_validate_stream(stream, offset, error);
 }
 
 static gboolean
 fu_fpc_ff2_firmware_parse(FuFirmware *firmware,
-			  GBytes *fw,
+			  GInputStream *stream,
 			  gsize offset,
 			  FwupdInstallFlags flags,
 			  GError **error)
 {
 	FuFpcFf2Firmware *self = FU_FPC_FF2_FIRMWARE(firmware);
-	g_autoptr(GByteArray) st_hdr = NULL;
+	g_autoptr(FuStructFpcFf2Hdr) st_hdr = NULL;
 
-	st_hdr = fu_struct_fpc_ff2_hdr_parse_bytes(fw, offset, error);
+	st_hdr = fu_struct_fpc_ff2_hdr_parse_stream(stream, offset, error);
 	if (st_hdr == NULL)
 		return FALSE;
 	self->blocks_num = fu_struct_fpc_ff2_hdr_get_blocks_num(st_hdr);
@@ -66,7 +69,7 @@ static void
 fu_fpc_ff2_firmware_class_init(FuFpcFf2FirmwareClass *klass)
 {
 	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
-	firmware_class->check_magic = fu_fpc_ff2_validate;
+	firmware_class->validate = fu_fpc_ff2_firmware_validate;
 	firmware_class->parse = fu_fpc_ff2_firmware_parse;
 	firmware_class->export = fu_fpc_ff2_firmware_export;
 }

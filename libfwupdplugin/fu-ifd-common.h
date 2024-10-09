@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -23,9 +23,6 @@ typedef enum {
 	FU_IFD_ACCESS_READ = 1 << 0,
 	FU_IFD_ACCESS_WRITE = 1 << 1,
 } FuIfdAccess;
-
-#define FU_IFD_FREG_BASE(freg)	(((freg) << 12) & 0x07FFF000)
-#define FU_IFD_FREG_LIMIT(freg) ((((freg) >> 4) & 0x07FFF000) | 0x00000FFF)
 
 const gchar *
 fu_ifd_region_to_name(FuIfdRegion region);

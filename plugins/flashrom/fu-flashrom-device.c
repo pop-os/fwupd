@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 Daniel Campello <campello@chromium.org>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Daniel Campello <campello@chromium.org>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -12,17 +12,8 @@
 #include "fu-flashrom-cmos.h"
 #include "fu-flashrom-device.h"
 
-/*
- * Flag to determine if the CMOS checksum should be reset after the flash
- * is reprogrammed.  This will force the CMOS defaults to be reloaded on
- * the next boot.
- */
-#define FU_FLASHROM_DEVICE_FLAG_RESET_CMOS (1 << 0)
-
-/*
- * Flag to determine if manual ME unlocking by pressing Fn + M is supported.
- */
-#define FU_FLASHROM_DEVICE_FLAG_FN_M_ME_UNLOCK (1 << 1)
+#define FU_FLASHROM_DEVICE_FLAG_RESET_CMOS     "reset-cmos"
+#define FU_FLASHROM_DEVICE_FLAG_FN_M_ME_UNLOCK "fn-m-me-unlock"
 
 struct _FuFlashromDevice {
 	FuUdevDevice parent_instance;
@@ -43,19 +34,19 @@ fu_flashrom_device_set_quirk_kv(FuDevice *device,
 {
 	if (g_strcmp0(key, "PciBcrAddr") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		fu_device_set_metadata_integer(device, "PciBcrAddr", tmp);
 		return TRUE;
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no supported");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no supported");
 	return FALSE;
 }
 
 static gboolean
 fu_flashrom_device_probe(FuDevice *device, GError **error)
 {
-	const gchar *dev_name = NULL;
+	g_autofree gchar *dev_name = NULL;
 	const gchar *sysfs_path = NULL;
 
 	sysfs_path = fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device));
@@ -64,10 +55,12 @@ fu_flashrom_device_probe(FuDevice *device, GError **error)
 		physical_id = g_strdup_printf("DEVNAME=%s", sysfs_path);
 		fu_device_set_physical_id(device, physical_id);
 	}
-	dev_name = fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(device), "name", NULL);
-	if (dev_name != NULL) {
+	dev_name = fu_udev_device_read_sysfs(FU_UDEV_DEVICE(device),
+					     "name",
+					     FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+					     NULL);
+	if (dev_name != NULL)
 		fu_device_add_instance_id_full(device, dev_name, FU_DEVICE_INSTANCE_FLAG_QUIRKS);
-	}
 	return TRUE;
 }
 
@@ -264,19 +257,15 @@ fu_flashrom_device_init(FuFlashromDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_protocol(FU_DEVICE(self), "org.flashrom");
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ENSURE_SEMVER);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_HOST_FIRMWARE);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ENSURE_SEMVER);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_FLAGS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE);
 	fu_device_set_physical_id(FU_DEVICE(self), "flashrom");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_add_icon(FU_DEVICE(self), "computer");
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_FLASHROM_DEVICE_FLAG_RESET_CMOS,
-					"reset-cmos");
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_FLASHROM_DEVICE_FLAG_FN_M_ME_UNLOCK,
-					"fn-m-me-unlock");
+	fu_device_register_private_flag(FU_DEVICE(self), FU_FLASHROM_DEVICE_FLAG_RESET_CMOS);
+	fu_device_register_private_flag(FU_DEVICE(self), FU_FLASHROM_DEVICE_FLAG_FN_M_ME_UNLOCK);
 }
 
 static void
@@ -332,7 +321,7 @@ fu_flashrom_device_class_init(FuFlashromDeviceClass *klass)
 {
 	GParamSpec *pspec;
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
 	object_class->get_property = fu_flashrom_device_get_property;
 	object_class->set_property = fu_flashrom_device_set_property;
@@ -364,14 +353,14 @@ fu_flashrom_device_class_init(FuFlashromDeviceClass *klass)
 	g_object_class_install_property(object_class, PROP_FLASHCTX, pspec);
 
 	object_class->finalize = fu_flashrom_device_finalize;
-	klass_device->set_quirk_kv = fu_flashrom_device_set_quirk_kv;
-	klass_device->probe = fu_flashrom_device_probe;
-	klass_device->open = fu_flashrom_device_open;
-	klass_device->close = fu_flashrom_device_close;
-	klass_device->set_progress = fu_flashrom_device_set_progress;
-	klass_device->prepare = fu_flashrom_device_prepare;
-	klass_device->dump_firmware = fu_flashrom_device_dump_firmware;
-	klass_device->write_firmware = fu_flashrom_device_write_firmware;
+	device_class->set_quirk_kv = fu_flashrom_device_set_quirk_kv;
+	device_class->probe = fu_flashrom_device_probe;
+	device_class->open = fu_flashrom_device_open;
+	device_class->close = fu_flashrom_device_close;
+	device_class->set_progress = fu_flashrom_device_set_progress;
+	device_class->prepare = fu_flashrom_device_prepare;
+	device_class->dump_firmware = fu_flashrom_device_dump_firmware;
+	device_class->write_firmware = fu_flashrom_device_write_firmware;
 }
 
 FuDevice *

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 GN Audio A/S
+ * Copyright 2023 GN Audio A/S
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -34,16 +34,19 @@ fu_jabra_gnp_firmware_parse_version(FuJabraGnpFirmware *self, GError **error)
 
 	split = g_strsplit(fu_firmware_get_version(FU_FIRMWARE(self)), ".", -1);
 	if (g_strv_length(split) != 3) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "version invalid");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "version invalid");
 		return FALSE;
 	}
-	if (!fu_strtoull(split[0], &val, 0x0, 0xFF, error))
+	if (!fu_strtoull(split[0], &val, 0x0, 0xFF, FU_INTEGER_BASE_AUTO, error))
 		return FALSE;
 	self->version_data.major = (guint8)val;
-	if (!fu_strtoull(split[1], &val, 0x0, 0xFF, error))
+	if (!fu_strtoull(split[1], &val, 0x0, 0xFF, FU_INTEGER_BASE_AUTO, error))
 		return FALSE;
 	self->version_data.minor = (guint8)val;
-	if (!fu_strtoull(split[2], &val, 0x0, 0xFF, error))
+	if (!fu_strtoull(split[2], &val, 0x0, 0xFF, FU_INTEGER_BASE_AUTO, error))
 		return FALSE;
 	self->version_data.micro = (guint8)val;
 
@@ -68,8 +71,8 @@ fu_jabra_gnp_firmware_parse_info(FuJabraGnpFirmware *self, XbSilo *silo, GError 
 	version = xb_node_get_attr(build_vector, "version");
 	if (version == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "buildVector version missing");
 		return FALSE;
 	}
@@ -82,7 +85,7 @@ fu_jabra_gnp_firmware_parse_info(FuJabraGnpFirmware *self, XbSilo *silo, GError 
 	dfu_pid_str = xb_node_query_text(dfu_pid, "usbPid", error);
 	if (dfu_pid_str == NULL)
 		return FALSE;
-	if (!fu_strtoull(dfu_pid_str, &val, 0x0, 0xFFFF, error)) {
+	if (!fu_strtoull(dfu_pid_str, &val, 0x0, 0xFFFF, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "cannot parse usbPid of %s: ", dfu_pid_str);
 		return FALSE;
 	}
@@ -94,7 +97,7 @@ fu_jabra_gnp_firmware_parse_info(FuJabraGnpFirmware *self, XbSilo *silo, GError 
 
 static gboolean
 fu_jabra_gnp_firmware_parse(FuFirmware *firmware,
-			    GBytes *fw,
+			    GInputStream *stream,
 			    gsize offset,
 			    FwupdInstallFlags flags,
 			    GError **error)
@@ -113,7 +116,7 @@ fu_jabra_gnp_firmware_parse(FuFirmware *firmware,
 				       FU_ARCHIVE_FORMAT_ZIP);
 	fu_archive_firmware_set_compression(FU_ARCHIVE_FIRMWARE(firmware_archive),
 					    FU_ARCHIVE_COMPRESSION_NONE);
-	if (!fu_firmware_parse_full(firmware_archive, fw, offset, flags, error))
+	if (!fu_firmware_parse_stream(firmware_archive, stream, offset, flags, error))
 		return FALSE;
 
 	/* parse the XML metadata */
@@ -141,7 +144,7 @@ fu_jabra_gnp_firmware_parse(FuFirmware *firmware,
 		g_autoptr(FuJabraGnpImage) img = fu_jabra_gnp_image_new();
 		g_autoptr(GError) error_local = NULL;
 		if (!fu_jabra_gnp_image_parse(img, n, firmware_archive, &error_local)) {
-			if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_DATA)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA)) {
 				g_debug("ignoring image 0x%x: %s", i, error_local->message);
 				continue;
 			}
@@ -180,9 +183,9 @@ fu_jabra_gnp_firmware_init(FuJabraGnpFirmware *self)
 static void
 fu_jabra_gnp_firmware_class_init(FuJabraGnpFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_jabra_gnp_firmware_parse;
-	klass_firmware->export = fu_jabra_gnp_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_jabra_gnp_firmware_parse;
+	firmware_class->export = fu_jabra_gnp_firmware_export;
 }
 
 FuFirmware *

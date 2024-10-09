@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -35,7 +35,6 @@ fu_ebitdo_device_send(FuEbitdoDevice *self,
 		      gsize in_len,
 		      GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length;
 	guint8 ep_out = FU_EBITDO_USB_RUNTIME_EP_OUT;
 	g_autoptr(GByteArray) st_hdr = fu_struct_ebitdo_pkt_new();
@@ -49,7 +48,7 @@ fu_ebitdo_device_send(FuEbitdoDevice *self,
 
 	/* check size */
 	if (in_len > 64 - 8) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "input buffer too large");
+		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "input buffer too large");
 		return FALSE;
 	}
 
@@ -80,17 +79,17 @@ fu_ebitdo_device_send(FuEbitdoDevice *self,
 	fu_dump_raw(G_LOG_DOMAIN, "->DEVICE", st_hdr->data, st_hdr->len);
 
 	/* get data from device */
-	if (!g_usb_device_interrupt_transfer(usb_device,
-					     ep_out,
-					     st_hdr->data,
-					     st_hdr->len,
-					     &actual_length,
-					     FU_EBITDO_USB_TIMEOUT,
-					     NULL, /* cancellable */
-					     &error_local)) {
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+					      ep_out,
+					      st_hdr->data,
+					      st_hdr->len,
+					      &actual_length,
+					      FU_EBITDO_USB_TIMEOUT,
+					      NULL, /* cancellable */
+					      &error_local)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "failed to send to device on ep 0x%02x: %s",
 			    (guint)FU_EBITDO_USB_BOOTLOADER_EP_OUT,
 			    error_local->message);
@@ -102,7 +101,6 @@ fu_ebitdo_device_send(FuEbitdoDevice *self,
 static gboolean
 fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	guint8 packet[FU_EBITDO_USB_EP_SIZE] = {0};
 	gsize actual_length;
 	guint8 ep_in = FU_EBITDO_USB_RUNTIME_EP_IN;
@@ -114,17 +112,17 @@ fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GErro
 		ep_in = FU_EBITDO_USB_BOOTLOADER_EP_IN;
 
 	/* get data from device */
-	if (!g_usb_device_interrupt_transfer(usb_device,
-					     ep_in,
-					     packet,
-					     sizeof(packet),
-					     &actual_length,
-					     FU_EBITDO_USB_TIMEOUT,
-					     NULL, /* cancellable */
-					     &error_local)) {
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+					      ep_in,
+					      packet,
+					      sizeof(packet),
+					      &actual_length,
+					      FU_EBITDO_USB_TIMEOUT,
+					      NULL, /* cancellable */
+					      &error_local)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "failed to retrieve from device on ep 0x%02x: %s",
 			    (guint)ep_in,
 			    error_local->message);
@@ -144,8 +142,8 @@ fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GErro
 		if (out != NULL) {
 			if (fu_struct_ebitdo_pkt_get_payload_len(st_hdr) < out_len) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "payload too small, expected %" G_GSIZE_FORMAT
 					    " got %u",
 					    out_len,
@@ -170,8 +168,8 @@ fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GErro
 		if (out != NULL) {
 			if (out_len != 4) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "outbuf size wrong, expected 4 got %" G_GSIZE_FORMAT,
 					    out_len);
 				return FALSE;
@@ -195,8 +193,8 @@ fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GErro
 		if (out != NULL) {
 			if (fu_struct_ebitdo_pkt_get_cmd_len(st_hdr) != out_len) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "outbuf size wrong, expected %" G_GSIZE_FORMAT
 					    " got %i",
 					    out_len,
@@ -223,8 +221,8 @@ fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GErro
 		if (fu_struct_ebitdo_pkt_get_cmd(st_hdr) != FU_EBITDO_PKT_CMD_ACK) {
 			g_set_error(
 			    error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "write failed, got %s",
 			    fu_ebitdo_pkt_cmd_to_string(fu_struct_ebitdo_pkt_get_cmd(st_hdr)));
 			return FALSE;
@@ -233,10 +231,7 @@ fu_ebitdo_device_receive(FuEbitdoDevice *self, guint8 *out, gsize out_len, GErro
 	}
 
 	/* unhandled */
-	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
-			    "unexpected device response");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "unexpected device response");
 	return FALSE;
 }
 
@@ -253,15 +248,15 @@ fu_ebitdo_device_validate(FuEbitdoDevice *self, GError **error)
 	const gchar *allowlist[] = {"8Bitdo", "8BitDo", "SFC30", NULL};
 
 	/* this is a new, always valid, VID */
-	if (fu_usb_device_get_vid(FU_USB_DEVICE(self)) == 0x2dc8)
+	if (fu_device_get_vid(FU_DEVICE(self)) == 0x2dc8)
 		return TRUE;
 
 	/* verify the vendor prefix against a allowlist */
 	ven = fu_device_get_vendor(FU_DEVICE(self));
 	if (ven == NULL) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "could not check vendor descriptor: ");
 		return FALSE;
 	}
@@ -270,8 +265,8 @@ fu_ebitdo_device_validate(FuEbitdoDevice *self, GError **error)
 			return TRUE;
 	}
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_INVALID_DATA,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_INVALID_DATA,
 		    "vendor '%s' did not match allowlist, "
 		    "probably not a 8BitDo device…",
 		    ven);
@@ -281,7 +276,6 @@ fu_ebitdo_device_validate(FuEbitdoDevice *self, GError **error)
 static gboolean
 fu_ebitdo_device_open(FuDevice *device, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	FuEbitdoDevice *self = FU_EBITDO_DEVICE(device);
 
 	/* FuUsbDevice->open */
@@ -291,10 +285,10 @@ fu_ebitdo_device_open(FuDevice *device, GError **error)
 	/* open, then ensure this is actually 8BitDo hardware */
 	if (!fu_ebitdo_device_validate(self, error))
 		return FALSE;
-	if (!g_usb_device_claim_interface(usb_device,
-					  0, /* 0 = idx? */
-					  G_USB_DEVICE_CLAIM_INTERFACE_BIND_KERNEL_DRIVER,
-					  error)) {
+	if (!fu_usb_device_claim_interface(FU_USB_DEVICE(self),
+					   0, /* 0 = idx? */
+					   FU_USB_DEVICE_CLAIM_FLAG_KERNEL_DRIVER,
+					   error)) {
 		return FALSE;
 	}
 
@@ -380,10 +374,9 @@ fu_ebitdo_device_detach(FuDevice *device, FuProgress *progress, GError **error)
 
 	/* generate a message if not already set from the metadata */
 	if (fu_device_get_update_message(device) == NULL) {
-		GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 		g_autoptr(GString) msg = g_string_new(NULL);
 		g_string_append(msg, "Not in bootloader mode: Disconnect the controller, ");
-		switch (g_usb_device_get_pid(usb_device)) {
+		switch (fu_device_get_pid(device)) {
 		case 0xab11: /* FC30 */
 		case 0xab12: /* NES30 */
 		case 0xab21: /* SFC30 */
@@ -455,7 +448,7 @@ fu_ebitdo_device_write_firmware(FuDevice *device,
 	gsize bufsz = 0;
 	guint32 serial_new[3];
 	g_autoptr(GBytes) fw_hdr = NULL;
-	g_autoptr(GBytes) fw_payload = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 	const guint32 app_key_index[16] = {0x186976e5,
@@ -494,8 +487,8 @@ fu_ebitdo_device_write_firmware(FuDevice *device,
 	fw_hdr = fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_HEADER, error);
 	if (fw_hdr == NULL)
 		return FALSE;
-	fw_payload = fu_firmware_get_bytes(firmware, error);
-	if (fw_payload == NULL)
+	stream_payload = fu_firmware_get_stream(firmware, error);
+	if (stream_payload == NULL)
 		return FALSE;
 
 	/* set up the firmware header */
@@ -517,13 +510,20 @@ fu_ebitdo_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* flash the firmware in 32 byte blocks */
-	chunks = fu_chunk_array_new_from_bytes(fw_payload, 0x0, 32);
+	chunks = fu_chunk_array_new_from_stream(stream_payload, 0x0, 32, error);
+	if (chunks == NULL)
+		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		g_debug("writing %u bytes to 0x%04x of 0x%04x",
-			fu_chunk_get_data_sz(chk),
-			fu_chunk_get_address(chk),
-			fu_chunk_get_data_sz(chk));
+			(guint)fu_chunk_get_data_sz(chk),
+			(guint)fu_chunk_get_address(chk),
+			(guint)fu_chunk_get_data_sz(chk));
 		if (!fu_ebitdo_device_send(self,
 					   FU_EBITDO_PKT_TYPE_USER_CMD,
 					   FU_EBITDO_PKT_CMD_UPDATE_FIRMWARE_DATA,
@@ -533,13 +533,13 @@ fu_ebitdo_device_write_firmware(FuDevice *device,
 					   error)) {
 			g_prefix_error(error,
 				       "failed to write firmware @0x%04x: ",
-				       fu_chunk_get_address(chk));
+				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 		if (!fu_ebitdo_device_receive(self, NULL, 0, error)) {
 			g_prefix_error(error,
 				       "failed to get ACK for write firmware @0x%04x: ",
-				       fu_chunk_get_address(chk));
+				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 		fu_progress_set_percentage_full(fu_progress_get_child(progress),
@@ -595,12 +595,11 @@ fu_ebitdo_device_write_firmware(FuDevice *device,
 static gboolean
 fu_ebitdo_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	g_autoptr(GError) error_local = NULL;
 
 	/* when doing a soft-reboot the device does not re-enumerate properly
-	 * so manually reboot the GUsbDevice */
-	if (!g_usb_device_reset(usb_device, &error_local)) {
+	 * so manually reboot the FuUsbDevice */
+	if (!fu_usb_device_reset(FU_USB_DEVICE(device), &error_local)) {
 		g_prefix_error(&error_local, "failed to force-reset device: ");
 		if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_WILL_DISAPPEAR)) {
 			fu_device_set_remove_delay(device, 0);
@@ -646,7 +645,7 @@ fu_ebitdo_device_probe(FuDevice *device, GError **error)
 }
 
 static void
-fu_ebitdo_set_progress(FuDevice *self, FuProgress *progress)
+fu_ebitdo_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
@@ -660,9 +659,9 @@ static void
 fu_ebitdo_device_init(FuEbitdoDevice *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.8bitdo");
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ADD_COUNTERPART_GUIDS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_request_flag(FU_DEVICE(self), FWUPD_REQUEST_FLAG_NON_GENERIC_MESSAGE);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_EBITDO_FIRMWARE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
@@ -671,13 +670,13 @@ fu_ebitdo_device_init(FuEbitdoDevice *self)
 static void
 fu_ebitdo_device_class_init(FuEbitdoDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_ebitdo_device_write_firmware;
-	klass_device->setup = fu_ebitdo_device_setup;
-	klass_device->detach = fu_ebitdo_device_detach;
-	klass_device->attach = fu_ebitdo_device_attach;
-	klass_device->open = fu_ebitdo_device_open;
-	klass_device->probe = fu_ebitdo_device_probe;
-	klass_device->set_progress = fu_ebitdo_set_progress;
-	klass_device->convert_version = fu_ebitdo_device_convert_version;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_ebitdo_device_write_firmware;
+	device_class->setup = fu_ebitdo_device_setup;
+	device_class->detach = fu_ebitdo_device_detach;
+	device_class->attach = fu_ebitdo_device_attach;
+	device_class->open = fu_ebitdo_device_open;
+	device_class->probe = fu_ebitdo_device_probe;
+	device_class->set_progress = fu_ebitdo_device_set_progress;
+	device_class->convert_version = fu_ebitdo_device_convert_version;
 }

@@ -1,14 +1,17 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-byte-array.h"
 #include "fu-bytes.h"
+#include "fu-common.h"
+#include "fu-input-stream.h"
 #include "fu-linear-firmware.h"
+#include "fu-partial-input-stream.h"
 
 /**
  * FuLinearFirmware:
@@ -68,8 +71,8 @@ fu_linear_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 		priv->image_gtype = g_type_from_name(tmp);
 		if (priv->image_gtype == G_TYPE_INVALID) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_FOUND,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "GType %s not registered",
 				    tmp);
 			return FALSE;
@@ -82,23 +85,29 @@ fu_linear_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 
 static gboolean
 fu_linear_firmware_parse(FuFirmware *firmware,
-			 GBytes *fw,
+			 GInputStream *stream,
 			 gsize offset,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuLinearFirmware *self = FU_LINEAR_FIRMWARE(firmware);
 	FuLinearFirmwarePrivate *priv = GET_PRIVATE(self);
-	gsize bufsz = g_bytes_get_size(fw);
+	gsize streamsz = 0;
 
-	while (offset < bufsz) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	while (offset < streamsz) {
 		g_autoptr(FuFirmware) img = g_object_new(priv->image_gtype, NULL);
-		g_autoptr(GBytes) fw_tmp = NULL;
+		g_autoptr(GInputStream) stream_tmp = NULL;
 
-		fw_tmp = fu_bytes_new_offset(fw, offset, bufsz - offset, error);
-		if (fw_tmp == NULL)
+		stream_tmp = fu_partial_input_stream_new(stream, offset, streamsz - offset, error);
+		if (stream_tmp == NULL)
 			return FALSE;
-		if (!fu_firmware_parse(img, fw_tmp, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error)) {
+		if (!fu_firmware_parse_stream(img,
+					      stream_tmp,
+					      0x0,
+					      flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      error)) {
 			g_prefix_error(error, "failed to parse at 0x%x: ", (guint)offset);
 			return FALSE;
 		}
@@ -172,21 +181,22 @@ static void
 fu_linear_firmware_init(FuLinearFirmware *self)
 {
 	fu_firmware_set_images_max(FU_FIRMWARE(self), 1024);
+	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_NO_AUTO_DETECTION);
 }
 
 static void
 fu_linear_firmware_class_init(FuLinearFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	GParamSpec *pspec;
 
 	object_class->get_property = fu_linear_firmware_get_property;
 	object_class->set_property = fu_linear_firmware_set_property;
-	klass_firmware->parse = fu_linear_firmware_parse;
-	klass_firmware->write = fu_linear_firmware_write;
-	klass_firmware->export = fu_linear_firmware_export;
-	klass_firmware->build = fu_linear_firmware_build;
+	firmware_class->parse = fu_linear_firmware_parse;
+	firmware_class->write = fu_linear_firmware_write;
+	firmware_class->export = fu_linear_firmware_export;
+	firmware_class->build = fu_linear_firmware_build;
 
 	/**
 	 * FuLinearFirmware:image-gtype:

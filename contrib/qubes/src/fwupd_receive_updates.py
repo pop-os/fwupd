@@ -1,15 +1,14 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # The Qubes OS Project, http://www.qubes-os.org
 #
-# Copyright (C) 2010  Rafal Wojtczuk  <rafal@invisiblethingslab.com>
-#               2020  Norbert Kamiński  <norbert.kaminski@3mdeb.com>
+# Copyright 2010 Rafal Wojtczuk <rafal@invisiblethingslab.com>
+# Copyright 2020 Norbert Kamiński <norbert.kaminski@3mdeb.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 
 import base64
-import glob
 import hashlib
 import itertools
 import os
@@ -17,7 +16,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
-from qubes_fwupd_common import EXIT_CODES, create_dirs
+from qubes_fwupd_common import create_dirs
 
 FWUPD_DOM0_DIR = "/var/cache/fwupd/qubes"
 FWUPD_DOM0_UPDATES_DIR = os.path.join(FWUPD_DOM0_DIR, "updates")

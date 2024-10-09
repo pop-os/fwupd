@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Jimmy Yu <Jimmy_yu@pixart.com>
+ * Copyright 2020 Jimmy Yu <Jimmy_yu@pixart.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -12,7 +12,7 @@
 #define PIXART_RF_FW_HEADER_SIZE       32 /* bytes */
 #define PIXART_RF_FW_HEADER_TAG_OFFSET 24
 /* The hpac header is start from 821st byte from the end */
-#define PIXART_RF_FW_HEADER_HPAC_POS_FROM_END 821
+#define PIXART_RF_FW_HEADER_HPAC_POS_FROM_END	      821
 #define PIXART_RF_FW_HEADER_HPAC_VERSION_POS_FROM_END 823
 
 #define PIXART_RF_FW_HEADER_MAGIC 0x55AA55AA55AA55AA
@@ -40,33 +40,40 @@ fu_pxi_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuil
 }
 
 static gboolean
-fu_pxi_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_pxi_firmware_validate(FuFirmware *firmware, GInputStream *stream, gsize offset, GError **error)
 {
 	guint64 magic = 0;
 	FuPxiFirmware *self = FU_PXI_FIRMWARE(firmware);
+	gsize streamsz = 0;
 
 	/* is a footer, in normal bin file, the header is starts from the 32nd byte from the end. */
-	if (!fu_memread_uint64_safe(g_bytes_get_data(fw, NULL),
-				    g_bytes_get_size(fw),
-				    g_bytes_get_size(fw) - PIXART_RF_FW_HEADER_SIZE +
-					PIXART_RF_FW_HEADER_TAG_OFFSET,
-				    &magic,
-				    G_BIG_ENDIAN,
-				    error)) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (streamsz < PIXART_RF_FW_HEADER_SIZE) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_FILE,
+				    "stream was too small");
+		return FALSE;
+	}
+	if (!fu_input_stream_read_u64(stream,
+				      streamsz - PIXART_RF_FW_HEADER_SIZE +
+					  PIXART_RF_FW_HEADER_TAG_OFFSET,
+				      &magic,
+				      G_BIG_ENDIAN,
+				      error)) {
 		g_prefix_error(error, "failed to read magic: ");
 		return FALSE;
 	}
 	if (magic != PIXART_RF_FW_HEADER_MAGIC) {
 		/* if the magic number is not found, then start from the 821st byte from the end for
 		 * HPAC header */
-		if (!fu_memread_uint64_safe(g_bytes_get_data(fw, NULL),
-					    g_bytes_get_size(fw),
-					    g_bytes_get_size(fw) -
-						PIXART_RF_FW_HEADER_HPAC_POS_FROM_END +
-						PIXART_RF_FW_HEADER_TAG_OFFSET,
-					    &magic,
-					    G_BIG_ENDIAN,
-					    error)) {
+		if (!fu_input_stream_read_u64(stream,
+					      streamsz - PIXART_RF_FW_HEADER_HPAC_POS_FROM_END +
+						  PIXART_RF_FW_HEADER_TAG_OFFSET,
+					      &magic,
+					      G_BIG_ENDIAN,
+					      error)) {
 			g_prefix_error(error, "failed to read magic: ");
 			return FALSE;
 		}
@@ -88,14 +95,13 @@ fu_pxi_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GErr
 
 static gboolean
 fu_pxi_firmware_parse(FuFirmware *firmware,
-		      GBytes *fw,
+		      GInputStream *stream,
 		      gsize offset,
 		      FwupdInstallFlags flags,
 		      GError **error)
 {
 	FuPxiFirmware *self = FU_PXI_FIRMWARE(firmware);
-	const guint8 *buf;
-	gsize bufsz = 0;
+	gsize streamsz = 0;
 	guint32 version_raw = 0;
 	guint8 fw_header[PIXART_RF_FW_HEADER_SIZE];
 	guint8 model_name[FU_PXI_DEVICE_MODEL_NAME_LEN] = {0x0};
@@ -103,28 +109,41 @@ fu_pxi_firmware_parse(FuFirmware *firmware,
 	g_autofree gchar *version = NULL;
 
 	/* get fw header from buf */
-	buf = g_bytes_get_data(fw, &bufsz);
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
 	if (fu_pxi_firmware_is_hpac(self)) {
-		if (!fu_memcpy_safe(fw_header,
-				    sizeof(fw_header),
-				    0x0,
-				    buf,
-				    bufsz,
-				    bufsz - PIXART_RF_FW_HEADER_HPAC_POS_FROM_END,
-				    sizeof(fw_header),
-				    error)) {
+		if (streamsz < PIXART_RF_FW_HEADER_HPAC_VERSION_POS_FROM_END) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
+					    "image is too small");
+			return FALSE;
+		}
+		if (!fu_input_stream_read_safe(stream,
+					       fw_header,
+					       sizeof(fw_header),
+					       0x0,
+					       streamsz - PIXART_RF_FW_HEADER_HPAC_POS_FROM_END,
+					       sizeof(fw_header),
+					       error)) {
 			g_prefix_error(error, "failed to read fw header: ");
 			return FALSE;
 		}
 	} else {
-		if (!fu_memcpy_safe(fw_header,
-				    sizeof(fw_header),
-				    0x0,
-				    buf,
-				    bufsz,
-				    bufsz - sizeof(fw_header),
-				    sizeof(fw_header),
-				    error)) {
+		if (streamsz < sizeof(fw_header)) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
+					    "image is too small");
+			return FALSE;
+		}
+		if (!fu_input_stream_read_safe(stream,
+					       fw_header,
+					       sizeof(fw_header),
+					       0x0,
+					       streamsz - sizeof(fw_header),
+					       sizeof(fw_header),
+					       error)) {
 			g_prefix_error(error, "failed to read fw header: ");
 			return FALSE;
 		}
@@ -134,12 +153,12 @@ fu_pxi_firmware_parse(FuFirmware *firmware,
 
 	/* set fw version */
 	if (fu_pxi_firmware_is_hpac(self)) {
-		if (!fu_memread_uint16_safe(buf,
-					    bufsz,
-					    bufsz - PIXART_RF_FW_HEADER_HPAC_VERSION_POS_FROM_END,
-					    &hpac_ver,
-					    G_BIG_ENDIAN,
-					    error))
+		if (!fu_input_stream_read_u16(stream,
+					      streamsz -
+						  PIXART_RF_FW_HEADER_HPAC_VERSION_POS_FROM_END,
+					      &hpac_ver,
+					      G_BIG_ENDIAN,
+					      error))
 			return FALSE;
 
 		version_raw = hpac_ver;
@@ -151,7 +170,7 @@ fu_pxi_firmware_parse(FuFirmware *firmware,
 		version = fu_version_from_uint32(version_raw, FWUPD_VERSION_FORMAT_DELL_BIOS);
 	}
 	fu_firmware_set_version_raw(firmware, version_raw);
-	fu_firmware_set_version(firmware, version);
+	fu_firmware_set_version(firmware, version); /* nocheck:set-version */
 
 	/* set fw model name */
 	if (!fu_memcpy_safe(model_name,
@@ -237,8 +256,8 @@ fu_pxi_firmware_write(FuFirmware *firmware, GError **error)
 	if (!g_ascii_isdigit(fw_header[0]) || !g_ascii_isdigit(fw_header[2]) ||
 	    !g_ascii_isdigit(fw_header[4])) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "cannot write invalid version number 0x%x",
 			    (guint)version_raw);
 		return NULL;
@@ -279,13 +298,13 @@ static void
 fu_pxi_firmware_class_init(FuPxiFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_pxi_firmware_finalize;
-	klass_firmware->check_magic = fu_pxi_firmware_check_magic;
-	klass_firmware->parse = fu_pxi_firmware_parse;
-	klass_firmware->build = fu_pxi_firmware_build;
-	klass_firmware->write = fu_pxi_firmware_write;
-	klass_firmware->export = fu_pxi_firmware_export;
+	firmware_class->validate = fu_pxi_firmware_validate;
+	firmware_class->parse = fu_pxi_firmware_parse;
+	firmware_class->build = fu_pxi_firmware_build;
+	firmware_class->write = fu_pxi_firmware_write;
+	firmware_class->export = fu_pxi_firmware_export;
 }
 
 FuFirmware *

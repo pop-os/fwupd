@@ -101,3 +101,11 @@ workflows:
               ignore: /.*/
             tags:
               only: /^\d+\.\d+\.\d+$/
+      - publish-docs:
+          requires:
+            - build-ubuntu-x86_64
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^\d+\.\d+\.\d+$/

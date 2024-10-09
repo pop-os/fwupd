@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Ricardo Cañuelo <ricardo.canuelo@collabora.com>
+ * Copyright 2021 Ricardo Cañuelo <ricardo.canuelo@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuBackend"
@@ -29,6 +29,7 @@ fu_bluez_backend_object_properties_changed(FuBluezBackend *self, GDBusProxy *pro
 	g_autoptr(FuBluezDevice) dev = NULL;
 	g_autoptr(GVariant) val_connected = NULL;
 	g_autoptr(GVariant) val_paired = NULL;
+	g_autoptr(GVariant) val_services_resolved = NULL;
 
 	/* device is suitable */
 	val_connected = g_dbus_proxy_get_cached_property(proxy, "Connected");
@@ -37,7 +38,12 @@ fu_bluez_backend_object_properties_changed(FuBluezBackend *self, GDBusProxy *pro
 	val_paired = g_dbus_proxy_get_cached_property(proxy, "Paired");
 	if (val_paired == NULL)
 		return;
-	suitable = g_variant_get_boolean(val_connected) && g_variant_get_boolean(val_paired);
+	val_services_resolved = g_dbus_proxy_get_cached_property(proxy, "ServicesResolved");
+	if (val_services_resolved == NULL)
+		return;
+
+	suitable = g_variant_get_boolean(val_connected) && g_variant_get_boolean(val_paired) &&
+		   g_variant_get_boolean(val_services_resolved);
 
 	/* is this an existing device we've previously added */
 	device_tmp = fu_backend_lookup_by_id(FU_BACKEND(self), path);
@@ -52,8 +58,14 @@ fu_bluez_backend_object_properties_changed(FuBluezBackend *self, GDBusProxy *pro
 	}
 
 	/* not paired and connected */
-	if (!suitable)
+	if (!suitable) {
+		g_debug("%s connected=%i, paired=%i, services resolved=%i, ignoring",
+			path,
+			g_variant_get_boolean(val_connected),
+			g_variant_get_boolean(val_paired),
+			g_variant_get_boolean(val_services_resolved));
 		return;
+	}
 
 	/* create device */
 	dev = g_object_new(FU_TYPE_BLUEZ_DEVICE,
@@ -156,7 +168,10 @@ fu_bluez_backend_timeout_cb(gpointer user_data)
 }
 
 static gboolean
-fu_bluez_backend_setup(FuBackend *backend, FuProgress *progress, GError **error)
+fu_bluez_backend_setup(FuBackend *backend,
+		       FuBackendSetupFlags flags,
+		       FuProgress *progress,
+		       GError **error)
 {
 	FuBluezBackend *self = FU_BLUEZ_BACKEND(backend);
 	g_autoptr(FuBluezBackendHelper) helper = g_new0(FuBluezBackendHelper, 1);
@@ -183,14 +198,16 @@ fu_bluez_backend_setup(FuBackend *backend, FuProgress *progress, GError **error)
 		return FALSE;
 	self->object_manager = g_steal_pointer(&helper->object_manager);
 
-	g_signal_connect(G_DBUS_OBJECT_MANAGER(self->object_manager),
-			 "object-added",
-			 G_CALLBACK(fu_bluez_backend_object_added_cb),
-			 self);
-	g_signal_connect(G_DBUS_OBJECT_MANAGER(self->object_manager),
-			 "object-removed",
-			 G_CALLBACK(fu_bluez_backend_object_removed_cb),
-			 self);
+	if (flags & FU_BACKEND_SETUP_FLAG_USE_HOTPLUG) {
+		g_signal_connect(G_DBUS_OBJECT_MANAGER(self->object_manager),
+				 "object-added",
+				 G_CALLBACK(fu_bluez_backend_object_added_cb),
+				 self);
+		g_signal_connect(G_DBUS_OBJECT_MANAGER(self->object_manager),
+				 "object-removed",
+				 G_CALLBACK(fu_bluez_backend_object_removed_cb),
+				 self);
+	}
 	return TRUE;
 }
 
@@ -229,16 +246,22 @@ static void
 fu_bluez_backend_class_init(FuBluezBackendClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuBackendClass *klass_backend = FU_BACKEND_CLASS(klass);
+	FuBackendClass *backend_class = FU_BACKEND_CLASS(klass);
 
 	object_class->finalize = fu_bluez_backend_finalize;
-	klass_backend->setup = fu_bluez_backend_setup;
-	klass_backend->coldplug = fu_bluez_backend_coldplug;
+	backend_class->setup = fu_bluez_backend_setup;
+	backend_class->coldplug = fu_bluez_backend_coldplug;
 }
 
 FuBackend *
 fu_bluez_backend_new(FuContext *ctx)
 {
-	return FU_BACKEND(
-	    g_object_new(FU_TYPE_BLUEZ_BACKEND, "name", "bluez", "context", ctx, NULL));
+	return FU_BACKEND(g_object_new(FU_TYPE_BLUEZ_BACKEND,
+				       "name",
+				       "bluez",
+				       "context",
+				       ctx,
+				       "device-gtype",
+				       FU_TYPE_BLUEZ_DEVICE,
+				       NULL));
 }

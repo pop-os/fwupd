@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuIfdFirmware"
@@ -10,11 +10,16 @@
 
 #include "fu-byte-array.h"
 #include "fu-bytes.h"
+#include "fu-common.h"
+#include "fu-composite-input-stream.h"
+#include "fu-efi-volume.h"
 #include "fu-ifd-bios.h"
 #include "fu-ifd-common.h"
 #include "fu-ifd-firmware.h"
 #include "fu-ifd-image.h"
+#include "fu-input-stream.h"
 #include "fu-mem.h"
+#include "fu-partial-input-stream.h"
 
 /**
  * FuIfdFirmware:
@@ -46,7 +51,7 @@ typedef struct {
 G_DEFINE_TYPE_WITH_PRIVATE(FuIfdFirmware, fu_ifd_firmware, FU_TYPE_FIRMWARE)
 #define GET_PRIVATE(o) (fu_ifd_firmware_get_instance_private(o))
 
-#define FU_IFD_SIZE	 0x1000
+#define FU_IFD_SIZE 0x1000
 
 #define FU_IFD_FDBAR_FLASH_UPPER_MAP1 0x0EFC
 #define FU_IFD_FDBAR_OEM_SECTION      0x0F00
@@ -90,37 +95,67 @@ fu_ifd_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuil
 }
 
 static gboolean
-fu_ifd_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_ifd_firmware_validate(FuFirmware *firmware, GInputStream *stream, gsize offset, GError **error)
 {
-	return fu_struct_ifd_fdbar_validate_bytes(fw, offset, error);
+	return fu_struct_ifd_fdbar_validate_stream(stream, offset, error);
+}
+
+static GInputStream *
+fu_ifd_firmware_fixup_stream(GInputStream *stream, GError **error)
+{
+	const guint8 buf[] = {0xFF};
+	gsize streamsz = 0;
+	g_autoptr(GBytes) blob = g_bytes_new(buf, sizeof(buf));
+	g_autoptr(GInputStream) stream2 = fu_composite_input_stream_new();
+
+	/* already aligned */
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return NULL;
+	if (((streamsz >> 1) << 1) == streamsz)
+		return g_object_ref(stream);
+
+	/* pad with one trailing byte */
+	if (!fu_composite_input_stream_add_stream(FU_COMPOSITE_INPUT_STREAM(stream2),
+						  stream,
+						  error))
+		return NULL;
+	fu_composite_input_stream_add_bytes(FU_COMPOSITE_INPUT_STREAM(stream2), blob);
+	return g_steal_pointer(&stream2);
 }
 
 static gboolean
 fu_ifd_firmware_parse(FuFirmware *firmware,
-		      GBytes *fw,
+		      GInputStream *stream,
 		      gsize offset,
 		      FwupdInstallFlags flags,
 		      GError **error)
 {
 	FuIfdFirmware *self = FU_IFD_FIRMWARE(firmware);
 	FuIfdFirmwarePrivate *priv = GET_PRIVATE(self);
-	gsize bufsz = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
+	gsize streamsz = 0;
 	g_autoptr(GByteArray) st_fcba = NULL;
 	g_autoptr(GByteArray) st_fdbar = NULL;
+	g_autoptr(GInputStream) stream2 = NULL;
 
 	/* check size */
-	if (bufsz < FU_IFD_SIZE) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (streamsz < FU_IFD_SIZE) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INTERNAL,
-			    "file is too small, expected bufsz >= 0x%x",
+			    "file is too small, expected streamsz >= 0x%x",
 			    (guint)FU_IFD_SIZE);
 		return FALSE;
 	}
 
+	/* some test IFD images were captured missing the final byte -- so align up */
+	stream2 = fu_ifd_firmware_fixup_stream(stream, error);
+	if (stream2 == NULL)
+		return FALSE;
+
 	/* descriptor registers */
-	st_fdbar = fu_struct_ifd_fdbar_parse_bytes(fw, 0x0, error);
+	st_fdbar = fu_struct_ifd_fdbar_parse_stream(stream, 0x0, error);
 	if (st_fdbar == NULL)
 		return FALSE;
 	priv->descriptor_map0 = fu_struct_ifd_fdbar_get_descriptor_map0(st_fdbar);
@@ -137,7 +172,7 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 	priv->flash_mch_strap_base_addr = (priv->descriptor_map2 << 4) & 0x00000FF0;
 
 	/* FCBA */
-	st_fcba = fu_struct_ifd_fcba_parse_bytes(fw, priv->flash_component_base_addr, error);
+	st_fcba = fu_struct_ifd_fcba_parse_stream(stream, priv->flash_component_base_addr, error);
 	if (st_fcba == NULL)
 		return FALSE;
 	priv->components_rcd = fu_struct_ifd_fcba_get_flcomp(st_fcba);
@@ -145,37 +180,33 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 	priv->illegal_jedec1 = fu_struct_ifd_fcba_get_flill1(st_fcba);
 
 	/* FMBA */
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz,
-				    priv->flash_master_base_addr + 0x0,
-				    &priv->flash_master[1],
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u32(stream,
+				      priv->flash_master_base_addr + 0x0,
+				      &priv->flash_master[1],
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz,
-				    priv->flash_master_base_addr + 0x4,
-				    &priv->flash_master[2],
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u32(stream,
+				      priv->flash_master_base_addr + 0x4,
+				      &priv->flash_master[2],
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz,
-				    priv->flash_master_base_addr + 0x8,
-				    &priv->flash_master[3],
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u32(stream,
+				      priv->flash_master_base_addr + 0x8,
+				      &priv->flash_master[3],
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
 
 	/* FRBA */
 	priv->flash_descriptor_regs = g_new0(guint32, priv->num_regions);
 	for (guint i = 0; i < priv->num_regions; i++) {
-		if (!fu_memread_uint32_safe(buf,
-					    bufsz,
-					    priv->flash_region_base_addr + (i * sizeof(guint32)),
-					    &priv->flash_descriptor_regs[i],
-					    G_LITTLE_ENDIAN,
-					    error))
+		if (!fu_input_stream_read_u32(stream,
+					      priv->flash_region_base_addr + (i * sizeof(guint32)),
+					      &priv->flash_descriptor_regs[i],
+					      G_LITTLE_ENDIAN,
+					      error))
 			return FALSE;
 	}
 	for (guint i = 0; i < priv->num_regions; i++) {
@@ -184,7 +215,7 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 		guint32 freg_limt = FU_IFD_FREG_LIMIT(priv->flash_descriptor_regs[i]);
 		guint32 freg_size = (freg_limt - freg_base) + 1;
 		g_autoptr(FuFirmware) img = NULL;
-		g_autoptr(GBytes) contents = NULL;
+		g_autoptr(GInputStream) partial_stream = NULL;
 
 		/* invalid */
 		if (freg_base > freg_limt)
@@ -192,21 +223,26 @@ fu_ifd_firmware_parse(FuFirmware *firmware,
 
 		/* create image */
 		g_debug("freg %s 0x%04x -> 0x%04x", freg_str, freg_base, freg_limt);
-		contents = fu_bytes_new_offset(fw, freg_base, freg_size, error);
-		if (contents == NULL)
+		partial_stream = fu_partial_input_stream_new(stream2, freg_base, freg_size, error);
+		if (partial_stream == NULL)
 			return FALSE;
 		if (i == FU_IFD_REGION_BIOS) {
 			img = fu_ifd_bios_new();
 		} else {
 			img = fu_ifd_image_new();
 		}
-		if (!fu_firmware_parse(img, contents, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error))
+		if (!fu_firmware_parse_stream(img,
+					      partial_stream,
+					      0x0,
+					      flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      error))
 			return FALSE;
 		fu_firmware_set_addr(img, freg_base);
 		fu_firmware_set_idx(img, i);
 		if (freg_str != NULL)
 			fu_firmware_set_id(img, freg_str);
-		fu_firmware_add_image(firmware, img);
+		if (!fu_firmware_add_image_full(firmware, img, error))
+			return FALSE;
 
 		/* is writable by anything other than the region itself */
 		for (FuIfdRegion r = 1; r <= 3; r++) {
@@ -422,6 +458,9 @@ fu_ifd_firmware_init(FuIfdFirmware *self)
 	priv->flash_master[3] = 0x00800900;
 	priv->flash_ich_strap_base_addr = 0x100;
 	priv->flash_mch_strap_base_addr = 0x300;
+	g_type_ensure(FU_TYPE_IFD_BIOS);
+	g_type_ensure(FU_TYPE_IFD_IMAGE);
+	g_type_ensure(FU_TYPE_EFI_VOLUME);
 }
 
 static void
@@ -437,13 +476,13 @@ static void
 fu_ifd_firmware_class_init(FuIfdFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_ifd_firmware_finalize;
-	klass_firmware->check_magic = fu_ifd_firmware_check_magic;
-	klass_firmware->export = fu_ifd_firmware_export;
-	klass_firmware->parse = fu_ifd_firmware_parse;
-	klass_firmware->write = fu_ifd_firmware_write;
-	klass_firmware->build = fu_ifd_firmware_build;
+	firmware_class->validate = fu_ifd_firmware_validate;
+	firmware_class->export = fu_ifd_firmware_export;
+	firmware_class->parse = fu_ifd_firmware_parse;
+	firmware_class->write = fu_ifd_firmware_write;
+	firmware_class->build = fu_ifd_firmware_build;
 }
 
 /**

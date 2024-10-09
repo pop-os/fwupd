@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2022 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -10,7 +10,7 @@
 
 #define STEELSERIES_BUFFER_REPORT_SIZE 64 + 1
 
-#define STEELSERIES_HID_GET_REPORT 0x04U
+#define STEELSERIES_HID_GET_REPORT  0x04U
 #define STEELSERIES_HID_MAX_RETRIES 100
 
 #define STEELSERIES_HID_VERSION_COMMAND		 0x90U
@@ -58,7 +58,7 @@ fu_steelseries_fizz_hid_command_cb(FuDevice *device, gpointer user_data, GError 
 		/* since fu_udev_device_pread() treats unexpected data size as error
 		 * we have to check the output additionally since the size of
 		 * unexpected data size from mouse input data is only 16b */
-		if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_FAILED) ||
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_INTERNAL) ||
 		    report_id != 0x01) {
 			g_propagate_prefixed_error(error,
 						   g_steal_pointer(&error_local),
@@ -71,8 +71,8 @@ fu_steelseries_fizz_hid_command_cb(FuDevice *device, gpointer user_data, GError 
 
 	if (report_id != STEELSERIES_HID_GET_REPORT) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "data with unexpected Report ID (%u)",
 			    report_id);
 		return FALSE;
@@ -195,10 +195,10 @@ fu_steelseries_fizz_hid_setup(FuDevice *device, GError **error)
 static void
 fu_steelseries_fizz_hid_class_init(FuSteelseriesFizzHidClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
-	klass_device->setup = fu_steelseries_fizz_hid_setup;
-	klass_device->detach = fu_steelseries_fizz_hid_detach;
+	device_class->setup = fu_steelseries_fizz_hid_setup;
+	device_class->detach = fu_steelseries_fizz_hid_detach;
 }
 
 static void

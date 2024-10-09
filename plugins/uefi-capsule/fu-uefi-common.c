@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2015 Peter Jones <pjones@redhat.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Peter Jones <pjones@redhat.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -19,28 +19,27 @@ fu_uefi_bootmgr_get_suffix(GError **error)
 		const gchar *arch;
 	} suffixes[] = {
 #if defined(__x86_64__)
-		{64, "x64"},
+	    {64, "x64"},
 #elif defined(__aarch64__)
-		{64, "aa64"},
+	    {64, "aa64"},
 #elif defined(__loongarch_lp64)
-		{64, "loongarch64"},
+	    {64, "loongarch64"},
 #elif (defined(__riscv) && __riscv_xlen == 64)
-		{64, "riscv64"},
+	    {64, "riscv64"},
 #endif
 #if defined(__i386__) || defined(__i686__)
-		{32, "ia32"},
+	    {32, "ia32"},
 #elif defined(__arm__)
-		{32, "arm"},
+	    {32, "arm"},
 #endif
-		{0, NULL}
-	};
+	    {0, NULL}};
 	g_autofree gchar *sysfsfwdir = fu_path_from_kind(FU_PATH_KIND_SYSFSDIR_FW);
 	g_autofree gchar *sysfsefidir = g_build_filename(sysfsfwdir, "efi", NULL);
 	firmware_bits = fu_uefi_read_file_as_uint64(sysfsefidir, "fw_platform_size");
 	if (firmware_bits == 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_FOUND,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
 			    "%s/fw_platform_size cannot be found",
 			    sysfsefidir);
 		return NULL;
@@ -53,8 +52,8 @@ fu_uefi_bootmgr_get_suffix(GError **error)
 
 	/* this should exist */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_FOUND,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_FOUND,
 		    "%s/fw_platform_size has unknown value %" G_GUINT64_FORMAT,
 		    sysfsefidir,
 		    firmware_bits);
@@ -63,13 +62,13 @@ fu_uefi_bootmgr_get_suffix(GError **error)
 
 /* return without the ESP dir prepended */
 gchar *
-fu_uefi_get_esp_app_path(const gchar *cmd, GError **error)
+fu_uefi_get_esp_app_path(const gchar *esp_path, const gchar *cmd, GError **error)
 {
 	const gchar *suffix = fu_uefi_bootmgr_get_suffix(error);
 	g_autofree gchar *base = NULL;
 	if (suffix == NULL)
 		return NULL;
-	base = fu_uefi_get_esp_path_for_os();
+	base = fu_uefi_get_esp_path_for_os(esp_path);
 	return g_strdup_printf("%s/%s%s.efi", base, cmd, suffix);
 }
 
@@ -87,12 +86,13 @@ fu_uefi_get_esp_app_path(const gchar *cmd, GError **error)
  * Since: 1.8.1
  **/
 gchar *
-fu_uefi_get_built_app_path(const gchar *binary, GError **error)
+fu_uefi_get_built_app_path(FuEfivars *efivars, const gchar *binary, GError **error)
 {
 	const gchar *suffix;
 	g_autofree gchar *prefix = NULL;
 	g_autofree gchar *source_path = NULL;
 	g_autofree gchar *source_path_signed = NULL;
+	gboolean secureboot_enabled = FALSE;
 	gboolean source_path_exists = FALSE;
 	gboolean source_path_signed_exists = FALSE;
 
@@ -107,11 +107,13 @@ fu_uefi_get_built_app_path(const gchar *binary, GError **error)
 	source_path_exists = g_file_test(source_path, G_FILE_TEST_EXISTS);
 	source_path_signed_exists = g_file_test(source_path_signed, G_FILE_TEST_EXISTS);
 
-	if (fu_efivar_secure_boot_enabled(NULL)) {
+	if (!fu_efivars_get_secure_boot(efivars, &secureboot_enabled, error))
+		return NULL;
+	if (secureboot_enabled) {
 		if (!source_path_signed_exists) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_FOUND,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "%s cannot be found",
 				    source_path_signed);
 			return NULL;
@@ -125,8 +127,8 @@ fu_uefi_get_built_app_path(const gchar *binary, GError **error)
 		return g_steal_pointer(&source_path_signed);
 
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_FOUND,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_FOUND,
 		    "%s and %s cannot be found",
 		    source_path,
 		    source_path_signed);
@@ -145,8 +147,8 @@ fu_uefi_get_framebuffer_size(guint32 *width, guint32 *height, GError **error)
 	fbdir = g_build_filename(sysfsdriverdir, "efi-framebuffer", "efi-framebuffer.0", NULL);
 	if (!g_file_test(fbdir, G_FILE_TEST_EXISTS)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "EFI framebuffer not found");
 		return FALSE;
 	}
@@ -154,8 +156,8 @@ fu_uefi_get_framebuffer_size(guint32 *width, guint32 *height, GError **error)
 	width_tmp = fu_uefi_read_file_as_uint64(fbdir, "width");
 	if (width_tmp == 0 || height_tmp == 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "EFI framebuffer has invalid size "
 			    "%" G_GUINT32_FORMAT "x%" G_GUINT32_FORMAT,
 			    width_tmp,
@@ -169,94 +171,60 @@ fu_uefi_get_framebuffer_size(guint32 *width, guint32 *height, GError **error)
 	return TRUE;
 }
 
-gboolean
-fu_uefi_get_bitmap_size(const guint8 *buf,
-			gsize bufsz,
-			guint32 *width,
-			guint32 *height,
-			GError **error)
-{
-	guint32 ui32;
-
-	g_return_val_if_fail(buf != NULL, FALSE);
-
-	/* check header */
-	if (bufsz < 26 || memcmp(buf, "BM", 2) != 0) {
-		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
-				    "invalid BMP header signature");
-		return FALSE;
-	}
-
-	/* starting address */
-	if (!fu_memread_uint32_safe(buf, bufsz, 10, &ui32, G_LITTLE_ENDIAN, error))
-		return FALSE;
-	if (ui32 < 26) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
-			    "BMP header invalid @ %" G_GUINT32_FORMAT "x",
-			    ui32);
-		return FALSE;
-	}
-
-	/* BITMAPINFOHEADER header */
-	if (!fu_memread_uint32_safe(buf, bufsz, 14, &ui32, G_LITTLE_ENDIAN, error))
-		return FALSE;
-	if (ui32 < 26 - 14) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
-			    "BITMAPINFOHEADER invalid @ %" G_GUINT32_FORMAT "x",
-			    ui32);
-		return FALSE;
-	}
-
-	/* dimensions */
-	if (width != NULL) {
-		if (!fu_memread_uint32_safe(buf, bufsz, 18, width, G_LITTLE_ENDIAN, error))
-			return FALSE;
-	}
-	if (height != NULL) {
-		if (!fu_memread_uint32_safe(buf, bufsz, 22, height, G_LITTLE_ENDIAN, error))
-			return FALSE;
-	}
-	return TRUE;
-}
-
-/* return without the ESP dir prepended */
+/**
+ * fu_uefi_get_esp_path_for_os:
+ * @esp_base: The base path of the EFI System Partition (ESP).
+ *
+ * Retrieves the directory structure of the EFI System Partition (ESP) for
+ * the operating system.
+ *
+ * This function constructs and returns the path of the directory to use
+ * within the ESP based on the provided base path.
+ *
+ * Returns: (transfer full): A newly allocated string containing the directory
+ * structure within the ESP for the operating system. The caller is
+ * responsible for freeing the returned string.
+ */
 gchar *
-fu_uefi_get_esp_path_for_os(void)
+fu_uefi_get_esp_path_for_os(const gchar *esp_base)
 {
 #ifndef EFI_OS_DIR
-	const gchar *os_release_id = NULL;
-	const gchar *id_like = NULL;
+	g_autofree gchar *os_release_id = NULL;
+	g_autofree gchar *id_like = NULL;
 	g_autofree gchar *esp_path = NULL;
-	g_autoptr(GError) error_local = NULL;
-	g_autoptr(GHashTable) os_release = fwupd_get_os_release(&error_local);
+	g_autofree gchar *full_path = NULL;
+	g_autofree gchar *systemd_path = NULL;
+	g_autofree gchar *full_systemd_path = NULL;
+
+	/* distro (or user) is using systemd-boot */
+	systemd_path = g_build_filename("EFI", "systemd", NULL);
+	full_systemd_path = g_build_filename(esp_base, systemd_path, NULL);
+	if (g_file_test(full_systemd_path, G_FILE_TEST_IS_DIR))
+		return g_steal_pointer(&systemd_path);
+
 	/* try to lookup /etc/os-release ID key */
-	if (os_release != NULL) {
-		os_release_id = g_hash_table_lookup(os_release, "ID");
-	} else {
-		g_debug("failed to get ID: %s", error_local->message);
-	}
+	os_release_id = g_get_os_info(G_OS_INFO_KEY_ID);
 	if (os_release_id == NULL)
-		os_release_id = "unknown";
+		os_release_id = g_strdup("unknown");
+
 	/* if ID key points at something existing return it */
 	esp_path = g_build_filename("EFI", os_release_id, NULL);
-	if (g_file_test(esp_path, G_FILE_TEST_IS_DIR) || os_release == NULL)
+	full_path = g_build_filename(esp_base, esp_path, NULL);
+	if (g_file_test(full_path, G_FILE_TEST_IS_DIR))
 		return g_steal_pointer(&esp_path);
+
 	/* if ID key doesn't exist, try ID_LIKE */
-	id_like = g_hash_table_lookup(os_release, "ID_LIKE");
+	id_like = g_get_os_info("ID_LIKE");
 	if (id_like != NULL) {
 		g_auto(GStrv) split = g_strsplit(id_like, " ", -1);
 		for (guint i = 0; split[i] != NULL; i++) {
 			g_autofree gchar *id_like_path = g_build_filename("EFI", split[i], NULL);
-			if (g_file_test(id_like_path, G_FILE_TEST_IS_DIR)) {
-				g_debug("using ID_LIKE key from os-release");
-				return g_steal_pointer(&id_like_path);
-			}
+			g_autofree gchar *id_like_full_path =
+			    g_build_filename(esp_base, id_like_path, NULL);
+			if (!g_file_test(id_like_full_path, G_FILE_TEST_IS_DIR))
+				continue;
+			g_debug("using ID_LIKE key from os-release");
+			return g_steal_pointer(&id_like_path);
 		}
 	}
 	return g_steal_pointer(&esp_path);
@@ -275,7 +243,7 @@ fu_uefi_read_file_as_uint64(const gchar *path, const gchar *attr_name)
 
 	if (!g_file_get_contents(fn, &data, NULL, NULL))
 		return 0x0;
-	if (!fu_strtoull(data, &tmp, 0, G_MAXUINT64, &error_local)) {
+	if (!fu_strtoull(data, &tmp, 0, G_MAXUINT64, FU_INTEGER_BASE_AUTO, &error_local)) {
 		g_warning("invalid string specified: %s", error_local->message);
 		return G_MAXUINT64;
 	}

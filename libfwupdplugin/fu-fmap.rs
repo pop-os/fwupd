@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(New, ValidateBytes, ParseBytes)]
-struct Fmap {
+#[derive(New, ValidateStream, ParseStream)]
+struct FuStructFmap {
     signature: [char; 8] == "__FMAP__",
     ver_major: u8 = 0x1,
     ver_minor: u8 = 0x1,
@@ -11,8 +11,9 @@ struct Fmap {
     name: [char; 32],
     nareas: u16le,		// number of areas
 }
-#[derive(New, ParseBytes)]
-struct FmapArea {		// area of volatile and static regions
+
+#[derive(New, ParseStream)]
+struct FuStructFmapArea {		// area of volatile and static regions
     offset: u32le,		// offset relative to base
     size: u32le,		// bytes
     name: [char; 32],	// descriptive name

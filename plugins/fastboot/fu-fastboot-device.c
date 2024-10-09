@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -30,22 +30,21 @@ static void
 fu_fastboot_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuFastbootDevice *self = FU_FASTBOOT_DEVICE(device);
-	fu_string_append_kx(str, idt, "BlockSize", self->blocksz);
-	fu_string_append_kb(str, idt, "Secure", self->secure);
+	fwupd_codec_string_append_hex(str, idt, "BlockSize", self->blocksz);
+	fwupd_codec_string_append_bool(str, idt, "Secure", self->secure);
 }
 
 static gboolean
 fu_fastboot_device_probe(FuDevice *device, GError **error)
 {
 	FuFastbootDevice *self = FU_FASTBOOT_DEVICE(device);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
-	g_autoptr(GUsbInterface) intf = NULL;
+	g_autoptr(FuUsbInterface) intf = NULL;
 
 	/* find the correct fastboot interface */
-	intf = g_usb_device_get_interface(usb_device, 0xff, 0x42, 0x03, error);
+	intf = fu_usb_device_get_interface(FU_USB_DEVICE(self), 0xff, 0x42, 0x03, error);
 	if (intf == NULL)
 		return FALSE;
-	fu_usb_device_add_interface(FU_USB_DEVICE(self), g_usb_interface_get_number(intf));
+	fu_usb_device_add_interface(FU_USB_DEVICE(self), fu_usb_interface_get_number(intf));
 	return TRUE;
 }
 
@@ -53,7 +52,6 @@ static gboolean
 fu_fastboot_device_write(FuDevice *device, const guint8 *buf, gsize buflen, GError **error)
 {
 	FuFastbootDevice *self = FU_FASTBOOT_DEVICE(device);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	gboolean ret;
 	gsize actual_len = 0;
 	g_autofree guint8 *buf2 = NULL;
@@ -63,14 +61,14 @@ fu_fastboot_device_write(FuDevice *device, const guint8 *buf, gsize buflen, GErr
 	buf2 = fu_memdup_safe(buf, buflen, error);
 	if (buf2 == NULL)
 		return FALSE;
-	ret = g_usb_device_bulk_transfer(usb_device,
-					 FASTBOOT_EP_OUT,
-					 buf2,
-					 buflen,
-					 &actual_len,
-					 FASTBOOT_TRANSACTION_TIMEOUT,
-					 NULL,
-					 error);
+	ret = fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					  FASTBOOT_EP_OUT,
+					  buf2,
+					  buflen,
+					  &actual_len,
+					  FASTBOOT_TRANSACTION_TIMEOUT,
+					  NULL,
+					  error);
 
 	/* give device some time to handle action */
 	fu_device_sleep(device, self->operation_delay);
@@ -81,8 +79,8 @@ fu_fastboot_device_write(FuDevice *device, const guint8 *buf, gsize buflen, GErr
 	}
 	if (actual_len != buflen) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only wrote %" G_GSIZE_FORMAT "bytes",
 			    actual_len);
 		return FALSE;
@@ -96,8 +94,8 @@ fu_fastboot_device_writestr(FuDevice *device, const gchar *str, GError **error)
 	gsize buflen = strlen(str);
 	if (buflen > FASTBOOT_CMD_BUFSZ - 4) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "fastboot limits writes to %i bytes",
 			    FASTBOOT_CMD_BUFSZ - 4);
 		return FALSE;
@@ -118,7 +116,6 @@ fu_fastboot_device_read(FuDevice *device,
 			GError **error)
 {
 	FuFastbootDevice *self = FU_FASTBOOT_DEVICE(device);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	guint retries = 1;
 
 	/* these commands may return INFO or take some time to complete */
@@ -132,21 +129,19 @@ fu_fastboot_device_read(FuDevice *device,
 		g_autofree gchar *tmp = NULL;
 		g_autoptr(GError) error_local = NULL;
 
-		ret = g_usb_device_bulk_transfer(usb_device,
-						 FASTBOOT_EP_IN,
-						 buf,
-						 sizeof(buf),
-						 &actual_len,
-						 FASTBOOT_TRANSACTION_TIMEOUT,
-						 NULL,
-						 &error_local);
+		ret = fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+						  FASTBOOT_EP_IN,
+						  buf,
+						  sizeof(buf),
+						  &actual_len,
+						  FASTBOOT_TRANSACTION_TIMEOUT,
+						  NULL,
+						  &error_local);
 		/* give device some time to handle action */
 		fu_device_sleep(device, self->operation_delay);
 
 		if (!ret) {
-			if (g_error_matches(error_local,
-					    G_USB_DEVICE_ERROR,
-					    G_USB_DEVICE_ERROR_TIMED_OUT)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT)) {
 				g_debug("ignoring %s", error_local->message);
 				continue;
 			}
@@ -158,8 +153,8 @@ fu_fastboot_device_read(FuDevice *device,
 		fu_dump_raw(G_LOG_DOMAIN, "read", buf, actual_len);
 		if (actual_len < 4) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "only read %" G_GSIZE_FORMAT "bytes",
 				    actual_len);
 			return FALSE;
@@ -187,8 +182,8 @@ fu_fastboot_device_read(FuDevice *device,
 		/* failure */
 		if (memcmp(buf, "FAIL", 4) == 0) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_READ,
 				    "failed to read response: %s",
 				    tmp);
 			return FALSE;
@@ -196,14 +191,14 @@ fu_fastboot_device_read(FuDevice *device,
 
 		/* unknown failure */
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
 				    "failed to read response");
 		return FALSE;
 	}
 
 	/* we timed out a *lot* */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no response to read");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT, "no response to read");
 	return FALSE;
 }
 
@@ -275,7 +270,12 @@ fu_fastboot_device_download(FuDevice *device, GBytes *fw, FuProgress *progress, 
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_fastboot_device_write(device,
 					      fu_chunk_get_data(chk),
 					      fu_chunk_get_data_sz(chk),
@@ -390,8 +390,8 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 	/* oem */
 	if (g_strcmp0(op, "oem") == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "OEM commands are not supported");
 		return FALSE;
 	}
@@ -405,8 +405,8 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 		if (var == NULL) {
 			tmp = xb_node_export(part, XB_NODE_EXPORT_FLAG_NONE, NULL);
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "required var for part: %s",
 				    tmp);
 			return FALSE;
@@ -417,8 +417,8 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 			return FALSE;
 		if (tmp == NULL || tmp[0] == '\0') {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to getvar %s",
 				    var);
 			return FALSE;
@@ -436,8 +436,8 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 			g_autofree gchar *tmp = NULL;
 			tmp = xb_node_export(part, XB_NODE_EXPORT_FLAG_NONE, NULL);
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "required partition for part: %s",
 				    tmp);
 			return FALSE;
@@ -469,8 +469,8 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 			g_autofree gchar *tmp = NULL;
 			tmp = xb_node_export(part, XB_NODE_EXPORT_FLAG_NONE, NULL);
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "required partition and filename: %s",
 				    tmp);
 			return FALSE;
@@ -495,8 +495,8 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 			csum_actual = g_compute_checksum_for_bytes(csum_kinds[i].kind, data);
 			if (g_strcmp0(csum, csum_actual) != 0) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "%s invalid, expected %s, got %s",
 					    filename,
 					    csum,
@@ -523,7 +523,7 @@ fu_fastboot_device_write_motorola_part(FuDevice *device,
 	}
 
 	/* unknown */
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "unknown operation %s", op);
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "unknown operation %s", op);
 	return FALSE;
 }
 
@@ -633,7 +633,10 @@ fu_fastboot_device_write_firmware(FuDevice *device,
 		return fu_fastboot_device_write_motorola(device, firmware, progress, error);
 
 	/* not supported */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "manifest not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "manifest not supported");
 	return FALSE;
 }
 
@@ -648,20 +651,23 @@ fu_fastboot_device_set_quirk_kv(FuDevice *device,
 
 	/* load from quirks */
 	if (g_strcmp0(key, "FastbootBlockSize") == 0) {
-		if (!fu_strtoull(value, &tmp, 0x40, 0x100000, error))
+		if (!fu_strtoull(value, &tmp, 0x40, 0x100000, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->blocksz = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "FastbootOperationDelay") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXSIZE, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXSIZE, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->operation_delay = tmp;
 		return TRUE;
 	}
 
 	/* failed */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -699,8 +705,8 @@ fu_fastboot_device_init(FuFastbootDevice *self)
 	fu_device_add_protocol(FU_DEVICE(self), "com.google.fastboot");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ADD_COUNTERPART_GUIDS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_remove_delay(FU_DEVICE(self), FASTBOOT_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_ARCHIVE_FIRMWARE);
 }
@@ -708,12 +714,12 @@ fu_fastboot_device_init(FuFastbootDevice *self)
 static void
 fu_fastboot_device_class_init(FuFastbootDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->probe = fu_fastboot_device_probe;
-	klass_device->setup = fu_fastboot_device_setup;
-	klass_device->write_firmware = fu_fastboot_device_write_firmware;
-	klass_device->attach = fu_fastboot_device_attach;
-	klass_device->to_string = fu_fastboot_device_to_string;
-	klass_device->set_quirk_kv = fu_fastboot_device_set_quirk_kv;
-	klass_device->set_progress = fu_fastboot_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->probe = fu_fastboot_device_probe;
+	device_class->setup = fu_fastboot_device_setup;
+	device_class->write_firmware = fu_fastboot_device_write_firmware;
+	device_class->attach = fu_fastboot_device_attach;
+	device_class->to_string = fu_fastboot_device_to_string;
+	device_class->set_quirk_kv = fu_fastboot_device_set_quirk_kv;
+	device_class->set_progress = fu_fastboot_device_set_progress;
 }

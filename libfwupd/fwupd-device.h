@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -31,8 +31,6 @@ struct _FwupdDeviceClass {
 
 FwupdDevice *
 fwupd_device_new(void);
-gchar *
-fwupd_device_to_string(FwupdDevice *self) G_GNUC_NON_NULL(1);
 
 const gchar *
 fwupd_device_get_id(FwupdDevice *self) G_GNUC_NON_NULL(1);
@@ -74,10 +72,6 @@ const gchar *
 fwupd_device_get_branch(FwupdDevice *self) G_GNUC_NON_NULL(1);
 void
 fwupd_device_set_branch(FwupdDevice *self, const gchar *branch) G_GNUC_NON_NULL(1);
-const gchar *
-fwupd_device_get_description(FwupdDevice *self) G_GNUC_NON_NULL(1);
-void
-fwupd_device_set_description(FwupdDevice *self, const gchar *description) G_GNUC_NON_NULL(1);
 const gchar *
 fwupd_device_get_version(FwupdDevice *self) G_GNUC_NON_NULL(1);
 void
@@ -185,12 +179,6 @@ const gchar *
 fwupd_device_get_plugin(FwupdDevice *self) G_GNUC_NON_NULL(1);
 void
 fwupd_device_set_plugin(FwupdDevice *self, const gchar *plugin) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_device_get_protocols)
-const gchar *
-fwupd_device_get_protocol(FwupdDevice *self) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_device_add_protocol)
-void
-fwupd_device_set_protocol(FwupdDevice *self, const gchar *protocol) G_GNUC_NON_NULL(1);
 void
 fwupd_device_add_protocol(FwupdDevice *self, const gchar *protocol) G_GNUC_NON_NULL(1, 2);
 gboolean
@@ -202,12 +190,6 @@ const gchar *
 fwupd_device_get_vendor(FwupdDevice *self) G_GNUC_NON_NULL(1);
 void
 fwupd_device_set_vendor(FwupdDevice *self, const gchar *vendor) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_device_get_vendor_ids)
-const gchar *
-fwupd_device_get_vendor_id(FwupdDevice *self) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_device_add_vendor_id)
-void
-fwupd_device_set_vendor_id(FwupdDevice *self, const gchar *vendor_id) G_GNUC_NON_NULL(1);
 void
 fwupd_device_add_vendor_id(FwupdDevice *self, const gchar *vendor_id) G_GNUC_NON_NULL(1, 2);
 gboolean
@@ -251,14 +233,6 @@ const gchar *
 fwupd_device_get_update_error(FwupdDevice *self) G_GNUC_NON_NULL(1);
 void
 fwupd_device_set_update_error(FwupdDevice *self, const gchar *update_error) G_GNUC_NON_NULL(1);
-const gchar *
-fwupd_device_get_update_message(FwupdDevice *self) G_GNUC_NON_NULL(1);
-void
-fwupd_device_set_update_message(FwupdDevice *self, const gchar *update_message) G_GNUC_NON_NULL(1);
-const gchar *
-fwupd_device_get_update_image(FwupdDevice *self) G_GNUC_NON_NULL(1);
-void
-fwupd_device_set_update_image(FwupdDevice *self, const gchar *update_image) G_GNUC_NON_NULL(1);
 FwupdStatus
 fwupd_device_get_status(FwupdDevice *self) G_GNUC_NON_NULL(1);
 void
@@ -279,10 +253,6 @@ gboolean
 fwupd_device_match_flags(FwupdDevice *self, FwupdDeviceFlags include, FwupdDeviceFlags exclude)
     G_GNUC_NON_NULL(1);
 
-FwupdDevice *
-fwupd_device_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
-GPtrArray *
-fwupd_device_array_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
 void
 fwupd_device_array_ensure_parents(GPtrArray *devices) G_GNUC_NON_NULL(1);
 GPtrArray *

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Benson Leung <bleung@chromium.org>
+ * Copyright 2020 Benson Leung <bleung@chromium.org>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -13,7 +13,6 @@
 
 struct _FuCrosEcFirmware {
 	FuFmapFirmware parent_instance;
-	struct cros_ec_version version;
 	GPtrArray *sections;
 };
 
@@ -31,14 +30,14 @@ fu_cros_ec_firmware_pick_sections(FuCrosEcFirmware *self, guint32 writeable_offs
 		if (offset != writeable_offset)
 			continue;
 
-		section->ustatus = FU_CROS_EC_FW_NEEDED;
+		section->ustatus = FU_CROS_EC_FIRMWARE_UPGRADE_STATUS_NEEDED;
 		found = TRUE;
 	}
 
 	if (!found) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "no writeable section found with offset: 0x%x",
 			    writeable_offset);
 		return FALSE;
@@ -55,14 +54,14 @@ fu_cros_ec_firmware_get_needed_sections(FuCrosEcFirmware *self, GError **error)
 
 	for (guint i = 0; i < self->sections->len; i++) {
 		FuCrosEcFirmwareSection *section = g_ptr_array_index(self->sections, i);
-		if (section->ustatus != FU_CROS_EC_FW_NEEDED)
+		if (section->ustatus != FU_CROS_EC_FIRMWARE_UPGRADE_STATUS_NEEDED)
 			continue;
 		g_ptr_array_add(needed_sections, section);
 	}
 	if (needed_sections->len == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "no needed sections");
 		return NULL;
 	}
@@ -73,7 +72,7 @@ fu_cros_ec_firmware_get_needed_sections(FuCrosEcFirmware *self, GError **error)
 
 static gboolean
 fu_cros_ec_firmware_parse(FuFirmware *firmware,
-			  GBytes *fw,
+			  GInputStream *stream,
 			  gsize offset,
 			  FwupdInstallFlags flags,
 			  GError **error)
@@ -86,6 +85,7 @@ fu_cros_ec_firmware_parse(FuFirmware *firmware,
 		FuCrosEcFirmwareSection *section = g_ptr_array_index(self->sections, i);
 		const gchar *fmap_name;
 		const gchar *fmap_fwid_name;
+		g_autoptr(FuCrosEcVersion) version = NULL;
 		g_autoptr(FuFirmware) img = NULL;
 		g_autoptr(FuFirmware) fwid_img = NULL;
 		g_autoptr(GBytes) payload_bytes = NULL;
@@ -100,8 +100,8 @@ fu_cros_ec_firmware_parse(FuFirmware *firmware,
 			fmap_fwid_name = "RW_FWID";
 		} else {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "incorrect section name");
 			return FALSE;
 		}
@@ -142,7 +142,8 @@ fu_cros_ec_firmware_parse(FuFirmware *firmware,
 		fu_firmware_set_version(img, section->raw_version);
 		section->image_idx = fu_firmware_get_idx(img);
 
-		if (!fu_cros_ec_parse_version(section->raw_version, &section->version, error)) {
+		version = fu_cros_ec_version_parse(section->raw_version, error);
+		if (version == NULL) {
 			g_prefix_error(error,
 				       "failed parsing firmware's version: %32s: ",
 				       section->raw_version);
@@ -150,15 +151,15 @@ fu_cros_ec_firmware_parse(FuFirmware *firmware,
 		}
 
 		if (rw) {
-			if (!fu_cros_ec_parse_version(section->raw_version,
-						      &self->version,
-						      error)) {
+			g_autoptr(FuCrosEcVersion) version_rw = NULL;
+			version_rw = fu_cros_ec_version_parse(section->raw_version, error);
+			if (version_rw == NULL) {
 				g_prefix_error(error,
 					       "failed parsing firmware's version: %32s: ",
 					       section->raw_version);
 				return FALSE;
 			}
-			fu_firmware_set_version(firmware, self->version.triplet);
+			fu_firmware_set_version(firmware, version_rw->triplet);
 		}
 	}
 
@@ -192,8 +193,8 @@ static void
 fu_cros_ec_firmware_class_init(FuCrosEcFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFmapFirmwareClass *klass_firmware = FU_FMAP_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_cros_ec_firmware_parse;
+	FuFmapFirmwareClass *firmware_class = FU_FMAP_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_cros_ec_firmware_parse;
 	object_class->finalize = fu_cros_ec_firmware_finalize;
 }
 

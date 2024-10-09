@@ -1,7 +1,7 @@
 project('fwupd', 'c',
-  version: '1.9.25',
+  version: '2.0.0',
   license: 'LGPL-2.1-or-later',
-  meson_version: '>=0.62.0',
+  meson_version: '>=1.3.0',
   default_options: ['warning_level=2', 'c_std=c11'],
 )
 
@@ -26,10 +26,8 @@ if git.found()
     source_version = fwupd_version
   endif
   tag = run_command([git, 'describe', '--exact-match'], check: false).returncode() == 0
-else
-  source_version = fwupd_version
+  conf.set_quoted('SOURCE_VERSION', source_version)
 endif
-conf.set_quoted('SOURCE_VERSION', source_version)
 
 # libtool versioning - this applies to libfwupd
 #
@@ -48,7 +46,7 @@ conf.set_quoted('SOURCE_VERSION', source_version)
 # - If the interface is the same as the previous version, but bugs are
 #   fixed, change:
 #      REVISION += 1
-libfwupd_lt_current = '2'
+libfwupd_lt_current = '3'
 libfwupd_lt_revision = '0'
 libfwupd_lt_age = '0'
 libfwupd_lt_version = '@0@.@1@.@2@'.format(libfwupd_lt_current, libfwupd_lt_age, libfwupd_lt_revision)
@@ -66,6 +64,7 @@ warning_flags = [
   '-Wduplicated-branches',
   '-Wduplicated-cond',
   '-Wempty-body',
+  '-Wfloat-equal',
   '-Wformat=2',
   '-Wformat-nonliteral',
   '-Wformat-security',
@@ -73,6 +72,7 @@ warning_flags = [
   '-Wignored-qualifiers',
   '-Wimplicit-function-declaration',
   '-Wimplicit-int',
+  '-Wincompatible-pointer-types',
   '-Winit-self',
   '-Wint-conversion',
   '-Wlogical-op',
@@ -201,18 +201,17 @@ mandir = join_paths(prefix, get_option('mandir'))
 localedir = join_paths(prefix, get_option('localedir'))
 
 diffcmd = find_program('diff')
-gio = dependency('gio-2.0', version: '>= 2.68.0')
-giounix = dependency('gio-unix-2.0', version: '>= 2.68.0', required: false)
+gio = dependency('gio-2.0', version: '>= 2.72.0')
+giounix = dependency('gio-unix-2.0', version: '>= 2.72.0', required: false)
 if giounix.found()
   conf.set('HAVE_GIO_UNIX', '1')
 endif
 gmodule = dependency('gmodule-2.0')
-if build_standalone
-gudev = dependency('gudev-1.0', version: '>= 232',
-                    required: get_option('gudev').disable_auto_if(host_machine.system() != 'linux'))
-if gudev.found()
-  conf.set('HAVE_GUDEV', '1')
+enable_udev = get_option('udev').disable_auto_if(host_machine.system() != 'linux').allowed()
+if enable_udev
+  conf.set('HAVE_UDEV', '1')
 endif
+if build_standalone
 bluez = get_option('bluez').disable_auto_if(host_machine.system() != 'linux')
 if bluez.allowed()
   conf.set('HAVE_BLUEZ', '1')
@@ -222,28 +221,34 @@ hsi = get_option('hsi').disable_auto_if(host_machine.system() != 'linux').disabl
 if hsi
   conf.set('HAVE_HSI', '1')
 endif
-libxmlb = dependency('xmlb', version: '>= 0.3.6', fallback: ['libxmlb', 'libxmlb_dep'])
-gusb = dependency('gusb', version: '>= 0.3.8', fallback: ['gusb', 'gusb_dep'], required: get_option('gusb'))
-if libxmlb.version().version_compare('>= 0.3.18')
-  if libxmlb.get_variable('zstd') == 'true'
-    lvfs_metadata_format = 'zst'
-  elif libxmlb.get_variable('lzma') == 'true'
-    lvfs_metadata_format = 'xz'
-  else
-    lvfs_metadata_format = 'gz'
-  endif
-else
+libxmlb = dependency('xmlb', version: '>= 0.3.19', fallback: ['libxmlb', 'libxmlb_dep'])
+if libxmlb.get_variable('zstd') == 'true'
+  lvfs_metadata_format = 'zst'
+elif libxmlb.get_variable('lzma') == 'true'
   lvfs_metadata_format = 'xz'
+else
+  lvfs_metadata_format = 'gz'
 endif
 conf.set_quoted('FU_LVFS_METADATA_FORMAT', lvfs_metadata_format)
-if gusb.found()
-  conf.set('HAVE_GUSB', '1')
+
+# FreeBSD is missing some libusb symbols
+libusb = dependency('libusb-1.0', version : '>= 0.1.12')
+conf.set_quoted('LIBUSB_VERSION', libusb.version())
+if cc.has_header_symbol('libusb.h', 'libusb_set_option', dependencies: libusb)
+  conf.set('HAVE_LIBUSB_SET_OPTION', '1')
 endif
+if cc.has_header_symbol('libusb.h', 'libusb_init_context', dependencies: libusb)
+  conf.set('HAVE_LIBUSB_INIT_CONTEXT', '1')
+endif
+if cc.has_header_symbol('libusb.h', 'libusb_get_parent', dependencies: libusb)
+  conf.set('HAVE_LIBUSB_GET_PARENT', '1')
+endif
+
 sqlite = dependency('sqlite3', required: get_option('sqlite'))
 if sqlite.found()
   conf.set('HAVE_SQLITE', '1')
 endif
-passim = dependency('passim', version: '>= 0.1.5', required: get_option('passim'), fallback: ['passim', 'passim_dep'])
+passim = dependency('passim', version: '>= 0.1.6', required: get_option('passim'), fallback: ['passim', 'passim_dep'])
 if passim.found()
   conf.set('HAVE_PASSIM', '1')
 endif
@@ -262,29 +267,48 @@ libcurl = dependency('libcurl', version: '>= 7.62.0', required: get_option('curl
 if libcurl.found()
   conf.set('HAVE_LIBCURL', '1')
 endif
-polkit = dependency('polkit-gobject-1', version: '>= 0.103',
+libdrm = dependency('libdrm', required: false)
+if libdrm.found()
+  conf.set('HAVE_LIBDRM' , '1')
+endif
+polkit = dependency('polkit-gobject-1', version: '>= 0.114',
          required: get_option('polkit').disable_auto_if(host_machine.system() != 'linux'))
 if polkit.found()
   conf.set('HAVE_POLKIT', '1')
-  if polkit.version().version_compare('>= 0.114')
-    conf.set('HAVE_POLKIT_0_114', '1')
-  endif
   conf.set_quoted ('POLKIT_ACTIONDIR', polkit.get_variable(pkgconfig: 'actiondir'))
 endif
 if build_daemon
   if not polkit.found()
     warning('Polkit is disabled, the daemon will allow ALL client actions')
   endif
-  if gudev.found()
-    udevdir = get_option('udevdir')
-    if udevdir == '' and host_machine.system() == 'linux'
-      udev = dependency('udev')
-      udevdir = udev.get_variable(pkgconfig: 'udevdir')
-    endif
-  endif
 endif
 libm = cc.find_library('m', required: false)
 zlib = dependency('zlib')
+
+fs = import('fs')
+
+# look for usb.ids in both of the Debian and Fedora locations,
+# and fall back to the system datadir in case we're building in a venv or prefix
+vendor_ids_dir = get_option('vendor_ids_dir')
+if vendor_ids_dir == ''
+  vendor_ids_dir = join_paths(datadir, 'misc')
+  if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
+    vendor_ids_dir = join_paths(datadir, 'hwdata')
+  endif
+  if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
+    vendor_ids_dir = '/usr/share/hwdata'
+  endif
+  if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
+    vendor_ids_dir = '/usr/share/misc'
+  endif
+  if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
+    vendor_ids_dir = '/usr/local/var/homebrew/linked/usb.ids/share/misc'
+  endif
+  if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
+    error('could not auto-detect -Dvendor_ids_dir=')
+  endif
+endif
+conf.set_quoted ('FWUPD_DATADIR_VENDOR_IDS', vendor_ids_dir)
 
 bashcomp = dependency('bash-completion', required: false)
 python3path = get_option('python')
@@ -328,11 +352,6 @@ endif
 
 libsystemd = dependency('libsystemd',
                         required: get_option('systemd').disable_auto_if(host_machine.system() != 'linux'))
-offline = get_option('offline').require(libsystemd.found(),
-    error_message: '-Doffline=enabled requires systemd')
-if offline.allowed()
-  conf.set('HAVE_FWUPDOFFLINE', '1')
-endif
 
 if cc.has_header('sys/utsname.h')
   conf.set('HAVE_UTSNAME_H', '1')
@@ -342,6 +361,9 @@ if cc.has_header('sys/inotify.h')
 endif
 if cc.has_header('sys/ioctl.h')
   conf.set('HAVE_IOCTL_H', '1')
+endif
+if cc.has_header('termios.h')
+  conf.set('HAVE_TERMIOS_H', '1')
 endif
 if cc.has_header('errno.h')
   conf.set('HAVE_ERRNO_H', '1')
@@ -361,8 +383,14 @@ endif
 if cc.has_header('linux/ethtool.h')
   conf.set('HAVE_ETHTOOL_H', '1')
 endif
+if cc.has_header('linux/i2c-dev.h')
+  conf.set('HAVE_I2C_DEV_H', '1')
+endif
 if cc.has_header('linux/mei.h')
   conf.set('HAVE_MEI_H', '1')
+endif
+if cc.has_header('linux/videodev2.h')
+  conf.set('HAVE_VIDEODEV2_H', '1')
 endif
 if cc.has_header('mtd/mtd-user.h')
   conf.set('HAVE_MTD_USER_H', '1')
@@ -467,16 +495,16 @@ if build_standalone
   conf.set_quoted('EFI_MACHINE_TYPE_NAME', EFI_MACHINE_TYPE_NAME)
 endif
 
-umockdev = dependency('umockdev-1.0', required: false)
-
+flashrom = get_option('plugin_flashrom').disable_auto_if(host_machine.system() != 'linux')
+allow_flashrom = flashrom.allowed()
 if build_standalone
-  libflashrom = dependency('flashrom', 
-                            fallback: ['flashrom', 'flashrom_dep'], 
-                            required: get_option('plugin_flashrom').disable_auto_if(host_machine.system() != 'linux'))
+  libflashrom = dependency('flashrom',
+                            fallback: ['flashrom', 'flashrom_dep'],
+                            required: flashrom)
 endif
 
 if libsystemd.found()
-  systemd = dependency('systemd', version: '>= 211', required: get_option('systemd'))
+  systemd = dependency('systemd', version: '>= 249', required: get_option('systemd'))
   conf.set('HAVE_SYSTEMD' , '1')
   conf.set('HAVE_LOGIND' , '1')
   systemd_root_prefix = get_option('systemd_root_prefix')
@@ -487,13 +515,9 @@ if libsystemd.found()
     systemd_sysusers_dir = systemd.get_variable(pkgconfig: 'sysusersdir')
   else
     systemdunitdir = systemd.get_variable(pkgconfig: 'systemdsystemunitdir', pkgconfig_define: ['rootprefix', systemd_root_prefix])
-    systemd_root_prefix_varname = 'root_prefix'
-    if systemd.version().version_compare('< 246')
-      systemd_root_prefix_varname = 'rootprefix'
-    endif
-    systemd_shutdown_dir = systemd.get_variable(pkgconfig: 'systemdshutdowndir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
-    systemd_modules_load_dir = systemd.get_variable(pkgconfig: 'modulesloaddir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
-    systemd_sysusers_dir = systemd.get_variable(pkgconfig: 'sysusersdir', pkgconfig_define: [systemd_root_prefix_varname, systemd_root_prefix])
+    systemd_shutdown_dir = systemd.get_variable(pkgconfig: 'systemdshutdowndir', pkgconfig_define: ['root_prefix', systemd_root_prefix])
+    systemd_modules_load_dir = systemd.get_variable(pkgconfig: 'modulesloaddir', pkgconfig_define: ['root_prefix', systemd_root_prefix])
+    systemd_sysusers_dir = systemd.get_variable(pkgconfig: 'sysusersdir', pkgconfig_define: ['root_prefix', systemd_root_prefix])
   endif
 endif
 
@@ -510,11 +534,6 @@ endif
 supported_build = get_option('supported_build').disable_auto_if(not tag).allowed()
 if supported_build
     conf.set('SUPPORTED_BUILD', '1')
-endif
-
-# compatibility with behavior in < kernel 6.3
-if get_option('thinklmi_compat')
-  conf.set('FU_THINKLMI_COMPAT', '1')
 endif
 
 gnome = import('gnome')
@@ -536,11 +555,6 @@ else
   libdir_pkg = join_paths(libdir, 'fwupd-@0@'.format(fwupd_version))
 endif
 conf.set_quoted('FWUPD_LIBDIR_PKG', libdir_pkg)
-endif
-
-# sanity check, otherwise there is not point building
-if build_standalone and host_machine.system() == 'windows' and not gusb.found()
-  error('gusb feature is required for Windows build')
 endif
 
 conf.set_quoted('GETTEXT_PACKAGE', meson.project_name())
@@ -582,7 +596,7 @@ gidocgen_dep = dependency('gi-docgen',
   required: get_option('docs'),
 )
 gidocgen_app = find_program('gi-docgen', required: gidocgen_dep.found())
-build_docs = gidocgen_dep.found() and gidocgen_app.found()
+build_docs = gidocgen_dep.found() and gidocgen_app.found() and introspection.allowed()
 
 if build_docs and gidocgen_dep.version().version_compare('< 2022.2')
   markdown_version = run_command(
@@ -621,6 +635,24 @@ rustgen = generator(python3,
     '@OUTPUT1@',
   ],
 )
+
+dbusmock = run_command(
+  [python3, '-c', 'import dbusmock; print(dbusmock.__version__)'],
+  check: false,
+)
+
+umockdev_integration_tests = get_option('umockdev_tests')                     \
+                              .disable_auto_if(not get_option('tests'))       \
+                              .disable_auto_if(not introspection.allowed())   \
+                              .disable_auto_if(not run_sanitize_unsafe_tests) \
+                              .disable_auto_if(dbusmock.returncode() != 0)
+umockdev = dependency('umockdev-1.0', required: get_option('umockdev_tests'))
+
+if dbusmock.returncode() != 0 and get_option('umockdev_tests').allowed()
+  warning('python dbusmock not found, umockdev tests will be disabled')
+endif
+
+allow_uefi_capsule = get_option('plugin_uefi_capsule').disable_auto_if(host_machine.system() not in ['linux', 'freebsd']).allowed()
 
 subdir('generate-build')
 subdir('libfwupd')
@@ -665,13 +697,6 @@ if build_standalone
   )
 endif
 
-if build_daemon and libsystemd.found() and offline.allowed()
-  install_symlink('fwupd-offline-update.service',
-    install_dir: join_paths(systemdunitdir, 'system-update.target.wants'),
-    pointing_to: join_paths('..', 'fwupd-offline-update.service')
-  )
-endif
-
 if libsystemd.found()
   summary({
     'systemd_unit_user': get_option('systemd_unit_user'),
@@ -691,6 +716,7 @@ summary({
   'cbor': cbor,
   'consolekit': consolekit,
   'dbus_socket_address': get_option('dbus_socket_address'),
+  'vendor_ids_dir': vendor_ids_dir,
   'docs': build_docs,
   'elogind': elogind,
   'gnutls': gnutls,
@@ -702,23 +728,33 @@ summary({
   'supported_build': supported_build,
   'static_analysis': static_analysis,
   'tests': get_option('tests'),
+  'umockdev_tests': umockdev_integration_tests.allowed(),
 }, section: 'project features')
 
 if build_daemon
   summary({
     'bluez': bluez.allowed(),
-    'compat_cli': get_option('compat_cli'),
-    'gusb': gusb,
-    'gudev': gudev,
+    'libusb': libusb,
+    'udev': enable_udev,
     'hsi': hsi,
     'lvfs_metadata_format': lvfs_metadata_format,
     'libarchive': libarchive.found(),
-    'offline': offline.allowed(),
     'passim': passim,
     'sqlite': sqlite,
-    'thinklmi_compat': get_option('thinklmi_compat'),
     'GPG support': supported_gpg,
     'PKCS7 support': supported_pkcs7,
   }, section: 'daemon features')
-  summary(plugins, section: 'plugins')
+  en=[]
+  dis=[]
+  foreach plugin: plugins.keys()
+    if plugins[plugin]
+      en += plugin
+    else
+      dis += plugin
+    endif
+  endforeach
+  summary({
+    'enabled': ', '.join(en),
+    'disabled': ', '.join(dis),
+  }, section: 'plugins')
 endif

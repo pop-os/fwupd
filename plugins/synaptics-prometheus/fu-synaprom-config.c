@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2019 Synaptics Inc
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Synaptics Inc
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -59,8 +59,8 @@ fu_synaprom_config_setup(FuDevice *device, GError **error)
 	if (reply->len < FU_STRUCT_SYNAPROM_REPLY_IOTA_FIND_HDR_SIZE +
 			     FU_STRUCT_SYNAPROM_IOTA_CONFIG_VERSION_SIZE) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "CFG return data invalid size: 0x%04x",
 			    reply->len);
 		return FALSE;
@@ -71,8 +71,8 @@ fu_synaprom_config_setup(FuDevice *device, GError **error)
 	if (fu_struct_synaprom_reply_iota_find_hdr_get_itype(st_hdr) !=
 	    FU_SYNAPROM_IOTA_ITYPE_CONFIG_VERSION) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "CFG iota had invalid itype: 0x%04x",
 			    fu_struct_synaprom_reply_iota_find_hdr_get_itype(st_hdr));
 		return FALSE;
@@ -106,15 +106,17 @@ fu_synaprom_config_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_synaprom_config_prepare_firmware(FuDevice *device,
-				    GBytes *fw,
+				    GInputStream *stream,
+				    FuProgress *progress,
 				    FwupdInstallFlags flags,
 				    GError **error)
 {
 	FuSynapromConfig *self = FU_SYNAPROM_CONFIG(device);
 	FuDevice *parent = fu_device_get_parent(device);
 	g_autoptr(GByteArray) st_hdr = NULL;
-	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GInputStream) stream_hdr = NULL;
 	g_autoptr(FuFirmware) firmware = fu_synaprom_firmware_new();
+	g_autoptr(FuFirmware) img_hdr = NULL;
 
 	if (fu_synaprom_device_get_product_type(FU_SYNAPROM_DEVICE(parent)) ==
 	    FU_SYNAPROM_PRODUCT_TYPE_TRITON) {
@@ -124,14 +126,17 @@ fu_synaprom_config_prepare_firmware(FuDevice *device,
 	}
 
 	/* parse the firmware */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 
 	/* check the update header product and version */
-	blob = fu_firmware_get_image_by_id_bytes(firmware, "cfg-update-header", error);
-	if (blob == NULL)
+	img_hdr = fu_firmware_get_image_by_id(firmware, "cfg-update-header", error);
+	if (img_hdr == NULL)
 		return NULL;
-	st_hdr = fu_struct_synaprom_cfg_hdr_parse_bytes(blob, 0x0, error);
+	stream_hdr = fu_firmware_get_stream(img_hdr, error);
+	if (stream_hdr == NULL)
+		return NULL;
+	st_hdr = fu_struct_synaprom_cfg_hdr_parse_stream(stream_hdr, 0x0, error);
 	if (st_hdr == NULL) {
 		g_prefix_error(error, "CFG metadata is invalid: ");
 		return NULL;
@@ -144,8 +149,8 @@ fu_synaprom_config_prepare_firmware(FuDevice *device,
 				  (guint)FU_SYNAPROM_PRODUCT_PROMETHEUS);
 		} else {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "CFG metadata not compatible, "
 				    "got 0x%02x expected 0x%02x",
 				    fu_struct_synaprom_cfg_hdr_get_product(st_hdr),
@@ -164,8 +169,8 @@ fu_synaprom_config_prepare_firmware(FuDevice *device,
 				  self->configid2);
 		} else {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "CFG version not compatible, "
 				    "got %u:%u expected %u:%u",
 				    fu_struct_synaprom_cfg_hdr_get_id1(st_hdr),
@@ -206,7 +211,7 @@ fu_synaprom_config_init(FuSynapromConfig *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ONLY_VERSION_UPGRADE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_PARENT_FOR_OPEN);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_logical_id(FU_DEVICE(self), "cfg");
 	fu_device_set_name(FU_DEVICE(self), "Prometheus IOTA Config");
@@ -223,8 +228,8 @@ fu_synaprom_config_constructed(GObject *obj)
 
 	/* append the firmware kind to the generated GUID */
 	devid = g_strdup_printf("USB\\VID_%04X&PID_%04X-cfg",
-				fu_usb_device_get_vid(FU_USB_DEVICE(parent)),
-				fu_usb_device_get_pid(FU_USB_DEVICE(parent)));
+				fu_device_get_vid(parent),
+				fu_device_get_pid(parent));
 	fu_device_add_instance_id(FU_DEVICE(self), devid);
 
 	G_OBJECT_CLASS(fu_synaprom_config_parent_class)->constructed(obj);
@@ -247,15 +252,15 @@ fu_synaprom_config_detach(FuDevice *device, FuProgress *progress, GError **error
 static void
 fu_synaprom_config_class_init(FuSynapromConfigClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->constructed = fu_synaprom_config_constructed;
-	klass_device->write_firmware = fu_synaprom_config_write_firmware;
-	klass_device->prepare_firmware = fu_synaprom_config_prepare_firmware;
-	klass_device->setup = fu_synaprom_config_setup;
-	klass_device->reload = fu_synaprom_config_setup;
-	klass_device->attach = fu_synaprom_config_attach;
-	klass_device->detach = fu_synaprom_config_detach;
+	device_class->write_firmware = fu_synaprom_config_write_firmware;
+	device_class->prepare_firmware = fu_synaprom_config_prepare_firmware;
+	device_class->setup = fu_synaprom_config_setup;
+	device_class->reload = fu_synaprom_config_setup;
+	device_class->attach = fu_synaprom_config_attach;
+	device_class->detach = fu_synaprom_config_detach;
 }
 
 FuSynapromConfig *

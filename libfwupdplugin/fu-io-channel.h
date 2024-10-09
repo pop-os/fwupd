@@ -1,12 +1,14 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
 
 #include <fwupd.h>
+
+#include "fu-io-channel-struct.h"
 
 #define FU_TYPE_IO_CHANNEL (fu_io_channel_get_type())
 
@@ -33,13 +35,20 @@ typedef enum {
 FuIOChannel *
 fu_io_channel_unix_new(gint fd);
 FuIOChannel *
-fu_io_channel_new_file(const gchar *filename, GError **error) G_GNUC_WARN_UNUSED_RESULT
+fu_io_channel_virtual_new(const gchar *name, GError **error) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1);
+FuIOChannel *
+fu_io_channel_new_file(const gchar *filename,
+		       FuIoChannelOpenFlag open_flags,
+		       GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1);
 
 gint
 fu_io_channel_unix_get_fd(FuIOChannel *self) G_GNUC_NON_NULL(1);
 gboolean
 fu_io_channel_shutdown(FuIOChannel *self, GError **error) G_GNUC_WARN_UNUSED_RESULT
+    G_GNUC_NON_NULL(1);
+gboolean
+fu_io_channel_seek(FuIOChannel *self, gsize offset, GError **error) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1);
 gboolean
 fu_io_channel_write_raw(FuIOChannel *self,
@@ -62,6 +71,12 @@ fu_io_channel_write_bytes(FuIOChannel *self,
 			  guint timeout_ms,
 			  FuIOChannelFlags flags,
 			  GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
+gboolean
+fu_io_channel_write_stream(FuIOChannel *self,
+			   GInputStream *stream,
+			   guint timeout_ms,
+			   FuIOChannelFlags flags,
+			   GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 gboolean
 fu_io_channel_write_byte_array(FuIOChannel *self,
 			       GByteArray *buf,

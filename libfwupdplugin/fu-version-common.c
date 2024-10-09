@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCommon"
@@ -13,12 +13,13 @@
 #include "fwupd-enums.h"
 #include "fwupd-error.h"
 
+#include "fu-string.h"
 #include "fu-version-common.h"
 
-#define FU_COMMON_VERSION_DECODE_BCD(val) ((((val) >> 4) & 0x0f) * 10 + ((val)&0x0f))
+#define FU_COMMON_VERSION_DECODE_BCD(val) ((((val) >> 4) & 0x0f) * 10 + ((val) & 0x0f))
 
 static gchar *
-fu_common_version_ensure_semver(const gchar *version);
+fu_version_ensure_semver_internal(const gchar *version);
 
 /**
  * fu_version_from_uint64:
@@ -427,7 +428,7 @@ fu_version_ensure_semver(const gchar *version, FwupdVersionFormat fmt)
 	g_autoptr(GString) str = g_string_new(NULL);
 
 	/* split into all sections */
-	tmp = fu_common_version_ensure_semver(version);
+	tmp = fu_version_ensure_semver_internal(version);
 	if (tmp == NULL)
 		return NULL;
 	if (fmt == FWUPD_VERSION_FORMAT_UNKNOWN)
@@ -455,16 +456,8 @@ fu_version_ensure_semver(const gchar *version, FwupdVersionFormat fmt)
 	return g_string_free(g_steal_pointer(&str), FALSE);
 }
 
-/**
- * fu_common_version_ensure_semver:
- * @version: (nullable): a version number, e.g. ` V1.2.3 `
- *
- * Builds a semver from the possibly crazy version number.
- *
- * Returns: a version number, e.g. `1.2.3`, or %NULL if the version was not valid
- */
 static gchar *
-fu_common_version_ensure_semver(const gchar *version)
+fu_version_ensure_semver_internal(const gchar *version)
 {
 	gboolean dot_valid = FALSE;
 	guint digit_cnt = 0;
@@ -532,10 +525,7 @@ fu_common_version_ensure_semver(const gchar *version)
 gchar *
 fu_version_parse_from_format(const gchar *version, FwupdVersionFormat fmt)
 {
-	const gchar *version_noprefix = version;
-	gchar *endptr = NULL;
-	guint64 tmp;
-	guint base;
+	guint64 tmp = 0;
 
 	/* sanity check */
 	if (version == NULL)
@@ -550,19 +540,7 @@ fu_version_parse_from_format(const gchar *version, FwupdVersionFormat fmt)
 		return g_strdup(version);
 
 	/* convert 0x prefixed strings to dotted decimal */
-	if (g_str_has_prefix(version, "0x")) {
-		version_noprefix += 2;
-		base = 16;
-	} else {
-		/* for non-numeric content, just return the string */
-		if (!_g_ascii_is_digits(version))
-			return g_strdup(version);
-		base = 10;
-	}
-
-	/* convert */
-	tmp = g_ascii_strtoull(version_noprefix, &endptr, base);
-	if (endptr != NULL && endptr[0] != '\0')
+	if (!fu_strtoull(version, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, NULL))
 		return g_strdup(version);
 	if (tmp == 0)
 		return g_strdup(version);
@@ -669,8 +647,8 @@ fu_version_verify_format(const gchar *version, FwupdVersionFormat fmt, GError **
 	fmt_guess = fu_version_guess_format(version);
 	if (fmt_guess != fmt_base) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "%s is not a valid %s (guessed %s)",
 			    version,
 			    fwupd_version_format_to_string(fmt),
@@ -712,8 +690,8 @@ fu_version_compare_safe(const gchar *version_a, const gchar *version_b)
 			return 1;
 
 		/* compare integers */
-		ver_a = g_ascii_strtoll(split_a[i], &endptr_a, 10);
-		ver_b = g_ascii_strtoll(split_b[i], &endptr_b, 10);
+		ver_a = g_ascii_strtoll(split_a[i], &endptr_a, 10); /* nocheck:blocked */
+		ver_b = g_ascii_strtoll(split_b[i], &endptr_b, 10); /* nocheck:blocked */
 		if (ver_a < ver_b)
 			return -1;
 		if (ver_a > ver_b)

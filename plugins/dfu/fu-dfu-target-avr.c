@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -24,8 +24,8 @@
  * program the user firmware avoiding the bootloader and for checking the total
  * chunk size.
  *
- * The chip ID can be found from a datasheet or using `dfu-tool list` when the
- * hardware is connected and in bootloader mode.
+ * The chip ID can be found from a datasheet or using `sudo fwupdtool --plugins dfu get-devices`
+ * when the hardware is connected and in bootloader mode.
  *
  * Since: 1.0.1
  */
@@ -510,7 +510,7 @@ fu_dfu_target_avr_setup(FuDfuTarget *target, GError **error)
 			    (guint)sz);
 		return FALSE;
 	}
-	memcpy(&device_id_be, buf, 4);
+	memcpy(&device_id_be, buf, 4); /* nocheck:blocked */
 	priv->device_id = GINT32_FROM_BE(device_id_be);
 
 	if (buf[0] == ATMEL_MANUFACTURER_CODE1) {
@@ -924,12 +924,12 @@ fu_dfu_target_avr_init(FuDfuTargetAvr *self)
 static void
 fu_dfu_target_avr_class_init(FuDfuTargetAvrClass *klass)
 {
-	FuDfuTargetClass *klass_target = FU_DFU_TARGET_CLASS(klass);
-	klass_target->setup = fu_dfu_target_avr_setup;
-	klass_target->attach = fu_dfu_target_avr_attach;
-	klass_target->mass_erase = fu_dfu_target_avr_mass_erase;
-	klass_target->upload_element = fu_dfu_target_avr_upload_element;
-	klass_target->download_element = fu_dfu_target_avr_download_element;
+	FuDfuTargetClass *target_class = FU_DFU_TARGET_CLASS(klass);
+	target_class->setup = fu_dfu_target_avr_setup;
+	target_class->attach = fu_dfu_target_avr_attach;
+	target_class->mass_erase = fu_dfu_target_avr_mass_erase;
+	target_class->upload_element = fu_dfu_target_avr_upload_element;
+	target_class->download_element = fu_dfu_target_avr_download_element;
 }
 
 FuDfuTarget *

@@ -1,8 +1,8 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
-# Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+# Copyright 2022 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 
 # import os
@@ -11,7 +11,6 @@ import glob
 
 
 if __name__ == "__main__":
-
     fns = []
 
     if len(sys.argv) > 1:
@@ -30,7 +29,7 @@ if __name__ == "__main__":
 
     for fn in fns:
         modified: bool = False
-        with open(fn, "r") as f:
+        with open(fn) as f:
             buf = f.read()
         for old, new in {
             "fu_common_sum8": "fu_sum8",
@@ -44,17 +43,17 @@ if __name__ == "__main__":
             "fu_common_sum32w": "fu_sum32w",
             "fu_common_sum32w_bytes": "fu_sum32w_bytes",
             "fu_common_crc8": "fu_crc8",
-            "fu_common_crc8_full": "fu_crc8_full",
+            "fu_common_crc8_full": "fu_crc8",
             "fu_common_crc16": "fu_crc16",
-            "fu_common_crc16_full": "fu_crc16_full",
+            "fu_common_crc16_full": "fu_crc16",
             "fu_common_crc32": "fu_crc32",
-            "fu_common_crc32_full": "fu_crc32_full",
+            "fu_common_crc32_full": "fu_crc32",
             "fu_byte_array_set_size_full": "fu_byte_array_set_size",
             "fu_common_string_replace": "g_string_replace",
-            "fu_common_string_append_kv": "fu_string_append",
-            "fu_common_string_append_ku": "fu_string_append_ku",
-            "fu_common_string_append_kx": "fu_string_append_kx",
-            "fu_common_string_append_kb": "fu_string_append_kb",
+            "fu_common_string_append_kv": "fwupd_codec_string_append",
+            "fu_common_string_append_ku": "fwupd_codec_string_append_int",
+            "fu_common_string_append_kx": "fwupd_codec_string_append_hex",
+            "fu_common_string_append_kb": "fwupd_codec_string_append_bool",
             "fu_common_strnsplit": "fu_strsplit",
             "fu_common_strnsplit_full": "fu_strsplit_full",
             "fu_common_strjoin_array": "fu_strjoin",
@@ -71,8 +70,7 @@ if __name__ == "__main__":
             "fu_common_bytes_compare(": "fu_bytes_compare(",
             "fu_common_set_contents_bytes": "fu_bytes_set_contents",
             "fu_common_get_contents_bytes": "fu_bytes_get_contents",
-            "fu_common_get_contents_stream": "fu_bytes_get_contents_stream",
-            "fu_common_get_contents_fd": "fu_bytes_get_contents_fd",
+            "fu_common_get_contents_stream": "fu_input_stream_read_bytes",
             "fu_common_read_uint8_safe": "fu_memread_uint8_safe",
             "fu_common_read_uint16_safe": "fu_memread_uint16_safe",
             "fu_common_read_uint32_safe": "fu_memread_uint32_safe",
@@ -91,7 +89,6 @@ if __name__ == "__main__":
             "fu_common_read_uint64": "fu_memread_uint64",
             "fu_common_bytes_compare_raw": "fu_memcmp_safe",
             "FuOutputHandler": "FuSpawnOutputHandler",
-            "fu_common_spawn_sync": "fu_spawn_sync",
             "fu_common_kernel_locked_down": "fu_kernel_locked_down",
             "fu_common_check_kernel_version": "fu_kernel_check_version",
             "fu_common_get_firmware_search_path": "fu_kernel_get_firmware_search_path",
@@ -124,7 +121,6 @@ if __name__ == "__main__":
             "fu_common_get_volumes_by_kind": "fu_volume_new_by_kind",
             "fu_common_get_volume_by_device": "fu_volume_new_by_device",
             "fu_common_get_volume_by_devnum": "fu_volume_new_by_devnum",
-            "fu_common_get_esp_for_path": "fu_volume_new_esp_for_path",
             "fu_common_get_esp_default": "fu_context_get_esp_volumes",
             "fu_smbios_to_string": "fu_firmware_to_string",
             "fu_i2c_device_read_full": "fu_i2c_device_read",
@@ -133,6 +129,47 @@ if __name__ == "__main__":
             "fu_string_replace": "g_string_replace",
             "fu_efi_firmware_decompress_lzma": "fu_lzma_decompress_bytes",
             "fu_device_build_instance_id_quirk": "fu_device_build_instance_id_full",
+            "fwupd_bios_setting_array_from_variant": "fwupd_codec_from_variant",
+            "fwupd_bios_setting_from_json": "fwupd_codec_from_json",
+            "fwupd_bios_setting_from_variant": "fwupd_codec_from_variant",
+            "fwupd_bios_setting_to_json": "fwupd_codec_to_json",
+            "fwupd_bios_setting_to_string": "fwupd_codec_to_string",
+            "fwupd_bios_setting_to_variant": "fwupd_codec_to_variant",
+            "fwupd_device_array_from_variant": "fwupd_codec_from_variant",
+            "fwupd_device_from_json": "fwupd_codec_from_json",
+            "fwupd_device_from_variant": "fwupd_codec_from_variant",
+            "fwupd_device_to_json_full": "fwupd_codec_to_json",
+            "fwupd_device_to_json": "fwupd_codec_to_json",
+            "fwupd_device_to_string": "fwupd_codec_to_string",
+            "fwupd_device_to_variant_full": "fwupd_codec_to_variant",
+            "fwupd_device_to_variant": "fwupd_codec_to_variant",
+            "fwupd_plugin_array_from_variant": "fwupd_codec_from_variant",
+            "fwupd_plugin_from_variant": "fwupd_codec_from_variant",
+            "fwupd_plugin_to_json": "fwupd_codec_to_json",
+            "fwupd_plugin_to_string": "fwupd_codec_to_string",
+            "fwupd_plugin_to_variant": "fwupd_codec_to_variant",
+            "fwupd_release_array_from_variant": "fwupd_codec_from_variant",
+            "fwupd_release_from_variant": "fwupd_codec_from_variant",
+            "fwupd_release_to_json": "fwupd_codec_to_json",
+            "fwupd_release_to_string": "fwupd_codec_to_string",
+            "fwupd_release_to_variant": "fwupd_codec_to_variant",
+            "fwupd_remote_array_from_variant": "fwupd_codec_from_variant",
+            "fwupd_remote_from_variant": "fwupd_codec_from_variant",
+            "fwupd_remote_to_json": "fwupd_codec_to_json",
+            "fwupd_remote_to_variant": "fwupd_codec_to_variant",
+            "fwupd_report_from_variant": "fwupd_codec_from_variant",
+            "fwupd_report_to_json": "fwupd_codec_to_json",
+            "fwupd_report_to_string": "fwupd_codec_to_string",
+            "fwupd_report_to_variant": "fwupd_codec_to_variant",
+            "fwupd_request_from_variant": "fwupd_codec_from_variant",
+            "fwupd_request_to_string": "fwupd_codec_to_string",
+            "fwupd_request_to_variant": "fwupd_codec_to_variant",
+            "fwupd_security_attr_array_from_variant": "fwupd_codec_from_variant",
+            "fwupd_security_attr_from_json": "fwupd_codec_from_json",
+            "fwupd_security_attr_from_variant": "fwupd_codec_from_variant",
+            "fwupd_security_attr_to_json": "fwupd_codec_to_json",
+            "fwupd_security_attr_to_string": "fwupd_codec_to_string",
+            "fwupd_security_attr_to_variant": "fwupd_codec_to_variant",
         }.items():
             if buf.find(old) == -1:
                 continue

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Andrii Dushko <andrii.dushko@developex.net>
+ * Copyright 2021 Andrii Dushko <andrii.dushko@developex.net>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -37,4 +37,4 @@ void
 fu_corsair_bp_set_legacy_attach(FuCorsairBp *self, gboolean is_legacy_attach);
 
 FuCorsairBp *
-fu_corsair_bp_new(GUsbDevice *usb_device, gboolean is_subdevice);
+fu_corsair_bp_new(FuUsbDevice *usb_device, gboolean is_subdevice);

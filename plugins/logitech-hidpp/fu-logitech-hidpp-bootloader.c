@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -33,9 +33,9 @@ fu_logitech_hidpp_bootloader_to_string(FuDevice *device, guint idt, GString *str
 {
 	FuLogitechHidppBootloader *self = FU_LOGITECH_HIDPP_BOOTLOADER(device);
 	FuLogitechHidppBootloaderPrivate *priv = GET_PRIVATE(self);
-	fu_string_append_kx(str, idt, "FlashAddrHigh", priv->flash_addr_hi);
-	fu_string_append_kx(str, idt, "FlashAddrLow", priv->flash_addr_lo);
-	fu_string_append_kx(str, idt, "FlashBlockSize", priv->flash_blocksize);
+	fwupd_codec_string_append_hex(str, idt, "FlashAddrHigh", priv->flash_addr_hi);
+	fwupd_codec_string_append_hex(str, idt, "FlashAddrLow", priv->flash_addr_lo);
+	fwupd_codec_string_append_hex(str, idt, "FlashBlockSize", priv->flash_blocksize);
 }
 
 FuLogitechHidppBootloaderRequest *
@@ -75,8 +75,8 @@ fu_logitech_hidpp_bootloader_parse_requests(FuLogitechHidppBootloader *self,
 		payload->len = fu_logitech_hidpp_buffer_read_uint8(tmp + 0x01);
 		if (payload->len > 28) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "firmware data invalid: too large %u bytes",
 				    payload->len);
 			return NULL;
@@ -104,8 +104,8 @@ fu_logitech_hidpp_bootloader_parse_requests(FuLogitechHidppBootloader *self,
 				return NULL;
 			if (offset != 0x0000) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "extended linear addresses with offset different from "
 					    "0 are not supported");
 				return NULL;
@@ -122,8 +122,8 @@ fu_logitech_hidpp_bootloader_parse_requests(FuLogitechHidppBootloader *self,
 			break;
 		default:
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "intel hex file record type %02x not supported",
 				    rec_type);
 			return NULL;
@@ -137,8 +137,8 @@ fu_logitech_hidpp_bootloader_parse_requests(FuLogitechHidppBootloader *self,
 			const gchar *ptr = tmp + 0x09 + (j * 2);
 			if (ptr[0] == '\0') {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "firmware data invalid: expected %u bytes",
 					    payload->len);
 				return NULL;
@@ -176,8 +176,8 @@ fu_logitech_hidpp_bootloader_parse_requests(FuLogitechHidppBootloader *self,
 	}
 	if (reqs->len == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "firmware data invalid: no payloads found");
 		return NULL;
 	}
@@ -283,8 +283,8 @@ fu_logitech_hidpp_bootloader_setup(FuDevice *device, GError **error)
 	}
 	if (req->len != 0x06) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "failed to get meminfo: invalid size %02x",
 			    req->len);
 		return FALSE;
@@ -304,7 +304,6 @@ fu_logitech_hidpp_bootloader_request(FuLogitechHidppBootloader *self,
 				     FuLogitechHidppBootloaderRequest *req,
 				     GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length = 0;
 	guint8 buf_request[32];
 	guint8 buf_response[32];
@@ -327,30 +326,28 @@ fu_logitech_hidpp_bootloader_request(FuLogitechHidppBootloader *self,
 
 	/* send request */
 	fu_dump_raw(G_LOG_DOMAIN, "host->device", buf_request, sizeof(buf_request));
-	if (usb_device != NULL) {
-		if (!fu_hid_device_set_report(FU_HID_DEVICE(self),
-					      0x0,
-					      buf_request,
-					      sizeof(buf_request),
-					      FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
-					      FU_HID_DEVICE_FLAG_NONE,
-					      error)) {
-			g_prefix_error(error, "failed to send data: ");
-			return FALSE;
-		}
+	if (!fu_hid_device_set_report(FU_HID_DEVICE(self),
+				      0x0,
+				      buf_request,
+				      sizeof(buf_request),
+				      FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
+				      FU_HID_DEVICE_FLAG_NONE,
+				      error)) {
+		g_prefix_error(error, "failed to send data: ");
+		return FALSE;
 	}
 
 	/* no response required when rebooting */
-	if (usb_device != NULL && req->cmd == FU_LOGITECH_HIDPP_BOOTLOADER_CMD_REBOOT) {
+	if (req->cmd == FU_LOGITECH_HIDPP_BOOTLOADER_CMD_REBOOT) {
 		g_autoptr(GError) error_ignore = NULL;
-		if (!g_usb_device_interrupt_transfer(usb_device,
-						     FU_LOGITECH_HIDPP_DEVICE_EP1,
-						     buf_response,
-						     sizeof(buf_response),
-						     &actual_length,
-						     FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
-						     NULL,
-						     &error_ignore)) {
+		if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+						      FU_LOGITECH_HIDPP_DEVICE_EP1,
+						      buf_response,
+						      sizeof(buf_response),
+						      &actual_length,
+						      FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
+						      NULL,
+						      &error_ignore)) {
 			g_debug("ignoring: %s", error_ignore->message);
 		} else {
 			fu_dump_raw(G_LOG_DOMAIN, "device->host", buf_response, actual_length);
@@ -360,39 +357,24 @@ fu_logitech_hidpp_bootloader_request(FuLogitechHidppBootloader *self,
 
 	/* get response */
 	memset(buf_response, 0x00, sizeof(buf_response));
-	if (usb_device != NULL) {
-		if (!g_usb_device_interrupt_transfer(usb_device,
-						     FU_LOGITECH_HIDPP_DEVICE_EP1,
-						     buf_response,
-						     sizeof(buf_response),
-						     &actual_length,
-						     FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
-						     NULL,
-						     error)) {
-			g_prefix_error(error, "failed to get data: ");
-			return FALSE;
-		}
-	} else {
-		/* emulated */
-		buf_response[0] = buf_request[0];
-		if (buf_response[0] == FU_LOGITECH_HIDPP_BOOTLOADER_CMD_GET_MEMINFO) {
-			buf_response[3] = 0x06; /* len */
-			buf_response[4] = 0x40; /* lo MSB */
-			buf_response[5] = 0x00; /* lo LSB */
-			buf_response[6] = 0x6b; /* hi MSB */
-			buf_response[7] = 0xff; /* hi LSB */
-			buf_response[8] = 0x00; /* bs MSB */
-			buf_response[9] = 0x80; /* bs LSB */
-		}
-		actual_length = sizeof(buf_response);
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+					      FU_LOGITECH_HIDPP_DEVICE_EP1,
+					      buf_response,
+					      sizeof(buf_response),
+					      &actual_length,
+					      FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
+					      NULL,
+					      error)) {
+		g_prefix_error(error, "failed to get data: ");
+		return FALSE;
 	}
 	fu_dump_raw(G_LOG_DOMAIN, "device->host", buf_response, actual_length);
 
 	/* parse response */
 	if ((buf_response[0x00] & 0xf0) != req->cmd) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid command response of %02x, expected %02x",
 			    buf_response[0x00],
 			    req->cmd);
@@ -403,15 +385,15 @@ fu_logitech_hidpp_bootloader_request(FuLogitechHidppBootloader *self,
 	req->len = buf_response[0x03];
 	if (req->len > 28) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid data size of %02x",
 			    req->len);
 		return FALSE;
 	}
 	memset(req->data, 0x00, 28);
 	if (req->len > 0)
-		memcpy(req->data, buf_response + 0x04, req->len);
+		memcpy(req->data, buf_response + 0x04, req->len); /* nocheck:blocked */
 	return TRUE;
 }
 
@@ -420,23 +402,22 @@ fu_logitech_hidpp_bootloader_init(FuLogitechHidppBootloader *self)
 {
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_icon(FU_DEVICE(self), "preferences-desktop-keyboard");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_name(FU_DEVICE(self), "Unifying Receiver");
 	fu_device_set_summary(FU_DEVICE(self), "Miniaturised USB wireless receiver (bootloader)");
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS);
 	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_LOGITECH_HIDPP_BOOTLOADER_FLAG_IS_SIGNED,
-					"is-signed");
+					FU_LOGITECH_HIDPP_BOOTLOADER_FLAG_IS_SIGNED);
 	fu_usb_device_add_interface(FU_USB_DEVICE(self), 0x00);
 }
 
 static void
 fu_logitech_hidpp_bootloader_class_init(FuLogitechHidppBootloaderClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_logitech_hidpp_bootloader_to_string;
-	klass_device->attach = fu_logitech_hidpp_bootloader_attach;
-	klass_device->setup = fu_logitech_hidpp_bootloader_setup;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_logitech_hidpp_bootloader_to_string;
+	device_class->attach = fu_logitech_hidpp_bootloader_attach;
+	device_class->setup = fu_logitech_hidpp_bootloader_setup;
 }

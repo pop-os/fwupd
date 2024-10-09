@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -32,8 +32,6 @@ void
 fu_plugin_add_string(FuPlugin *self, guint idt, GString *str) G_GNUC_NON_NULL(1);
 GPtrArray *
 fu_plugin_get_rules(FuPlugin *self, FuPluginRule rule) G_GNUC_NON_NULL(1);
-gboolean
-fu_plugin_has_rule(FuPlugin *self, FuPluginRule rule, const gchar *name) G_GNUC_NON_NULL(1);
 GHashTable *
 fu_plugin_get_report_metadata(FuPlugin *self) G_GNUC_NON_NULL(1);
 gboolean
@@ -108,7 +106,7 @@ fu_plugin_runner_device_register(FuPlugin *self, FuDevice *device) G_GNUC_NON_NU
 gboolean
 fu_plugin_runner_write_firmware(FuPlugin *self,
 				FuDevice *device,
-				GBytes *blob_fw,
+				GInputStream *stream,
 				FuProgress *progress,
 				FwupdInstallFlags flags,
 				GError **error) G_GNUC_WARN_UNUSED_RESULT
@@ -149,6 +147,9 @@ fu_plugin_runner_reboot_cleanup(FuPlugin *self,
 				GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 void
 fu_plugin_runner_add_security_attrs(FuPlugin *self, FuSecurityAttrs *attrs) G_GNUC_NON_NULL(1, 2);
+gboolean
+fu_plugin_runner_modify_config(FuPlugin *self, const gchar *key, const gchar *value, GError **error)
+    G_GNUC_NON_NULL(1, 2, 3);
 gint
 fu_plugin_name_compare(FuPlugin *plugin1, FuPlugin *plugin2) G_GNUC_NON_NULL(1, 2);
 gint

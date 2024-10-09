@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2015 VIA Corporation
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 VIA Corporation
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -27,9 +27,12 @@ static void
 fu_vli_pd_parade_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuVliPdParadeDevice *self = FU_VLI_PD_PARADE_DEVICE(device);
-	fu_string_append(str, idt, "DeviceKind", fu_vli_device_kind_to_string(self->device_kind));
-	fu_string_append_kx(str, idt, "Page2", self->page2);
-	fu_string_append_kx(str, idt, "Page7", self->page7);
+	fwupd_codec_string_append(str,
+				  idt,
+				  "DeviceKind",
+				  fu_vli_device_kind_to_string(self->device_kind));
+	fwupd_codec_string_append_hex(str, idt, "Page2", self->page2);
+	fwupd_codec_string_append_hex(str, idt, "Page7", self->page7);
 }
 
 static gboolean
@@ -50,19 +53,19 @@ fu_vli_pd_parade_device_i2c_read(FuVliPdParadeDevice *self,
 
 	/* VL103 FW only Use bits[7:1], so divide by 2 */
 	value = ((guint16)reg_offset << 8) | (page2 >> 1);
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_VLI_PD_PARADE_I2C_CMD_READ,
-					   value,
-					   0x0,
-					   buf,
-					   bufsz,
-					   NULL,
-					   FU_VLI_DEVICE_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_VLI_PD_PARADE_I2C_CMD_READ,
+					    value,
+					    0x0,
+					    buf,
+					    bufsz,
+					    NULL,
+					    FU_VLI_DEVICE_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "failed to read 0x%x:0x%x: ", page2, reg_offset);
 		return FALSE;
 	}
@@ -83,19 +86,19 @@ fu_vli_pd_parade_device_i2c_write(FuVliPdParadeDevice *self,
 	/* VL103 FW only Use bits[7:1], so divide by 2 */
 	value = ((guint16)reg_offset << 8) | (page2 >> 1);
 	index = (guint16)val << 8;
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_VLI_PD_PARADE_I2C_CMD_WRITE,
-					   value,
-					   index,
-					   buf,
-					   0x0,
-					   NULL,
-					   FU_VLI_DEVICE_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_VLI_PD_PARADE_I2C_CMD_WRITE,
+					    value,
+					    index,
+					    buf,
+					    0x0,
+					    NULL,
+					    FU_VLI_DEVICE_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "failed to write 0x%x:0x%x: ", page2, reg_offset);
 		return FALSE;
 	}
@@ -500,7 +503,9 @@ fu_vli_pd_parade_device_write_firmware(FuDevice *device,
 		return FALSE;
 	blocks = fu_chunk_array_new_from_bytes(fw, 0x0, 0x10000);
 	for (guint i = 1; i < fu_chunk_array_length(blocks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(blocks, i);
+		g_autoptr(FuChunk) chk = fu_chunk_array_index(blocks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_vli_pd_parade_device_block_erase(self, fu_chunk_get_idx(chk), error))
 			return FALSE;
 		fu_progress_set_percentage_full(fu_progress_get_child(progress),
@@ -520,7 +525,9 @@ fu_vli_pd_parade_device_write_firmware(FuDevice *device,
 
 	/* write blocks */
 	for (guint i = 1; i < fu_chunk_array_length(blocks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(blocks, i);
+		g_autoptr(FuChunk) chk = fu_chunk_array_index(blocks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_vli_pd_parade_device_block_write(self,
 							 fu_chunk_get_idx(chk),
 							 fu_chunk_get_data(chk),
@@ -536,21 +543,27 @@ fu_vli_pd_parade_device_write_firmware(FuDevice *device,
 
 	/* add the new boot config into the verify buffer */
 	buf_verify = g_byte_array_sized_new(g_bytes_get_size(fw));
-	chk0 = fu_chunk_array_index(blocks, 0);
+	chk0 = fu_chunk_array_index(blocks, 0, error);
+	if (chk0 == NULL)
+		return FALSE;
 	g_byte_array_append(buf_verify, fu_chunk_get_data(chk0), fu_chunk_get_data_sz(chk0));
 
 	/*  verify SPI ROM, ignoring the boot config */
 	for (guint i = 1; i < fu_chunk_array_length(blocks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(blocks, i);
-		gsize bufsz = fu_chunk_get_data_sz(chk);
-		g_autofree guint8 *vbuf = g_malloc0(bufsz);
+		g_autofree guint8 *vbuf = NULL;
+		g_autoptr(FuChunk) chk = NULL;
+
+		chk = fu_chunk_array_index(blocks, i, error);
+		if (chk == NULL)
+			return FALSE;
+		vbuf = g_malloc0(fu_chunk_get_data_sz(chk));
 		if (!fu_vli_pd_parade_device_block_read(self,
 							fu_chunk_get_idx(chk),
 							vbuf,
-							bufsz,
+							fu_chunk_get_data_sz(chk),
 							error))
 			return FALSE;
-		g_byte_array_append(buf_verify, vbuf, bufsz);
+		g_byte_array_append(buf_verify, vbuf, fu_chunk_get_data_sz(chk));
 		fu_progress_set_percentage_full(fu_progress_get_child(progress),
 						i + 1,
 						fu_chunk_array_length(blocks));
@@ -709,12 +722,12 @@ fu_vli_pd_parade_device_init(FuVliPdParadeDevice *self)
 static void
 fu_vli_pd_parade_device_class_init(FuVliPdParadeDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_vli_pd_parade_device_to_string;
-	klass_device->probe = fu_vli_pd_parade_device_probe;
-	klass_device->dump_firmware = fu_vli_pd_parade_device_dump_firmware;
-	klass_device->write_firmware = fu_vli_pd_parade_device_write_firmware;
-	klass_device->set_progress = fu_vli_pd_parade_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_vli_pd_parade_device_to_string;
+	device_class->probe = fu_vli_pd_parade_device_probe;
+	device_class->dump_firmware = fu_vli_pd_parade_device_dump_firmware;
+	device_class->write_firmware = fu_vli_pd_parade_device_write_firmware;
+	device_class->set_progress = fu_vli_pd_parade_device_set_progress;
 }
 
 FuDevice *

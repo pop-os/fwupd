@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -96,7 +96,7 @@ fu_linux_display_plugin_init(FuLinuxDisplayPlugin *self)
 }
 
 static void
-fu_ata_plugin_constructed(GObject *obj)
+fu_linux_display_plugin_constructed(GObject *obj)
 {
 	FuPlugin *plugin = FU_PLUGIN(obj);
 	fu_plugin_add_device_udev_subsystem(plugin, "drm");
@@ -106,7 +106,7 @@ static void
 fu_linux_display_plugin_class_init(FuLinuxDisplayPluginClass *klass)
 {
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
-	plugin_class->constructed = fu_ata_plugin_constructed;
+	plugin_class->constructed = fu_linux_display_plugin_constructed;
 	plugin_class->ready = fu_linux_display_plugin_plugin_ready;
 	plugin_class->backend_device_added = fu_linux_display_plugin_plugin_backend_device_added;
 	plugin_class->backend_device_removed =

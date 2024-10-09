@@ -1,8 +1,8 @@
 /*
- * Copyright (c) 1999-2022 Logitech, Inc.
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 1999-2022 Logitech, Inc.
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -74,12 +74,12 @@ const guchar kLogiUnitIdCameraVersion = 8;
 const guchar kLogiAitSetMmpCmdFwBurning = 1;
 
 struct _FuLogitechScribeDevice {
-	FuUdevDevice parent_instance;
+	FuV4lDevice parent_instance;
 	guint update_ep[EP_LAST];
 	guint update_iface;
 };
 
-G_DEFINE_TYPE(FuLogitechScribeDevice, fu_logitech_scribe_device, FU_TYPE_UDEV_DEVICE)
+G_DEFINE_TYPE(FuLogitechScribeDevice, fu_logitech_scribe_device, FU_TYPE_V4L_DEVICE)
 
 static gboolean
 fu_logitech_scribe_device_send(FuLogitechScribeDevice *self,
@@ -96,17 +96,20 @@ fu_logitech_scribe_device_send(FuLogitechScribeDevice *self,
 	if (interface_id == BULK_INTERFACE_UPD) {
 		ep = self->update_ep[EP_OUT];
 	} else {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "interface is invalid");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "interface is invalid");
 		return FALSE;
 	}
-	if (!g_usb_device_bulk_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(usb_device)),
-					ep,
-					(guint8 *)buf->data,
-					buf->len,
-					&transferred,
-					BULK_TRANSFER_TIMEOUT,
-					cancellable,
-					error)) {
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(usb_device),
+					 ep,
+					 (guint8 *)buf->data,
+					 buf->len,
+					 &transferred,
+					 BULK_TRANSFER_TIMEOUT,
+					 cancellable,
+					 error)) {
 		g_prefix_error(error, "failed to send using bulk transfer: ");
 		return FALSE;
 	}
@@ -128,18 +131,21 @@ fu_logitech_scribe_device_recv(FuLogitechScribeDevice *self,
 	if (interface_id == BULK_INTERFACE_UPD) {
 		ep = self->update_ep[EP_IN];
 	} else {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "interface is invalid");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "interface is invalid");
 		return FALSE;
 	}
-	if (!g_usb_device_bulk_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(usb_device)),
-					ep,
-					buf->data,
-					buf->len,
-					&received_length,
-					timeout,
-					NULL,
-					error)) {
-		g_prefix_error(error, "failed to receive using bulk transfer: ");
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(usb_device),
+					 ep,
+					 buf->data,
+					 buf->len,
+					 &received_length,
+					 timeout,
+					 NULL,
+					 error)) {
+		g_prefix_error(error, "failed to receive: ");
 		return FALSE;
 	}
 	return TRUE;
@@ -193,7 +199,11 @@ fu_logitech_scribe_device_send_upd_cmd(FuLogitechScribeDevice *self,
 				    error))
 		return FALSE;
 	if (cmd_tmp != CMD_ACK) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "not CMD_ACK, got %x", cmd);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
+			    "not CMD_ACK, got %x",
+			    cmd);
 		return FALSE;
 	}
 	if (!fu_memread_uint32_safe(buf_ack->data,
@@ -205,8 +215,8 @@ fu_logitech_scribe_device_send_upd_cmd(FuLogitechScribeDevice *self,
 		return FALSE;
 	if (cmd_tmp != cmd) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid upd message received, expected %x, got %x",
 			    cmd,
 			    cmd_tmp);
@@ -215,13 +225,28 @@ fu_logitech_scribe_device_send_upd_cmd(FuLogitechScribeDevice *self,
 	return TRUE;
 }
 
+static gboolean
+fu_logitech_scribe_device_compute_hash_cb(const guint8 *buf,
+					  gsize bufsz,
+					  gpointer user_data,
+					  GError **error)
+{
+	GChecksum *checksum = (GChecksum *)user_data;
+	g_checksum_update(checksum, buf, bufsz);
+	return TRUE;
+}
+
 static gchar *
-fu_logitech_scribe_device_compute_hash(GBytes *data)
+fu_logitech_scribe_device_compute_hash(GInputStream *stream, GError **error)
 {
 	guint8 md5buf[HASH_VALUE_SIZE] = {0};
 	gsize data_len = sizeof(md5buf);
-	GChecksum *checksum = g_checksum_new(G_CHECKSUM_MD5);
-	g_checksum_update(checksum, g_bytes_get_data(data, NULL), g_bytes_get_size(data));
+	g_autoptr(GChecksum) checksum = g_checksum_new(G_CHECKSUM_MD5);
+	if (!fu_input_stream_chunkify(stream,
+				      fu_logitech_scribe_device_compute_hash_cb,
+				      checksum,
+				      error))
+		return NULL;
 	g_checksum_get_digest(checksum, (guint8 *)&md5buf, &data_len);
 	return g_base64_encode(md5buf, sizeof(md5buf));
 }
@@ -248,8 +273,10 @@ fu_logitech_scribe_device_query_data_size(FuLogitechScribeDevice *self,
 	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				  UVCIOC_CTRL_QUERY,
 				  (guint8 *)&size_query,
+				  sizeof(size_query),
 				  NULL,
 				  FU_LOGITECH_SCRIBE_DEVICE_IOCTL_TIMEOUT,
+				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 				  error))
 		return FALSE;
 	/* convert the data byte to int */
@@ -286,8 +313,10 @@ fu_logitech_scribe_device_get_xu_control(FuLogitechScribeDevice *self,
 	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				  UVCIOC_CTRL_QUERY,
 				  (guint8 *)&control_query,
+				  sizeof(control_query),
 				  NULL,
 				  FU_LOGITECH_SCRIBE_DEVICE_IOCTL_TIMEOUT,
+				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 				  error))
 		return FALSE;
 	g_debug("received get xu control response, size: %u unit: 0x%x selector: 0x%x",
@@ -304,42 +333,17 @@ static void
 fu_logitech_scribe_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuLogitechScribeDevice *self = FU_LOGITECH_SCRIBE_DEVICE(device);
-	fu_string_append_kx(str, idt, "UpdateIface", self->update_iface);
-	fu_string_append_kx(str, idt, "UpdateEpOut", self->update_ep[EP_OUT]);
-	fu_string_append_kx(str, idt, "UpdateEpIn", self->update_ep[EP_IN]);
+	fwupd_codec_string_append_hex(str, idt, "UpdateIface", self->update_iface);
+	fwupd_codec_string_append_hex(str, idt, "UpdateEpOut", self->update_ep[EP_OUT]);
+	fwupd_codec_string_append_hex(str, idt, "UpdateEpIn", self->update_ep[EP_IN]);
 }
 
 static gboolean
 fu_logitech_scribe_device_probe(FuDevice *device, GError **error)
 {
-	const gchar *id_v4l_capabilities;
-	const gchar *index;
-	GUdevDevice *udev_device = fu_udev_device_get_dev(FU_UDEV_DEVICE(device));
-
-	/* check is valid */
-	if (g_strcmp0(fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)), "video4linux") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "is not correct subsystem=%s, expected video4linux",
-			    fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)));
-		return FALSE;
-	}
-
-	/* only interested in video capture device */
-	id_v4l_capabilities = g_udev_device_get_property(udev_device, "ID_V4L_CAPABILITIES");
-	if (g_strcmp0(id_v4l_capabilities, ":capture:") != 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "only video capture device are supported");
-		return FALSE;
-	}
-
 	/* interested in lowest index only e,g, video0, ignore low format siblings like
 	 * video1/video2/video3 etc */
-	index = g_udev_device_get_sysfs_attr(udev_device, "index");
-	if (g_strcmp0(index, "0") != 0) {
+	if (fu_v4l_device_get_index(FU_V4L_DEVICE(device)) != 0) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
@@ -347,8 +351,8 @@ fu_logitech_scribe_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 	};
 
-	/* set the physical ID */
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "video4linux", error);
+	/* success */
+	return TRUE;
 }
 
 static gboolean
@@ -361,16 +365,25 @@ fu_logitech_scribe_device_send_upd_init_cmd_cb(FuDevice *device, gpointer user_d
 static gboolean
 fu_logitech_scribe_device_write_fw(FuLogitechScribeDevice *self,
 				   FuUsbDevice *usb_device,
-				   GBytes *fw,
+				   GInputStream *stream,
 				   FuProgress *progress,
 				   GError **error)
 {
-	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(fw, 0x0, PAYLOAD_SIZE);
+	g_autoptr(FuChunkArray) chunks = NULL;
+
+	chunks = fu_chunk_array_new_from_stream(stream, 0x0, PAYLOAD_SIZE, error);
+	if (chunks == NULL)
+		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) data_pkt = g_byte_array_new();
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		g_byte_array_append(data_pkt, fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 		if (!fu_logitech_scribe_device_send_upd_cmd(self,
 							    usb_device,
@@ -393,61 +406,53 @@ fu_logitech_scribe_device_write_firmware(FuDevice *device,
 					 GError **error)
 {
 	FuLogitechScribeDevice *self = FU_LOGITECH_SCRIBE_DEVICE(device);
+	gsize streamsz = 0;
 	g_autofree gchar *base64hash = NULL;
 	g_autoptr(GByteArray) end_pkt = g_byte_array_new();
 	g_autoptr(GByteArray) start_pkt = g_byte_array_new();
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(GError) error_local = NULL;
-	g_autoptr(GUsbInterface) intf = NULL;
+	g_autoptr(FuUsbInterface) intf = NULL;
 	g_autoptr(GPtrArray) endpoints = NULL;
-	g_autoptr(GUsbDevice) g_usb_device = NULL;
 	g_autoptr(FuUsbDevice) usb_device = NULL;
+	g_autoptr(FuDeviceLocker) locker = NULL;
 
-	/* convert GUdevDevice to GUsbDevice */
-	g_usb_device = fu_udev_device_find_usb_device(FU_UDEV_DEVICE(device), error);
-	if (g_usb_device == NULL) {
+	/* get USB parent */
+	usb_device = FU_USB_DEVICE(
+	    fu_device_get_backend_parent_with_subsystem(device, "usb:usb_device", error));
+	if (usb_device == NULL)
 		return FALSE;
-	}
-
-	usb_device = fu_usb_device_new(fu_device_get_context(device), g_usb_device);
-	if (usb_device == NULL) {
-		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
-				    "failed to create usb device instance");
-		return FALSE;
-	}
 
 	/* re-open with new device set */
-	fu_usb_device_set_dev(usb_device, g_usb_device);
-	if (!fu_device_open(FU_DEVICE(usb_device), error))
+	locker = fu_device_locker_new(usb_device, error);
+	if (locker == NULL)
 		return FALSE;
 
 	/* find the correct interface */
-	intf = g_usb_device_get_interface(fu_usb_device_get_dev(FU_USB_DEVICE(usb_device)),
-					  G_USB_DEVICE_CLASS_VENDOR_SPECIFIC,
-					  UPD_INTERFACE_SUBPROTOCOL_ID,
-					  FU_LOGITECH_SCRIBE_PROTOCOL_ID,
-					  error);
+	intf = fu_usb_device_get_interface(FU_USB_DEVICE(usb_device),
+					   FU_USB_CLASS_VENDOR_SPECIFIC,
+					   UPD_INTERFACE_SUBPROTOCOL_ID,
+					   FU_LOGITECH_SCRIBE_PROTOCOL_ID,
+					   error);
 	if (intf == NULL)
 		return FALSE;
 
-	endpoints = g_usb_interface_get_endpoints(intf);
+	endpoints = fu_usb_interface_get_endpoints(intf);
 	if (endpoints == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "failed to get usb device endpoints");
 		return FALSE;
 	}
 
-	self->update_iface = g_usb_interface_get_number(intf);
+	self->update_iface = fu_usb_interface_get_number(intf);
 	for (guint j = 0; j < endpoints->len; j++) {
-		GUsbEndpoint *ep = g_ptr_array_index(endpoints, j);
+		FuUsbEndpoint *ep = g_ptr_array_index(endpoints, j);
 		if (j == EP_OUT)
-			self->update_ep[EP_OUT] = g_usb_endpoint_get_address(ep);
+			self->update_ep[EP_OUT] = fu_usb_endpoint_get_address(ep);
 		else
-			self->update_ep[EP_IN] = g_usb_endpoint_get_address(ep);
+			self->update_ep[EP_IN] = fu_usb_endpoint_get_address(ep);
 	}
 	fu_usb_device_add_interface(usb_device, self->update_iface);
 	g_debug("usb data, iface: %u ep_out: %u ep_in: %u",
@@ -464,8 +469,8 @@ fu_logitech_scribe_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 5, "uninit");
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* sending INIT. Retry if device is not in IDLE state to receive the file */
@@ -481,7 +486,9 @@ fu_logitech_scribe_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* start transfer */
-	fu_byte_array_append_uint64(start_pkt, g_bytes_get_size(fw), G_LITTLE_ENDIAN);
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	fu_byte_array_append_uint64(start_pkt, streamsz, G_LITTLE_ENDIAN);
 	if (!fu_logitech_scribe_device_send_upd_cmd(self,
 						    usb_device,
 						    CMD_START_TRANSFER,
@@ -495,14 +502,16 @@ fu_logitech_scribe_device_write_firmware(FuDevice *device,
 	/* push each block to device */
 	if (!fu_logitech_scribe_device_write_fw(self,
 						usb_device,
-						fw,
+						stream,
 						fu_progress_get_child(progress),
 						error))
 		return FALSE;
 	fu_progress_step_done(progress);
 
 	/* end transfer */
-	base64hash = fu_logitech_scribe_device_compute_hash(fw);
+	base64hash = fu_logitech_scribe_device_compute_hash(stream, error);
+	if (base64hash == NULL)
+		return FALSE;
 	fu_byte_array_append_uint32(end_pkt, 1, G_LITTLE_ENDIAN); /* update */
 	fu_byte_array_append_uint32(end_pkt, 0, G_LITTLE_ENDIAN); /* force */
 	fu_byte_array_append_uint32(end_pkt,
@@ -542,9 +551,8 @@ fu_logitech_scribe_device_write_firmware(FuDevice *device,
 }
 
 static gboolean
-fu_logitech_scribe_device_set_version(FuDevice *device, GError **error)
+fu_logitech_scribe_device_ensure_version(FuLogitechScribeDevice *self, GError **error)
 {
-	FuLogitechScribeDevice *self = FU_LOGITECH_SCRIBE_DEVICE(device);
 	guint32 fwversion = 0;
 	guint16 data_len = 0;
 	g_autofree guint8 *query_data = NULL;
@@ -572,7 +580,7 @@ fu_logitech_scribe_device_set_version(FuDevice *device, GError **error)
 	/*  little-endian data. MinorVersion byte 0, MajorVersion byte 1, BuildVersion byte 3 & 2 */
 	fwversion =
 	    (query_data[1] << 24) + (query_data[0] << 16) + (query_data[3] << 8) + query_data[2];
-	fu_device_set_version_u32(device, fwversion);
+	fu_device_set_version_raw(FU_DEVICE(self), fwversion);
 
 	/* success */
 	return TRUE;
@@ -581,7 +589,25 @@ fu_logitech_scribe_device_set_version(FuDevice *device, GError **error)
 static gboolean
 fu_logitech_scribe_device_setup(FuDevice *device, GError **error)
 {
-	return fu_logitech_scribe_device_set_version(device, error);
+	FuLogitechScribeDevice *self = FU_LOGITECH_SCRIBE_DEVICE(device);
+
+	/* FuV4lDevice->setup */
+	if (!FU_DEVICE_CLASS(fu_logitech_scribe_device_parent_class)->setup(device, error))
+		return FALSE;
+
+	/* only interested in video capture device */
+	if ((fu_v4l_device_get_caps(FU_V4L_DEVICE(device)) & FU_V4L_CAP_VIDEO_CAPTURE) == 0) {
+		g_autofree gchar *caps =
+		    fu_v4l_cap_to_string(fu_v4l_device_get_caps(FU_V4L_DEVICE(self)));
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "only video capture device are supported, got %s",
+			    caps);
+		return FALSE;
+	}
+
+	return fu_logitech_scribe_device_ensure_version(self, error);
 }
 
 static void
@@ -592,6 +618,12 @@ fu_logitech_scribe_device_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "reload");
+}
+
+static gchar *
+fu_logitech_scribe_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
 }
 
 static void
@@ -614,11 +646,12 @@ static void
 fu_logitech_scribe_device_class_init(FuLogitechScribeDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_logitech_scribe_device_finalize;
-	klass_device->to_string = fu_logitech_scribe_device_to_string;
-	klass_device->write_firmware = fu_logitech_scribe_device_write_firmware;
-	klass_device->probe = fu_logitech_scribe_device_probe;
-	klass_device->setup = fu_logitech_scribe_device_setup;
-	klass_device->set_progress = fu_logitech_scribe_device_set_progress;
+	device_class->to_string = fu_logitech_scribe_device_to_string;
+	device_class->write_firmware = fu_logitech_scribe_device_write_firmware;
+	device_class->probe = fu_logitech_scribe_device_probe;
+	device_class->setup = fu_logitech_scribe_device_setup;
+	device_class->set_progress = fu_logitech_scribe_device_set_progress;
+	device_class->convert_version = fu_logitech_scribe_device_convert_version;
 }

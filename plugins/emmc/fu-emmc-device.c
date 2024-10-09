@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2019 Mario Limonciello <mario.limonciello@dell.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -78,8 +78,7 @@ static void
 fu_emmc_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
-	FU_DEVICE_CLASS(fu_emmc_device_parent_class)->to_string(device, idt, str);
-	fu_string_append_ku(str, idt, "SectorSize", self->sect_size);
+	fwupd_codec_string_append_int(str, idt, "SectorSize", self->sect_size);
 }
 
 static const gchar *
@@ -110,69 +109,57 @@ fu_emmc_device_get_manufacturer(guint64 mmc_id)
 }
 
 static gboolean
-fu_emmc_device_get_sysattr_guint64(GUdevDevice *device,
+fu_emmc_device_get_sysattr_guint64(FuUdevDevice *device,
 				   const gchar *name,
 				   guint64 *val_out,
 				   GError **error)
 {
-	const gchar *sysfs;
+	g_autofree gchar *value = NULL;
 
-	sysfs = g_udev_device_get_sysfs_attr(device, name);
-	if (sysfs == NULL) {
-		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "failed get %s", name);
+	value = fu_udev_device_read_sysfs(device,
+					  name,
+					  FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+					  error);
+	if (value == NULL)
 		return FALSE;
-	}
-
-	*val_out = g_ascii_strtoull(sysfs, NULL, 16);
-
-	return TRUE;
+	return fu_strtoull(value, val_out, 0, G_MAXUINT64, FU_INTEGER_BASE_16, error);
 }
 
 static gboolean
 fu_emmc_device_probe(FuDevice *device, GError **error)
 {
-	GUdevDevice *udev_device = fu_udev_device_get_dev(FU_UDEV_DEVICE(device));
 	guint64 flag;
 	guint64 oemid = 0;
 	guint64 manfid = 0;
-	const gchar *tmp;
-	g_autoptr(GUdevDevice) udev_parent = NULL;
+	g_autofree gchar *attr_fwrev = NULL;
+	g_autofree gchar *attr_manfid = NULL;
+	g_autofree gchar *attr_name = NULL;
 	g_autofree gchar *man_oem_name = NULL;
-	g_autofree gchar *vendor_id = NULL;
+	g_autoptr(FuUdevDevice) udev_parent = NULL;
 	g_autoptr(GRegex) dev_regex = NULL;
 
-	udev_parent = g_udev_device_get_parent_with_subsystem(udev_device, "mmc", NULL);
+	udev_parent =
+	    FU_UDEV_DEVICE(fu_device_get_backend_parent_with_subsystem(device, "mmc:disk", NULL));
 	if (udev_parent == NULL) {
 		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no MMC parent");
 		return FALSE;
 	}
 
-	/* look for only the parent node */
-	if (g_strcmp0(g_udev_device_get_devtype(udev_device), "disk") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "is not correct devtype=%s, expected disk",
-			    g_udev_device_get_devtype(udev_device));
-		return FALSE;
-	}
-
 	/* ignore *rpmb and *boot* mmc block devices */
 	dev_regex = g_regex_new("mmcblk\\d$", 0, 0, NULL);
-	tmp = g_udev_device_get_name(udev_device);
-	if (tmp == NULL) {
+	if (fu_device_get_name(device) == NULL) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "device has no name");
 		return FALSE;
 	}
-	if (!g_regex_match(dev_regex, tmp, 0, NULL)) {
+	if (!g_regex_match(dev_regex, fu_device_get_name(device), 0, NULL)) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "is not raw mmc block device, devname=%s",
-			    g_udev_device_get_name(udev_device));
+			    fu_device_get_name(device));
 		return FALSE;
 	}
 
@@ -189,8 +176,11 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	}
 
 	/* name */
-	tmp = g_udev_device_get_sysfs_attr(udev_parent, "name");
-	if (tmp == NULL) {
+	attr_name = fu_udev_device_read_sysfs(udev_parent,
+					      "name",
+					      FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+					      NULL);
+	if (attr_name == NULL) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -198,18 +188,21 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 			    fu_device_get_name(device));
 		return FALSE;
 	}
-	fu_device_add_instance_strsafe(device, "NAME", tmp);
+	fu_device_add_instance_strsafe(device, "NAME", attr_name);
 	fu_device_build_instance_id(device, NULL, "EMMC", "NAME", NULL);
-	fu_device_set_name(device, tmp);
+	fu_device_set_name(device, attr_name);
 
 	/* firmware version */
-	tmp = g_udev_device_get_sysfs_attr(udev_parent, "fwrev");
-	if (tmp != NULL) {
+	attr_fwrev = fu_udev_device_read_sysfs(udev_parent,
+					       "fwrev",
+					       FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+					       NULL);
+	if (attr_fwrev != NULL) {
 		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_NUMBER);
-		fu_device_set_version(device, tmp);
+		fu_device_set_version(device, attr_fwrev);
 	}
-	fu_device_add_instance_strsafe(device, "REV", tmp);
-	if (fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV))
+	fu_device_add_instance_strsafe(device, "REV", attr_fwrev);
+	if (fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_ADD_INSTANCE_ID_REV))
 		fu_device_build_instance_id(device, NULL, "EMMC", "NAME", "REV", NULL);
 
 	/* manfid + oemid, manfid + oemid + name */
@@ -238,9 +231,13 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	fu_device_add_instance_id(device, man_oem_name);
 
 	/* set the vendor */
-	tmp = g_udev_device_get_sysfs_attr(udev_parent, "manfid");
-	vendor_id = g_strdup_printf("EMMC:%s", tmp);
-	fu_device_add_vendor_id(device, vendor_id);
+	attr_manfid = fu_udev_device_read_sysfs(udev_parent,
+						"manfid",
+						FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+						error);
+	if (attr_manfid == NULL)
+		return FALSE;
+	fu_device_build_vendor_id(device, "EMMC", attr_manfid);
 	fu_device_set_vendor(device, fu_emmc_device_get_manufacturer(manfid));
 
 	/* set the physical ID */
@@ -248,7 +245,7 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* internal */
-	if (!fu_emmc_device_get_sysattr_guint64(udev_device, "removable", &flag, error))
+	if (!fu_emmc_device_get_sysattr_guint64(FU_UDEV_DEVICE(device), "removable", &flag, error))
 		return FALSE;
 	if (flag == 0)
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_INTERNAL);
@@ -257,7 +254,7 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_emmc_read_extcsd(FuEmmcDevice *self, guint8 *ext_csd, gsize ext_csd_sz, GError **error)
+fu_emmc_device_read_extcsd(FuEmmcDevice *self, guint8 *ext_csd, gsize ext_csd_sz, GError **error)
 {
 	struct mmc_ioc_cmd idata = {
 	    .write_flag = 0,
@@ -271,18 +268,19 @@ fu_emmc_read_extcsd(FuEmmcDevice *self, guint8 *ext_csd, gsize ext_csd_sz, GErro
 	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 				    MMC_IOC_CMD,
 				    (guint8 *)&idata,
+				    sizeof(idata),
 				    NULL,
 				    FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+				    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 				    error);
 }
 
 static gboolean
-fu_emmc_validate_extcsd(FuDevice *device, GError **error)
+fu_emmc_device_validate_extcsd(FuEmmcDevice *self, GError **error)
 {
-	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
 	guint8 ext_csd[512] = {0x0};
 
-	if (!fu_emmc_read_extcsd(FU_EMMC_DEVICE(device), ext_csd, sizeof(ext_csd), error))
+	if (!fu_emmc_device_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
 		return FALSE;
 	if (ext_csd[EXT_CSD_REV] < EXT_CSD_REV_V5_0) {
 		g_set_error(error,
@@ -290,7 +288,7 @@ fu_emmc_validate_extcsd(FuDevice *device, GError **error)
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "FFU is only available on devices >= "
 			    "MMC 5.0, not supported in %s",
-			    fu_device_get_name(device));
+			    fu_device_get_name(FU_DEVICE(self)));
 		return FALSE;
 	}
 	if ((ext_csd[EXT_CSD_SUPPORTED_MODES] & EXT_CSD_FFU) == 0) {
@@ -298,7 +296,7 @@ fu_emmc_validate_extcsd(FuDevice *device, GError **error)
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "FFU is not supported in %s",
-			    fu_device_get_name(device));
+			    fu_device_get_name(FU_DEVICE(self)));
 		return FALSE;
 	}
 	if (ext_csd[EXT_CSD_FW_CONFIG] & EXT_CSD_UPDATE_DISABLE) {
@@ -306,7 +304,7 @@ fu_emmc_validate_extcsd(FuDevice *device, GError **error)
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "firmware update was disabled in %s",
-			    fu_device_get_name(device));
+			    fu_device_get_name(FU_DEVICE(self)));
 		return FALSE;
 	}
 	self->sect_size = (ext_csd[EXT_CSD_DATA_SECTOR_SIZE] == 0) ? 512 : 4096;
@@ -317,9 +315,10 @@ fu_emmc_validate_extcsd(FuDevice *device, GError **error)
 static gboolean
 fu_emmc_device_setup(FuDevice *device, GError **error)
 {
+	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
 	g_autoptr(GError) error_validate = NULL;
 
-	if (!fu_emmc_validate_extcsd(device, &error_validate))
+	if (!fu_emmc_device_validate_extcsd(self, &error_validate))
 		g_debug("%s", error_validate->message);
 	else
 		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_UPDATABLE);
@@ -329,24 +328,26 @@ fu_emmc_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_emmc_device_prepare_firmware(FuDevice *device,
-				GBytes *fw,
+				GInputStream *stream,
+				FuProgress *progress,
 				FwupdInstallFlags flags,
 				GError **error)
 {
 	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
-	gsize fw_size = g_bytes_get_size(fw);
+	g_autoptr(FuFirmware) firmware = fu_firmware_new();
 
 	/* check alignment */
-	if ((fw_size % self->sect_size) > 0) {
+	if (fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
+		return NULL;
+	if ((fu_firmware_get_size(firmware) % self->sect_size) > 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INVALID_FILE,
 			    "firmware data size (%" G_GSIZE_FORMAT ") is not aligned",
-			    fw_size);
+			    fu_firmware_get_size(firmware));
 		return NULL;
 	}
-
-	return fu_firmware_new_from_bytes(fw);
+	return g_steal_pointer(&firmware);
 }
 
 static gboolean
@@ -357,15 +358,15 @@ fu_emmc_device_write_firmware(FuDevice *device,
 			      GError **error)
 {
 	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
-	gsize fw_size = 0;
 	guint32 arg;
 	guint32 sect_done = 0;
 	guint32 sector_size;
 	gboolean check_sect_done = FALSE;
+	gsize multi_cmdsz;
 	guint8 ext_csd[512];
 	guint failure_cnt = 0;
 	g_autofree struct mmc_ioc_multi_cmd *multi_cmd = NULL;
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* progress */
@@ -375,13 +376,12 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 45, NULL);
 
-	if (!fu_emmc_read_extcsd(FU_EMMC_DEVICE(device), ext_csd, sizeof(ext_csd), error))
+	if (!fu_emmc_device_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
 		return FALSE;
 
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
-	fw_size = g_bytes_get_size(fw);
 
 	sector_size = self->write_block_size ?: self->sect_size;
 
@@ -393,7 +393,8 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	      ext_csd[EXT_CSD_FFU_ARG_2] << 16 | ext_csd[EXT_CSD_FFU_ARG_3] << 24;
 
 	/* prepare multi_cmd to be sent */
-	multi_cmd = g_malloc0(sizeof(struct mmc_ioc_multi_cmd) + 4 * sizeof(struct mmc_ioc_cmd));
+	multi_cmdsz = sizeof(struct mmc_ioc_multi_cmd) + 4 * sizeof(struct mmc_ioc_cmd);
+	multi_cmd = g_malloc0(multi_cmdsz);
 	multi_cmd->num_of_cmds = 4;
 
 	/* put device into ffu mode */
@@ -425,18 +426,27 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* build packets */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x00, sector_size);
+	chunks = fu_chunk_array_new_from_stream(stream, 0x00, sector_size, error);
+	if (chunks == NULL)
+		return FALSE;
 	while (failure_cnt < 3) {
 		for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-			g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+			g_autoptr(FuChunk) chk = NULL;
+
+			/* prepare chunk */
+			chk = fu_chunk_array_index(chunks, i, error);
+			if (chk == NULL)
+				return FALSE;
 
 			mmc_ioc_cmd_set_data(multi_cmd->cmds[2], fu_chunk_get_data(chk));
 
 			if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 						  MMC_IOC_MULTI_CMD,
 						  (guint8 *)multi_cmd,
+						  multi_cmdsz,
 						  NULL,
 						  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+						  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 						  error)) {
 				g_autoptr(GError) error_local = NULL;
 				g_prefix_error(error, "multi-cmd failed: ");
@@ -444,8 +454,10 @@ fu_emmc_device_write_firmware(FuDevice *device,
 				if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 							  MMC_IOC_CMD,
 							  (guint8 *)&multi_cmd->cmds[3],
+							  sizeof(struct mmc_ioc_cmd),
 							  NULL,
 							  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+							  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 							  &error_local)) {
 					g_prefix_error(error, "%s: ", error_local->message);
 				}
@@ -461,7 +473,7 @@ fu_emmc_device_write_firmware(FuDevice *device,
 		if (!check_sect_done)
 			break;
 
-		if (!fu_emmc_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
+		if (!fu_emmc_device_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
 			return FALSE;
 
 		sect_done = ext_csd[EXT_CSD_NUM_OF_FW_SEC_PROG_0] |
@@ -481,16 +493,18 @@ fu_emmc_device_write_firmware(FuDevice *device,
 
 	/* sanity check */
 	if (check_sect_done) {
+		gsize streamsz = 0;
 		gsize total_done = (gsize)sect_done * (gsize)self->sect_size;
-
-		if (total_done != fw_size) {
+		if (!fu_input_stream_size(stream, &streamsz, error))
+			return FALSE;
+		if (total_done != streamsz) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "firmware size and number of sectors written "
 				    "mismatch (%" G_GSIZE_FORMAT "/%" G_GSIZE_FORMAT "):",
 				    total_done,
-				    fw_size);
+				    streamsz);
 			return FALSE;
 		}
 	}
@@ -501,6 +515,8 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	} else {
 		/* re-enter ffu mode and install the firmware */
 		multi_cmd->num_of_cmds = 2;
+		multi_cmdsz = sizeof(struct mmc_ioc_multi_cmd) +
+			      multi_cmd->num_of_cmds * sizeof(struct mmc_ioc_cmd);
 
 		/* set ext_csd to install mode */
 		multi_cmd->cmds[1].opcode = MMC_SWITCH;
@@ -516,8 +532,10 @@ fu_emmc_device_write_firmware(FuDevice *device,
 		if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 					  MMC_IOC_MULTI_CMD,
 					  (guint8 *)multi_cmd,
+					  multi_cmdsz,
 					  NULL,
 					  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+					  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 					  error)) {
 			g_autoptr(GError) error_local = NULL;
 			/* In case multi-cmd ioctl failed before exiting from ffu mode */
@@ -525,8 +543,10 @@ fu_emmc_device_write_firmware(FuDevice *device,
 			if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
 						  MMC_IOC_CMD,
 						  (guint8 *)&multi_cmd->cmds[2],
+						  sizeof(struct mmc_ioc_cmd),
 						  NULL,
 						  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+						  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
 						  &error_local)) {
 				g_prefix_error(error, "%s: ", error_local->message);
 			}
@@ -534,12 +554,12 @@ fu_emmc_device_write_firmware(FuDevice *device,
 		}
 
 		/* return status */
-		if (!fu_emmc_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
+		if (!fu_emmc_device_read_extcsd(self, ext_csd, sizeof(ext_csd), error))
 			return FALSE;
 		if (ext_csd[EXT_CSD_FFU_STATUS] != 0) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
 				    "FFU install failed: %d",
 				    ext_csd[EXT_CSD_FFU_STATUS]);
 			return FALSE;
@@ -556,13 +576,16 @@ fu_emmc_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *val
 	FuEmmcDevice *self = FU_EMMC_DEVICE(device);
 	if (g_strcmp0(key, "EmmcBlockSize") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->write_block_size = tmp;
 		return TRUE;
 	}
 
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -582,7 +605,9 @@ fu_emmc_device_init(FuEmmcDevice *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "org.jedec.mmc");
 	fu_device_add_icon(FU_DEVICE(self), "media-memory");
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
 }
 
 static void
@@ -595,13 +620,13 @@ static void
 fu_emmc_device_class_init(FuEmmcDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_emmc_device_finalize;
-	klass_device->set_quirk_kv = fu_emmc_device_set_quirk_kv;
-	klass_device->setup = fu_emmc_device_setup;
-	klass_device->to_string = fu_emmc_device_to_string;
-	klass_device->prepare_firmware = fu_emmc_device_prepare_firmware;
-	klass_device->probe = fu_emmc_device_probe;
-	klass_device->write_firmware = fu_emmc_device_write_firmware;
-	klass_device->set_progress = fu_emmc_device_set_progress;
+	device_class->set_quirk_kv = fu_emmc_device_set_quirk_kv;
+	device_class->setup = fu_emmc_device_setup;
+	device_class->to_string = fu_emmc_device_to_string;
+	device_class->prepare_firmware = fu_emmc_device_prepare_firmware;
+	device_class->probe = fu_emmc_device_probe;
+	device_class->write_firmware = fu_emmc_device_write_firmware;
+	device_class->set_progress = fu_emmc_device_set_progress;
 }

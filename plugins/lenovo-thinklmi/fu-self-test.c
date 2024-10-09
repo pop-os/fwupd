@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Mario Limonciello <mario.limonciello@amd.com>
+ * Copyright 2021 Mario Limonciello <mario.limonciello@amd.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -23,7 +23,7 @@ typedef struct {
 } FuTest;
 
 static void
-_plugin_device_added_cb(FuPlugin *plugin, FuDevice *device, gpointer user_data)
+fu_test_plugin_device_added_cb(FuPlugin *plugin, FuDevice *device, gpointer user_data)
 {
 	FuDevice **dev = (FuDevice **)user_data;
 	*dev = device;
@@ -56,14 +56,8 @@ fu_test_self_init(FuTest *self, GError **error)
 	g_assert_no_error(*error);
 	g_assert_true(ret);
 	ret = fu_context_reload_bios_settings(ctx, error);
-#ifdef FU_THINKLMI_COMPAT
 	g_assert_no_error(*error);
 	g_assert_true(ret);
-#else
-	g_assert_error(*error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
-	g_assert_false(ret);
-	return FALSE;
-#endif
 
 	self->plugin_uefi_capsule =
 	    fu_plugin_new_from_gtype(fu_uefi_capsule_plugin_get_type(), ctx);
@@ -91,7 +85,7 @@ fu_test_probe_fake_esrt(FuTest *self)
 
 	added_id = g_signal_connect(FU_PLUGIN(self->plugin_uefi_capsule),
 				    "device-added",
-				    G_CALLBACK(_plugin_device_added_cb),
+				    G_CALLBACK(fu_test_plugin_device_added_cb),
 				    &dev);
 
 	ret = fu_plugin_runner_coldplug(self->plugin_uefi_capsule, progress, &error);

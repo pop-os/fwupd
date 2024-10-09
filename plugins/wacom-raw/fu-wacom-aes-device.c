@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -9,7 +9,7 @@
 #include "fu-wacom-aes-device.h"
 #include "fu-wacom-common.h"
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint8 report_id;
 	guint8 cmd;
 	guint8 echo;
@@ -25,7 +25,7 @@ struct _FuWacomAesDevice {
 G_DEFINE_TYPE(FuWacomAesDevice, fu_wacom_aes_device, FU_TYPE_WACOM_DEVICE)
 
 static gboolean
-fu_wacom_aes_add_recovery_hwid(FuDevice *device, GError **error)
+fu_wacom_aes_device_add_recovery_hwid(FuWacomAesDevice *self, GError **error)
 {
 	FuWacomRawRequest cmd = {
 	    .report_id = FU_WACOM_RAW_BL_REPORT_ID_SET,
@@ -39,14 +39,14 @@ fu_wacom_aes_add_recovery_hwid(FuDevice *device, GError **error)
 					.data = {0x00}};
 	guint16 pid;
 
-	if (!fu_wacom_device_set_feature(FU_WACOM_DEVICE(device),
+	if (!fu_wacom_device_set_feature(FU_WACOM_DEVICE(self),
 					 (guint8 *)&cmd,
 					 sizeof(cmd),
 					 error)) {
 		g_prefix_error(error, "failed to send: ");
 		return FALSE;
 	}
-	if (!fu_wacom_device_get_feature(FU_WACOM_DEVICE(device),
+	if (!fu_wacom_device_get_feature(FU_WACOM_DEVICE(self),
 					 (guint8 *)&rsp,
 					 sizeof(rsp),
 					 error)) {
@@ -55,8 +55,8 @@ fu_wacom_aes_add_recovery_hwid(FuDevice *device, GError **error)
 	}
 	if (rsp.size8 != cmd.size8) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "firmware does not support this feature");
 		return FALSE;
 	}
@@ -64,24 +64,24 @@ fu_wacom_aes_add_recovery_hwid(FuDevice *device, GError **error)
 	pid = (rsp.data[7] << 8) + (rsp.data[6]);
 	if ((pid == 0xFFFF) || (pid == 0x0000)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "invalid recovery product ID %04x",
 			    pid);
 		return FALSE;
 	}
 
 	/* add recovery IDs */
-	fu_device_add_instance_u16(device, "VEN", 0x2D1F);
-	fu_device_add_instance_u16(device, "DEV", pid);
-	if (!fu_device_build_instance_id(device, error, "HIDRAW", "VID", "PID", NULL))
+	fu_device_add_instance_u16(FU_DEVICE(self), "VEN", 0x2D1F);
+	fu_device_add_instance_u16(FU_DEVICE(self), "DEV", pid);
+	if (!fu_device_build_instance_id(FU_DEVICE(self), error, "HIDRAW", "VID", "PID", NULL))
 		return FALSE;
-	fu_device_add_instance_u16(device, "VEN", 0x056A);
-	return fu_device_build_instance_id(device, error, "HIDRAW", "VID", "PID", NULL);
+	fu_device_add_instance_u16(FU_DEVICE(self), "VEN", 0x056A);
+	return fu_device_build_instance_id(FU_DEVICE(self), error, "HIDRAW", "VID", "PID", NULL);
 }
 
 static gboolean
-fu_wacom_aes_query_operation_mode(FuWacomAesDevice *self, GError **error)
+fu_wacom_aes_device_query_operation_mode(FuWacomAesDevice *self, GError **error)
 {
 	guint8 buf[FU_WACOM_RAW_FW_REPORT_SZ] = {
 	    FU_WACOM_RAW_FW_REPORT_ID,
@@ -102,9 +102,9 @@ fu_wacom_aes_query_operation_mode(FuWacomAesDevice *self, GError **error)
 
 	/* unsupported */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_FAILED,
-		    "Failed to query operation mode, got 0x%x",
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
+		    "failed to query operation mode, got 0x%x",
 		    buf[1]);
 	return FALSE;
 }
@@ -116,14 +116,14 @@ fu_wacom_aes_device_setup(FuDevice *device, GError **error)
 	g_autoptr(GError) error_local = NULL;
 
 	/* find out if in bootloader mode already */
-	if (!fu_wacom_aes_query_operation_mode(self, error))
+	if (!fu_wacom_aes_device_query_operation_mode(self, error))
 		return FALSE;
 
 	/* get firmware version */
 	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER)) {
 		fu_device_set_version(device, "0.0");
 		/* get the recovery PID if supported */
-		if (!fu_wacom_aes_add_recovery_hwid(device, &error_local))
+		if (!fu_wacom_aes_device_add_recovery_hwid(self, &error_local))
 			g_debug("failed to get HwID: %s", error_local->message);
 	} else {
 		guint16 fw_ver;
@@ -218,8 +218,8 @@ fu_wacom_aes_device_write_block(FuWacomAesDevice *self,
 	/* check size */
 	if (datasz != blocksz) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "block size 0x%x != 0x%x untested",
 			    (guint)datasz,
 			    (guint)blocksz);
@@ -268,7 +268,12 @@ fu_wacom_aes_device_write_firmware(FuDevice *device,
 
 	/* write */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_wacom_aes_device_write_block(self,
 						     fu_chunk_get_idx(chk),
 						     fu_chunk_get_address(chk),
@@ -294,9 +299,9 @@ fu_wacom_aes_device_init(FuWacomAesDevice *self)
 static void
 fu_wacom_aes_device_class_init(FuWacomAesDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	FuWacomDeviceClass *klass_wac_device = FU_WACOM_DEVICE_CLASS(klass);
-	klass_device->setup = fu_wacom_aes_device_setup;
-	klass_device->attach = fu_wacom_aes_device_attach;
-	klass_wac_device->write_firmware = fu_wacom_aes_device_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	FuWacomDeviceClass *wac_device_class = FU_WACOM_DEVICE_CLASS(klass);
+	device_class->setup = fu_wacom_aes_device_setup;
+	device_class->attach = fu_wacom_aes_device_attach;
+	wac_device_class->write_firmware = fu_wacom_aes_device_write_firmware;
 }

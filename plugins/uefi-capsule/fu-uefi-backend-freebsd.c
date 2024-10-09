@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 3mdeb Embedded Systems Consulting
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 3mdeb Embedded Systems Consulting
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -85,7 +85,7 @@ fu_uefi_backend_device_new(FuUefiBackend *self,
 #endif
 
 static gboolean
-fu_uefi_backend_freebsd_setup(FuBackend *backend, GError **error)
+fu_uefi_backend_freebsd_setup(FuBackend *backend, FuBackendSetupFlags flags, GError **error)
 {
 	g_autofree gchar *efi_ver = fu_kenv_get_string("efi-version", error);
 	if (efi_ver == NULL) {
@@ -188,9 +188,9 @@ fu_uefi_backend_freebsd_init(FuUefiBackendFreebsd *self)
 static void
 fu_uefi_backend_freebsd_class_init(FuUefiBackendFreebsdClass *klass)
 {
-	FuBackendClass *klass_backend = FU_BACKEND_CLASS(klass);
-	klass_backend->setup = fu_uefi_backend_freebsd_setup;
-	klass_backend->coldplug = fu_uefi_backend_freebsd_coldplug;
+	FuBackendClass *backend_class = FU_BACKEND_CLASS(klass);
+	backend_class->setup = fu_uefi_backend_freebsd_setup;
+	backend_class->coldplug = fu_uefi_backend_freebsd_coldplug;
 }
 
 FuBackend *

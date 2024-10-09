@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2012 Andrew Duggan
- * Copyright (C) 2012 Synaptics Inc.
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2012 Andrew Duggan
+ * Copyright 2012 Synaptics Inc.
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -214,8 +214,13 @@ fu_synaptics_rmi_v7_device_write_blocks(FuSynapticsRmiDevice *self,
 	/* write FW blocks */
 	chunks = fu_chunk_array_new_from_bytes(fw, 0x00, flash->block_size);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) req = g_byte_array_new();
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		g_byte_array_append(req, fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
 		if (!fu_synaptics_rmi_device_write(self,
 						   address,
@@ -225,7 +230,7 @@ fu_synaptics_rmi_v7_device_write_blocks(FuSynapticsRmiDevice *self,
 			g_prefix_error(error,
 				       "failed to write block @0x%x:%x: ",
 				       address,
-				       fu_chunk_get_address(chk));
+				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 	}
@@ -286,10 +291,16 @@ fu_synaptics_rmi_v7_device_write_partition_signature(FuSynapticsRmiDevice *self,
 					  0x00,
 					  (gsize)flash->payload_length * (gsize)flash->block_size);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
-		g_autoptr(GBytes) chk_blob = fu_chunk_get_bytes(chk);
-		g_autoptr(GByteArray) req_trans_sz = g_byte_array_new();
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) req_cmd = g_byte_array_new();
+		g_autoptr(GByteArray) req_trans_sz = g_byte_array_new();
+		g_autoptr(GBytes) chk_blob = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
+
 		fu_byte_array_append_uint16(req_trans_sz,
 					    fu_chunk_get_data_sz(chk) / flash->block_size,
 					    G_LITTLE_ENDIAN);
@@ -310,6 +321,7 @@ fu_synaptics_rmi_v7_device_write_partition_signature(FuSynapticsRmiDevice *self,
 			g_prefix_error(error, "failed to write signature command: ");
 			return FALSE;
 		}
+		chk_blob = fu_chunk_get_bytes(chk);
 		if (!fu_synaptics_rmi_v7_device_write_blocks(self,
 							     f34->data_base + 0x5,
 							     chk_blob,
@@ -368,10 +380,16 @@ fu_synaptics_rmi_v7_device_write_partition(FuSynapticsRmiDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks) + 1);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
-		g_autoptr(GBytes) chk_blob = fu_chunk_get_bytes(chk);
+		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(GBytes) chk_blob = NULL;
 		g_autoptr(GByteArray) req_trans_sz = g_byte_array_new();
 		g_autoptr(GByteArray) req_cmd = g_byte_array_new();
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
+
 		fu_byte_array_append_uint16(req_trans_sz,
 					    fu_chunk_get_data_sz(chk) / flash->block_size,
 					    G_LITTLE_ENDIAN);
@@ -392,6 +410,7 @@ fu_synaptics_rmi_v7_device_write_partition(FuSynapticsRmiDevice *self,
 			g_prefix_error(error, "failed to flash command: ");
 			return FALSE;
 		}
+		chk_blob = fu_chunk_get_bytes(chk);
 		if (!fu_synaptics_rmi_v7_device_write_blocks(self,
 							     f34->data_base + 0x5,
 							     chk_blob,
@@ -524,10 +543,10 @@ fu_synaptics_rmi_v7_device_secure_check(FuSynapticsRmiDevice *self,
 		byte_payload = fu_firmware_get_bytes(img, error);
 		if (byte_payload == NULL)
 			return FALSE;
-		if (!fu_synaptics_verify_sha256_signature(byte_payload,
-							  pubkey,
-							  byte_signature,
-							  error)) {
+		if (!fu_synaptics_rmi_verify_sha256_signature(byte_payload,
+							      pubkey,
+							      byte_signature,
+							      error)) {
 			g_prefix_error(error, "%s secure check failed: ", id);
 			return FALSE;
 		}
@@ -741,7 +760,7 @@ fu_synaptics_rmi_v7_device_write_firmware(FuDevice *device,
 }
 
 static gboolean
-fu_synaptics_rmi_device_read_flash_config_v7(FuSynapticsRmiDevice *self, GError **error)
+fu_synaptics_rmi_v7_device_read_flash_config(FuSynapticsRmiDevice *self, GError **error)
 {
 	FuSynapticsRmiFlash *flash = fu_synaptics_rmi_device_get_flash(self);
 	FuSynapticsRmiFunction *f34;
@@ -929,7 +948,7 @@ fu_synaptics_rmi_v7_device_setup(FuSynapticsRmiDevice *self, GError **error)
 	}
 
 	/* read flash config */
-	return fu_synaptics_rmi_device_read_flash_config_v7(self, error);
+	return fu_synaptics_rmi_v7_device_read_flash_config(self, error);
 }
 
 gboolean

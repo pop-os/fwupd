@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -75,12 +75,11 @@ fu_tpm_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuTpmDevice *self = FU_TPM_DEVICE(device);
 	FuTpmDevicePrivate *priv = GET_PRIVATE(self);
-	if (priv->family != NULL)
-		fu_string_append(str, idt, "Family", priv->family);
+	fwupd_codec_string_append(str, idt, "Family", priv->family);
 }
 
 static void
-fu_tpm_v2_device_item_free(FuTpmDevicePcrItem *item)
+fu_tpm_device_item_free(FuTpmDevicePcrItem *item)
 {
 	g_free(item->checksum);
 	g_free(item);
@@ -102,20 +101,19 @@ static void
 fu_tpm_device_init(FuTpmDevice *self)
 {
 	FuTpmDevicePrivate *priv = GET_PRIVATE(self);
-	priv->items = g_ptr_array_new_with_free_func((GDestroyNotify)fu_tpm_v2_device_item_free);
+	priv->items = g_ptr_array_new_with_free_func((GDestroyNotify)fu_tpm_device_item_free);
 	fu_device_set_name(FU_DEVICE(self), "TPM");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_QUAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_icon(FU_DEVICE(self), "computer");
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self), FU_UDEV_DEVICE_FLAG_NONE);
 }
 
 static void
 fu_tpm_device_class_init(FuTpmDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
 	object_class->finalize = fu_tpm_device_finalize;
-	klass_device->to_string = fu_tpm_device_to_string;
+	device_class->to_string = fu_tpm_device_to_string;
 }

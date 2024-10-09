@@ -18,6 +18,12 @@ struct _FuDellK2PdFirmware {
 
 G_DEFINE_TYPE(FuDellK2PdFirmware, fu_dell_k2_pd_firmware, FU_TYPE_FIRMWARE)
 
+static gchar *
+fu_dell_k2_pd_firmware_convert_version(FuFirmware *firmware, guint64 version_raw)
+{
+	return fu_version_from_uint32_hex(version_raw, fu_firmware_get_version_format(firmware));
+}
+
 static gboolean
 fu_dell_k2_pd_firmware_find_magic_offset(FuFirmware *firmware,
 					 guint32 magic,
@@ -58,17 +64,18 @@ fu_dell_k2_pd_firmware_find_magic_offset(FuFirmware *firmware,
 
 static gboolean
 fu_dell_k2_pd_firmware_set_version(FuFirmware *firmware,
-				   GBytes *fw,
+				   GInputStream *stream,
 				   gsize magic_offset,
 				   GError **error)
 {
-	gsize bufsz = 0;
+	gsize streamsz = 0;
 	gsize version_offset = magic_offset + DOCK_PD_VERSION_OFFSET;
 	guint32 raw_version = 0;
-	g_autofree gchar *version = NULL;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
-	if (version_offset + 4 > bufsz) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+
+	if (version_offset + 4 > streamsz) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_INVALID_FILE,
@@ -76,22 +83,16 @@ fu_dell_k2_pd_firmware_set_version(FuFirmware *firmware,
 		return FALSE;
 	}
 
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz,
-				    version_offset,
-				    &raw_version,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u32(stream, version_offset, &raw_version, G_LITTLE_ENDIAN, error))
 		return FALSE;
 
-	version = fu_version_from_uint32_hex(raw_version, FWUPD_VERSION_FORMAT_QUAD);
-	fu_firmware_set_version(firmware, version);
+	fu_firmware_set_version_raw(firmware, raw_version);
 	return TRUE;
 }
 
 static gboolean
 fu_dell_k2_pd_firmware_parse(FuFirmware *firmware,
-			     GBytes *fw,
+			     GInputStream *stream,
 			     gsize offset,
 			     FwupdInstallFlags flags,
 			     GError **error)
@@ -106,7 +107,7 @@ fu_dell_k2_pd_firmware_parse(FuFirmware *firmware,
 		return FALSE;
 
 	/* read version from firmware */
-	if (!fu_dell_k2_pd_firmware_set_version(firmware, fw, magic_offset, error))
+	if (!fu_dell_k2_pd_firmware_set_version(firmware, stream, magic_offset, error))
 		return FALSE;
 
 	return TRUE;
@@ -115,6 +116,7 @@ fu_dell_k2_pd_firmware_parse(FuFirmware *firmware,
 static void
 fu_dell_k2_pd_firmware_init(FuDellK2PdFirmware *self)
 {
+	fu_firmware_set_version_format(FU_FIRMWARE(self), FWUPD_VERSION_FORMAT_QUAD);
 }
 
 static void
@@ -122,4 +124,5 @@ fu_dell_k2_pd_firmware_class_init(FuDellK2PdFirmwareClass *klass)
 {
 	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	firmware_class->parse = fu_dell_k2_pd_firmware_parse;
+	firmware_class->convert_version = fu_dell_k2_pd_firmware_convert_version;
 }

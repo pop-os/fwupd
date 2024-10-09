@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Adam.Chen <Adam.Chen@genesyslogic.com.tw>
+ * Copyright 2023 Adam.Chen <Adam.Chen@genesyslogic.com.tw>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -18,9 +18,9 @@ G_DECLARE_FINAL_TYPE(FuGenesysHubhidDevice,
 gboolean
 fu_genesys_hubhid_device_send_report(FuGenesysHubhidDevice *self,
 				     FuProgress *progress,
-				     GUsbDeviceDirection direction,
-				     GUsbDeviceRequestType request_type,
-				     GUsbDeviceRecipient recipient,
+				     FuUsbDirection direction,
+				     FuUsbRequestType request_type,
+				     FuUsbRecipient recipient,
 				     guint8 request,
 				     guint16 value,
 				     guint16 idx,

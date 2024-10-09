@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -17,28 +17,30 @@ G_DEFINE_TYPE(FuEbitdoFirmware, fu_ebitdo_firmware, FU_TYPE_FIRMWARE)
 
 static gboolean
 fu_ebitdo_firmware_parse(FuFirmware *firmware,
-			 GBytes *fw,
+			 GInputStream *stream,
 			 gsize offset,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	guint32 payload_len;
 	guint32 version;
-	g_autofree gchar *version_str = NULL;
+	gsize streamsz = 0;
 	g_autoptr(FuFirmware) img_hdr = fu_firmware_new();
 	g_autoptr(GByteArray) st = NULL;
-	g_autoptr(GBytes) fw_hdr = NULL;
-	g_autoptr(GBytes) fw_payload = NULL;
+	g_autoptr(GInputStream) stream_hdr = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 
 	/* check the file size */
-	st = fu_struct_ebitdo_hdr_parse_bytes(fw, offset, error);
+	st = fu_struct_ebitdo_hdr_parse_stream(stream, offset, error);
 	if (st == NULL)
 		return FALSE;
-	payload_len = (guint32)(g_bytes_get_size(fw) - st->len);
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	payload_len = (guint32)(streamsz - st->len);
 	if (payload_len != fu_struct_ebitdo_hdr_get_destination_len(st)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "file size incorrect, expected 0x%04x got 0x%04x",
 			    (guint)fu_struct_ebitdo_hdr_get_destination_len(st),
 			    (guint)payload_len);
@@ -47,25 +49,25 @@ fu_ebitdo_firmware_parse(FuFirmware *firmware,
 
 	/* parse version */
 	version = fu_struct_ebitdo_hdr_get_version(st);
-	version_str = g_strdup_printf("%.2f", version / 100.f);
-	fu_firmware_set_version(firmware, version_str);
 	fu_firmware_set_version_raw(firmware, version);
 
 	/* add header */
-	fw_hdr = fu_bytes_new_offset(fw, 0x0, st->len, error);
-	if (fw_hdr == NULL)
+	stream_hdr = fu_partial_input_stream_new(stream, 0x0, st->len, error);
+	if (stream_hdr == NULL)
+		return FALSE;
+	if (!fu_firmware_parse_stream(img_hdr, stream_hdr, 0x0, flags, error))
 		return FALSE;
 	fu_firmware_set_id(img_hdr, FU_FIRMWARE_ID_HEADER);
-	fu_firmware_set_bytes(img_hdr, fw_hdr);
 	fu_firmware_add_image(firmware, img_hdr);
 
 	/* add payload */
-	fw_payload = fu_bytes_new_offset(fw, st->len, payload_len, error);
-	if (fw_payload == NULL)
+	stream_payload = fu_partial_input_stream_new(stream, st->len, payload_len, error);
+	if (stream_payload == NULL)
+		return FALSE;
+	if (!fu_firmware_set_stream(firmware, stream_payload, error))
 		return FALSE;
 	fu_firmware_set_id(firmware, FU_FIRMWARE_ID_PAYLOAD);
 	fu_firmware_set_addr(firmware, fu_struct_ebitdo_hdr_get_destination_addr(st));
-	fu_firmware_set_bytes(firmware, fw_payload);
 	return TRUE;
 }
 
@@ -86,15 +88,23 @@ fu_ebitdo_firmware_write(FuFirmware *firmware, GError **error)
 	return g_steal_pointer(&st);
 }
 
+static gchar *
+fu_ebitdo_firmware_convert_version(FuFirmware *firmware, guint64 version_raw)
+{
+	return g_strdup_printf("%.2f", version_raw / 100.f);
+}
+
 static void
 fu_ebitdo_firmware_init(FuEbitdoFirmware *self)
 {
+	fu_firmware_set_version_format(FU_FIRMWARE(self), FWUPD_VERSION_FORMAT_PAIR);
 }
 
 static void
 fu_ebitdo_firmware_class_init(FuEbitdoFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_ebitdo_firmware_parse;
-	klass_firmware->write = fu_ebitdo_firmware_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->convert_version = fu_ebitdo_firmware_convert_version;
+	firmware_class->parse = fu_ebitdo_firmware_parse;
+	firmware_class->write = fu_ebitdo_firmware_write;
 }

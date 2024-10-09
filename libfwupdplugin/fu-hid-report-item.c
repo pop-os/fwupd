@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuHidDevice"
@@ -10,8 +10,11 @@
 
 #include "fu-byte-array.h"
 #include "fu-bytes.h"
+#include "fu-common.h"
 #include "fu-hid-report-item.h"
+#include "fu-input-stream.h"
 #include "fu-mem-private.h"
+#include "fu-partial-input-stream.h"
 #include "fu-string.h"
 
 /**
@@ -53,62 +56,66 @@ fu_hid_report_item_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbB
 
 static gboolean
 fu_hid_report_item_parse(FuFirmware *firmware,
-			 GBytes *fw,
+			 GInputStream *stream,
 			 gsize offset,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuHidReportItem *self = FU_HID_REPORT_ITEM(firmware);
 	const guint8 size_lookup[] = {0, 1, 2, 4};
-	gsize bufsz = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
-	guint8 val = buf[offset];
-	guint8 data_size = size_lookup[val & 0b11];
-	guint8 tag = (val & 0b11111100) >> 2;
+	guint8 data_size;
+	guint8 tag;
+	guint8 val = 0;
 
+	if (!fu_input_stream_read_u8(stream, offset, &val, error))
+		return FALSE;
+	data_size = size_lookup[val & 0b11];
+	tag = (val & 0b11111100) >> 2;
 	fu_firmware_set_idx(firmware, tag);
 	fu_firmware_set_id(firmware, fu_hid_item_tag_to_string(tag));
-	if (!fu_memchk_read(bufsz, offset, data_size + 1, error))
-		return FALSE;
+
 	if (tag == FU_HID_ITEM_TAG_LONG && data_size == 2) {
-		if (offset + 1 >= bufsz) {
+		gsize streamsz = 0;
+		if (!fu_input_stream_size(stream, &streamsz, error))
+			return FALSE;
+		if (offset + 1 >= streamsz) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_FAILED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "not enough data to read long tag");
 			return FALSE;
 		}
-		data_size = buf[++offset];
+		if (!fu_input_stream_read_u8(stream, offset + 1, &data_size, error))
+			return FALSE;
 	} else {
-		g_autoptr(GBytes) img = NULL;
+		g_autoptr(GInputStream) partial_stream = NULL;
 		if (data_size == 1) {
 			guint8 value = 0;
-			if (!fu_memread_uint8_safe(buf, bufsz, offset + 1, &value, error))
+			if (!fu_input_stream_read_u8(stream, offset + 1, &value, error))
 				return FALSE;
 			self->value = value;
 		} else if (data_size == 2) {
 			guint16 value = 0;
-			if (!fu_memread_uint16_safe(buf,
-						    bufsz,
-						    offset + 1,
-						    &value,
-						    G_LITTLE_ENDIAN,
-						    error))
+			if (!fu_input_stream_read_u16(stream,
+						      offset + 1,
+						      &value,
+						      G_LITTLE_ENDIAN,
+						      error))
 				return FALSE;
 			self->value = value;
 		} else if (data_size == 4) {
-			if (!fu_memread_uint32_safe(buf,
-						    bufsz,
-						    offset + 1,
-						    &self->value,
-						    G_LITTLE_ENDIAN,
-						    error))
+			if (!fu_input_stream_read_u32(stream,
+						      offset + 1,
+						      &self->value,
+						      G_LITTLE_ENDIAN,
+						      error))
 				return FALSE;
 		}
-		img = fu_bytes_new_offset(fw, offset + 1, data_size, error);
-		if (img == NULL)
+		partial_stream = fu_partial_input_stream_new(stream, offset + 1, data_size, error);
+		if (partial_stream == NULL)
 			return FALSE;
-		fu_firmware_set_bytes(firmware, img);
+		if (!fu_firmware_set_stream(firmware, partial_stream, error))
+			return FALSE;
 	}
 
 	/* success */
@@ -153,7 +160,7 @@ fu_hid_report_item_build(FuFirmware *firmware, XbNode *n, GError **error)
 	/* optional data */
 	tmp = xb_node_query_text(n, "idx", NULL);
 	if (tmp != NULL) {
-		if (!fu_strtoull(tmp, &value, 0x0, G_MAXUINT8, error))
+		if (!fu_strtoull(tmp, &value, 0x0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		fu_firmware_set_idx(firmware, value);
 		fu_firmware_set_id(firmware, fu_hid_item_tag_to_string(value));
@@ -165,7 +172,7 @@ fu_hid_report_item_build(FuFirmware *firmware, XbNode *n, GError **error)
 	}
 	tmp = xb_node_query_text(n, "value", NULL);
 	if (tmp != NULL) {
-		if (!fu_strtoull(tmp, &value, 0x0, G_MAXUINT32, error))
+		if (!fu_strtoull(tmp, &value, 0x0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->value = value;
 	}
@@ -183,11 +190,11 @@ fu_hid_report_item_init(FuHidReportItem *self)
 static void
 fu_hid_report_item_class_init(FuHidReportItemClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->export = fu_hid_report_item_export;
-	klass_firmware->parse = fu_hid_report_item_parse;
-	klass_firmware->write = fu_hid_report_item_write;
-	klass_firmware->build = fu_hid_report_item_build;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->export = fu_hid_report_item_export;
+	firmware_class->parse = fu_hid_report_item_parse;
+	firmware_class->write = fu_hid_report_item_write;
+	firmware_class->build = fu_hid_report_item_build;
 }
 
 /**

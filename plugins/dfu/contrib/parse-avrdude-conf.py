@@ -1,5 +1,8 @@
-#!/usr/bin/python3
-# SPDX-License-Identifier: LGPL-2.1+
+#!/usr/bin/env python3
+#
+# Copyright 2017 Richard Hughes <richard@hughsie.com>
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 """ This parses avrdude.conf and generates quirks for fwupd """
 
@@ -7,6 +10,7 @@
 
 import sys
 from difflib import SequenceMatcher
+
 
 # finds a part using the ID
 def _find_part_by_id(parts, part_id):
@@ -43,7 +47,6 @@ def _parse_parts(fn_source):
     parts = []
 
     for line in open(fn_source).readlines():
-
         # try to clean up crazy syntax
         line = line.replace("\n", "")
         if line.endswith(";"):
@@ -113,7 +116,6 @@ def _write_quirks(parts, fn_destination):
     results = {}
 
     for part in parts:
-
         # ignore meta parts with deprecated names
         if "desc" not in part:
             continue

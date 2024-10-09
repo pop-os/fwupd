@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuEngineConfig"
@@ -14,8 +14,8 @@
 
 struct _FuEngineConfig {
 	FuConfig parent_instance;
-	GHashTable *os_release;	      /* (element-type utf-8 utf-8) */
 	GPtrArray *disabled_devices;  /* (element-type utf-8) */
+	GPtrArray *emulated_devices;  /* (element-type utf-8) */
 	GPtrArray *disabled_plugins;  /* (element-type utf-8) */
 	GPtrArray *approved_firmware; /* (element-type utf-8) */
 	GPtrArray *blocked_firmware;  /* (element-type utf-8) */
@@ -36,8 +36,8 @@ fu_engine_config_report_from_flags(FwupdReport *report, const gchar *flags_str, 
 		FwupdReportFlags flag = fwupd_report_flag_from_string(flags_strv[i]);
 		if (flag == FWUPD_REPORT_FLAG_UNKNOWN) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "report flag '%s' unknown",
 				    flags_strv[i]);
 			return FALSE;
@@ -54,26 +54,31 @@ fu_engine_config_report_from_spec(FuEngineConfig *self, const gchar *report_spec
 	g_autoptr(FwupdReport) report = fwupd_report_new();
 
 	for (guint i = 0; parts[i] != NULL; i++) {
-		const gchar *value = NULL;
+		g_autofree gchar *value = NULL;
 		g_auto(GStrv) kv = g_strsplit(parts[i], "=", 2);
 		if (g_strv_length(kv) != 2) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to parse report specifier key=value %s",
 				    parts[i]);
 			return NULL;
 		}
-		if (self->os_release != NULL && g_str_has_prefix(kv[1], "$"))
-			value = g_hash_table_lookup(self->os_release, kv[1] + 1);
+		if (g_str_has_prefix(kv[1], "$"))
+			value = g_get_os_info(kv[1] + 1);
 		if (value == NULL)
-			value = kv[1];
+			value = g_strdup(kv[1]);
 		if (g_strcmp0(kv[0], "VendorId") == 0) {
 			guint64 tmp = 0;
 			if (g_strcmp0(value, "$OEM") == 0) {
 				fwupd_report_add_flag(report, FWUPD_REPORT_FLAG_FROM_OEM);
 			} else {
-				if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error)) {
+				if (!fu_strtoull(value,
+						 &tmp,
+						 0,
+						 G_MAXUINT32,
+						 FU_INTEGER_BASE_AUTO,
+						 error)) {
 					g_prefix_error(error, "failed to parse '%s': ", value);
 					return NULL;
 				}
@@ -92,8 +97,8 @@ fu_engine_config_report_from_spec(FuEngineConfig *self, const gchar *report_spec
 				return NULL;
 		} else {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to parse report specifier key %s",
 				    kv[0]);
 			return NULL;
@@ -109,7 +114,8 @@ fu_engine_config_reload(FuEngineConfig *self)
 {
 	g_auto(GStrv) approved_firmware = NULL;
 	g_auto(GStrv) blocked_firmware = NULL;
-	g_auto(GStrv) devices = NULL;
+	g_auto(GStrv) disabled_devices = NULL;
+	g_auto(GStrv) emulated_devices = NULL;
 	g_auto(GStrv) plugins = NULL;
 	g_auto(GStrv) report_specs = NULL;
 	g_auto(GStrv) uids = NULL;
@@ -120,10 +126,10 @@ fu_engine_config_reload(FuEngineConfig *self)
 
 	/* get disabled devices */
 	g_ptr_array_set_size(self->disabled_devices, 0);
-	devices = fu_config_get_value_strv(FU_CONFIG(self), "fwupd", "DisabledDevices");
-	if (devices != NULL) {
-		for (guint i = 0; devices[i] != NULL; i++)
-			g_ptr_array_add(self->disabled_devices, g_strdup(devices[i]));
+	disabled_devices = fu_config_get_value_strv(FU_CONFIG(self), "fwupd", "DisabledDevices");
+	if (disabled_devices != NULL) {
+		for (guint i = 0; disabled_devices[i] != NULL; i++)
+			g_ptr_array_add(self->disabled_devices, g_strdup(disabled_devices[i]));
 	}
 
 	/* get disabled plugins */
@@ -137,6 +143,14 @@ fu_engine_config_reload(FuEngineConfig *self)
 			g_strdelimit(plugin_name, "-", '_');
 			g_ptr_array_add(self->disabled_plugins, g_steal_pointer(&plugin_name));
 		}
+	}
+
+	/* get emulated devices */
+	g_ptr_array_set_size(self->emulated_devices, 0);
+	emulated_devices = fu_config_get_value_strv(FU_CONFIG(self), "fwupd", "EmulatedDevices");
+	if (emulated_devices != NULL) {
+		for (guint i = 0; emulated_devices[i] != NULL; i++)
+			g_ptr_array_add(self->emulated_devices, g_strdup(emulated_devices[i]));
 	}
 
 	/* get approved firmware */
@@ -166,7 +180,7 @@ fu_engine_config_reload(FuEngineConfig *self)
 	/* get the domains to run in verbose */
 	domains = fu_config_get_value(FU_CONFIG(self), "fwupd", "VerboseDomains");
 	if (domains != NULL && domains[0] != '\0')
-		(void)g_setenv("FWUPD_VERBOSE", domains, TRUE);
+		(void)g_setenv("FWUPD_VERBOSE", domains, FALSE);
 
 	/* fetch host best known configuration */
 	host_bkc = fu_config_get_value(FU_CONFIG(self), "fwupd", "HostBkc");
@@ -185,7 +199,12 @@ fu_engine_config_reload(FuEngineConfig *self)
 		for (guint i = 0; uids[i] != NULL; i++) {
 			guint64 val = 0;
 			g_autoptr(GError) error_local = NULL;
-			if (!fu_strtoull(uids[i], &val, 0, G_MAXUINT64, &error_local)) {
+			if (!fu_strtoull(uids[i],
+					 &val,
+					 0,
+					 G_MAXUINT64,
+					 FU_INTEGER_BASE_AUTO,
+					 &error_local)) {
 				g_warning("failed to parse UID '%s': %s",
 					  uids[i],
 					  error_local->message);
@@ -232,6 +251,13 @@ fu_engine_config_get_disabled_devices(FuEngineConfig *self)
 {
 	g_return_val_if_fail(FU_IS_ENGINE_CONFIG(self), NULL);
 	return self->disabled_devices;
+}
+
+GPtrArray *
+fu_engine_config_get_emulated_devices(FuEngineConfig *self)
+{
+	g_return_val_if_fail(FU_IS_ENGINE_CONFIG(self), NULL);
+	return self->emulated_devices;
 }
 
 GArray *
@@ -380,7 +406,7 @@ fu_engine_config_archive_size_max_default(void)
 }
 
 static void
-fu_engine_set_config_default(FuEngineConfig *self, const gchar *key, const gchar *value)
+fu_engine_config_set_default(FuEngineConfig *self, const gchar *key, const gchar *value)
 {
 	fu_config_set_default(FU_CONFIG(self), "fwupd", key, value);
 }
@@ -391,6 +417,7 @@ fu_engine_config_init(FuEngineConfig *self)
 	g_autofree gchar *archive_size_max_default = fu_engine_config_archive_size_max_default();
 	self->disabled_devices = g_ptr_array_new_with_free_func(g_free);
 	self->disabled_plugins = g_ptr_array_new_with_free_func(g_free);
+	self->emulated_devices = g_ptr_array_new_with_free_func(g_free);
 	self->approved_firmware = g_ptr_array_new_with_free_func(g_free);
 	self->blocked_firmware = g_ptr_array_new_with_free_func(g_free);
 	self->trusted_uids = g_array_new(FALSE, FALSE, sizeof(guint64));
@@ -399,34 +426,32 @@ fu_engine_config_init(FuEngineConfig *self)
 	g_signal_connect(self, "loaded", G_CALLBACK(fu_engine_config_changed_cb), NULL);
 	g_signal_connect(self, "changed", G_CALLBACK(fu_engine_config_changed_cb), NULL);
 
-	/* optionally used for substitutions */
-	self->os_release = fwupd_get_os_release(NULL);
-
 	/* defaults changed here will also be reflected in the fwupd.conf man page */
-	fu_engine_set_config_default(self, "AllowEmulation", "false");
-	fu_engine_set_config_default(self, "ApprovedFirmware", NULL);
-	fu_engine_set_config_default(self, "ArchiveSizeMax", archive_size_max_default);
-	fu_engine_set_config_default(self, "BlockedFirmware", NULL);
-	fu_engine_set_config_default(self, "DisabledDevices", NULL);
-	fu_engine_set_config_default(self, "DisabledPlugins", "");
-	fu_engine_set_config_default(self, "EnumerateAllDevices", "false");
-	fu_engine_set_config_default(self, "EspLocation", NULL);
-	fu_engine_set_config_default(self, "HostBkc", NULL);
-	fu_engine_set_config_default(self, "IdleTimeout", "300");		  /* s */
-	fu_engine_set_config_default(self, "IdleInhibitStartupThreshold", "500"); /* ms */
-	fu_engine_set_config_default(self, "IgnorePower", "false");
-	fu_engine_set_config_default(self, "IgnoreRequirements", "false");
-	fu_engine_set_config_default(self, "OnlyTrusted", "true");
-	fu_engine_set_config_default(self, "P2pPolicy", FU_DEFAULT_P2P_POLICY);
-	fu_engine_set_config_default(self, "ReleaseDedupe", "true");
-	fu_engine_set_config_default(self, "ReleasePriority", "local");
-	fu_engine_set_config_default(self, "ShowDevicePrivate", "true");
-	fu_engine_set_config_default(self, "TestDevices", "false");
-	fu_engine_set_config_default(self, "TrustedReports", "VendorId=$OEM");
-	fu_engine_set_config_default(self, "TrustedUids", NULL);
-	fu_engine_set_config_default(self, "UpdateMotd", "true");
-	fu_engine_set_config_default(self, "UriSchemes", "file;https;http;ipfs");
-	fu_engine_set_config_default(self, "VerboseDomains", NULL);
+	fu_engine_config_set_default(self, "AllowEmulation", "false");
+	fu_engine_config_set_default(self, "ApprovedFirmware", NULL);
+	fu_engine_config_set_default(self, "ArchiveSizeMax", archive_size_max_default);
+	fu_engine_config_set_default(self, "BlockedFirmware", NULL);
+	fu_engine_config_set_default(self, "DisabledDevices", NULL);
+	fu_engine_config_set_default(self, "EmulatedDevices", NULL);
+	fu_engine_config_set_default(self, "DisabledPlugins", "");
+	fu_engine_config_set_default(self, "EnumerateAllDevices", "false");
+	fu_engine_config_set_default(self, "EspLocation", NULL);
+	fu_engine_config_set_default(self, "HostBkc", NULL);
+	fu_engine_config_set_default(self, "IdleTimeout", "300");		  /* s */
+	fu_engine_config_set_default(self, "IdleInhibitStartupThreshold", "500"); /* ms */
+	fu_engine_config_set_default(self, "IgnorePower", "false");
+	fu_engine_config_set_default(self, "IgnoreRequirements", "false");
+	fu_engine_config_set_default(self, "OnlyTrusted", "true");
+	fu_engine_config_set_default(self, "P2pPolicy", FU_DEFAULT_P2P_POLICY);
+	fu_engine_config_set_default(self, "ReleaseDedupe", "true");
+	fu_engine_config_set_default(self, "ReleasePriority", "local");
+	fu_engine_config_set_default(self, "ShowDevicePrivate", "true");
+	fu_engine_config_set_default(self, "TestDevices", "false");
+	fu_engine_config_set_default(self, "TrustedReports", "VendorId=$OEM");
+	fu_engine_config_set_default(self, "TrustedUids", NULL);
+	fu_engine_config_set_default(self, "UpdateMotd", "true");
+	fu_engine_config_set_default(self, "UriSchemes", "file;https;http;ipfs");
+	fu_engine_config_set_default(self, "VerboseDomains", NULL);
 }
 
 static void
@@ -434,10 +459,9 @@ fu_engine_config_finalize(GObject *obj)
 {
 	FuEngineConfig *self = FU_ENGINE_CONFIG(obj);
 
-	if (self->os_release != NULL)
-		g_hash_table_unref(self->os_release);
 	g_ptr_array_unref(self->disabled_devices);
 	g_ptr_array_unref(self->disabled_plugins);
+	g_ptr_array_unref(self->emulated_devices);
 	g_ptr_array_unref(self->approved_firmware);
 	g_ptr_array_unref(self->blocked_firmware);
 	g_ptr_array_unref(self->uri_schemes);

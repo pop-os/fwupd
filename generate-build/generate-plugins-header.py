@@ -1,9 +1,9 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-docstring
 #
-# Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+# Copyright 2022 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import sys
 
@@ -12,7 +12,6 @@ if len(sys.argv) < 3:
     sys.exit(1)
 
 with open(sys.argv[1], "w") as f:
-
     # empty argument is no plugins
     plugin_names = []
     if sys.argv[3]:

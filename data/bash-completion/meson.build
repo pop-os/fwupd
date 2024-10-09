@@ -15,7 +15,11 @@ if bashcomp.found()
   )
 
   if build_daemon
-    install_data(['fwupdmgr'],
+    configure_file(
+      input: 'fwupdmgr',
+      output: 'fwupdmgr',
+      configuration: con,
+      install: true,
       install_dir: completions_dir,
     )
   endif # build_daemon

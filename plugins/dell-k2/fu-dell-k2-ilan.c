@@ -29,7 +29,7 @@ fu_dell_k2_ilan_setup(FuDevice *device, GError **error)
 	FuDevice *proxy = fu_device_get_proxy(device);
 	guint32 version_raw;
 	FuDellK2BaseType dock_type = fu_dell_k2_ec_get_dock_type(proxy);
-	guint8 dev_type = FU_DELL_K2_EC_DEV_TYPE_LAN;
+	guint8 dev_type = DELL_K2_EC_DEV_TYPE_LAN;
 	g_autofree gchar *devname = NULL;
 
 	/* name */
@@ -73,15 +73,16 @@ fu_dell_k2_ilan_write(FuDevice *device,
 		return FALSE;
 
 	/* construct writing buffer */
-	fw_whdr = fu_dell_k2_ec_hid_fwup_pkg_new(fw, FU_DELL_K2_EC_DEV_TYPE_LAN, 0);
+	fw_whdr = fu_dell_k2_ec_hid_fwup_pkg_new(fw, DELL_K2_EC_DEV_TYPE_LAN, 0);
 
 	/* prepare the chunks */
-	chunks = fu_chunk_array_new_from_bytes(fw_whdr, 0, FU_DELL_K2_EC_HID_DATA_PAGE_SZ);
+	chunks = fu_chunk_array_new_from_bytes(fw_whdr, 0, DELL_K2_EC_HID_DATA_PAGE_SZ);
 
 	/* write to device */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 
+		chk = fu_chunk_array_index(chunks, i, error);
 		if (chk == NULL)
 			return FALSE;
 
@@ -120,8 +121,8 @@ fu_dell_k2_ilan_init(FuDellK2Ilan *self)
 	fu_device_add_icon(FU_DEVICE(self), "network-wired");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PROXY_FOR_OPEN);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_EXPLICIT_ORDER);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_PROXY_FOR_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_EXPLICIT_ORDER);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_DELL_K2_ILAN_FIRMWARE);
 }

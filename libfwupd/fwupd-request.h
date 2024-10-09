@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -27,16 +27,34 @@ struct _FwupdRequestClass {
 
 /**
  * FwupdRequestKind:
- * @FWUPD_REQUEST_KIND_UNKNOWN:		Unknown kind
- * @FWUPD_REQUEST_KIND_POST:		After the update
- * @FWUPD_REQUEST_KIND_IMMEDIATE:	Immediately
  *
  * The kind of request we are asking of the user.
  **/
 typedef enum {
-	FWUPD_REQUEST_KIND_UNKNOWN,   /* Since: 1.6.2 */
-	FWUPD_REQUEST_KIND_POST,      /* Since: 1.6.2 */
-	FWUPD_REQUEST_KIND_IMMEDIATE, /* Since: 1.6.2 */
+	/**
+	 * FWUPD_REQUEST_KIND_UNKNOWN:
+	 *
+	 * Unknown kind.
+	 *
+	 * Since: 1.6.2
+	 */
+	FWUPD_REQUEST_KIND_UNKNOWN,
+	/**
+	 * FWUPD_REQUEST_KIND_POST:
+	 *
+	 * After the update.
+	 *
+	 * Since: 1.6.2
+	 */
+	FWUPD_REQUEST_KIND_POST,
+	/**
+	 * FWUPD_REQUEST_KIND_IMMEDIATE:
+	 *
+	 * Immediately.
+	 *
+	 * Since: 1.6.2
+	 */
+	FWUPD_REQUEST_KIND_IMMEDIATE,
 	/*< private >*/
 	FWUPD_REQUEST_KIND_LAST
 } FwupdRequestKind;
@@ -113,65 +131,60 @@ typedef enum {
 #define FWUPD_REQUEST_ID_REPLUG_POWER "org.freedesktop.fwupd.replug-power"
 
 /**
- * FWUPD_REQUEST_FLAG_NONE:
- *
- * No flags are set.
- *
- * Since: 1.8.6
- */
-#define FWUPD_REQUEST_FLAG_NONE (0u)
-
-/**
- * FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE:
- *
- * Use a generic (translated) request message.
- *
- * Since: 1.8.6
- */
-#define FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE (1u << 0)
-
-/**
- * FWUPD_REQUEST_FLAG_ALLOW_GENERIC_IMAGE:
- *
- * Use a generic (translated) request image.
- *
- * Since: 1.8.6
- */
-#define FWUPD_REQUEST_FLAG_ALLOW_GENERIC_IMAGE (1u << 1)
-
-/**
- * FWUPD_REQUEST_FLAG_NON_GENERIC_MESSAGE:
- *
- * Device requires a non-generic interaction with custom non-translatable text.
- *
- * Since: 1.9.10
- */
-#define FWUPD_REQUEST_FLAG_NON_GENERIC_MESSAGE (1ull << 2)
-
-/**
- * FWUPD_REQUEST_FLAG_NON_GENERIC_IMAGE:
- *
- * Device requires to show the user a custom image for the action to make sense.
- *
- * Since: 1.9.10
- */
-#define FWUPD_REQUEST_FLAG_NON_GENERIC_IMAGE (1ull << 3)
-
-/**
- * FWUPD_REQUEST_FLAG_UNKNOWN:
- *
- * The request flag is unknown, typically caused by using mismatched client and daemon.
- *
- * Since: 1.8.6
- */
-#define FWUPD_REQUEST_FLAG_UNKNOWN G_MAXUINT64
-
-/**
  * FwupdRequestFlags:
  *
  * Flags used to represent request attributes
  */
-typedef guint64 FwupdRequestFlags;
+typedef enum {
+	/**
+	 * FWUPD_REQUEST_FLAG_NONE:
+	 *
+	 * No flags are set.
+	 *
+	 * Since: 1.8.6
+	 */
+	FWUPD_REQUEST_FLAG_NONE = 0u,
+	/**
+	 * FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE:
+	 *
+	 * Use a generic (translated) request message.
+	 *
+	 * Since: 1.8.6
+	 */
+	FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE = 1u << 0,
+	/**
+	 * FWUPD_REQUEST_FLAG_ALLOW_GENERIC_IMAGE:
+	 *
+	 * Use a generic (translated) request image.
+	 *
+	 * Since: 1.8.6
+	 */
+	FWUPD_REQUEST_FLAG_ALLOW_GENERIC_IMAGE = 1u << 1,
+	/**
+	 * FWUPD_REQUEST_FLAG_NON_GENERIC_MESSAGE:
+	 *
+	 * Device requires a non-generic interaction with custom non-translatable text.
+	 *
+	 * Since: 1.9.10
+	 */
+	FWUPD_REQUEST_FLAG_NON_GENERIC_MESSAGE = 1ull << 2,
+	/**
+	 * FWUPD_REQUEST_FLAG_NON_GENERIC_IMAGE:
+	 *
+	 * Device requires to show the user a custom image for the action to make sense.
+	 *
+	 * Since: 1.9.10
+	 */
+	FWUPD_REQUEST_FLAG_NON_GENERIC_IMAGE = 1ull << 3,
+	/**
+	 * FWUPD_REQUEST_FLAG_UNKNOWN:
+	 *
+	 * The request flag is unknown, typically caused by using mismatched client and daemon.
+	 *
+	 * Since: 1.8.6
+	 */
+	FWUPD_REQUEST_FLAG_UNKNOWN = G_MAXUINT64,
+} FwupdRequestFlags;
 
 const gchar *
 fwupd_request_kind_to_string(FwupdRequestKind kind);
@@ -185,8 +198,6 @@ fwupd_request_flag_from_string(const gchar *flag);
 
 FwupdRequest *
 fwupd_request_new(void);
-gchar *
-fwupd_request_to_string(FwupdRequest *self) G_GNUC_NON_NULL(1);
 
 const gchar *
 fwupd_request_get_id(FwupdRequest *self) G_GNUC_NON_NULL(1);
@@ -224,8 +235,5 @@ fwupd_request_remove_flag(FwupdRequest *self, FwupdRequestFlags flag) G_GNUC_NON
 gboolean
 fwupd_request_has_flag(FwupdRequest *self, FwupdRequestFlags flag) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1);
-
-FwupdRequest *
-fwupd_request_from_variant(GVariant *value);
 
 G_END_DECLS

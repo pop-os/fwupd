@@ -1,13 +1,13 @@
 // Copyright 2024 Richard hughes <Richard@hughsie.com>
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(ValidateBytes, ParseBytes)]
-struct SynapticsVmm9 {
+#[derive(ValidateStream, ParseStream)]
+struct FuStructSynapticsVmm9 {
     signature: [char; 7] == "CARRERA",
 }
 
 #[repr(u8)]
-enum SynapticsVmm9RcCtrl {
+enum FuSynapticsVmm9RcCtrl {
     EnableRc = 0x01,
     DisableRc = 0x02,
     GetId = 0x03,
@@ -34,7 +34,7 @@ enum SynapticsVmm9RcCtrl {
 
 #[derive(ToString)]
 #[repr(u8)]
-enum SynapticsVmm9RcSts {
+enum FuSynapticsVmm9RcSts {
     Success,
     Invalid,
     Unsupported,
@@ -45,37 +45,37 @@ enum SynapticsVmm9RcSts {
     RollbackFailed,
 }
 
-#[derive(New, Getters, ToString)]
-struct HidPayload {
+#[derive(New, Getters)]
+struct FuStructHidPayload {
     cap: u8,
     state: u8,
-    ctrl: SynapticsVmm9RcCtrl,
-    sts: SynapticsVmm9RcSts,
+    ctrl: FuSynapticsVmm9RcCtrl,
+    sts: FuSynapticsVmm9RcSts,
     offset: u32le,
     length: u32le,
     fifo: [u8; 32],
 }
 
 #[derive(New, ToString, Getters)]
-struct HidSetCommand {
+struct FuStructHidSetCommand {
     id: u8 == 0x1,
     type: u8 == 0x0, // packet write
     size: u8,
-    payload: HidPayload,
+    payload: FuStructHidPayload,
     checksum: u8, // this is actually lower if @rc_fifo is less than 32 bytes
 }
 
 #[derive(New, Parse)]
-struct HidGetCommand {
+struct FuStructHidGetCommand {
     id: u8 == 0x1,
     type: u8 == 0x0, // packet reply
     size: u8,
-    payload: HidPayload,
+    payload: FuStructHidPayload,
     checksum: u8, // payload is always 32 bytes
 }
 
 #[derive(Parse)]
-struct SynapticsUpdGetId {
+struct FuStructSynapticsUpdGetId {
     _pid: u16le,
     cid: u8,
     bid: u8,

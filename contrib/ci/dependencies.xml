@@ -1,5 +1,24 @@
 <?xml version="1.0"?>
 <dependencies>
+  <dependency id="hwdata">
+    <distro id="arch">
+      <package variant="x86_64" />
+    </distro>
+    <distro id="ubuntu">
+      <package variant="x86_64" />
+      <package variant="aarch64" />
+    </distro>
+    <distro id="debian">
+      <control />
+      <package variant="x86_64" />
+      <package variant="i386" />
+    </distro>
+    <distro id="fedora">
+      <package variant="x86_64" />
+      <package variant="aarch64" />
+      <package variant="mingw64" />
+    </distro>
+  </dependency>
   <dependency id="pesign">
     <distro id="fedora">
       <package variant="x86_64" />
@@ -16,6 +35,9 @@
     </distro>
   </dependency>
   <dependency id="bash-completion">
+    <distro id="arch">
+      <package variant="x86_64" />
+    </distro>
     <distro id="debian">
       <control />
       <package variant="x86_64" />
@@ -27,6 +49,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="base-devel">
@@ -102,6 +125,15 @@
       <package variant="mingw64">mingw64-gcc</package>
     </distro>
   </dependency>
+  <dependency id="gcovr">
+    <distro id="debian">
+      <package variant="x86_64" />
+      <package variant="i386" />
+    </distro>
+    <distro id="ubuntu">
+      <package variant="x86_64" />
+    </distro>
+  </dependency>
   <dependency id="gcc-multilib-s390x-linux-gnu">
     <distro id="debian">
       <package variant="s390x" />
@@ -127,6 +159,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libcairo-gobject2">
@@ -146,6 +179,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libdrm-dev">
@@ -163,6 +197,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libjson-glib-dev">
@@ -180,6 +215,9 @@
     <distro id="void">
       <package variant="x86_64">json-glib-devel</package>
     </distro>
+    <distro id="darwin">
+      <package>json-glib</package>
+    </distro>
     <distro id="debian">
       <control>
         <version>(>= 1.1.1)</version>
@@ -193,6 +231,7 @@
         <version>(>= 1.1.1)</version>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libftdi1-dev">
@@ -213,6 +252,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libpci-dev">
@@ -234,6 +274,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="fonts-noto">
@@ -258,6 +299,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="devscripts">
@@ -267,6 +309,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="debhelper">
@@ -282,6 +325,7 @@
         <version>(>= 12)</version>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="dbus-x11">
@@ -298,6 +342,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="dconf">
@@ -318,6 +363,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="intltool">
@@ -332,6 +378,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libfreetype-dev">
@@ -351,6 +398,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="fontconfig">
@@ -369,6 +417,12 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
+    </distro>
+  </dependency>
+  <dependency id="fwupd-efi">
+    <distro id="arch">
+      <package variant="x86_64">fwupd-efi</package>
     </distro>
   </dependency>
   <dependency id="libjaylink-dev">
@@ -384,9 +438,13 @@
         <exclusive>ia64</exclusive>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libflashrom-dev">
+    <distro id="arch">
+      <package variant="x86_64">flashrom</package>
+    </distro>
     <distro id="fedora">
       <package variant="x86_64">flashrom-devel</package>
       <package variant="aarch64">flashrom-devel</package>
@@ -403,6 +461,7 @@
         <exclusive>ia64</exclusive>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="gettext">
@@ -432,6 +491,7 @@
         <version>(>= 0.19.8.1)</version>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="gnupg2">
@@ -476,6 +536,7 @@
       </control>
       <package variant="x86_64">gnu-efi</package>
       <package variant="i386">gnu-efi</package>
+      <package variant="aarch64">gnu-efi</package>
     </distro>
   </dependency>
   <dependency id="git">
@@ -500,6 +561,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libglib2.0-dev">
@@ -512,6 +574,9 @@
       <!-- need native too until meson fixes https://github.com/mesonbuild/meson/issues/10376 -->
       <package variant="mingw64">glib2-devel</package>
       <package variant="mingw64">mingw64-glib2</package>
+    </distro>
+    <distro id="arch">
+      <package variant="x86_64">gsettings-desktop-schemas</package>
     </distro>
     <distro id="void">
       <package variant="x86_64">glib-devel</package>
@@ -529,6 +594,7 @@
         <version>(>= 2.45.8)</version>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="glibc-langpack-en">
@@ -551,6 +617,9 @@
     <distro id="void">
       <package variant="x86_64" />
     </distro>
+    <distro id="darwin">
+      <package variant="x86_64" />
+    </distro>
     <distro id="debian">
       <control />
       <package variant="x86_64" />
@@ -559,6 +628,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="gnome-desktop-testing">
@@ -571,6 +641,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="gnutls-dev">
@@ -585,6 +656,9 @@
     <distro id="void">
       <package variant="x86_64">gnutls-devel</package>
     </distro>
+    <distro id="darwin">
+      <package>gnutls</package>
+    </distro>
     <distro id="debian">
       <control />
       <package variant="x86_64" />
@@ -594,6 +668,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="gnutls-bin">
@@ -616,6 +691,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="jq">
@@ -627,9 +703,13 @@
       <package variant="aarch64" />
       <package variant="mingw64" />
     </distro>
+    <distro id="debian">
+      <package variant="x86_64" />
+    </distro>
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libxmlb-dev">
@@ -662,9 +742,13 @@
         <version>(>= 0.1.13)</version>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libjcat-dev">
+    <distro id="arch">
+      <package variant="x86_64">libjcat</package>
+    </distro>
     <distro id="fedora">
       <package variant="x86_64">libjcat-devel</package>
       <package variant="aarch64">libjcat-devel</package>
@@ -678,6 +762,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="void">
       <package variant="x86_64">libjcat-devel</package>
@@ -697,6 +782,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libzstd-dev">
@@ -728,9 +814,13 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="void">
       <package variant="x86_64">libarchive-devel</package>
+    </distro>
+    <distro id="darwin">
+      <package>libarchive</package>
     </distro>
   </dependency>
   <dependency id="libcbor-dev">
@@ -753,6 +843,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="void">
       <package variant="x86_64">libcbor-devel</package>
@@ -768,50 +859,33 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
-    </distro>
-  </dependency>
-  <dependency id="libgudev-1.0-dev">
-    <distro id="centos">
-      <package variant="x86_64">libgudev1-devel</package>
-    </distro>
-    <distro id="fedora">
-      <package variant="x86_64">libgudev1-devel</package>
-      <package variant="aarch64">libgudev1-devel</package>
-    </distro>
-    <distro id="debian">
-      <control />
-      <package variant="x86_64" />
-      <package variant="s390x">libgudev-1.0-dev:s390x</package>
-      <package variant="i386" />
-      <package variant="aarch64" />
-    </distro>
-    <distro id="ubuntu">
-      <control />
-      <package variant="x86_64" />
       <package variant="aarch64" />
     </distro>
   </dependency>
-  <dependency id="libgusb-dev">
+  <dependency id="libusb-1.0-0-dev">
     <distro id="arch">
-      <package variant="x86_64">libgusb</package>
+      <package variant="x86_64">libusb</package>
     </distro>
     <distro id="centos">
-      <package variant="x86_64">libgusb-devel</package>
+      <package variant="x86_64">libusb1-devel</package>
     </distro>
     <distro id="fedora">
-      <package variant="x86_64">libgusb-devel</package>
-      <package variant="aarch64">libgusb-devel</package>
-      <package variant="mingw64">mingw64-libgusb</package>
+      <package variant="x86_64">libusb1-devel</package>
+      <package variant="aarch64">libusb1-devel</package>
+      <package variant="mingw64">mingw64-libusbx</package>
     </distro>
     <distro id="void">
-      <package variant="x86_64">libgusb-devel</package>
+      <package variant="x86_64">libusb-devel</package>
+    </distro>
+    <distro id="darwin">
+      <package>libusb</package>
     </distro>
     <distro id="debian">
       <control>
-        <version>(>= 0.3.5)</version>
+        <version>(>= 1.0.9)</version>
       </control>
       <package variant="x86_64" />
-      <package variant="s390x">libgusb-dev:s390x</package>
+      <package variant="s390x">libusb-1.0-0-dev:s390x</package>
       <package variant="i386" />
     </distro>
     <distro id="ubuntu">
@@ -819,6 +893,7 @@
         <version>(>= 0.3.3)</version>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libicu-dev">
@@ -848,6 +923,9 @@
     <distro id="void">
       <package variant="x86_64">libcurl-devel</package>
     </distro>
+    <distro id="darwin">
+      <package>curl</package>
+    </distro>
     <distro id="debian">
       <control />
       <package variant="x86_64" />
@@ -857,6 +935,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <!-- for passim -->
@@ -882,6 +961,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libxml2-dev:s390x">
@@ -904,6 +984,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="locales">
@@ -916,6 +997,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="meson">
@@ -939,6 +1021,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="void">
       <package variant="x86_64" />
@@ -987,6 +1070,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="pkg-config">
@@ -998,6 +1082,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="fedora">
       <package variant="mingw64">mingw64-pkg-config</package>
@@ -1027,6 +1112,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libmm-glib-dev">
@@ -1049,6 +1135,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libqmi-glib-dev">
@@ -1071,6 +1158,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libmbim-glib-dev">
@@ -1093,6 +1181,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="libqrtr-glib-dev">
@@ -1104,6 +1193,9 @@
     </distro>
   </dependency>
   <dependency id="libpolkit-gobject-1-dev">
+    <distro id="arch">
+      <package variant="x86_64">polkit</package>
+    </distro>
     <distro id="centos">
       <package variant="x86_64">polkit-devel</package>
     </distro>
@@ -1123,6 +1215,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python34-pip">
@@ -1131,6 +1224,37 @@
     </distro>
     <distro id="arch">
       <package variant="x86_64">python-pip</package>
+    </distro>
+  </dependency>
+  <dependency id="python3-virtualenv">
+    <distro id="debian">
+      <package variant="x86_64" />
+    </distro>
+    <distro id="ubuntu">
+      <package variant="x86_64" />
+      <package variant="aarch64" />
+    </distro>
+    <distro id="fedora">
+      <package variant="x86_64" />
+      <package variant="aarch64" />
+    </distro>
+    <distro id="darwin">
+      <package>virtualenv</package>
+    </distro>
+  </dependency>
+  <dependency id="python3-dbusmock">
+    <distro id="debian">
+      <package variant="x86_64" />
+    </distro>
+    <distro id="arch">
+      <package variant="x86_64">python-dbusmock</package>
+    </distro>
+    <distro id="ubuntu">
+      <package variant="x86_64" />
+      <package variant="aarch64" />
+    </distro>
+    <distro id="fedora">
+      <package variant="x86_64" />
     </distro>
   </dependency>
   <dependency id="python3">
@@ -1162,6 +1286,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-pefile">
@@ -1180,6 +1305,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-uswid">
@@ -1194,6 +1320,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="gi-docgen">
@@ -1207,6 +1334,9 @@
     <distro id="arch">
       <package variant="x86_64" />
     </distro>
+    <distro id="darwin">
+      <package variant="x86_64" />
+    </distro>
     <distro id="centos">
       <package variant="x86_64" />
     </distro>
@@ -1216,6 +1346,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <!-- These are needed for gi-docgen -->
@@ -1223,6 +1354,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-typogrify">
@@ -1233,6 +1365,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="fedora">
       <package variant="x86_64" />
@@ -1251,6 +1384,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-markdown">
@@ -1260,6 +1394,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-jinja2">
@@ -1274,6 +1409,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-gobject">
@@ -1301,6 +1437,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-packaging">
@@ -1319,6 +1456,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-requests">
@@ -1362,9 +1500,13 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="void">
       <package variant="x86_64">sqlite-devel</package>
+    </distro>
+    <distro id="darwin">
+      <package>sqlite</package>
     </distro>
   </dependency>
   <dependency id="logind">
@@ -1382,7 +1524,7 @@
     </distro>
     <distro id="debian">
       <control>
-        <version>(>= 231)</version>
+        <version>(>= 249)</version>
       </control>
       <package variant="x86_64">systemd-dev</package>
       <package variant="s390x">systemd-dev</package>
@@ -1390,9 +1532,10 @@
     </distro>
     <distro id="ubuntu">
       <control>
-        <version>(>= 231)</version>
+        <version>(>= 249)</version>
       </control>
       <package variant="x86_64">systemd-dev</package>
+      <package variant="aarch64">systemd-dev</package>
     </distro>
   </dependency>
   <dependency id="libsystemd-dev">
@@ -1412,6 +1555,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="shared-mime-info">
@@ -1434,6 +1578,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="texlive-fonts-recommended">
@@ -1443,6 +1588,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="udev">
@@ -1455,6 +1601,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="umockdev">
@@ -1476,6 +1623,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="valac">
@@ -1492,6 +1640,9 @@
     <distro id="void">
       <package variant="x86_64">vala</package>
     </distro>
+    <distro id="darwin">
+      <package>vala</package>
+    </distro>
     <distro id="debian">
       <control />
       <package variant="x86_64" />
@@ -1501,6 +1652,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="valgrind">
@@ -1521,6 +1673,7 @@
     <distro id="ubuntu">
       <package variant="x86_64">valgrind-if-available</package>
       <package variant="i386">valgrind-if-available</package>
+      <package variant="aarch64">valgrind-if-available</package>
     </distro>
   </dependency>
   <dependency id="wget">
@@ -1562,6 +1715,7 @@
         <inclusive>i386</inclusive>
       </control>
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="void">
       <package variant="x86_64">tpm2-tss-devel</package>
@@ -1576,6 +1730,7 @@
   <dependency id="shellcheck">
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="fedora">
       <package variant="x86_64">ShellCheck</package>
@@ -1593,6 +1748,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="fedora">
       <package variant="x86_64">protobuf-c-devel</package>
@@ -1600,6 +1756,9 @@
     </distro>
     <distro id="void">
       <package variant="x86_64">protobuf-c-devel</package>
+    </distro>
+    <distro id="darwin">
+      <package>protobuf-c</package>
     </distro>
   </dependency>
   <dependency id="protobuf-c-compiler">
@@ -1611,6 +1770,7 @@
     <distro id="ubuntu">
       <control />
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="fedora">
       <package variant="x86_64" />
@@ -1626,6 +1786,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
   </dependency>
   <dependency id="python3-venv">
@@ -1635,6 +1796,7 @@
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
+      <package variant="aarch64" />
     </distro>
     <distro id="arch">
       <package variant="x86_64">python-virtualenv</package>

@@ -1,9 +1,9 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-docstring
 #
-# Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+# Copyright 2023 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import os
 import sys
@@ -29,6 +29,11 @@ class Type(Enum):
     U64 = "u64"
     STRING = "char"
     GUID = "Guid"
+    B32 = "b32"
+    I8 = "i8"
+    I16 = "i16"
+    I32 = "i32"
+    I64 = "i64"
 
 
 class Export(Enum):
@@ -39,7 +44,6 @@ class Export(Enum):
 
 # convert a CamelCase name into snake_case
 def _camel_to_snake(name: str) -> str:
-
     # specified as all caps
     if name.upper() == name:
         return name.lower()
@@ -70,11 +74,22 @@ class EnumObj:
         }
 
     def c_method(self, suffix: str):
-        return f"fu_{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
+        return f"{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
 
     @property
     def c_type(self):
-        return f"Fu{self.name}"
+        return f"{self.name}"
+
+    @property
+    def c_define_last(self) -> str:
+        return f"{_camel_to_snake(self.name).upper()}_LAST"
+
+    @property
+    def items_any_defaults(self) -> bool:
+        for item in self.items:
+            if item.default:
+                return True
+        return False
 
     def item(self, name: str) -> Optional["EnumItem"]:
         for item in self.items:
@@ -107,10 +122,9 @@ class EnumItem:
     @property
     def c_define(self) -> str:
         name_snake = _camel_to_snake(self.obj.name)
-        return f"FU_{name_snake.upper()}_{_camel_to_snake(self.name).replace('-', '_').upper()}"
+        return f"{name_snake.upper()}_{_camel_to_snake(self.name).replace('-', '_').upper()}"
 
     def parse_default(self, val: str) -> None:
-
         val = {
             "u64::MAX": "G_MAXUINT64",
             "u32::MAX": "G_MAXUINT32",
@@ -138,21 +152,34 @@ class StructObj:
         self._exports: Dict[str, Export] = {
             "Validate": Export.NONE,
             "ValidateBytes": Export.NONE,
+            "ValidateStream": Export.NONE,
+            "ValidateInternal": Export.NONE,
             "Parse": Export.NONE,
             "ParseBytes": Export.NONE,
+            "ParseStream": Export.NONE,
+            "ParseInternal": Export.NONE,
             "New": Export.NONE,
             "ToString": Export.NONE,
         }
 
     def c_method(self, suffix: str):
-        return f"fu_struct_{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
+        return f"{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
 
     def c_define(self, suffix: str):
-        return f"FU_STRUCT_{_camel_to_snake(self.name).upper()}_{suffix.upper()}"
+        return f"{_camel_to_snake(self.name).upper()}_{suffix.upper()}"
+
+    @property
+    def _has_bits(self) -> bool:
+        for item in self.items:
+            if item.type == Type.B32:
+                return True
+        return False
 
     @property
     def size(self) -> int:
         size: int = 0
+        if self._has_bits:
+            return 4
         for item in self.items:
             size += item.size
         return size
@@ -169,25 +196,12 @@ class StructObj:
             return
         self._exports[derive] = Export.PRIVATE
         if derive == "Validate":
-            for item in self.items:
-                if (
-                    item.constant
-                    and item.type != Type.STRING
-                    and not (item.type == Type.U8 and item.multiplier)
-                ):
-                    item.add_private_export("Getters")
-                if item.struct_obj:
-                    item.struct_obj.add_private_export("Validate")
+            self.add_private_export("ValidateInternal")
+        elif derive == "ValidateStream":
+            self.add_private_export("ValidateInternal")
         elif derive == "ValidateBytes":
             self.add_private_export("Validate")
-        elif derive == "ToString":
-            for item in self.items:
-                if item.enum_obj and not item.constant:
-                    item.enum_obj.add_private_export("ToString")
-        elif derive == "ParseBytes":
-            self.add_private_export("Parse")
-        elif derive == "Parse":
-            self.add_private_export("ToString")
+        elif derive == "ValidateInternal":
             for item in self.items:
                 if (
                     item.constant
@@ -196,14 +210,37 @@ class StructObj:
                 ):
                     item.add_private_export("Getters")
                 if item.struct_obj:
-                    item.struct_obj.add_private_export("Validate")
+                    item.struct_obj.add_private_export("ValidateInternal")
+        elif derive == "ToString":
+            for item in self.items:
+                if item.struct_obj:
+                    item.struct_obj.add_private_export("ToString")
+                if item.enum_obj and not item.constant and item.enabled:
+                    item.enum_obj.add_private_export("ToString")
+        elif derive == "Parse":
+            self.add_private_export("ParseInternal")
+        elif derive == "ParseStream":
+            self.add_private_export("ParseInternal")
+        elif derive == "ParseBytes":
+            self.add_private_export("Parse")
+        elif derive == "ParseInternal":
+            self.add_private_export("ToString")
+            self.add_private_export("ValidateInternal")
+            for item in self.items:
+                if (
+                    item.constant
+                    and item.type != Type.STRING
+                    and not (item.type == Type.U8 and item.multiplier)
+                ):
+                    item.add_private_export("Getters")
+                if item.struct_obj:
+                    item.struct_obj.add_private_export("ValidateInternal")
         elif derive == "New":
             for item in self.items:
                 if item.constant and not (item.type == Type.U8 and item.multiplier):
                     item.add_private_export("Setters")
 
     def add_public_export(self, derive: str) -> None:
-
         # Getters and Setters are special as we do not want public exports of const
         if derive in ["Getters", "Setters"]:
             for item in self.items:
@@ -214,7 +251,7 @@ class StructObj:
             self._exports[derive] = Export.PUBLIC
 
         # for convenience
-        if derive in ["Parse", "ParseBytes"]:
+        if derive in ["Parse", "ParseBytes", "ParseStream"]:
             self.add_public_export("Getters")
         if derive == "New":
             self.add_public_export("Setters")
@@ -238,6 +275,8 @@ class StructItem:
         self.padding: Optional[str] = None
         self.endian: Endian = Endian.NATIVE
         self.multiplier: int = 0
+        self._bits_size: int = 0
+        self._bits_offset: int = 0
         self.offset: int = 0
         self._exports: Dict[str, Export] = {
             "Getters": Export.NONE,
@@ -257,19 +296,34 @@ class StructItem:
         return self._exports[derive]
 
     @property
+    def bits_offset(self) -> int:
+        # from 32 bit word start
+        return self._bits_offset
+
+    @property
+    def bits_size(self) -> int:
+        if self.type == Type.B32:
+            return self._bits_size
+        return self.size * 8
+
+    @property
+    def bits_mask(self) -> int:
+        return (1 << self._bits_size) - 1
+
+    @property
     def size(self) -> int:
         multiplier = self.multiplier
         if not multiplier:
             multiplier = 1
-        if self.type in [Type.U8, Type.STRING, Type.GUID]:
+        if self.type in [Type.U8, Type.I8, Type.STRING, Type.GUID]:
             return multiplier
-        if self.type == Type.U16:
+        if self.type in [Type.U16, Type.I16]:
             return multiplier * 2
         if self.type == Type.U24:
             return multiplier * 3
-        if self.type == Type.U32:
+        if self.type in [Type.U32, Type.I32]:
             return multiplier * 4
-        if self.type == Type.U64:
+        if self.type in [Type.U64, Type.I64]:
             return multiplier * 8
         return 0
 
@@ -318,6 +372,16 @@ class StructItem:
             return "gchar"
         if self.type == Type.GUID:
             return "fwupd_guid_t"
+        if self.type == Type.B32:
+            return "guint32"
+        if self.type == Type.I8:
+            return "gint8"
+        if self.type == Type.I16:
+            return "gint16"
+        if self.type == Type.I32:
+            return "gint32"
+        if self.type == Type.I64:
+            return "gint64"
         return "void"
 
     @property
@@ -328,12 +392,19 @@ class StructItem:
             return "uint24"
         if self.type == Type.U32:
             return "uint32"
+        if self.type == Type.B32:
+            return "uint32"
         if self.type == Type.U64:
+            return "uint64"
+        if self.type == Type.I16:
+            return "uint16"
+        if self.type == Type.I32:
+            return "uint32"
+        if self.type == Type.I64:
             return "uint64"
         return ""
 
     def _parse_default(self, val: str) -> str:
-
         if self.enum_obj:
             enum_item = self.enum_obj.item(val)
             if not enum_item:
@@ -359,6 +430,7 @@ class StructItem:
             Type.U24,
             Type.U32,
             Type.U64,
+            Type.B32,
         ]:
             if val.startswith("0x") or val.startswith("0b"):
                 val = val.replace("_", "")
@@ -366,7 +438,6 @@ class StructItem:
         raise ValueError(f"do not know how to parse value for type: {self.type}")
 
     def parse_default(self, val: str) -> None:
-
         if (
             self.type == Type.U8
             and self.multiplier
@@ -378,18 +449,19 @@ class StructItem:
         self.default = self._parse_default(val)
 
     def parse_constant(self, val: str) -> None:
-
         self.default = self._parse_default(val)
         self.constant = self.default
 
     def parse_type(
         self, val: str, enum_objs: Dict[str, EnumObj], struct_objs: Dict[str, StructObj]
     ) -> None:
-
         # is array
         if val.startswith("[") and val.endswith("]"):
             typestr, multiplier = val[1:-1].split(";", maxsplit=1)
-            self.multiplier = int(multiplier)
+            if multiplier.startswith("0x"):
+                self.multiplier = int(multiplier[2:], 16)
+            else:
+                self.multiplier = int(multiplier)
         else:
             typestr = val
 
@@ -407,13 +479,28 @@ class StructItem:
             if not typestr_maybe:
                 raise ValueError(f"no repr for: {typestr}")
             typestr = typestr_maybe
+
+        # detect endian
+        if typestr.endswith("be"):
+            self.endian = Endian.BIG
+            typestr = typestr[:-2]
+        elif typestr.endswith("le"):
+            self.endian = Endian.LITTLE
+            typestr = typestr[:-2]
+
+        # support partial bytes
+        for bits_size in range(1, 32):
+            if bits_size in [8, 16, 24, 32]:
+                continue
+            if typestr == f"u{bits_size}":
+                self.type = Type.B32
+                self._bits_size = bits_size
+                if self.endian == Endian.NATIVE:
+                    self.endian = Endian.LITTLE
+                return
+
+        # defined types
         try:
-            if typestr.endswith("be"):
-                self.endian = Endian.BIG
-                typestr = typestr[:-2]
-            elif typestr.endswith("le"):
-                self.endian = Endian.LITTLE
-                typestr = typestr[:-2]
             self.type = Type(typestr)
             if self.type == Type.GUID:
                 self.multiplier = 16
@@ -448,7 +535,6 @@ class Generator:
         )
 
     def _process_enums(self, enum_obj: EnumObj) -> Tuple[str, str]:
-
         # render
         subst = {
             "Type": Type,
@@ -460,7 +546,6 @@ class Generator:
         return template_c.render(subst), template_h.render(subst)
 
     def _process_structs(self, struct_obj: StructObj) -> Tuple[str, str]:
-
         # render
         subst = {
             "Type": Type,
@@ -476,11 +561,11 @@ class Generator:
         repr_type: Optional[str] = None
         derives: List[str] = []
         offset: int = 0
+        bits_offset: int = 0
         struct_cur: Optional[StructObj] = None
         enum_cur: Optional[EnumObj] = None
 
-        for line in contents.split("\n"):
-
+        for line_num, line in enumerate(contents.split("\n")):
             # replace all tabs with spaces
             line = line.replace("\t", "  ")
 
@@ -493,14 +578,16 @@ class Generator:
             if line.startswith("struct ") and line.endswith("{"):
                 name = line[6:-1].strip()
                 if name in self.struct_objs:
-                    raise ValueError(f"struct {name} already defined")
+                    raise ValueError(
+                        f"struct {name} already defined on line {line_num}"
+                    )
                 struct_cur = StructObj(name)
                 self.struct_objs[name] = struct_cur
                 continue
             if line.startswith("enum ") and line.endswith("{"):
                 name = line[4:-1].strip()
                 if name in self.enum_objs:
-                    raise ValueError(f"enum {name} already defined")
+                    raise ValueError(f"enum {name} already defined on line {line_num}")
                 enum_cur = EnumObj(name)
                 enum_cur.repr_type = repr_type
                 self.enum_objs[name] = enum_cur
@@ -539,11 +626,14 @@ class Generator:
                 repr_type = None
                 derives.clear()
                 offset = 0
+                bits_offset = 0
                 continue
 
             # check for trailing comma
             if not line.endswith(","):
-                raise ValueError(f"invalid struct line: {line} -- needs trailing comma")
+                raise ValueError(
+                    f"invalid struct line on line {line_num}: {line} -- needs trailing comma"
+                )
             line = line[:-1]
 
             # split enumeration into sections
@@ -557,28 +647,32 @@ class Generator:
 
             # split structure into sections
             if struct_cur:
-
                 # parse "signature: u32be == 0x12345678"
                 parts = line.replace(" ", "").split(":", maxsplit=2)
                 if len(parts) == 1:
-                    raise ValueError(f"invalid struct line: {line}")
+                    raise ValueError(f"invalid struct line on line {line_num}: {line}")
 
                 # parse one element
                 item = StructItem(struct_cur)
+                item._bits_offset = bits_offset
                 item.offset = offset
                 item.element_id = parts[0]
 
                 type_parts = parts[1].split("=", maxsplit=3)
-                item.parse_type(
-                    type_parts[0],
-                    enum_objs=self.enum_objs,
-                    struct_objs=self.struct_objs,
-                )
+                try:
+                    item.parse_type(
+                        type_parts[0],
+                        enum_objs=self.enum_objs,
+                        struct_objs=self.struct_objs,
+                    )
+                except ValueError as e:
+                    raise ValueError(f"{str(e)} on line {line_num}: {line}")
                 if len(type_parts) == 3:
                     item.parse_constant(type_parts[2])
                 elif len(type_parts) == 2:
                     item.parse_default(type_parts[1])
                 offset += item.size
+                bits_offset += item.bits_size
                 struct_cur.items.append(item)
 
         # process the templates here
@@ -603,7 +697,6 @@ class Generator:
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("src", action="store", type=str, help="source")
     parser.add_argument("dst_c", action="store", type=str, help="destination .c")

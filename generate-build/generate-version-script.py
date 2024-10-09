@@ -1,9 +1,9 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-docstring
 #
-# Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+# Copyright 2017 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import sys
 import argparse
@@ -53,7 +53,6 @@ class LdVersionScript:
         return version
 
     def _add_cls(self, cls):
-
         # add all class functions
         for node in cls.findall(XMLNS + "function"):
             self._add_node(node)
@@ -98,9 +97,10 @@ class LdVersionScript:
                 self._add_cls(cls)
             for cls in ns.findall(XMLNS + "class"):
                 self._add_cls(cls)
+            for cls in ns.findall(XMLNS + "interface"):
+                self._add_cls(cls)
 
     def render(self):
-
         # get a sorted list of all the versions
         versions = []
         for version in self.releases:
@@ -111,13 +111,13 @@ class LdVersionScript:
         oldversion = None
         for version in sorted(versions, key=parse_version):
             symbols = sorted(self.releases[version])
-            verout += "\n%s_%s {\n" % (self.library_name, version)
+            verout += "\n{}_{} {{\n".format(self.library_name, version)
             verout += "  global:\n"
             for symbol in symbols:
                 verout += f"    {symbol};\n"
             verout += "  local: *;\n"
             if oldversion:
-                verout += "} %s_%s;\n" % (self.library_name, oldversion)
+                verout += "}} {}_{};\n".format(self.library_name, oldversion)
             else:
                 verout += "};\n"
             oldversion = version
@@ -125,7 +125,6 @@ class LdVersionScript:
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-r", "--override", action="append", nargs=2, metavar=("symbol", "version")
