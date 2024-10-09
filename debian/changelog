@@ -1,7 +1,8 @@
-fwupd (2.0.0-1) UNRELEASED; urgency=medium
+fwupd (2.0.0-1) experimental; urgency=medium
 
   * New upstream version (2.0.0)
   * Breaks ABI, introduce new libfwupd3 library for other software to use.
+  * Adjust build depends for new version.
 
  -- Mario Limonciello <superm1@gmail.com>  Wed, 09 Oct 2024 09:34:25 -0500
 
