@@ -1,3 +1,9 @@
+fwupd (1.9.25-1pop0) jammy; urgency=medium
+
+  * Pop!_OS backport
+
+ -- Jeremy Soller <jeremy@system76.com>  Fri, 11 Oct 2024 10:30:41 -0600
+
 fwupd (1.9.25-1) unstable; urgency=medium
 
   * New upstream version (1.9.25)
