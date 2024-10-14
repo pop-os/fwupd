@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.9.25',
+  version: '1.9.26',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=0.62.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -26,10 +26,8 @@ if git.found()
     source_version = fwupd_version
   endif
   tag = run_command([git, 'describe', '--exact-match'], check: false).returncode() == 0
-else
-  source_version = fwupd_version
+  conf.set_quoted('SOURCE_VERSION', source_version)
 endif
-conf.set_quoted('SOURCE_VERSION', source_version)
 
 # libtool versioning - this applies to libfwupd
 #

@@ -799,6 +799,13 @@ fu_engine_modify_config(FuEngine *self, const gchar *key, const gchar *value, GE
 			       "test:VerifyDelay",
 			       "test:WriteDelay",
 			       "test:WriteSupported",
+			       "uefi_capsule:DisableCapsuleUpdateOnDisk",
+			       "uefi_capsule:DisableShimForSecureBoot",
+			       "uefi_capsule:EnableEfiDebugging",
+			       "uefi_capsule:EnableGrubChainLoad",
+			       "uefi_capsule:OverrideESPMountPoint",
+			       "uefi_capsule:RebootCleanup",
+			       "uefi_capsule:RequireESPFreeSpace",
 			       NULL};
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
@@ -8853,6 +8860,12 @@ fu_engine_constructed(GObject *obj)
 							    G_USB_MICRO_VERSION);
 		fu_context_add_compile_version(self->ctx, "org.freedesktop.gusb", version);
 	}
+#endif
+#ifdef SOURCE_VERSION
+	if (g_strcmp0(SOURCE_VERSION, VERSION) != 0)
+		fu_context_add_compile_version(self->ctx,
+					       "org.freedesktop.fwupd.source",
+					       SOURCE_VERSION);
 #endif
 #ifdef HAVE_PASSIM
 	{
