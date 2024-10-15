@@ -74,6 +74,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  LIBFWUPD_1.9.6@LIBFWUPD_1.9.6 1.9.6
  LIBFWUPD_1.9.8@LIBFWUPD_1.9.8 1.9.8
  LIBFWUPD_2.0.0@LIBFWUPD_2.0.0 2.0.0
+ LIBFWUPD_2.0.1@LIBFWUPD_2.0.1 2.0.1
  fwupd_bios_setting_add_possible_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_get_current_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_get_description@LIBFWUPD_1.8.4 1.8.4
@@ -149,9 +150,11 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_client_get_daemon_interactive@LIBFWUPD_1.3.4 1.3.4
  fwupd_client_get_daemon_version@LIBFWUPD_0.9.6 1.0.0
  fwupd_client_get_details@LIBFWUPD_1.0.0 1.0.0
+ fwupd_client_get_details_async@LIBFWUPD_2.0.1 2.0.1
  fwupd_client_get_details_bytes@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_details_bytes_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_details_bytes_finish@LIBFWUPD_1.5.0 1.5.0
+ fwupd_client_get_details_finish@LIBFWUPD_2.0.1 2.0.1
  fwupd_client_get_device_by_id@LIBFWUPD_0.9.3 1.0.0
  fwupd_client_get_device_by_id_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_device_by_id_finish@LIBFWUPD_1.5.0 1.5.0
