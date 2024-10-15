@@ -96,12 +96,10 @@ fwupd_modify_config_sections=(
 
 fwupd_modify_config_opts=(
 	'ArchiveSizeMax'
-	'AllowEmulation'
 	'ApprovedFirmware'
 	'BlockedFirmware'
 	'DisabledDevices'
 	'DisabledPlugins'
-	'EmulatedDevices'
 	'EspLocation'
 	'EnumerateAllDevices'
 	'HostBkc'
@@ -351,7 +349,7 @@ _fwupdtool()
 			return 0
 		elif [[ "$args" = "4" ]]; then
 			case $prev in
-			AllowEmulation|EnumerateAllDevices|OnlyTrusted|IgnorePower|UpdateMotd|ShowDevicePrivate|ReleaseDedupe|TestDevices)
+			EnumerateAllDevices|OnlyTrusted|IgnorePower|UpdateMotd|ShowDevicePrivate|ReleaseDedupe|TestDevices)
 				COMPREPLY=( $(compgen -W "True False" -- "$cur") )
 				;;
 			AnotherWriteRequired|NeedsActivation|NeedsReboot|RegistrationSupported|RequestSupported|WriteSupported)
@@ -370,7 +368,7 @@ _fwupdtool()
 				;;
 			ApprovedFirmware|BlockedFirmware)
 				;;
-			DisabledDevices|EmulatedDevices)
+			DisabledDevices)
 				_show_device_ids
 				;;
 			DisabledPlugins)

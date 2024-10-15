@@ -215,7 +215,6 @@ fu_nordic_hid_archive_parse_file_get_flash_area_id(JsonObject *obj,
 static gboolean
 fu_nordic_hid_archive_parse(FuFirmware *firmware,
 			    GInputStream *stream,
-			    gsize offset,
 			    FwupdInstallFlags flags,
 			    GError **error)
 {
@@ -338,7 +337,11 @@ fu_nordic_hid_archive_parse(FuFirmware *firmware,
 		fwupd_image_id =
 		    g_strdup_printf("%s_%s_bank%01u", board_name, bootloader_name, flash_area_id);
 
-		if (!fu_firmware_parse(image, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error))
+		if (!fu_firmware_parse_bytes(image,
+					     blob,
+					     0x0,
+					     flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					     error))
 			return FALSE;
 
 		fu_firmware_set_id(image, fwupd_image_id);

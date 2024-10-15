@@ -192,7 +192,6 @@ fu_igsc_aux_firmware_parse_extension(FuIgscAuxFirmware *self, FuFirmware *fw, GE
 static gboolean
 fu_igsc_aux_firmware_parse(FuFirmware *firmware,
 			   GInputStream *stream,
-			   gsize offset,
 			   FwupdInstallFlags flags,
 			   GError **error)
 {
@@ -204,7 +203,7 @@ fu_igsc_aux_firmware_parse(FuFirmware *firmware,
 
 	/* FuIfwiFptFirmware->parse */
 	if (!FU_FIRMWARE_CLASS(fu_igsc_aux_firmware_parent_class)
-		 ->parse(firmware, stream, offset, flags, error))
+		 ->parse(firmware, stream, flags, error))
 		return FALSE;
 
 	/* parse data section */
@@ -214,7 +213,7 @@ fu_igsc_aux_firmware_parse(FuFirmware *firmware,
 		return FALSE;
 
 	/* parse as CPD */
-	if (!fu_firmware_parse(fw_cpd, blob_dataimg, flags, error))
+	if (!fu_firmware_parse_bytes(fw_cpd, blob_dataimg, 0x0, flags, error))
 		return FALSE;
 
 	/* get manifest */

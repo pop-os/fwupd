@@ -49,11 +49,11 @@ fu_usb_interface_parse_extra(FuUsbInterface *self, const guint8 *buf, gsize bufs
 	/* this is common to all descriptor types */
 	while (offset < bufsz) {
 		g_autoptr(FuUsbDescriptor) img = g_object_new(FU_TYPE_USB_DESCRIPTOR, NULL);
-		if (!fu_firmware_parse_full(FU_FIRMWARE(img),
-					    bytes,
-					    offset,
-					    FWUPD_INSTALL_FLAG_NONE,
-					    error))
+		if (!fu_firmware_parse_bytes(FU_FIRMWARE(img),
+					     bytes,
+					     offset,
+					     FWUPD_INSTALL_FLAG_NONE,
+					     error))
 			return FALSE;
 		if (!fu_firmware_add_image_full(FU_FIRMWARE(self), FU_FIRMWARE(img), error))
 			return FALSE;
@@ -348,7 +348,6 @@ fu_usb_interface_add_endpoint(FuUsbInterface *self, FuUsbEndpoint *endpoint)
 static gboolean
 fu_usb_interface_parse(FuFirmware *firmware,
 		       GInputStream *stream,
-		       gsize offset,
 		       FwupdInstallFlags flags,
 		       GError **error)
 {
@@ -357,11 +356,11 @@ fu_usb_interface_parse(FuFirmware *firmware,
 
 	/* FuUsbDescriptor */
 	if (!FU_FIRMWARE_CLASS(fu_usb_interface_parent_class)
-		 ->parse(firmware, stream, offset, flags, error))
+		 ->parse(firmware, stream, flags, error))
 		return FALSE;
 
 	/* parse as proper interface with endpoints */
-	st = fu_usb_interface_hdr_parse_stream(stream, offset, error);
+	st = fu_usb_interface_hdr_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 	self->iface.bLength = fu_usb_interface_hdr_get_length(st);
@@ -379,7 +378,7 @@ fu_usb_interface_parse(FuFirmware *firmware,
 	if (self->iface.bLength > st->len) {
 		g_autoptr(GByteArray) buf = NULL;
 		buf = fu_input_stream_read_byte_array(stream,
-						      offset + st->len,
+						      st->len,
 						      self->iface.bLength - st->len,
 						      error);
 		if (buf == NULL)

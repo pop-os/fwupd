@@ -22,7 +22,6 @@ G_DEFINE_TYPE(FuSynapticsCapeSnglFirmware,
 static gboolean
 fu_synaptics_cape_sngl_firmware_parse(FuFirmware *firmware,
 				      GInputStream *stream,
-				      gsize offset,
 				      FwupdInstallFlags flags,
 				      GError **error)
 {
@@ -51,7 +50,7 @@ fu_synaptics_cape_sngl_firmware_parse(FuFirmware *firmware,
 	}
 
 	/* unpack */
-	st = fu_struct_synaptics_cape_sngl_hdr_parse_stream(stream, offset, error);
+	st = fu_struct_synaptics_cape_sngl_hdr_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 	if (fu_struct_synaptics_cape_sngl_hdr_get_file_size(st) != streamsz) {
@@ -67,7 +66,7 @@ fu_synaptics_cape_sngl_firmware_parse(FuFirmware *firmware,
 		guint32 crc_calc = 0xFFFFFFFF;
 		g_autoptr(GInputStream) stream_tmp = NULL;
 
-		stream_tmp = fu_partial_input_stream_new(stream, 8, streamsz - 8, error);
+		stream_tmp = fu_partial_input_stream_new(stream, 8, G_MAXSIZE, error);
 		if (stream_tmp == NULL)
 			return FALSE;
 		if (!fu_input_stream_compute_crc32(stream_tmp,

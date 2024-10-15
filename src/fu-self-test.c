@@ -3791,6 +3791,70 @@ fu_device_list_explicit_order_post_func(gconstpointer user_data)
 }
 
 static void
+fu_device_list_better_than_func(gconstpointer user_data)
+{
+	FuTest *self = (FuTest *)user_data;
+	gboolean ret;
+	g_autoptr(FuDevice) device1 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device2 = fu_device_new(self->ctx);
+	g_autoptr(FuDevice) device_best = NULL;
+	g_autoptr(FuDevice) device_replug = NULL;
+	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
+	g_autoptr(FuPlugin) plugin1 = fu_plugin_new(self->ctx);
+	g_autoptr(FuPlugin) plugin2 = fu_plugin_new(self->ctx);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(GError) error = NULL;
+
+	/* add a bad plugin */
+	fu_plugin_set_name(plugin2, "plugin2");
+	fu_engine_add_plugin(engine, plugin2);
+
+	/* add a good plugin */
+	fu_plugin_set_name(plugin1, "plugin1");
+	fu_plugin_add_rule(plugin1, FU_PLUGIN_RULE_BETTER_THAN, "plugin2");
+	fu_engine_add_plugin(engine, plugin1);
+
+	/* load the daemon */
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* add a higher priority device */
+	fu_device_set_id(device1, "87ea5dfc8b8e384d848979496e706390b497e547");
+	fu_device_add_flag(device1, FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(device1, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_device_add_guid(device1, "12345678-1234-1234-1234-123456789012");
+	fu_device_add_protocol(device1, "com.acme");
+	fu_plugin_device_add(plugin1, device1);
+
+	/* should be ignored */
+	fu_device_set_id(device2, "87ea5dfc8b8e384d848979496e706390b497e547");
+	fu_device_add_flag(device2, FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(device2, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_device_add_guid(device2, "12345678-1234-1234-1234-123456789012");
+	fu_device_add_protocol(device2, "com.acme");
+	fu_plugin_device_add(plugin2, device2);
+
+	/* ensure we still have device1 */
+	device_best =
+	    fu_engine_get_device(engine, "87ea5dfc8b8e384d848979496e706390b497e547", &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(device_best);
+	g_assert_true(device_best == device1);
+
+	/* should be replaced */
+	fu_device_add_flag(device1, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
+	fu_plugin_device_add(plugin2, device2);
+
+	/* ensure we now have device2 */
+	device_replug =
+	    fu_engine_get_device(engine, "87ea5dfc8b8e384d848979496e706390b497e547", &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(device_replug);
+	g_assert_true(device_replug == device2);
+}
+
+static void
 fu_device_list_counterpart_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
@@ -4375,13 +4439,13 @@ static void
 fu_history_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
-	GError *error = NULL;
 	GPtrArray *checksums;
 	gboolean ret;
 	FuDevice *device;
 	FuRelease *release;
 	g_autoptr(FuDevice) device_found = NULL;
 	g_autoptr(FuHistory) history = NULL;
+	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) approved_firmware = NULL;
 	g_autofree gchar *dirname = NULL;
 	g_autofree gchar *filename = NULL;
@@ -4505,6 +4569,26 @@ fu_history_func(gconstpointer user_data)
 	g_assert_cmpint(approved_firmware->len, ==, 2);
 	g_assert_cmpstr(g_ptr_array_index(approved_firmware, 0), ==, "foo");
 	g_assert_cmpstr(g_ptr_array_index(approved_firmware, 1), ==, "bar");
+
+	/* emulation-tag */
+	ret = fu_history_add_emulation_tag(history, "id", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_history_has_emulation_tag(history, "id", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_history_has_emulation_tag(history, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_history_remove_emulation_tag(history, "id", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_history_remove_emulation_tag(history, "id", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_history_has_emulation_tag(history, "id", &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND);
+	g_assert_false(ret);
 }
 
 static GBytes *
@@ -4636,7 +4720,11 @@ fu_plugin_composite_func(gconstpointer user_data)
 	    "firmware.bin",
 	    "world",
 	    NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	components = fu_cabinet_get_components(cabinet, &error);
@@ -5298,7 +5386,11 @@ fu_common_store_cab_func(void)
 	    "firmware.dfu.asc",
 	    "signature",
 	    NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -5364,7 +5456,11 @@ fu_common_store_cab_artifact_func(void)
 	    "firmware.dfu.asc",
 	    "signature",
 	    NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet1), blob1, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet1),
+				      blob1,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -5391,7 +5487,11 @@ fu_common_store_cab_artifact_func(void)
 				  "firmware.dfu.asc",
 				  "signature",
 				  NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet2), blob2, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet2),
+				      blob2,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -5421,7 +5521,11 @@ fu_common_store_cab_artifact_func(void)
 	    "firmware.dfu.asc",
 	    "signature",
 	    NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet3), blob3, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet3),
+				      blob3,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -5446,7 +5550,11 @@ fu_common_store_cab_artifact_func(void)
 			      "firmware.dfu.asc",
 			      "signature",
 			      NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet4), blob4, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet4),
+				      blob4,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 }
@@ -5476,7 +5584,11 @@ fu_common_store_cab_unsigned_func(void)
 				 "firmware.bin",
 				 "world",
 				 NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -5525,7 +5637,11 @@ fu_common_store_cab_sha256_func(void)
 	    "firmware.bin",
 	    "world",
 	    NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 }
@@ -5554,7 +5670,11 @@ fu_common_store_cab_folder_func(void)
 				 "lvfs\\firmware.bin",
 				 "world",
 				 NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -5585,7 +5705,11 @@ fu_common_store_cab_error_no_metadata_func(void)
 	g_autoptr(GError) error = NULL;
 
 	blob = fu_test_build_cab(FALSE, "foo.txt", "hello", "bar.txt", "world", NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_false(ret);
 }
@@ -5613,7 +5737,11 @@ fu_common_store_cab_error_wrong_size_func(void)
 				 "firmware.bin",
 				 "world",
 				 NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_false(ret);
 }
@@ -5639,7 +5767,11 @@ fu_common_store_cab_error_missing_file_func(void)
 				 "firmware.bin",
 				 "world",
 				 NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_false(ret);
 }
@@ -5664,7 +5796,11 @@ fu_common_store_cab_error_size_func(void)
 				 "world",
 				 NULL);
 	fu_firmware_set_size_max(FU_FIRMWARE(cabinet), 123);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_false(ret);
 }
@@ -5691,7 +5827,11 @@ fu_common_store_cab_error_wrong_checksum_func(void)
 				 "firmware.bin",
 				 "world",
 				 NULL);
-	ret = fu_firmware_parse(FU_FIRMWARE(cabinet), blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_false(ret);
 }
@@ -6261,18 +6401,9 @@ fu_config_migrate_1_9_func(void)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	ret = fu_config_set_value(config, "fwupd", "AllowEmulation", "true", &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-
-	/* ensure that all keys except AllowEmulation migrated */
-	ret = g_file_get_contents(fake_localconf_fn, &localconf_data, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	g_assert_cmpstr(localconf_data,
-			==,
-			"[fwupd]\n"
-			"AllowEmulation=true\n");
+	/* ensure that all keys migrated */
+	ret = g_file_test(fake_localconf_fn, G_FILE_TEST_EXISTS);
+	g_assert_false(ret);
 }
 
 static void
@@ -6551,6 +6682,12 @@ fu_test_engine_fake_v4l(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
+	/* no -Dplugin_logitech_tap=enabled */
+	if (fu_engine_get_plugin_by_name(engine, "logitech_tap", &error) == NULL) {
+		g_test_skip(error->message);
+		return;
+	}
+
 	/* v4l -> logitech_tap */
 	device = fu_engine_get_device(engine, "d787669ee4a103fe0b361fe31c10ea037c72f27c", &error);
 	g_assert_no_error(error);
@@ -6623,6 +6760,12 @@ fu_test_engine_fake_serio(gconstpointer user_data)
 			     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+
+	/* no gnutls */
+	if (fu_engine_get_plugin_by_name(engine, "synaptics_rmi", &error) == NULL) {
+		g_test_skip(error->message);
+		return;
+	}
 
 	/* serio */
 	device = fu_engine_get_device(engine, "d8419b7614e50c6fb6162b5dca34df5236a62a8d", &error);
@@ -6704,6 +6847,12 @@ fu_test_engine_fake_mei(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
+	/* no -Dplugin_intel_me=enabled */
+	if (fu_engine_get_plugin_by_name(engine, "intel_me", &error) == NULL) {
+		g_test_skip(error->message);
+		return;
+	}
+
 	/* mei */
 	device = fu_engine_get_device(engine, "8d5470e73fd9a31eaa460b2b6aea95483fe3f14c", &error);
 	g_assert_no_error(error);
@@ -6738,6 +6887,12 @@ fu_test_engine_fake_block(gconstpointer user_data)
 			     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+
+	/* no -Dplugin_scsi=enabled */
+	if (fu_engine_get_plugin_by_name(engine, "scsi", &error) == NULL) {
+		g_test_skip(error->message);
+		return;
+	}
 
 	/* block */
 	device = fu_engine_get_device(engine, "7772d9fe9419e3ea564216e12913a16e233378a6", &error);
@@ -6839,6 +6994,9 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/device-list{counterpart}",
 			     self,
 			     fu_device_list_counterpart_func);
+	g_test_add_data_func("/fwupd/device-list{better-than}",
+			     self,
+			     fu_device_list_better_than_func);
 	g_test_add_data_func("/fwupd/release{compare}", self, fu_release_compare_func);
 	g_test_add_func("/fwupd/release{uri-scheme}", fu_release_uri_scheme_func);
 	g_test_add_data_func("/fwupd/release{trusted-report}",

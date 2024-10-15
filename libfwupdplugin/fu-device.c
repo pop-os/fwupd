@@ -3848,6 +3848,14 @@ fu_device_add_flag(FuDevice *self, FwupdDeviceFlags flag)
 	if (flag == FWUPD_DEVICE_FLAG_NONE)
 		return;
 
+	/* an emulated device cannot be used to record emulation events,
+	 * and an emulated device cannot be tagged for emulation */
+	if (flag == FWUPD_DEVICE_FLAG_EMULATED)
+		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG);
+	if (flag == FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG &&
+	    fu_device_has_flag(self, FWUPD_DEVICE_FLAG_EMULATED))
+		return;
+
 	/* being both a bootloader and requiring a bootloader is invalid */
 	if (flag & FWUPD_DEVICE_FLAG_NEEDS_BOOTLOADER)
 		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
@@ -6495,6 +6503,19 @@ static void
 fu_device_flags_notify_cb(FuDevice *self, GParamSpec *pspec, gpointer user_data)
 {
 	FuDevicePrivate *priv = GET_PRIVATE(self);
+
+	/* emulated device reinstalling do not need a replug or shutdown */
+	if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_EMULATED) &&
+	    fu_device_has_flag(self, FWUPD_DEVICE_FLAG_NEEDS_REBOOT)) {
+		g_debug("removing needs-reboot for emulated device");
+		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
+	}
+	if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_EMULATED) &&
+	    fu_device_has_flag(self, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN)) {
+		g_debug("removing needs-shutdown for emulated device");
+		fu_device_remove_flag(self, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN);
+	}
+
 	/* we only inhibit when the flags contains UPDATABLE, and that might be discovered by
 	 * probing the hardware *after* the battery level has been set */
 	if (priv->inhibits != NULL)

@@ -30,11 +30,11 @@ fu_algoltek_usbcr_firmware_export(FuFirmware *firmware,
 static gboolean
 fu_algoltek_usbcr_firmware_parse(FuFirmware *firmware,
 				 GInputStream *stream,
-				 gsize offset,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
 	FuAlgoltekUsbcrFirmware *self = FU_ALGOLTEK_USBCR_FIRMWARE(firmware);
+	gsize offset = 0;
 	guint16 app_ver = 0;
 	guint16 emmc_support_ver = 0;
 	guint16 emmc_ver = 0;
@@ -62,7 +62,7 @@ fu_algoltek_usbcr_firmware_parse(FuFirmware *firmware,
 		return FALSE;
 
 	/* calculate the offset of the app_ver */
-	offset = fw_addr + fw_len - FU_AG_USBCR_OFFSET_APP_VER_FROM_END;
+	offset += fw_addr + fw_len - FU_AG_USBCR_OFFSET_APP_VER_FROM_END;
 
 	/* app version */
 	if (!fu_input_stream_read_u16(stream, offset, &app_ver, G_BIG_ENDIAN, error))

@@ -43,6 +43,8 @@ void
 fu_udev_device_set_device_file(FuUdevDevice *self, const gchar *device_file) G_GNUC_NON_NULL(1);
 const gchar *
 fu_udev_device_get_sysfs_path(FuUdevDevice *self) G_GNUC_NON_NULL(1);
+gchar *
+fu_udev_device_get_devpath(FuUdevDevice *self) G_GNUC_NON_NULL(1);
 const gchar *
 fu_udev_device_get_subsystem(FuUdevDevice *self) G_GNUC_NON_NULL(1);
 const gchar *
@@ -94,6 +96,12 @@ fu_udev_device_read_property(FuUdevDevice *self,
 gchar *
 fu_udev_device_read_sysfs(FuUdevDevice *self, const gchar *attr, guint timeout_ms, GError **error)
     G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
+GBytes *
+fu_udev_device_read_sysfs_bytes(FuUdevDevice *self,
+				const gchar *attr,
+				gssize count,
+				guint timeout_ms,
+				GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 
 gboolean
 fu_udev_device_write_sysfs(FuUdevDevice *self,
@@ -101,5 +109,18 @@ fu_udev_device_write_sysfs(FuUdevDevice *self,
 			   const gchar *val,
 			   guint timeout_ms,
 			   GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2, 3);
+gboolean
+fu_udev_device_write_sysfs_byte_array(FuUdevDevice *self,
+				      const gchar *attr,
+				      GByteArray *buf,
+				      guint timeout_ms,
+				      GError **error) G_GNUC_WARN_UNUSED_RESULT
+    G_GNUC_NON_NULL(1, 2, 3);
+gboolean
+fu_udev_device_write_sysfs_bytes(FuUdevDevice *self,
+				 const gchar *attr,
+				 GBytes *blob,
+				 guint timeout_ms,
+				 GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2, 3);
 const gchar *
 fu_udev_device_get_devtype(FuUdevDevice *self) G_GNUC_NON_NULL(1);

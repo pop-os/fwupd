@@ -805,46 +805,6 @@ fu_util_device_test_component(FuUtilPrivate *priv,
 }
 
 static gboolean
-fu_util_emulation_load_with_fallback(FuUtilPrivate *priv, const gchar *filename, GError **error)
-{
-	g_autoptr(GError) error_local = NULL;
-
-	/* load data, but handle the case when emulation is disabled */
-	if (!fwupd_client_emulation_load(priv->client, filename, priv->cancellable, &error_local)) {
-		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED) ||
-		    priv->no_emulation_check) {
-			g_propagate_error(error, g_steal_pointer(&error_local));
-			return FALSE;
-		}
-		/* TRANSLATORS:  */
-		if (!priv->assume_yes) {
-			if (!fu_console_input_bool(priv->console,
-						   TRUE,
-						   "%s %s",
-						   /* ability to load emulated devices is opt-in */
-						   _("Device emulation is not enabled."),
-						   /* TRANSLATORS: we can do this live */
-						   _("Do you want to enable it now?"))) {
-				g_propagate_error(error, g_steal_pointer(&error_local));
-				return FALSE;
-			}
-		}
-		if (!fwupd_client_modify_config(priv->client,
-						"fwupd",
-						"AllowEmulation",
-						"true",
-						priv->cancellable,
-						error))
-			return FALSE;
-	} else {
-		return TRUE;
-	}
-
-	/* lets try again */
-	return fwupd_client_emulation_load(priv->client, filename, priv->cancellable, error);
-}
-
-static gboolean
 fu_util_device_test_remove_emulated_devices(FuUtilPrivate *priv, GError **error)
 {
 	g_autoptr(GPtrArray) devices = NULL;
@@ -905,7 +865,10 @@ fu_util_device_test_step(FuUtilPrivate *priv,
 			g_prefix_error(error, "failed to download %s: ", emulation_url);
 			return FALSE;
 		}
-		if (!fu_util_emulation_load_with_fallback(priv, emulation_filename, error))
+		if (!fwupd_client_emulation_load(priv->client,
+						 emulation_filename,
+						 priv->cancellable,
+						 error))
 			return FALSE;
 	}
 
@@ -2080,12 +2043,13 @@ fu_util_download_metadata(FuUtilPrivate *priv, GError **error)
 
 	/* metadata refreshed recently */
 	if ((priv->flags & FWUPD_INSTALL_FLAG_FORCE) == 0 && refresh_cnt == 0) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOTHING_TO_DO,
-				    /* TRANSLATORS: error message for a user who ran fwupdmgr
-				     * refresh recently */
-				    _("Metadata is up to date; use --force to refresh again."));
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOTHING_TO_DO,
+			    /* TRANSLATORS: error message for a user who ran fwupdmgr
+			     * refresh recently -- %1 is '--force' */
+			    _("Metadata is up to date; use %s to refresh again."),
+			    "--force");
 		return FALSE;
 	}
 
@@ -4641,6 +4605,7 @@ fu_util_emulation_tag(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FwupdDevice) dev = NULL;
 
 	/* set the flag */
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG;
 	dev = fu_util_get_device_or_prompt(priv, values, error);
 	if (dev == NULL)
 		return FALSE;
@@ -4697,7 +4662,7 @@ fu_util_emulation_load(FuUtilPrivate *priv, gchar **values, GError **error)
 				    "Invalid arguments, expected FILENAME");
 		return FALSE;
 	}
-	return fu_util_emulation_load_with_fallback(priv, values[0], error);
+	return fwupd_client_emulation_load(priv->client, values[0], priv->cancellable, error);
 }
 
 static gboolean
@@ -5431,8 +5396,10 @@ main(int argc, char *argv[])
 						       &priv->filter_device_include,
 						       &priv->filter_device_exclude,
 						       &error)) {
-			/* TRANSLATORS: the user didn't read the man page */
-			g_prefix_error(&error, "%s: ", _("Failed to parse flags for --filter"));
+			g_autofree gchar *str =
+			    /* TRANSLATORS: the user didn't read the man page, %1 is '--filter' */
+			    g_strdup_printf(_("Failed to parse flags for %s"), "--filter");
+			g_prefix_error(&error, "%s: ", str);
 			fu_util_print_error(priv, error);
 			return EXIT_FAILURE;
 		}
@@ -5442,10 +5409,11 @@ main(int argc, char *argv[])
 							&priv->filter_release_include,
 							&priv->filter_release_exclude,
 							&error)) {
-			/* TRANSLATORS: the user didn't read the man page */
-			g_prefix_error(&error,
-				       "%s: ",
-				       _("Failed to parse flags for --filter-release"));
+			g_autofree gchar *str =
+			    /* TRANSLATORS: the user didn't read the man page,
+			     * %1 is '--filter-release' */
+			    g_strdup_printf(_("Failed to parse flags for %s"), "--filter-release");
+			g_prefix_error(&error, "%s: ", str);
 			fu_util_print_error(priv, error);
 			return EXIT_FAILURE;
 		}

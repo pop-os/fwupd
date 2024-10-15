@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '2.0.0',
+  version: '2.0.1',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=1.3.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -18,6 +18,7 @@ conf.set('MICRO_VERSION', fwupd_micro_version)
 conf.set_quoted('PACKAGE_VERSION', fwupd_version)
 
 # get source version, falling back to package version
+source_version = fwupd_version
 git = find_program('git', required: false)
 tag = false
 if git.found()
@@ -26,8 +27,8 @@ if git.found()
     source_version = fwupd_version
   endif
   tag = run_command([git, 'describe', '--exact-match'], check: false).returncode() == 0
-  conf.set_quoted('SOURCE_VERSION', source_version)
 endif
+conf.set_quoted('SOURCE_VERSION', source_version)
 
 # libtool versioning - this applies to libfwupd
 #
@@ -267,7 +268,7 @@ libcurl = dependency('libcurl', version: '>= 7.62.0', required: get_option('curl
 if libcurl.found()
   conf.set('HAVE_LIBCURL', '1')
 endif
-libdrm = dependency('libdrm', required: false)
+libdrm = dependency('libdrm', required: get_option('libdrm'))
 if libdrm.found()
   conf.set('HAVE_LIBDRM' , '1')
 endif
@@ -722,6 +723,7 @@ summary({
   'gnutls': gnutls,
   'introspection': introspection.allowed(),
   'libcurl': libcurl,
+  'libdrm': libdrm,
   'lzma': lzma,
   'polkit': polkit,
   'python3': python3,

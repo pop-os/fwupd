@@ -337,6 +337,7 @@ fu_common_bitwise_func(void)
 	g_assert_cmpint(val, ==, 0x8000000000000002ull);
 
 	FU_BIT_CLEAR(val, 1);
+	g_assert_cmpint(val, ==, 0x8000000000000000ull);
 	FU_BIT_CLEAR(val, 63);
 	g_assert_cmpint(val, ==, 0);
 }
@@ -2448,6 +2449,7 @@ fu_backend_emulate_func(void)
 			     "  ]"
 			     "}";
 	const gchar *json2 = "{\n"
+			     "  \"FwupdVersion\" : \"" PACKAGE_VERSION "\",\n"
 			     "  \"UsbDevices\" : [\n"
 			     "    {\n"
 			     "      \"GType\" : \"FuUdevDevice\",\n"
@@ -3087,13 +3089,13 @@ fu_firmware_raw_aligned_func(void)
 	g_autoptr(GBytes) blob = g_bytes_new_static("hello", 5);
 
 	/* no alignment */
-	ret = fu_firmware_parse(firmware1, blob, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret = fu_firmware_parse_bytes(firmware1, blob, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* invalid alignment */
 	fu_firmware_set_alignment(firmware2, FU_FIRMWARE_ALIGNMENT_4K);
-	ret = fu_firmware_parse(firmware2, blob, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret = fu_firmware_parse_bytes(firmware2, blob, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_false(ret);
 }
@@ -3202,7 +3204,11 @@ fu_firmware_ihex_offset_func(void)
 			":00000001FF\n");
 
 	/* check we can load it too */
-	ret = fu_firmware_parse(firmware_verify, data_bin, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret = fu_firmware_parse_bytes(firmware_verify,
+				      data_bin,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NO_SEARCH,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	g_assert_cmpint(fu_firmware_get_addr(firmware_verify), ==, 0x80000000);
@@ -3603,7 +3609,7 @@ fu_firmware_csv_func(void)
 	g_assert_cmpstr(fu_csv_firmware_get_column_id(FU_CSV_FIRMWARE(firmware), 6), ==, NULL);
 
 	blob = g_bytes_new(data, strlen(data));
-	ret = fu_firmware_parse(firmware, blob, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(firmware, blob, 0x0, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	str = fu_firmware_to_string(firmware);
@@ -3692,7 +3698,7 @@ fu_firmware_linear_func(void)
 	g_assert_cmpint(g_bytes_get_size(blob3), ==, 1024);
 
 	/* parse them back */
-	ret = fu_firmware_parse(firmware2, blob3, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret = fu_firmware_parse_bytes(firmware2, blob3, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	str = fu_firmware_to_string(firmware2);
@@ -3814,7 +3820,7 @@ fu_firmware_oprom_func(void)
 	g_assert_cmpint(g_bytes_get_size(data_bin), ==, 1024);
 
 	/* re-parse to get the CPD image */
-	ret = fu_firmware_parse(firmware2, data_bin, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(firmware2, data_bin, 0x0, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	img1 = fu_firmware_get_image_by_id(firmware2, "cpd", &error);
@@ -4871,7 +4877,11 @@ fu_firmware_builder_round_trip_func(void)
 		blob = fu_firmware_write(firmware1, &error);
 		g_assert_no_error(error);
 		g_assert_nonnull(blob);
-		ret = fu_firmware_parse(firmware3, blob, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+		ret = fu_firmware_parse_bytes(firmware3,
+					      blob,
+					      0x0,
+					      FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      &error);
 		if (!ret)
 			g_prefix_error(&error, "%s: ", map[i].xml_fn);
 		g_assert_no_error(error);
@@ -5162,6 +5172,34 @@ fu_progress_child_finished(void)
 	/* parent step done after child finish */
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_CHILD_FINISHED);
 	fu_progress_step_done(progress);
+}
+
+static void
+fu_partial_input_stream_simple_func(void)
+{
+	gboolean ret;
+	gssize rc;
+	guint8 buf[2] = {0x0};
+	g_autoptr(GBytes) blob = g_bytes_new_static("12345678", 8);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GInputStream) base_stream = g_memory_input_stream_new_from_bytes(blob);
+	g_autoptr(GInputStream) stream = NULL;
+
+	/* use G_MAXSIZE for "rest of the stream" */
+	stream = fu_partial_input_stream_new(base_stream, 4, G_MAXSIZE, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(stream);
+	ret = g_seekable_seek(G_SEEKABLE(stream), 0x2, G_SEEK_SET, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(g_seekable_tell(G_SEEKABLE(stream)), ==, 0x2);
+
+	/* read from offset */
+	rc = g_input_stream_read(stream, buf, 2, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_cmpint(rc, ==, 2);
+	g_assert_cmpint(buf[0], ==, '7');
+	g_assert_cmpint(buf[1], ==, '8');
 }
 
 static void
@@ -5560,6 +5598,21 @@ fu_input_stream_find_func(void)
 }
 
 static void
+fu_input_stream_sum_overflow_func(void)
+{
+	guint8 buf[3] = {0};
+	gboolean ret;
+	guint32 sum32 = 0;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GInputStream) stream =
+	    g_memory_input_stream_new_from_data(buf, sizeof(buf), NULL);
+
+	ret = fu_input_stream_compute_sum32(stream, &sum32, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_READ);
+	g_assert_false(ret);
+}
+
+static void
 fu_input_stream_chunkify_func(void)
 {
 	gboolean ret;
@@ -5658,8 +5711,11 @@ fu_efi_lz77_decompressor_func(void)
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_tiano);
 	g_assert_cmpint(g_bytes_get_size(blob_tiano), ==, 144);
-	ret =
-	    fu_firmware_parse(lz77_decompressor_tiano, blob_tiano, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(lz77_decompressor_tiano,
+				      blob_tiano,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	blob_tiano2 = fu_firmware_get_bytes(lz77_decompressor_tiano, &error);
@@ -5674,10 +5730,11 @@ fu_efi_lz77_decompressor_func(void)
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_legacy);
 	g_assert_cmpint(g_bytes_get_size(blob_legacy), ==, 144);
-	ret = fu_firmware_parse(lz77_decompressor_legacy,
-				blob_tiano,
-				FWUPD_INSTALL_FLAG_NONE,
-				&error);
+	ret = fu_firmware_parse_bytes(lz77_decompressor_legacy,
+				      blob_tiano,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NONE,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	blob_legacy2 = fu_firmware_get_bytes(lz77_decompressor_legacy, &error);
@@ -5996,9 +6053,11 @@ main(int argc, char **argv)
 
 	g_test_add_func("/fwupd/efi-lz77{decompressor}", fu_efi_lz77_decompressor_func);
 	g_test_add_func("/fwupd/input-stream", fu_input_stream_func);
+	g_test_add_func("/fwupd/input-stream{sum-overflow}", fu_input_stream_sum_overflow_func);
 	g_test_add_func("/fwupd/input-stream{chunkify}", fu_input_stream_chunkify_func);
 	g_test_add_func("/fwupd/input-stream{find}", fu_input_stream_find_func);
 	g_test_add_func("/fwupd/partial-input-stream", fu_partial_input_stream_func);
+	g_test_add_func("/fwupd/partial-input-stream{simple}", fu_partial_input_stream_simple_func);
 	g_test_add_func("/fwupd/composite-input-stream", fu_composite_input_stream_func);
 	g_test_add_func("/fwupd/struct", fu_plugin_struct_func);
 	g_test_add_func("/fwupd/struct{bits}", fu_plugin_struct_bits_func);

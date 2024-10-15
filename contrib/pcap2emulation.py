@@ -19,12 +19,12 @@ URB_INTERRUPT = 1
 URB_CONTROL = 2
 URB_BULK = 3
 
-DESCRIPTOR_DEVICE = "1"
-DESCRIPTOR_CONFIGURATION = "2"
-DESCRIPTOR_STRING = "3"
-DESCRIPTOR_INTERFACE = "4"
-DESCRIPTOR_ENDPOINT = "5"
-DESCRIPTOR_EXTRA = "33"
+DESCRIPTOR_DEVICE = 1
+DESCRIPTOR_CONFIGURATION = 2
+DESCRIPTOR_STRING = 3
+DESCRIPTOR_INTERFACE = 4
+DESCRIPTOR_ENDPOINT = 5
+DESCRIPTOR_EXTRA = 33
 
 INTERFACE_CLASS_HID = 3
 INTERFACE_CLASS_SMARTCARD = 11
@@ -275,22 +275,22 @@ class Pcap2Emulation:
                         layers["usb"]["usb_usb_request_in"]
                     ]
                 else:
-                    length = int(layers["usb"]["usb_usb_data_len"])
+                    length = get_int(layers["usb"]["usb_usb_data_len"])
                 data = str(
                     base64.b64encode(bytes.fromhex("00" * length)),
                     "utf-8",
                 )
                 s += f",Data={data}"
             else:
-                length = int(layers["usb"]["usb_usb_data_len"])
+                length = get_int(layers["usb"]["usb_usb_data_len"])
                 s += f",Data={captured_data}"
             s += f",Length=0x{length:x}"
             return {"Id": s, "Data": captured_data}
         elif layers["usb"]["usb_usb_endpoint_address_direction"] == "1":
             if "usb_usb_urb_len" in layers["usb"]:
-                self.bulk_incoming_lens[layers["frame"]["frame_frame_number"]] = int(
-                    layers["usb"]["usb_usb_urb_len"]
-                )
+                self.bulk_incoming_lens[
+                    layers["frame"]["frame_frame_number"]
+                ] = get_int(layers["usb"]["usb_usb_urb_len"])
         return {}
 
     def _get_interface_descriptor(
@@ -298,12 +298,11 @@ class Pcap2Emulation:
     ) -> Any:
         table = {
             "usb_usb_bInterfaceNumber": "InterfaceNumber",
-            "usb_usb_bAlternateSetting": "AlternateSetting",
-            "usb_usb_bNumEndpoints": "NumEndpoints",
             "usb_usb_bInterfaceClass": "InterfaceClass",
             "usb_usb_bInterfaceSubClass": "InterfaceSubClass",
             "usb_usb_bInterfaceProtocol": "InterfaceProtocol",
             "usb_usb_iInterface": "Interface",
+            "usb_usb_bNumEndpoints": "NumEndpoints",
         }
 
         # Interface descriptor frame may occur multiple times,
@@ -323,6 +322,9 @@ class Pcap2Emulation:
                 val = get_int(layers[key][self.interface_index])
 
             if key not in layers:
+                continue
+
+            if key == "usb_usb_bInterfaceNumber" and val == 0:
                 continue
 
             interface[table[key]] = val
@@ -348,43 +350,6 @@ class Pcap2Emulation:
             if val != 0:
                 endpoint[table[key]] = val
         return endpoint
-
-    def _get_hid_descriptor(self, layers: Dict[str, Any], index: int) -> str:
-        desc = bytearray()
-        add_bytes(desc, layers["usb_usb_bLength"][index], 1)
-        add_bytes(desc, layers["usb_usb_bDescriptorType"][index], 1)
-        add_bytes(desc, layers["usbhid_usbhid_descriptor_hid_bcdHID"], 2)
-        add_bytes(desc, layers["usbhid_usbhid_descriptor_hid_bCountryCode"], 1)
-        add_bytes(desc, layers["usbhid_usbhid_descriptor_hid_bNumDescriptors"], 1)
-        add_bytes(desc, layers["usbhid_usbhid_descriptor_hid_bDescriptorType"], 1)
-        add_bytes(desc, layers["usbhid_usbhid_descriptor_hid_wDescriptorLength"], 2)
-        return str(base64.b64encode(desc), "utf-8")
-
-    def _get_smartcard_descriptor(self, layers: Dict[str, Any], index: int) -> str:
-        desc = bytearray()
-        add_bytes(desc, layers["usb_usb_bLength"][index], 1)
-        add_bytes(desc, layers["usb_usb_bDescriptorType"][index], 1)
-        add_bytes(desc, layers["usbccid_usbccid_bcdCCID"], 2)
-        add_bytes(desc, layers["usbccid_usbccid_bMaxSlotIndex"], 1)
-        add_bytes(desc, layers["usbccid_usbccid_bVoltageSupport"], 1)
-        add_bytes(desc, layers["usbccid_usbccid_dwProtocols"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_dwDefaultClock"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_dwMaximumClock"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_bNumClockSupported"], 1)
-        add_bytes(desc, layers["usbccid_usbccid_dwDataRate"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_dwMaxDataRate"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_bNumDataRatesSupported"], 1)
-        add_bytes(desc, layers["usbccid_usbccid_dwMaxIFSD"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_dwSynchProtocols"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_dwMechanical"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_dwFeatures"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_dwMaxCCIDMessageLength"], 4)
-        add_bytes(desc, layers["usbccid_usbccid_hf_ccid_bClassGetResponse"], 1)
-        add_bytes(desc, layers["usbccid_usbccid_hf_ccid_bClassEnvelope"], 1)
-        add_bytes(desc, layers["usbccid_usbccid_hf_ccid_wLcdLayout"], 2)
-        add_bytes(desc, layers["usbccid_usbccid_hf_ccid_bPINSupport"], 1)
-        add_bytes(desc, layers["usbccid_usbccid_hf_ccid_bMaxCCIDBusySlots"], 1)
-        return str(base64.b64encode(desc), "utf-8")
 
     def _save_event(self, event: Dict[str, str]) -> None:
         if not self.device:
@@ -450,6 +415,7 @@ class Pcap2Emulation:
 
                         for descriptor_type in layer:
                             descriptor_index += 1
+                            descriptor_type = get_int(descriptor_type)
 
                             if descriptor_type == DESCRIPTOR_DEVICE:
                                 # Check this is a reply for the Vid[:Pid] expected
@@ -479,9 +445,11 @@ class Pcap2Emulation:
                                 # using a fake PlatformId based on USB bus id and device address,
                                 # this PlatformId should be stable for all recorded devices
                                 if not self.platform_id:
-                                    self.platform_id = "usb:{:02x}:{:02x}".format(
-                                        int(layers["usb"]["usb_usb_bus_id"]),
-                                        int(layers["usb"]["usb_usb_device_address"]),
+                                    self.platform_id = "{:x}-{:x}".format(
+                                        get_int(layers["usb"]["usb_usb_bus_id"]),
+                                        get_int(
+                                            layers["usb"]["usb_usb_device_address"]
+                                        ),
                                     )
                                 # Device re-enumeration is triggered when 'Created' time differs
                                 # from previous phase, this keeps the 'Created' time from previous
@@ -493,32 +461,22 @@ class Pcap2Emulation:
                                 else:
                                     frame_time = self.device["Created"]
                                 self.device = {
+                                    "GType": "FuUsbDevice",
                                     "PlatformId": self.platform_id,
                                     "Created": frame_time,
-                                    "Tags": ["org.freedesktop.fwupd.emulation.v1"],
-                                    "IdVendor": int(layers["usb_usb_idVendor"]),
-                                    "IdProduct": int(layers["usb_usb_idProduct"], 16),
-                                    "Device": int(layers["usb_usb_bcdDevice"], 16),
-                                    "USB": int(layers["usb_usb_bcdUSB"], 16),
-                                    "Manufacturer": int(
+                                    "IdVendor": get_int(layers["usb_usb_idVendor"]),
+                                    "IdProduct": get_int(layers["usb_usb_idProduct"]),
+                                    "Device": get_int(layers["usb_usb_bcdDevice"]),
+                                    "USB": get_int(layers["usb_usb_bcdUSB"]),
+                                    "Manufacturer": get_int(
                                         layers["usb_usb_iManufacturer"]
                                     ),
-                                    "DeviceClass": int(layers["usb_usb_bDeviceClass"]),
-                                    "DeviceSubClass": int(
-                                        layers["usb_usb_bDeviceSubClass"]
-                                    ),
-                                    "DeviceProtocol": int(
-                                        layers["usb_usb_bDeviceProtocol"]
-                                    ),
-                                    "Product": int(layers["usb_usb_iProduct"]),
-                                    "SerialNumber": int(
-                                        layers["usb_usb_iSerialNumber"]
-                                    ),
+                                    "Product": get_int(layers["usb_usb_iProduct"]),
                                     "UsbInterfaces": [],
                                     "UsbEvents": [],
                                 }
 
-                            if descriptor_type == DESCRIPTOR_CONFIGURATION:
+                            elif descriptor_type == DESCRIPTOR_CONFIGURATION:
                                 if "usb_usb_iConfiguration" in layers:
                                     # The GetConfigurationIndex USB event is not directly
                                     # related to a specific USB event, but data can be
@@ -537,7 +495,7 @@ class Pcap2Emulation:
                                     }
                                     self._save_event(event)
 
-                            if descriptor_type == DESCRIPTOR_STRING:
+                            elif descriptor_type == DESCRIPTOR_STRING:
                                 if "usb_usb_DescriptorIndex" in layers:
                                     desc_index = get_int(
                                         layers["usb_usb_DescriptorIndex"]
@@ -562,7 +520,7 @@ class Pcap2Emulation:
                                     event_bytes["Id"] += f",Length=0x{length:x}"
 
                                 elif "usb_usb_bString" in layers:
-                                    if int(layers["usb_usb_bLength"]) != len(
+                                    if get_int(layers["usb_usb_bLength"]) != len(
                                         layers["usb_usb_bString"].encode("utf-16")
                                     ):
                                         # Discard frame used to retrieve STRING DESCRIPTOR length
@@ -588,7 +546,7 @@ class Pcap2Emulation:
                                     event_bytes["Data"] = event_str["Data"]
                                     self._save_event(event_bytes)
 
-                            if descriptor_type == DESCRIPTOR_INTERFACE:
+                            elif descriptor_type == DESCRIPTOR_INTERFACE:
                                 interface = self._get_interface_descriptor(
                                     layers, descriptor_index
                                 )
@@ -622,7 +580,7 @@ class Pcap2Emulation:
 
                                 self.interface_index += 1
 
-                            if descriptor_type == DESCRIPTOR_ENDPOINT:
+                            elif descriptor_type == DESCRIPTOR_ENDPOINT:
                                 if (
                                     len(layers["usb_usb_bEndpointAddress"])
                                     > self.endpoint_index
@@ -642,51 +600,56 @@ class Pcap2Emulation:
                                             break
                                     self.endpoint_index += 1
 
-                            if descriptor_type == DESCRIPTOR_EXTRA:
-                                for interface in self.device["UsbInterfaces"]:
-                                    if (
-                                        interface["InterfaceClass"]
-                                        == INTERFACE_CLASS_HID
-                                    ):
-                                        d = self._get_hid_descriptor(
-                                            layers, descriptor_index
-                                        )
-                                        interface["ExtraData"] = d
-                                        break
-                                    elif (
-                                        interface["InterfaceClass"]
-                                        == INTERFACE_CLASS_SMARTCARD
-                                    ):
-                                        d = self._get_smartcard_descriptor(
-                                            layers, descriptor_index
-                                        )
-                                        interface["ExtraData"] = d
-                                        break
+                            elif descriptor_type == DESCRIPTOR_EXTRA:
+                                pass
+                            else:
+                                sys.stderr.write(
+                                    "Unknown descriptor type: " + descriptor_type
+                                )
+                                exit(1)
 
-                    elif (
-                        "usb_usb_bmRequestType_type" in layers
-                        and int(layers["usb_usb_bmRequestType_type"], 16) == URB_CONTROL
-                    ):
+                    elif "usb_usb_bmRequestType_type" in layers:
                         # Found vendor CONTROL URB request
                         direction = not (layers["usb_usb_bmRequestType_direction"])
                         s = f"ControlTransfer:Direction=0x{direction:02x}"
                         s += ",RequestType=0x{:02x}".format(
-                            int(layers["usb_usb_bmRequestType_type"], 16)
+                            get_int(layers["usb_usb_bmRequestType_type"])
                         )
                         s += ",Recipient=0x{:02x}".format(
-                            int(layers["usb_usb_bmRequestType_recipient"], 16)
+                            get_int(layers["usb_usb_bmRequestType_recipient"])
                         )
-                        s += f",Request=0x{int(layers['usb_usb_setup_bRequest']):02x}"
-                        s += f",Value=0x{int(layers['usb_usb_setup_wValue'], 16):04x}"
-                        s += f",Idx=0x{int(layers['usb_usb_setup_wIndex']):04x}"
+                        if "usbhid_usbhid_setup_bRequest" in layers:
+                            s += f",Request=0x{get_int(layers['usbhid_usbhid_setup_bRequest']):02x}"
+                        elif "usb_usb_setup_bRequest" in layers:
+                            s += f",Request=0x{get_int(layers['usb_usb_setup_bRequest']):02x}"
+                        if (
+                            "usbhid_usbhid_setup_ReportID" in layers
+                            and "usbhid_usbhid_setup_ReportType" in layers
+                        ):
+                            rep_id = get_int(layers["usbhid_usbhid_setup_ReportID"])
+                            typ = get_int(layers["usbhid_usbhid_setup_ReportType"])
+                            val = typ << 8 | rep_id
+                            s += f",Value=0x{val:04x}"
+                        elif "usb_usb_setup_wValue" in layers:
+                            s += f",Value=0x{get_int(layers['usb_usb_setup_wValue']):04x}"
+                        if "usbhid_usbhid_setup_wIndex" in layers:
+                            s += f",Idx=0x{get_int(layers['usbhid_usbhid_setup_wIndex']):04x}"
+                        elif "usb_usb_setup_wIndex" in layers:
+                            s += f",Idx=0x{get_int(layers['usb_usb_setup_wIndex']):04x}"
+                        if "usbhid_usbhid_setup_wLength" in layers:
+                            length = get_int(layers["usbhid_usbhid_setup_wLength"])
+                        elif "usb_usb_setup_wLength" in layers:
+                            length = get_int(layers["usb_usb_setup_wLength"])
+                        else:
+                            length = 0
                         if "usb_usb_data_fragment" in layers:
                             data = layers["usb_usb_data_fragment"].replace(":", "")
                         else:
-                            data = "00" * int(layers["usb_usb_setup_wLength"])
+                            data = "00" * length
                         s += ",Data={}".format(
                             str(base64.b64encode(bytes.fromhex(data)), "utf-8")
                         )
-                        s += f",Length=0x{int(layers['usb_usb_setup_wLength']):x}"
+                        s += f",Length=0x{length:x}"
                         event = {"Id": s}
 
                         if direction:

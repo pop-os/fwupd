@@ -1170,6 +1170,10 @@ fu_util_device_flag_to_string(guint64 device_flag)
 		 * specified */
 		return _("Installing a specific release is explicitly required");
 	}
+	if (device_flag == FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG) {
+		/* TRANSLATORS: we can save all device enumeration events for emulation */
+		return _("Can tag for emulation");
+	}
 	if (device_flag == FWUPD_DEVICE_FLAG_UNKNOWN) {
 		return NULL;
 	}
@@ -1596,8 +1600,9 @@ fu_util_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		return _("UEFI capsule updates not available or enabled in firmware setup");
 	}
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_UNLOCK_REQUIRED) {
-		/* TRANSLATORS: user needs to run a command */
-		return _("Firmware updates disabled; run 'fwupdmgr unlock' to enable");
+		/* TRANSLATORS: user needs to run a command, %1 is 'fwupdmgr unlock' */
+		return g_strdup_printf(_("Firmware updates disabled; run '%s' to enable"),
+				       "fwupdmgr unlock");
 	}
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_AUTH_REQUIRED) {
 		/* TRANSLATORS: user needs to run a command */

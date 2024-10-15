@@ -61,7 +61,6 @@ fu_uswid_firmware_validate(FuFirmware *firmware, GInputStream *stream, gsize off
 static gboolean
 fu_uswid_firmware_parse(FuFirmware *firmware,
 			GInputStream *stream,
-			gsize offset,
 			FwupdInstallFlags flags,
 			GError **error)
 {
@@ -73,7 +72,7 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 	g_autoptr(GBytes) payload = NULL;
 
 	/* unpack */
-	st = fu_struct_uswid_parse_stream(stream, offset, error);
+	st = fu_struct_uswid_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 
@@ -120,7 +119,7 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 		g_autoptr(GInputStream) istream1 = NULL;
 		g_autoptr(GInputStream) istream2 = NULL;
 		conv = G_CONVERTER(g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB));
-		istream1 = fu_partial_input_stream_new(stream, offset + hdrsz, payloadsz, error);
+		istream1 = fu_partial_input_stream_new(stream, hdrsz, payloadsz, error);
 		if (istream1 == NULL)
 			return FALSE;
 		if (!g_seekable_seek(G_SEEKABLE(istream1), 0, G_SEEK_SET, NULL, error))
@@ -131,14 +130,14 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 			return FALSE;
 	} else if (priv->compression == FU_USWID_PAYLOAD_COMPRESSION_LZMA) {
 		g_autoptr(GBytes) payload_tmp = NULL;
-		payload_tmp = fu_input_stream_read_bytes(stream, offset + hdrsz, payloadsz, error);
+		payload_tmp = fu_input_stream_read_bytes(stream, hdrsz, payloadsz, error);
 		if (payload_tmp == NULL)
 			return FALSE;
 		payload = fu_lzma_decompress_bytes(payload_tmp, error);
 		if (payload == NULL)
 			return FALSE;
 	} else if (priv->compression == FU_USWID_PAYLOAD_COMPRESSION_NONE) {
-		payload = fu_input_stream_read_bytes(stream, offset + hdrsz, payloadsz, error);
+		payload = fu_input_stream_read_bytes(stream, hdrsz, payloadsz, error);
 		if (payload == NULL)
 			return FALSE;
 	} else {
@@ -160,10 +159,11 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 		fw2 = fu_bytes_new_offset(payload, offset_tmp, payloadsz - offset_tmp, error);
 		if (fw2 == NULL)
 			return FALSE;
-		if (!fu_firmware_parse(firmware_coswid,
-				       fw2,
-				       flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
-				       error))
+		if (!fu_firmware_parse_bytes(firmware_coswid,
+					     fw2,
+					     0x0,
+					     flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					     error))
 			return FALSE;
 		if (!fu_firmware_add_image_full(firmware, firmware_coswid, error))
 			return FALSE;

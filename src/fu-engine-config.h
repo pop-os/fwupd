@@ -23,8 +23,6 @@ GPtrArray *
 fu_engine_config_get_disabled_devices(FuEngineConfig *self) G_GNUC_NON_NULL(1);
 GPtrArray *
 fu_engine_config_get_disabled_plugins(FuEngineConfig *self) G_GNUC_NON_NULL(1);
-GPtrArray *
-fu_engine_config_get_emulated_devices(FuEngineConfig *self) G_GNUC_NON_NULL(1);
 GArray *
 fu_engine_config_get_trusted_uids(FuEngineConfig *self) G_GNUC_NON_NULL(1);
 GPtrArray *
@@ -48,8 +46,6 @@ gboolean
 fu_engine_config_get_show_device_private(FuEngineConfig *self) G_GNUC_NON_NULL(1);
 gboolean
 fu_engine_config_get_test_devices(FuEngineConfig *self) G_GNUC_NON_NULL(1);
-gboolean
-fu_engine_config_get_allow_emulation(FuEngineConfig *self) G_GNUC_NON_NULL(1);
 gboolean
 fu_engine_config_get_ignore_requirements(FuEngineConfig *self) G_GNUC_NON_NULL(1);
 gboolean
