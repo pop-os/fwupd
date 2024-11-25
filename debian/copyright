@@ -4,10 +4,7 @@ Source: https://github.com/fwupd/fwupd
 
 Files: *
 Copyright: 
-	    Norbert Kaminski  <norbert.kaminski@3mdeb.com>
-	    Norbert Kamiński  <norbert.kaminski@3mdeb.com>
-	    Rafal Wojtczuk  <rafal@invisiblethingslab.com>
-	   1999 Free Software Foundation, Inc.
+	   2006, 2008 Junio C Hamano
 	   3mdeb Embedded Systems Consulting
 	   9elements Agency GmbH <patrick.rudolph@9elements.com>
 	   Aaron Skomra <aaron.skomra@wacom.com>
@@ -15,24 +12,30 @@ Copyright:
 	   Advanced Micro Devices Inc.
 	   Aleix Pol <aleixpol@kde.org>
 	   Aleksander Morgado <aleksander@aleksander.es>
+	   Algoltek <Algoltek, Inc.>
 	   Algoltek, Inc.
 	   Andrew Duggan
 	   Andrii Dushko <andrii.dushko@developex.net>
 	   Apollo Ling <apollo.ling@synaptics.com>
+	   Apple Inc
 	   Ben Chuang <benchuanggli@gmail.com>
 	   Benson Leung <bleung@chromium.org>
 	   Canonical Ltd
 	   Canonical Ltd.
 	   Christian J. Kellner <christian@kellner.me>
 	   Collabora Ltd
+	   Collabora Ltd.
 	   Cypress Semiconductor Corporation.
 	   Daniel Campello <campello@chromium.org>
+	   Debarshi Ray <debarshir@src.gnome.org>
 	   Dell Inc.
 	   Dell Technologies
 	   Dell, Inc.
 	   Denis Pynkin <denis.pynkin@collabora.com>
 	   Dylan Van Assche <me@dylanvanassche.be>
+	   Emmanuel Pacaud <emmanuel@gnome.org>
 	   Evan Lojewski
+	   Framework Computer Inc
 	   Fresco Logic
 	   GN Audio
 	   GN Audio A/S
@@ -43,8 +46,11 @@ Copyright:
 	   Google, Inc.
 	   H.J. Lu <hjl.tools@gmail.com>
 	   Hai Su <hsu@kinet-ic.com>
+	   Hans de Goede <hdegoede@redhat.com>
 	   Haowei Lo <haowei.lo@fingerprints.com>
+	   Huddly
 	   Intel
+	   Intel Corporation
 	   Intel Corporation.
 	   Intel, Inc
 	   Intel, Inc.
@@ -57,48 +63,60 @@ Copyright:
 	   Jimmy Yu <Jimmy_yu@pixart.com>
 	   Jingle Wu <jingle.wu@emc.com.tw>
 	   Joshua Dickens <joshua.dickens@wacom.com>
+	   Kai Michaelis <kai.michaelis@immu.ne>
 	   Kevin Chen <hsinfu.chen@qsitw.com>
+	   Lars erling stensen <Lars.erling.stensen@huddly.com>
 	   Lennart Poettering <lennart@poettering.net>
+	   Logitech, Inc.
+	   LongSoft
+	   Marek Marczykowski-Górecki <marmarek@invisiblethingslab.com>
 	   Mario Limonciello
-	   Mario Limonciello <mario.limonciello@amd.com>
-	   Mario Limonciello <mario.limonciello@dell.com>
-	   Mario Limonciello <superm1@gmail.com>
 	   Matthias Klumpp <matthias@tenstral.net>
 	   Max Ehrlich maxehr@gmail.com
 	   Mediatek Inc.
 	   Michael Cheng <michael.cheng@emc.com.tw>
 	   Michał Kopeć <michal.kopec@3mdeb.com>
+	   Mike Chang <Mike.chang@telink-semi.com>
+	   Mike Chang <mike.chang@telink-semi.com>
+	   Norbert Kaminski <norbert.kaminski@3mdeb.com>
 	   Norbert Kamiński <norbert.kaminski@3mdeb.com>
+	   Parade Technology, Ltd
 	   Peichen Huang <peichenhuang@tw.kinetic.com>
 	   Peichen Huang <peichenhuang@tw.synaptics.com>
+	   Pena Christian <christian.a.pena@hp.com>
 	   Peter Jones <pjones@redhat.com>
 	   Peter Marheine <pmarheine@chromium.org>
 	   Philip Withnall <philip@tecnocode.co.uk>
 	   Philip Withnall <pwithnall@endlessos.org>
+	   Pierce Wang <pierce.wang@aver.com>
 	   Quectel Wireless Solutions Co., Ltd.
+	   Rafal Wojtczuk <rafal@invisiblethingslab.com>
 	   Realtek Corporation
 	   Realtek Semiconductor Corporation
 	   Ricardo Cañuelo <ricardo.canuelo@collabora.com>
-	   Richard Hughes <richard@hughsie.com>
+	   Richard hughes <Richard@hughsie.com>
 	   Ricky Wu <ricky_wu@realtek.com> <spring1527@gmail.com>
 	   Ryan Chang <ryan.chang@synaptics.com>
 	   Sean Rhodes <sean@starlabs.systems>
 	   Sergii Dmytruk <sergii.dmytruk@3mdeb.com>
 	   Shihwei Huang <shihwei.huang@focaltech-electronics.com>
+	   Simon McVittie
 	   Synaptics
 	   Synaptics Inc
 	   Synaptics Inc.
 	   Synaptics Incorporated
 	   Synaptics Incorporated <simon.ho@synaptics.com>
-	   TUXEDO Computers GmbH
+	   Synaptics Incorporated.
+	   TDT AG <development@tdt.de>
 	   Texas Instruments Incorporated
 	   Twain Byrnes <binarynewts@google.com>
 	   VIA Corporation
 	   Victor Cheng <victor_cheng@usiglobal.com>
+	   Vincent Pelletier <plr.vincent@gmail.com>
 	   Wistron <Felix_F_Chen@wistron.com>
 	   Xiaotian Cui <xtcui@analogixsemi.com>
 	   boger wang <boger@goodix.com>
-License: LGPL-2.1+
+License: LGPL-2.1-or-later
 
 Files:  *.metainfo.xml
 Copyright: Richard Hughes <richard@hughsie.com>
@@ -107,9 +125,9 @@ License: CC0-1.0
 Files: debian/*
 Copyright: 2015 Daniel Jared Dominguez <Jared_Dominguez@Dell.com>
            2015 Mario Limonciello <mario.limonciello@dell.com>
-License: LGPL-2.1+
+License: LGPL-2.1-or-later
 
-License: LGPL-2.1+
+License: LGPL-2.1-or-later
  This package is free software; you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
  the Free Software Foundation; either version 2.1 of the License, or

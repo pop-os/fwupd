@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2021 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -18,34 +18,33 @@ G_DEFINE_TYPE(FuGenesysScalerFirmware, fu_genesys_scaler_firmware, FU_TYPE_FIRMW
 
 static gboolean
 fu_genesys_scaler_firmware_parse(FuFirmware *firmware,
-				 GBytes *fw,
-				 gsize offset,
+				 GInputStream *stream,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
 	FuGenesysScalerFirmware *self = FU_GENESYS_SCALER_FIRMWARE(firmware);
-	gsize bufsz = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
-	g_autoptr(FuFirmware) firmware_payload = NULL;
+	gsize streamsz = 0;
+	g_autoptr(FuFirmware) firmware_payload = fu_firmware_new();
 	g_autoptr(FuFirmware) firmware_public_key = NULL;
-	g_autoptr(GBytes) blob_payload = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 	g_autoptr(GBytes) blob_public_key = NULL;
 
-	if (bufsz < sizeof(self->public_key)) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (streamsz < sizeof(self->public_key)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "buf was too small");
+				    FWUPD_ERROR_INVALID_DATA,
+				    "image is too small");
 		return FALSE;
 	}
-	if (!fu_memcpy_safe((guint8 *)&self->public_key,
-			    sizeof(self->public_key),
-			    0, /* dst */
-			    buf,
-			    bufsz,
-			    bufsz - sizeof(self->public_key), /* src */
-			    sizeof(self->public_key),
-			    error))
+	if (!fu_input_stream_read_safe(stream,
+				       (guint8 *)&self->public_key,
+				       sizeof(self->public_key),
+				       0,				    /* dst */
+				       streamsz - sizeof(self->public_key), /* src */
+				       sizeof(self->public_key),
+				       error))
 		return FALSE;
 	fu_dump_raw(G_LOG_DOMAIN,
 		    "PublicKey",
@@ -58,8 +57,12 @@ fu_genesys_scaler_firmware_parse(FuFirmware *firmware,
 	}
 
 	/* set payload */
-	blob_payload = g_bytes_new(buf, bufsz - sizeof(self->public_key));
-	firmware_payload = fu_firmware_new_from_bytes(blob_payload);
+	stream_payload =
+	    fu_partial_input_stream_new(stream, 0, streamsz - sizeof(self->public_key), error);
+	if (stream_payload == NULL)
+		return FALSE;
+	if (!fu_firmware_parse_stream(firmware_payload, stream_payload, 0x0, flags, error))
+		return FALSE;
 	fu_firmware_set_id(firmware_payload, FU_FIRMWARE_ID_PAYLOAD);
 	fu_firmware_add_image(firmware, firmware_payload);
 
@@ -82,10 +85,10 @@ fu_genesys_scaler_firmware_export(FuFirmware *firmware,
 	gchar N[0x200 + 1] = {'\0'};
 	gchar E[0x006 + 1] = {'\0'};
 
-	memcpy(N, self->public_key.N + 4, sizeof(N) - 1);
+	memcpy(N, self->public_key.N + 4, sizeof(N) - 1); /* nocheck:blocked */
 	fu_xmlb_builder_insert_kv(bn, "N", N);
 
-	memcpy(E, self->public_key.E + 4, sizeof(E) - 1);
+	memcpy(E, self->public_key.E + 4, sizeof(E) - 1); /* nocheck:blocked */
 	fu_xmlb_builder_insert_kv(bn, "E", E);
 }
 
@@ -154,11 +157,11 @@ fu_genesys_scaler_firmware_init(FuGenesysScalerFirmware *self)
 static void
 fu_genesys_scaler_firmware_class_init(FuGenesysScalerFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_genesys_scaler_firmware_parse;
-	klass_firmware->export = fu_genesys_scaler_firmware_export;
-	klass_firmware->build = fu_genesys_scaler_firmware_build;
-	klass_firmware->write = fu_genesys_scaler_firmware_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_genesys_scaler_firmware_parse;
+	firmware_class->export = fu_genesys_scaler_firmware_export;
+	firmware_class->build = fu_genesys_scaler_firmware_build;
+	firmware_class->write = fu_genesys_scaler_firmware_write;
 }
 
 FuFirmware *

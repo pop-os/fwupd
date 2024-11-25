@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Benson Leung <bleung@chromium.org>
+ * Copyright 2020 Benson Leung <bleung@chromium.org>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -16,11 +16,6 @@ G_DECLARE_DERIVABLE_TYPE(FuFmapFirmware, fu_fmap_firmware, FU, FMAP_FIRMWARE, Fu
 
 struct _FuFmapFirmwareClass {
 	FuFirmwareClass parent_class;
-	gboolean (*parse)(FuFirmware *self,
-			  GBytes *fw,
-			  gsize offset,
-			  FwupdInstallFlags flags,
-			  GError **error);
 };
 
 FuFirmware *

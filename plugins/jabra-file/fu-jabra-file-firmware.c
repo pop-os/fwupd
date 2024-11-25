@@ -40,8 +40,8 @@ fu_jabra_file_firmware_parse_info(FuJabraFileFirmware *self, XbSilo *silo, GErro
 	version = xb_node_get_attr(build_vector, "version");
 	if (version == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "buildVector version missing");
 		return FALSE;
 	}
@@ -52,7 +52,7 @@ fu_jabra_file_firmware_parse_info(FuJabraFileFirmware *self, XbSilo *silo, GErro
 	dfu_pid_str = xb_node_query_text(dfu_pid, "usbPid", error);
 	if (dfu_pid_str == NULL)
 		return FALSE;
-	if (!fu_strtoull(dfu_pid_str, &val, 0x0, G_MAXUINT16, error)) {
+	if (!fu_strtoull(dfu_pid_str, &val, 0x0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "cannot parse usbPid of %s: ", dfu_pid_str);
 		return FALSE;
 	}
@@ -64,8 +64,7 @@ fu_jabra_file_firmware_parse_info(FuJabraFileFirmware *self, XbSilo *silo, GErro
 
 static gboolean
 fu_jabra_file_firmware_parse(FuFirmware *firmware,
-			     GBytes *fw,
-			     gsize offset,
+			     GInputStream *stream,
 			     FwupdInstallFlags flags,
 			     GError **error)
 {
@@ -84,14 +83,12 @@ fu_jabra_file_firmware_parse(FuFirmware *firmware,
 				       FU_ARCHIVE_FORMAT_ZIP);
 	fu_archive_firmware_set_compression(FU_ARCHIVE_FIRMWARE(firmware_archive),
 					    FU_ARCHIVE_COMPRESSION_NONE);
-	if (!fu_firmware_parse_full(firmware_archive, fw, offset, flags, error))
+	if (!fu_firmware_parse_stream(firmware_archive, stream, 0x0, flags, error))
 		return FALSE;
 
 	img_xml = fu_archive_firmware_get_image_fnmatch(FU_ARCHIVE_FIRMWARE(firmware_archive),
 							"info.xml",
 							error);
-	if (img_xml == NULL)
-		return FALSE;
 	img_blob = fu_firmware_get_bytes(img_xml, error);
 	if (img_blob == NULL)
 		return FALSE;

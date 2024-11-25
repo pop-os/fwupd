@@ -39,7 +39,7 @@ plugin_builtin_redfish = static_library('fu_plugin_redfish',
 plugin_builtins += plugin_builtin_redfish
 
 if get_option('tests')
-  install_data(['tests/redfish-smbios.bin'],
+  install_data(['tests/redfish-smbios.builder.xml'],
     install_dir: join_paths(installed_test_datadir, 'tests'))
   install_data(['tests/redfish.conf'],
     install_dir: join_paths(installed_test_datadir, 'tests'),
@@ -53,6 +53,7 @@ if get_option('tests')
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
   env.set('FWUPD_LOCALSTATEDIR', '/tmp/fwupd-self-test/var')
+  env.set('LSAN_OPTIONS', 'suppressions=@0@'.format(join_paths(meson.project_source_root(), 'contrib', 'lsan-suppressions.txt')))
   e = executable(
     'redfish-self-test',
     rustgen.process('fu-redfish.rs'),

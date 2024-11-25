@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -833,6 +833,7 @@ fwupd_client_modify_config_cb(GObject *source, GAsyncResult *res, gpointer user_
 /**
  * fwupd_client_modify_config
  * @self: a #FwupdClient
+ * @section: config section, e.g. `redfish`
  * @key: config key, e.g. `DisabledPlugins`
  * @value: config value, e.g. `*`
  * @cancellable: (nullable): optional #GCancellable
@@ -843,10 +844,11 @@ fwupd_client_modify_config_cb(GObject *source, GAsyncResult *res, gpointer user_
  *
  * Returns: %TRUE for success
  *
- * Since: 1.2.8
+ * Since: 2.0.0
  **/
 gboolean
 fwupd_client_modify_config(FwupdClient *self,
+			   const gchar *section,
 			   const gchar *key,
 			   const gchar *value,
 			   GCancellable *cancellable,
@@ -855,6 +857,7 @@ fwupd_client_modify_config(FwupdClient *self,
 	g_autoptr(FwupdClientHelper) helper = NULL;
 
 	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
+	g_return_val_if_fail(section != NULL, FALSE);
 	g_return_val_if_fail(key != NULL, FALSE);
 	g_return_val_if_fail(value != NULL, FALSE);
 	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), FALSE);
@@ -867,11 +870,66 @@ fwupd_client_modify_config(FwupdClient *self,
 	/* call async version and run loop until complete */
 	helper = fwupd_client_helper_new(self);
 	fwupd_client_modify_config_async(self,
+					 section,
 					 key,
 					 value,
 					 cancellable,
 					 fwupd_client_modify_config_cb,
 					 helper);
+	g_main_loop_run(helper->loop);
+	if (!helper->ret) {
+		g_propagate_error(error, g_steal_pointer(&helper->error));
+		return FALSE;
+	}
+	return TRUE;
+}
+
+static void
+fwupd_client_reset_config_cb(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+	FwupdClientHelper *helper = (FwupdClientHelper *)user_data;
+	helper->ret = fwupd_client_reset_config_finish(FWUPD_CLIENT(source), res, &helper->error);
+	g_main_loop_quit(helper->loop);
+}
+
+/**
+ * fwupd_client_reset_config
+ * @self: a #FwupdClient
+ * @section: config section, e.g. `redfish`
+ * @cancellable: (nullable): optional #GCancellable
+ * @error: (nullable): optional return location for an error
+ *
+ * Resets a daemon config section.
+ * The daemon will only respond to this request with proper permissions.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.9.15
+ **/
+gboolean
+fwupd_client_reset_config(FwupdClient *self,
+			  const gchar *section,
+			  GCancellable *cancellable,
+			  GError **error)
+{
+	g_autoptr(FwupdClientHelper) helper = NULL;
+
+	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
+	g_return_val_if_fail(section != NULL, FALSE);
+	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* connect */
+	if (!fwupd_client_connect(self, cancellable, error))
+		return FALSE;
+
+	/* call async version and run loop until complete */
+	helper = fwupd_client_helper_new(self);
+	fwupd_client_reset_config_async(self,
+					section,
+					cancellable,
+					fwupd_client_reset_config_cb,
+					helper);
 	g_main_loop_run(helper->loop);
 	if (!helper->ret) {
 		g_propagate_error(error, g_steal_pointer(&helper->error));
@@ -1495,7 +1553,7 @@ fwupd_client_install_release_cb(GObject *source, GAsyncResult *res, gpointer use
 }
 
 /**
- * fwupd_client_install_release2:
+ * fwupd_client_install_release:
  * @self: a #FwupdClient
  * @device: a device
  * @release: a release
@@ -1508,16 +1566,16 @@ fwupd_client_install_release_cb(GObject *source, GAsyncResult *res, gpointer use
  *
  * Returns: %TRUE for success
  *
- * Since: 1.5.6
+ * Since: 2.0.0
  **/
 gboolean
-fwupd_client_install_release2(FwupdClient *self,
-			      FwupdDevice *device,
-			      FwupdRelease *release,
-			      FwupdInstallFlags install_flags,
-			      FwupdClientDownloadFlags download_flags,
-			      GCancellable *cancellable,
-			      GError **error)
+fwupd_client_install_release(FwupdClient *self,
+			     FwupdDevice *device,
+			     FwupdRelease *release,
+			     FwupdInstallFlags install_flags,
+			     FwupdClientDownloadFlags download_flags,
+			     GCancellable *cancellable,
+			     GError **error)
 {
 	g_autoptr(FwupdClientHelper) helper = NULL;
 
@@ -1533,53 +1591,20 @@ fwupd_client_install_release2(FwupdClient *self,
 
 	/* call async version and run loop until complete */
 	helper = fwupd_client_helper_new(self);
-	fwupd_client_install_release2_async(self,
-					    device,
-					    release,
-					    install_flags,
-					    download_flags,
-					    cancellable,
-					    fwupd_client_install_release_cb,
-					    helper);
+	fwupd_client_install_release_async(self,
+					   device,
+					   release,
+					   install_flags,
+					   download_flags,
+					   cancellable,
+					   fwupd_client_install_release_cb,
+					   helper);
 	g_main_loop_run(helper->loop);
 	if (!helper->ret) {
 		g_propagate_error(error, g_steal_pointer(&helper->error));
 		return FALSE;
 	}
 	return TRUE;
-}
-
-/**
- * fwupd_client_install_release:
- * @self: a #FwupdClient
- * @device: a device
- * @release: a release
- * @install_flags: install flags, e.g. %FWUPD_INSTALL_FLAG_ALLOW_REINSTALL
- * @cancellable: (nullable): optional #GCancellable
- * @error: (nullable): optional return location for an error
- *
- * Installs a new release on a device, downloading the firmware if required.
- *
- * Returns: %TRUE for success
- *
- * Since: 1.4.5
- * Deprecated: 1.5.6
- **/
-gboolean
-fwupd_client_install_release(FwupdClient *self,
-			     FwupdDevice *device,
-			     FwupdRelease *release,
-			     FwupdInstallFlags install_flags,
-			     GCancellable *cancellable,
-			     GError **error)
-{
-	return fwupd_client_install_release2(self,
-					     device,
-					     release,
-					     install_flags,
-					     FWUPD_CLIENT_DOWNLOAD_FLAG_NONE,
-					     cancellable,
-					     error);
 }
 
 #ifdef HAVE_GIO_UNIX
@@ -1744,7 +1769,7 @@ fwupd_client_refresh_remote_cb(GObject *source, GAsyncResult *res, gpointer user
 }
 
 /**
- * fwupd_client_refresh_remote2:
+ * fwupd_client_refresh_remote:
  * @self: a #FwupdClient
  * @remote: a #FwupdRemote
  * @download_flags: download flags, e.g. %FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_P2P
@@ -1755,14 +1780,14 @@ fwupd_client_refresh_remote_cb(GObject *source, GAsyncResult *res, gpointer user
  *
  * Returns: %TRUE for success
  *
- * Since: 1.9.4
+ * Since: 2.0.0
  **/
 gboolean
-fwupd_client_refresh_remote2(FwupdClient *self,
-			     FwupdRemote *remote,
-			     FwupdClientDownloadFlags download_flags,
-			     GCancellable *cancellable,
-			     GError **error)
+fwupd_client_refresh_remote(FwupdClient *self,
+			    FwupdRemote *remote,
+			    FwupdClientDownloadFlags download_flags,
+			    GCancellable *cancellable,
+			    GError **error)
 {
 	g_autoptr(FwupdClientHelper) helper = NULL;
 
@@ -1773,48 +1798,18 @@ fwupd_client_refresh_remote2(FwupdClient *self,
 
 	/* call async version and run loop until complete */
 	helper = fwupd_client_helper_new(self);
-	fwupd_client_refresh_remote2_async(self,
-					   remote,
-					   download_flags,
-					   cancellable,
-					   fwupd_client_refresh_remote_cb,
-					   helper);
+	fwupd_client_refresh_remote_async(self,
+					  remote,
+					  download_flags,
+					  cancellable,
+					  fwupd_client_refresh_remote_cb,
+					  helper);
 	g_main_loop_run(helper->loop);
 	if (!helper->ret) {
 		g_propagate_error(error, g_steal_pointer(&helper->error));
 		return FALSE;
 	}
 	return TRUE;
-}
-
-/**
- * fwupd_client_refresh_remote:
- * @self: a #FwupdClient
- * @remote: a #FwupdRemote
- * @cancellable: (nullable): optional #GCancellable
- * @error: (nullable): optional return location for an error
- *
- * Refreshes a remote by downloading new metadata.
- *
- * Returns: %TRUE for success
- *
- * Since: 1.4.5
- **/
-gboolean
-fwupd_client_refresh_remote(FwupdClient *self,
-			    FwupdRemote *remote,
-			    GCancellable *cancellable,
-			    GError **error)
-{
-	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
-	g_return_val_if_fail(FWUPD_IS_REMOTE(remote), FALSE);
-	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), FALSE);
-	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
-	return fwupd_client_refresh_remote2(self,
-					    remote,
-					    FWUPD_CLIENT_DOWNLOAD_FLAG_NONE,
-					    cancellable,
-					    error);
 }
 
 static void
@@ -2675,7 +2670,7 @@ fwupd_client_emulation_load_cb(GObject *source, GAsyncResult *res, gpointer user
 /**
  * fwupd_client_emulation_load
  * @self: a #FwupdClient
- * @data: archive data of JSON files
+ * @filename: archive data of JSON files
  * @cancellable: (nullable): optional #GCancellable
  * @error: (nullable): optional return location for an error
  *
@@ -2685,18 +2680,18 @@ fwupd_client_emulation_load_cb(GObject *source, GAsyncResult *res, gpointer user
  *
  * Returns: %TRUE for success
  *
- * Since: 1.8.11
+ * Since: 2.0.0
  **/
 gboolean
 fwupd_client_emulation_load(FwupdClient *self,
-			    GBytes *data,
+			    const gchar *filename,
 			    GCancellable *cancellable,
 			    GError **error)
 {
 	g_autoptr(FwupdClientHelper) helper = NULL;
 
 	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
-	g_return_val_if_fail(data != NULL, FALSE);
+	g_return_val_if_fail(filename != NULL, FALSE);
 	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
@@ -2707,7 +2702,7 @@ fwupd_client_emulation_load(FwupdClient *self,
 	/* call async version and run loop until complete */
 	helper = fwupd_client_helper_new(self);
 	fwupd_client_emulation_load_async(self,
-					  data,
+					  filename,
 					  cancellable,
 					  fwupd_client_emulation_load_cb,
 					  helper);
@@ -2723,14 +2718,14 @@ static void
 fwupd_client_emulation_save_cb(GObject *source, GAsyncResult *res, gpointer user_data)
 {
 	FwupdClientHelper *helper = (FwupdClientHelper *)user_data;
-	helper->bytes =
-	    fwupd_client_emulation_save_finish(FWUPD_CLIENT(source), res, &helper->error);
+	helper->ret = fwupd_client_emulation_save_finish(FWUPD_CLIENT(source), res, &helper->error);
 	g_main_loop_quit(helper->loop);
 }
 
 /**
  * fwupd_client_emulation_save:
  * @self: a #FwupdClient
+ * @filename: archive data of JSON files
  * @cancellable: (nullable): optional #GCancellable
  * @error: (nullable): optional return location for an error
  *
@@ -2743,35 +2738,39 @@ fwupd_client_emulation_save_cb(GObject *source, GAsyncResult *res, gpointer user
  * Once the device has been re-inserted then the emulation data will be available using
  * this API call.
  *
- * Returns: (transfer full): archive data
+ * Returns: %TRUE for success
  *
- * Since: 1.8.11
+ * Since: 2.0.0
  **/
-GBytes *
-fwupd_client_emulation_save(FwupdClient *self, GCancellable *cancellable, GError **error)
+gboolean
+fwupd_client_emulation_save(FwupdClient *self,
+			    const gchar *filename,
+			    GCancellable *cancellable,
+			    GError **error)
 {
 	g_autoptr(FwupdClientHelper) helper = NULL;
 
-	g_return_val_if_fail(FWUPD_IS_CLIENT(self), NULL);
-	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), NULL);
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+	g_return_val_if_fail(FWUPD_IS_CLIENT(self), FALSE);
+	g_return_val_if_fail(cancellable == NULL || G_IS_CANCELLABLE(cancellable), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* connect */
 	if (!fwupd_client_connect(self, cancellable, error))
-		return NULL;
+		return FALSE;
 
 	/* call async version and run loop until complete */
 	helper = fwupd_client_helper_new(self);
 	fwupd_client_emulation_save_async(self,
+					  filename,
 					  cancellable,
 					  fwupd_client_emulation_save_cb,
 					  helper);
 	g_main_loop_run(helper->loop);
-	if (helper->bytes == NULL) {
+	if (!helper->ret) {
 		g_propagate_error(error, g_steal_pointer(&helper->error));
-		return NULL;
+		return FALSE;
 	}
-	return g_steal_pointer(&helper->bytes);
+	return TRUE;
 }
 
 static void

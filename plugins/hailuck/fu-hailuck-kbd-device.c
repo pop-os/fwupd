@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -75,7 +75,7 @@ fu_hailuck_kbd_device_init(FuHailuckKbdDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_icon(FU_DEVICE(self), "input-keyboard");
 	fu_hid_device_set_interface(FU_HID_DEVICE(self), 0x1);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
@@ -84,8 +84,8 @@ fu_hailuck_kbd_device_init(FuHailuckKbdDevice *self)
 static void
 fu_hailuck_kbd_device_class_init(FuHailuckKbdDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->detach = fu_hailuck_kbd_device_detach;
-	klass_device->probe = fu_hailuck_kbd_device_probe;
-	klass_device->set_progress = fu_hailuck_kbd_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->detach = fu_hailuck_kbd_device_detach;
+	device_class->probe = fu_hailuck_kbd_device_probe;
+	device_class->set_progress = fu_hailuck_kbd_device_set_progress;
 }

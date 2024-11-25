@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -35,11 +35,6 @@ GPtrArray *
 fu_security_attrs_get_all(FuSecurityAttrs *self) G_GNUC_NON_NULL(1);
 void
 fu_security_attrs_append_internal(FuSecurityAttrs *self, FwupdSecurityAttr *attr)
-    G_GNUC_NON_NULL(1, 2);
-gchar *
-fu_security_attrs_to_json_string(FuSecurityAttrs *self, GError **error) G_GNUC_NON_NULL(1);
-gboolean
-fu_security_attrs_from_json(FuSecurityAttrs *self, JsonNode *json_node, GError **error)
     G_GNUC_NON_NULL(1, 2);
 gboolean
 fu_security_attrs_equal(FuSecurityAttrs *attrs1, FuSecurityAttrs *attrs2) G_GNUC_NON_NULL(1, 2);

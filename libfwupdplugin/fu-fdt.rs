@@ -1,8 +1,9 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(New, ValidateBytes, ParseBytes)]
-struct Fdt {
+#[derive(New, ValidateStream, ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructFdt {
     magic: u32be == 0xD00DFEED,
     totalsize: u32be,
     off_dt_struct: u32be,
@@ -14,13 +15,17 @@ struct Fdt {
     size_dt_strings: u32be,
     size_dt_struct: u32be,
 }
-#[derive(New, ParseBytes)]
-struct FdtReserveEntry {
+
+#[derive(New, ParseStream)]
+#[repr(C, packed)]
+struct FuStructFdtReserveEntry {
     address: u64be,
     size: u64be,
 }
+
 #[derive(New, Parse)]
-struct FdtProp {
+#[repr(C, packed)]
+struct FuStructFdtProp {
     len: u32be,
     nameoff: u32be,
 }

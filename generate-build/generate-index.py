@@ -1,10 +1,10 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # pylint: disable=invalid-name,missing-docstring,consider-using-f-string
 #
-# Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-# Copyright (C) 2023 Mario Limonciello <superm1@gmail.com>
+# Copyright 2023 Richard Hughes <richard@hughsie.com>
+# Copyright 2023 Mario Limonciello <superm1@gmail.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import os
 import sys
@@ -13,7 +13,6 @@ from jinja2 import Environment, FileSystemLoader
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output")
     parser.add_argument("-m", "--man", action="append", nargs=1)

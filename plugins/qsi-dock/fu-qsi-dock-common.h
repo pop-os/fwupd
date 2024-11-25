@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Kevin Chen <hsinfu.chen@qsitw.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Kevin Chen <hsinfu.chen@qsitw.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -21,7 +21,7 @@
 #define FU_QSI_DOCK_FIRMWARE_IDX_I225	0x40
 #define FU_QSI_DOCK_FIRMWARE_IDX_MCU	0x80
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint8 DMC[5];
 	guint8 PD[5];
 	guint8 DP5x[5];

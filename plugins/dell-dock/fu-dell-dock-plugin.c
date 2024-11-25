@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Dell Inc.
+ * Copyright 2018 Dell Inc.
  * All rights reserved.
  *
  * This software and associated documentation (if any) is furnished
@@ -10,13 +10,17 @@
  * redistributing this file, you may do so under either license.
  * Dell Chooses the MIT license part of Dual MIT/LGPLv2 license agreement.
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR MIT
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
  */
 
 #include "config.h"
 
 #include "fu-dell-dock-common.h"
+#include "fu-dell-dock-ec.h"
+#include "fu-dell-dock-mst.h"
 #include "fu-dell-dock-plugin.h"
+#include "fu-dell-dock-status.h"
+#include "fu-dell-dock-tbt.h"
 
 struct _FuDellDockPlugin {
 	FuPlugin parent_instance;
@@ -61,7 +65,7 @@ fu_dell_dock_plugin_probe(FuPlugin *plugin, FuDevice *proxy, GError **error)
 
 	/* create mst endpoint */
 	mst_device = fu_dell_dock_mst_new(ctx);
-	if (fu_dell_dock_get_dock_type(FU_DEVICE(ec_device)) == DOCK_BASE_TYPE_ATOMIC)
+	if (fu_dell_dock_ec_get_dock_type(FU_DEVICE(ec_device)) == DOCK_BASE_TYPE_ATOMIC)
 		instance_id_mst = DELL_DOCK_VMM6210_INSTANCE_ID;
 	else
 		instance_id_mst = DELL_DOCK_VM5331_INSTANCE_ID;
@@ -76,9 +80,9 @@ fu_dell_dock_plugin_probe(FuPlugin *plugin, FuDevice *proxy, GError **error)
 
 	/* create package version endpoint */
 	status_device = fu_dell_dock_status_new(ctx);
-	if (fu_dell_dock_get_dock_type(FU_DEVICE(ec_device)) == DOCK_BASE_TYPE_ATOMIC)
+	if (fu_dell_dock_ec_get_dock_type(FU_DEVICE(ec_device)) == DOCK_BASE_TYPE_ATOMIC)
 		instance_id_status = DELL_DOCK_ATOMIC_STATUS_INSTANCE_ID;
-	else if (fu_dell_dock_module_is_usb4(FU_DEVICE(ec_device)))
+	else if (fu_dell_dock_ec_module_is_usb4(FU_DEVICE(ec_device)))
 		instance_id_status = DELL_DOCK_DOCK2_INSTANCE_ID;
 	else
 		instance_id_status = DELL_DOCK_DOCK1_INSTANCE_ID;
@@ -159,7 +163,7 @@ fu_dell_dock_plugin_backend_device_added(FuPlugin *plugin,
 	}
 
 	/* determine dock type by ec */
-	dock_type = fu_dell_dock_get_dock_type(ec_device);
+	dock_type = fu_dell_dock_ec_get_dock_type(ec_device);
 	if (dock_type == DOCK_BASE_TYPE_UNKNOWN) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -204,11 +208,11 @@ fu_dell_dock_plugin_device_registered(FuPlugin *plugin, FuDevice *device)
 {
 	/* dell dock delays the activation so skips device restart */
 	if (fu_device_has_guid(device, DELL_DOCK_TBT_INSTANCE_ID)) {
-		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SKIPS_RESTART);
+		fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
 		fu_plugin_cache_add(plugin, "tbt", device);
 	}
 	if (fu_device_has_guid(device, DELL_DOCK_USB4_INSTANCE_ID)) {
-		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SKIPS_RESTART);
+		fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
 		fu_plugin_cache_add(plugin, "usb4", device);
 	}
 	if (FU_IS_DELL_DOCK_EC(device))
@@ -340,6 +344,10 @@ fu_dell_dock_plugin_constructed(GObject *obj)
 	/* allow these to be built by quirks */
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_DELL_DOCK_STATUS);
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_DELL_DOCK_MST);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_DELL_DOCK_EC);     /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_DELL_DOCK_MST);    /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_DELL_DOCK_STATUS); /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_DELL_DOCK_TBT);    /* coverage */
 
 #ifndef _WIN32
 	/* currently slower performance, but more reliable in corner cases */

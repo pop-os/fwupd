@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Dylan Van Assche <me@dylanvanassche.be>
+ * Copyright 2022 Dylan Van Assche <me@dylanvanassche.be>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -15,33 +15,29 @@
 #define ANDROID_BOOT_SECTOR_SIZE     512
 
 struct _FuAndroidBootDevice {
-	FuUdevDevice parent_instance;
-	gchar *label;
-	gchar *uuid;
+	FuBlockPartition parent_instance;
 	gchar *boot_slot;
 	guint64 max_size;
 };
 
-G_DEFINE_TYPE(FuAndroidBootDevice, fu_android_boot_device, FU_TYPE_UDEV_DEVICE)
+G_DEFINE_TYPE(FuAndroidBootDevice, fu_android_boot_device, FU_TYPE_BLOCK_PARTITION)
 
 static void
 fu_android_boot_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuAndroidBootDevice *self = FU_ANDROID_BOOT_DEVICE(device);
 
-	fu_string_append(str, idt, "BootSlot", self->boot_slot);
-	fu_string_append(str, idt, "Label", self->label);
-	fu_string_append(str, idt, "UUID", self->uuid);
-	fu_string_append_kx(str, idt, "MaxSize", self->max_size);
+	fwupd_codec_string_append(str, idt, "BootSlot", self->boot_slot);
+	fwupd_codec_string_append_hex(str, idt, "MaxSize", self->max_size);
 }
 
 static gboolean
 fu_android_boot_device_probe(FuDevice *device, GError **error)
 {
 	FuAndroidBootDevice *self = FU_ANDROID_BOOT_DEVICE(device);
-	GUdevDevice *udev_device = fu_udev_device_get_dev(FU_UDEV_DEVICE(device));
 	guint64 sectors = 0;
 	guint64 size = 0;
+	g_autofree gchar *prop_size = NULL;
 	g_autoptr(GHashTable) cmdline = NULL;
 
 	/* FuUdevDevice->probe */
@@ -60,17 +56,50 @@ fu_android_boot_device_probe(FuDevice *device, GError **error)
 	/* extract boot slot if available */
 	self->boot_slot = g_strdup(g_hash_table_lookup(cmdline, "androidboot.slot_suffix"));
 
-	/* extract label and check if it matches boot slot*/
-	if (g_udev_device_has_property(udev_device, "ID_PART_ENTRY_NAME")) {
-		self->label =
-		    g_strdup(g_udev_device_get_property(udev_device, "ID_PART_ENTRY_NAME"));
+	/* set max firmware size, required to avoid writing firmware bigger than partition */
+	prop_size = fu_udev_device_read_sysfs(FU_UDEV_DEVICE(device),
+					      "size",
+					      FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+					      NULL);
+	if (prop_size == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "device does not expose its size");
+		return FALSE;
+	}
+	if (!fu_strtoull(prop_size, &sectors, 0x0, G_MAXUINT64, FU_INTEGER_BASE_AUTO, error))
+		return FALSE;
+	size = sectors * ANDROID_BOOT_SECTOR_SIZE;
+	self->max_size = size;
 
-		/* Use label as device name */
-		fu_device_set_name(device, self->label);
+	/* extract serial number and set it */
+	fu_device_set_serial(device, g_hash_table_lookup(cmdline, "androidboot.serialno"));
+
+	/* set the firmware maximum size based on partition size or from quirk */
+	fu_device_set_firmware_size_max(device, self->max_size);
+
+	return TRUE;
+}
+
+static gboolean
+fu_android_boot_device_setup(FuDevice *device, GError **error)
+{
+	FuAndroidBootDevice *self = FU_ANDROID_BOOT_DEVICE(device);
+	const gchar *fs_label;
+
+	/* FuBlockPartition->setup() */
+	if (!FU_DEVICE_CLASS(fu_android_boot_device_parent_class)->setup(device, error))
+		return FALSE;
+
+	/* extract label and check if it matches boot slot */
+	fs_label = fu_block_partition_get_fs_label(FU_BLOCK_PARTITION(self));
+	if (fs_label != NULL) {
+		fu_device_set_name(device, fs_label);
 
 		/* If the device has A/B partitioning, compare boot slot to only expose partitions
 		 * in-use */
-		if (self->boot_slot != NULL && !g_str_has_suffix(self->label, self->boot_slot)) {
+		if (self->boot_slot != NULL && !g_str_has_suffix(fs_label, self->boot_slot)) {
 			g_set_error_literal(error,
 					    FWUPD_ERROR,
 					    FWUPD_ERROR_NOT_SUPPORTED,
@@ -79,43 +108,27 @@ fu_android_boot_device_probe(FuDevice *device, GError **error)
 		}
 	}
 
-	/* set max firmware size, required to avoid writing firmware bigger than partition */
-	if (!g_udev_device_has_property(udev_device, "ID_PART_ENTRY_SIZE")) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "device does not expose its size");
-		return FALSE;
-	}
-
-	sectors = g_udev_device_get_property_as_uint64(udev_device, "ID_PART_ENTRY_SIZE");
-	size = sectors * ANDROID_BOOT_SECTOR_SIZE;
-	self->max_size = size;
-
-	/* extract partition UUID and require it for supporting a device */
-	if (!g_udev_device_has_property(udev_device, "ID_PART_ENTRY_UUID")) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "device does not have a UUID");
-		return FALSE;
-	}
-	self->uuid = g_strdup(g_udev_device_get_property(udev_device, "ID_PART_ENTRY_UUID"));
-
-	/* extract serial number and set it */
-	fu_device_set_serial(device, g_hash_table_lookup(cmdline, "androidboot.serialno"));
-
 	/*
 	 * Some devices don't have unique TYPE UUIDs, add the partition label to make them truly
 	 * unique Devices have a fixed partition scheme anyway because they originally have Android
 	 * which has such requirements.
 	 */
-	fu_device_add_instance_strsafe(device, "UUID", self->uuid);
-	fu_device_add_instance_strsafe(device, "LABEL", self->label);
+	if (fu_block_partition_get_fs_uuid(FU_BLOCK_PARTITION(self)) == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "no partition UUID");
+		return FALSE;
+	}
+	fu_device_add_instance_strsafe(device,
+				       "UUID",
+				       fu_block_partition_get_fs_uuid(FU_BLOCK_PARTITION(self)));
+	fu_device_add_instance_strsafe(device, "LABEL", fs_label);
 	fu_device_add_instance_strsafe(device, "SLOT", self->boot_slot);
 
 	/* GUID based on UUID / UUID, label / UUID, label, slot */
-	fu_device_build_instance_id(device, NULL, "DRIVE", "UUID", NULL);
+	if (!fu_device_build_instance_id(device, error, "DRIVE", "UUID", NULL))
+		return FALSE;
 	fu_device_build_instance_id(device, NULL, "DRIVE", "UUID", "LABEL", NULL);
 	fu_device_build_instance_id(device, NULL, "DRIVE", "UUID", "LABEL", "SLOT", NULL);
 
@@ -128,9 +141,7 @@ fu_android_boot_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 	}
 
-	/* set the firmware maximum size based on partition size or from quirk */
-	fu_device_set_firmware_size_max(device, self->max_size);
-
+	/* success */
 	return TRUE;
 }
 
@@ -141,7 +152,7 @@ fu_android_boot_device_open(FuDevice *device, GError **error)
 
 	/* FuUdevDevice->open */
 	if (!FU_DEVICE_CLASS(fu_android_boot_device_parent_class)->open(device, &error_local)) {
-		if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_PERMISSION_DENIED)) {
 			g_set_error_literal(error,
 					    FWUPD_ERROR,
 					    FWUPD_ERROR_NOT_SUPPORTED,
@@ -172,7 +183,12 @@ fu_android_boot_device_write(FuAndroidBootDevice *self,
 
 	/* write each chunk */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_udev_device_pwrite(FU_UDEV_DEVICE(self),
 					   fu_chunk_get_address(chk),
 					   fu_chunk_get_data(chk),
@@ -197,7 +213,10 @@ fu_android_boot_device_erase(FuAndroidBootDevice *self, FuProgress *progress, GE
 	g_autofree guint8 *buf = g_malloc0(bufsz);
 	g_autoptr(GBytes) fw = g_bytes_new_take(g_steal_pointer(&buf), bufsz);
 
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, 10 * 1024);
+	chunks = fu_chunk_array_new_from_bytes(fw,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       10 * 1024);
 	return fu_android_boot_device_write(self, chunks, progress, error);
 }
 
@@ -212,11 +231,17 @@ fu_android_boot_device_verify(FuAndroidBootDevice *self,
 
 	/* verify each chunk */
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
-		g_autofree guint8 *buf = g_malloc0(fu_chunk_get_data_sz(chk));
-		g_autoptr(GBytes) blob1 = fu_chunk_get_bytes(chk);
+		g_autofree guint8 *buf = NULL;
+		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(GBytes) blob1 = NULL;
 		g_autoptr(GBytes) blob2 = NULL;
 
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
+
+		buf = g_malloc0(fu_chunk_get_data_sz(chk));
 		if (!fu_udev_device_pread(FU_UDEV_DEVICE(self),
 					  fu_chunk_get_address(chk),
 					  buf,
@@ -227,6 +252,7 @@ fu_android_boot_device_verify(FuAndroidBootDevice *self,
 				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
+		blob1 = fu_chunk_get_bytes(chk);
 		blob2 = g_bytes_new_static(buf, fu_chunk_get_data_sz(chk));
 		if (!fu_bytes_compare(blob1, blob2, error)) {
 			g_prefix_error(error,
@@ -248,16 +274,20 @@ fu_android_boot_device_write_firmware(FuDevice *device,
 				      GError **error)
 {
 	FuAndroidBootDevice *self = FU_ANDROID_BOOT_DEVICE(device);
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* get data to write */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
-	fu_dump_bytes(G_LOG_DOMAIN, "write", fw);
-
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, 10 * 1024);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						10 * 1024,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_ERASE, 72, NULL);
@@ -306,14 +336,17 @@ fu_android_boot_device_set_quirk_kv(FuDevice *device,
 	if (g_strcmp0(key, "AndroidBootPartitionMaxSize") == 0) {
 		guint64 size = 0;
 
-		if (!fu_strtoull(value, &size, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &size, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->max_size = size;
 		return TRUE;
 	}
 
 	/* failed */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -323,8 +356,6 @@ fu_android_boot_device_finalize(GObject *obj)
 	FuAndroidBootDevice *self = FU_ANDROID_BOOT_DEVICE(obj);
 	G_OBJECT_CLASS(fu_android_boot_device_parent_class)->finalize(obj);
 	g_free(self->boot_slot);
-	g_free(self->label);
-	g_free(self->uuid);
 }
 
 static void
@@ -337,9 +368,9 @@ fu_android_boot_device_init(FuAndroidBootDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),
-				 FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE |
-				     FU_UDEV_DEVICE_FLAG_OPEN_SYNC);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_SYNC);
 	fu_device_add_icon(FU_DEVICE(self), "computer");
 
 	/*
@@ -354,13 +385,14 @@ fu_android_boot_device_init(FuAndroidBootDevice *self)
 static void
 fu_android_boot_device_class_init(FuAndroidBootDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	GObjectClass *klass_object = G_OBJECT_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	klass_object->finalize = fu_android_boot_device_finalize;
-	klass_device->probe = fu_android_boot_device_probe;
-	klass_device->open = fu_android_boot_device_open;
-	klass_device->write_firmware = fu_android_boot_device_write_firmware;
-	klass_device->to_string = fu_android_boot_device_to_string;
-	klass_device->set_quirk_kv = fu_android_boot_device_set_quirk_kv;
+	object_class->finalize = fu_android_boot_device_finalize;
+	device_class->probe = fu_android_boot_device_probe;
+	device_class->setup = fu_android_boot_device_setup;
+	device_class->open = fu_android_boot_device_open;
+	device_class->write_firmware = fu_android_boot_device_write_firmware;
+	device_class->to_string = fu_android_boot_device_to_string;
+	device_class->set_quirk_kv = fu_android_boot_device_set_quirk_kv;
 }

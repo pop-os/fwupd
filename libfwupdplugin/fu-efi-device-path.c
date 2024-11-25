@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuEfiDevicePath"
@@ -10,8 +10,10 @@
 
 #include "fu-byte-array.h"
 #include "fu-bytes.h"
+#include "fu-common.h"
 #include "fu-efi-device-path.h"
 #include "fu-efi-struct.h"
+#include "fu-input-stream.h"
 
 /**
  * FuEfiDevicePath:
@@ -23,7 +25,16 @@ typedef struct {
 	guint8 subtype;
 } FuEfiDevicePathPrivate;
 
-G_DEFINE_TYPE_WITH_PRIVATE(FuEfiDevicePath, fu_efi_device_path, FU_TYPE_FIRMWARE)
+static void
+fu_efi_device_path_codec_iface_init(FwupdCodecInterface *iface);
+
+G_DEFINE_TYPE_EXTENDED(FuEfiDevicePath,
+		       fu_efi_device_path,
+		       FU_TYPE_FIRMWARE,
+		       0,
+		       G_ADD_PRIVATE(FuEfiDevicePath)
+			   G_IMPLEMENT_INTERFACE(FWUPD_TYPE_CODEC,
+						 fu_efi_device_path_codec_iface_init))
 #define GET_PRIVATE(o) (fu_efi_device_path_get_instance_private(o))
 
 static void
@@ -32,6 +43,14 @@ fu_efi_device_path_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbB
 	FuEfiDevicePath *self = FU_EFI_DEVICE_PATH(firmware);
 	FuEfiDevicePathPrivate *priv = GET_PRIVATE(self);
 	fu_xmlb_builder_insert_kx(bn, "subtype", priv->subtype);
+}
+
+static void
+fu_efi_device_path_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags flags)
+{
+	FuEfiDevicePath *self = FU_EFI_DEVICE_PATH(codec);
+	FuEfiDevicePathPrivate *priv = GET_PRIVATE(self);
+	fwupd_codec_json_append_int(builder, "Subtype", priv->subtype);
 }
 
 /**
@@ -71,26 +90,24 @@ fu_efi_device_path_set_subtype(FuEfiDevicePath *self, guint8 subtype)
 
 static gboolean
 fu_efi_device_path_parse(FuFirmware *firmware,
-			 GBytes *fw,
-			 gsize offset,
+			 GInputStream *stream,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuEfiDevicePath *self = FU_EFI_DEVICE_PATH(firmware);
 	FuEfiDevicePathPrivate *priv = GET_PRIVATE(self);
-	gsize bufsz = g_bytes_get_size(fw);
 	gsize dp_length;
+	gsize streamsz = 0;
 	g_autoptr(GByteArray) st = NULL;
-	g_autoptr(GBytes) payload = NULL;
 
 	/* parse */
-	st = fu_struct_efi_device_path_parse_bytes(fw, offset, error);
+	st = fu_struct_efi_device_path_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 	if (fu_struct_efi_device_path_get_length(st) < FU_STRUCT_EFI_DEVICE_PATH_SIZE) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "EFI DEVICE_PATH length invalid: 0x%x",
 			    fu_struct_efi_device_path_get_length(st));
 		return FALSE;
@@ -99,18 +116,22 @@ fu_efi_device_path_parse(FuFirmware *firmware,
 	priv->subtype = fu_struct_efi_device_path_get_subtype(st);
 
 	/* work around a efiboot bug */
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
 	dp_length = fu_struct_efi_device_path_get_length(st);
-	if (offset + dp_length > bufsz) {
-		dp_length = (bufsz - offset) - 0x4;
+	if (dp_length > streamsz) {
+		dp_length = streamsz - 0x4;
 		g_debug("fixing up DP length from 0x%x to 0x%x, because of a bug in efiboot",
 			fu_struct_efi_device_path_get_length(st),
 			(guint)dp_length);
 	}
-	payload = fu_bytes_new_offset(fw, offset + st->len, dp_length - st->len, error);
-	if (payload == NULL)
-		return FALSE;
-	fu_firmware_set_offset(firmware, offset);
-	fu_firmware_set_bytes(firmware, payload);
+	if (dp_length > st->len) {
+		g_autoptr(GBytes) payload =
+		    fu_input_stream_read_bytes(stream, st->len, dp_length - st->len, NULL, error);
+		if (payload == NULL)
+			return FALSE;
+		fu_firmware_set_bytes(firmware, payload);
+	}
 	fu_firmware_set_size(firmware, dp_length);
 
 	/* success */
@@ -155,6 +176,12 @@ fu_efi_device_path_build(FuFirmware *firmware, XbNode *n, GError **error)
 }
 
 static void
+fu_efi_device_path_codec_iface_init(FwupdCodecInterface *iface)
+{
+	iface->add_json = fu_efi_device_path_add_json;
+}
+
+static void
 fu_efi_device_path_init(FuEfiDevicePath *self)
 {
 }
@@ -162,11 +189,11 @@ fu_efi_device_path_init(FuEfiDevicePath *self)
 static void
 fu_efi_device_path_class_init(FuEfiDevicePathClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->export = fu_efi_device_path_export;
-	klass_firmware->parse = fu_efi_device_path_parse;
-	klass_firmware->write = fu_efi_device_path_write;
-	klass_firmware->build = fu_efi_device_path_build;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->export = fu_efi_device_path_export;
+	firmware_class->parse = fu_efi_device_path_parse;
+	firmware_class->write = fu_efi_device_path_write;
+	firmware_class->build = fu_efi_device_path_build;
 }
 
 /**

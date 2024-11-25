@@ -4,8 +4,7 @@ plugin_deps = [
   giounix,
   gnutls,
   gmodule,
-  gudev,
-  gusb,
+  libusb,
   libarchive,
   libjsonglib,
   libxmlb,
@@ -20,13 +19,16 @@ plugins = {
   'acpi-facp': false,
   'acpi-ivrs': false,
   'acpi-phat': false,
+  'algoltek-aux': false,
   'algoltek-usb': false,
+  'algoltek-usbcr': false,
+  'amd-kria': false,
   'amd-pmc': false,
   'amd-gpu': false,
   'analogix': false,
   'android-boot': false,
+  'asus-hid': false,
   'ata': false,
-  'audio-s5gen2': false,
   'aver-hid': false,
   'bcm57xx': false,
   'bios': false,
@@ -41,9 +43,8 @@ plugins = {
   'cros-ec': false,
   'dell': false,
   'dell-dock': false,
-  'dell-k2': false,
+  'dell-kestrel': false,
   'dfu': false,
-  'dfu-csr': false,
   'ebitdo': false,
   'elantp': false,
   'elanfp': false,
@@ -60,9 +61,10 @@ plugins = {
   'goodix-tp': false,
   'gpio': false,
   'hailuck': false,
+  'hpi-cfu': false,
+  'huddly-usb': false,
   'intel-gsc': false,
   'intel-me': false,
-  'intel-spi': false,
   'intel-usb4': false,
   'iommu': false,
   'jabra': false,
@@ -86,7 +88,6 @@ plugins = {
   'modem-manager': false,
   'msr': false,
   'mtd': false,
-  'nitrokey': false,
   'nordic-hid': false,
   'nvme': false,
   'optionrom': false,
@@ -97,14 +98,15 @@ plugins = {
   'pci-psp': false,
   'pixart-rf': false,
   'powerd': false,
+  'qc-s5gen2': false,
   'qsi-dock': false,
   'realtek-mst': false,
   'redfish': false,
+  'rp-pico': false,
   'rts54hid': false,
   'rts54hub': false,
   'steelseries': false,
   'scsi': false,
-  'superio': false,
   'synaptics-cape': false,
   'synaptics-cxaudio': false,
   'synaptics-mst': false,
@@ -113,6 +115,7 @@ plugins = {
   'synaptics-vmm9': false,
   'system76-launch': false,
   'test': false,
+  'telink-dfu':false,
   'thelio-io': false,
   'thunderbolt': false,
   'ti-tps6598x': false,
@@ -121,6 +124,7 @@ plugins = {
   'uefi-esrt': false,
   'uefi-pk': false,
   'uefi-recovery': false,
+  'uefi-sbat': false,
   'uf2': false,
   'upower': false,
   'usi-dock': false,
@@ -135,6 +139,37 @@ if get_option('plugin_vendor_example')
   plugins += {'vendor-example': false}
 endif
 
+umockdev_tests = []
+umockdev_ioctls = []
+device_tests = []
+enumeration_data = []
 foreach plugin, enabled: plugins
   subdir(plugin)
 endforeach
+
+if umockdev_integration_tests.allowed()
+  envs = environment()
+  envs.set('DAEMON_BUILDDIR', join_paths(meson.project_build_root(), 'src'))
+  envs.set('LIBFWUPD_BUILD_DIR', join_paths(meson.project_build_root(), 'libfwupd'))
+  envs.set('PYTHONPATH', join_paths(meson.project_source_root(), 'data', 'tests'))
+  envs.set('FWUPD_DATADIR_QUIRKS', join_paths(meson.project_build_root()))
+  envs.set('STATE_DIRECTORY', join_paths(meson.project_build_root(), 'state'))
+  envs.set('CACHE_DIRECTORY', join_paths(meson.project_build_root(), 'cache'))
+
+  foreach suite: umockdev_tests
+    r = run_command(unittest_inspector, suite,
+                    check: true, env: envs)
+    unit_tests = r.stdout().strip().split('\n')
+    foreach ut: unit_tests
+        test(ut, python3, args: [suite, ut], is_parallel: false, env: envs)
+    endforeach
+    install_data(suite,
+      install_dir: installed_test_datadir,
+    )
+  endforeach
+  foreach ioctl: umockdev_ioctls
+    install_data(ioctl,
+      install_dir: installed_test_datadir,
+    )
+  endforeach
+endif

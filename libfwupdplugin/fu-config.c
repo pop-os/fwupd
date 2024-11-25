@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuConfig"
@@ -41,46 +41,6 @@ typedef struct {
 
 G_DEFINE_TYPE_WITH_PRIVATE(FuConfig, fu_config, G_TYPE_OBJECT)
 #define GET_PRIVATE(o) (fu_config_get_instance_private(o))
-
-#if !GLIB_CHECK_VERSION(2, 66, 0)
-
-#define G_FILE_SET_CONTENTS_CONSISTENT 0
-typedef guint GFileSetContentsFlags;
-static gboolean
-g_file_set_contents_full(const gchar *filename,
-			 const gchar *contents,
-			 gssize length,
-			 GFileSetContentsFlags flags,
-			 int mode,
-			 GError **error)
-{
-	gint fd;
-	gssize wrote;
-
-	if (length < 0)
-		length = strlen(contents);
-	fd = g_open(filename, O_CREAT, mode);
-	if (fd < 0) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
-			    "could not open %s file",
-			    filename);
-		return FALSE;
-	}
-	wrote = write(fd, contents, length);
-	if (wrote != length) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
-			    "did not write %s file",
-			    filename);
-		g_close(fd, NULL);
-		return FALSE;
-	}
-	return g_close(fd, error);
-}
-#endif
 
 static void
 fu_config_item_free(FuConfigItem *item)
@@ -229,7 +189,6 @@ fu_config_migrate_keyfile(FuConfig *self)
 			  {"fwupd", "IgnorePower", NULL},
 			  {"fwupd", "DisabledPlugins", "test;test_ble;invalid"},
 			  {"fwupd", "DisabledPlugins", "test;test_ble"},
-			  {"fwupd", "AllowEmulation", NULL},
 			  {"redfish", "IpmiDisableCreateUser", NULL},
 			  {"redfish", "ManagerResetTimeout", NULL},
 			  {"msr", "MinimumSmeKernelVersion", NULL},
@@ -348,10 +307,14 @@ fu_config_reload(FuConfig *self, GError **error)
 		g_debug("trying to load config values from %s", item->filename);
 		blob_item = fu_bytes_get_contents(item->filename, &error_load);
 		if (blob_item == NULL) {
-			if (g_error_matches(error_load, G_FILE_ERROR, G_FILE_ERROR_ACCES)) {
+			if (g_error_matches(error_load,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_PERMISSION_DENIED)) {
 				g_debug("ignoring config file %s: ", error_load->message);
 				continue;
-			} else if (g_error_matches(error_load, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
+			} else if (g_error_matches(error_load,
+						   FWUPD_ERROR,
+						   FWUPD_ERROR_INVALID_FILE)) {
 				g_debug("%s", error_load->message);
 				continue;
 			}
@@ -419,8 +382,8 @@ fu_config_reload(FuConfig *self, GError **error)
 			g_info("renaming legacy config file %s to %s", fn_old, fn_new);
 			if (g_rename(fn_old, fn_new) != 0) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_FAILED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_FILE,
 					    "failed to change rename %s to %s",
 					    fn_old,
 					    fn_new);
@@ -506,7 +469,7 @@ fu_config_save(FuConfig *self, GError **error)
 	}
 
 	/* failed */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED, "no writable config");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no writable config");
 	return FALSE;
 }
 
@@ -540,7 +503,7 @@ fu_config_set_value(FuConfig *self,
 
 	/* sanity check */
 	if (priv->items->len == 0) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_INITIALIZED, "no config to load");
+		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "no config to load");
 		return FALSE;
 	}
 
@@ -695,7 +658,7 @@ fu_config_get_value_u64(FuConfig *self, const gchar *section, const gchar *key)
 	} else {
 		value_tmp = tmp;
 	}
-	if (!fu_strtoull(value_tmp, &value, 0, G_MAXUINT64, &error_local)) {
+	if (!fu_strtoull(value_tmp, &value, 0, G_MAXUINT64, FU_INTEGER_BASE_AUTO, &error_local)) {
 		g_warning("failed to parse [%s] %s = %s as integer", section, key, value_tmp);
 		return G_MAXUINT64;
 	}

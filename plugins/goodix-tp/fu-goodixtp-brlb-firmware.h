@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Goodix.inc <xulinkun@goodix.com>
+ * Copyright 2023 Goodix.inc <xulinkun@goodix.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -18,7 +18,7 @@ G_DECLARE_FINAL_TYPE(FuGoodixtpBrlbFirmware,
 
 gboolean
 fu_goodixtp_brlb_firmware_parse(FuGoodixtpFirmware *self,
-				GBytes *fw,
+				GInputStream *stream,
 				guint8 sensor_id,
 				GError **error);
 FuFirmware *

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2022 Intel
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Intel
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -71,8 +71,8 @@ fu_igsc_oprom_firmware_match_device(FuIgscOpromFirmware *self,
 
 	/* not us */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_FOUND,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_FOUND,
 		    "could not find 0x%04x:0x%04x 0x%04x:0x%04x in the image",
 		    vendor_id,
 		    device_id,
@@ -91,20 +91,23 @@ fu_igsc_oprom_firmware_match_device(FuIgscOpromFirmware *self,
 static gboolean
 fu_igsc_oprom_firmware_parse_extension(FuIgscOpromFirmware *self, FuFirmware *fw, GError **error)
 {
-	g_autoptr(GBytes) blob = NULL;
+	gsize streamsz = 0;
+	g_autoptr(GInputStream) stream = NULL;
 
 	/* get data */
-	blob = fu_firmware_get_bytes(fw, error);
-	if (blob == NULL)
+	stream = fu_firmware_get_stream(fw, error);
+	if (stream == NULL)
+		return FALSE;
+	if (!fu_input_stream_size(stream, &streamsz, error))
 		return FALSE;
 	if (fu_firmware_get_idx(fw) == MFT_EXT_TYPE_DEVICE_TYPE) {
-		for (gsize offset = 0; offset < g_bytes_get_size(blob);
+		for (gsize offset = 0; offset < streamsz;
 		     offset += FU_STRUCT_IGSC_OPROM_SUBSYSTEM_DEVICE_ID_SIZE) {
 			g_autofree FuIgscFwdataDeviceInfo *info = g_new0(FuIgscFwdataDeviceInfo, 1);
 			g_autoptr(GByteArray) st = NULL;
-			st = fu_struct_igsc_oprom_subsystem_device_id_parse_bytes(blob,
-										  offset,
-										  error);
+			st = fu_struct_igsc_oprom_subsystem_device_id_parse_stream(stream,
+										   offset,
+										   error);
 			if (st == NULL)
 				return FALSE;
 			info->subsys_vendor_id =
@@ -114,13 +117,13 @@ fu_igsc_oprom_firmware_parse_extension(FuIgscOpromFirmware *self, FuFirmware *fw
 			g_ptr_array_add(self->device_infos, g_steal_pointer(&info));
 		}
 	} else if (fu_firmware_get_idx(fw) == MFT_EXT_TYPE_DEVICE_ID_ARRAY) {
-		for (gsize offset = 0; offset < g_bytes_get_size(blob);
+		for (gsize offset = 0; offset < streamsz;
 		     offset += FU_STRUCT_IGSC_OPROM_SUBSYSTEM_DEVICE4_ID_SIZE) {
 			g_autofree FuIgscFwdataDeviceInfo *info = g_new0(FuIgscFwdataDeviceInfo, 1);
 			g_autoptr(GByteArray) st = NULL;
-			st = fu_struct_igsc_oprom_subsystem_device4_id_parse_bytes(blob,
-										   offset,
-										   error);
+			st = fu_struct_igsc_oprom_subsystem_device4_id_parse_stream(stream,
+										    offset,
+										    error);
 			if (st == NULL)
 				return FALSE;
 			info->vendor_id =
@@ -141,8 +144,7 @@ fu_igsc_oprom_firmware_parse_extension(FuIgscOpromFirmware *self, FuFirmware *fw
 
 static gboolean
 fu_igsc_oprom_firmware_parse(FuFirmware *firmware,
-			     GBytes *fw,
-			     gsize offset,
+			     GInputStream *stream,
 			     FwupdInstallFlags flags,
 			     GError **error)
 {
@@ -152,15 +154,15 @@ fu_igsc_oprom_firmware_parse(FuFirmware *firmware,
 
 	/* FuOpromFirmware->parse */
 	if (!FU_FIRMWARE_CLASS(fu_igsc_oprom_firmware_parent_class)
-		 ->parse(firmware, fw, offset, flags, error))
+		 ->parse(firmware, stream, flags, error))
 		return FALSE;
 
 	/* check sanity */
 	if (fu_oprom_firmware_get_subsystem(FU_OPROM_FIRMWARE(firmware)) !=
 	    FU_OPROM_FIRMWARE_SUBSYSTEM_EFI_BOOT_SRV_DRV) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid subsystem, got 0x%x, expected 0x%x",
 			    fu_oprom_firmware_get_subsystem(FU_OPROM_FIRMWARE(firmware)),
 			    (guint)FU_OPROM_FIRMWARE_SUBSYSTEM_EFI_BOOT_SRV_DRV);
@@ -169,8 +171,8 @@ fu_igsc_oprom_firmware_parse(FuFirmware *firmware,
 	if (fu_oprom_firmware_get_machine_type(FU_OPROM_FIRMWARE(firmware)) !=
 	    FU_OPROM_FIRMWARE_MACHINE_TYPE_X64) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid machine type, got 0x%x, expected 0x%x",
 			    fu_oprom_firmware_get_machine_type(FU_OPROM_FIRMWARE(firmware)),
 			    (guint)FU_OPROM_FIRMWARE_MACHINE_TYPE_X64);
@@ -179,8 +181,8 @@ fu_igsc_oprom_firmware_parse(FuFirmware *firmware,
 	if (fu_oprom_firmware_get_compression_type(FU_OPROM_FIRMWARE(firmware)) !=
 	    FU_OPROM_FIRMWARE_COMPRESSION_TYPE_NONE) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid compression type, got 0x%x, expected 0x%x (uncompressed)",
 			    fu_oprom_firmware_get_compression_type(FU_OPROM_FIRMWARE(firmware)),
 			    (guint)FU_OPROM_FIRMWARE_COMPRESSION_TYPE_NONE);
@@ -193,8 +195,8 @@ fu_igsc_oprom_firmware_parse(FuFirmware *firmware,
 		return FALSE;
 	if (!FU_IS_IFWI_CPD_FIRMWARE(fw_cpd)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "CPD was not FuIfwiCpdFirmware");
 		return FALSE;
 	}
@@ -230,9 +232,9 @@ fu_igsc_oprom_firmware_finalize(GObject *object)
 static void
 fu_igsc_oprom_firmware_class_init(FuIgscOpromFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_igsc_oprom_firmware_finalize;
-	klass_firmware->parse = fu_igsc_oprom_firmware_parse;
-	klass_firmware->export = fu_igsc_oprom_firmware_export;
+	firmware_class->parse = fu_igsc_oprom_firmware_parse;
+	firmware_class->export = fu_igsc_oprom_firmware_export;
 }

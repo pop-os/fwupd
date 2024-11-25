@@ -57,7 +57,6 @@ _fwupdmgr_cmd_list=(
 
 _fwupdmgr_opts=(
 	'--verbose'
-	'--offline'
 	'--allow-reinstall'
 	'--allow-older'
 	'--allow-branch-switch'
@@ -92,9 +91,18 @@ bios_set_opts=(
 	'--verbose'
 )
 
-modify_config_opts=(
+fwupd_modify_config_sections=(
+	'fwupd'
+	'msr'
+	'redfish'
+	'test'
+	'thunderbolt'
+	'uefi_capsule'
+	'dell_kestrel'
+)
+
+fwupd_modify_config_opts=(
 	'ArchiveSizeMax'
-	'AllowEmulation'
 	'ApprovedFirmware'
 	'BlockedFirmware'
 	'DisabledDevices'
@@ -115,6 +123,55 @@ modify_config_opts=(
 	'UpdateMotd'
 	'UriSchemes'
 	'VerboseDomains'
+)
+
+test_modify_config_opts=(
+	'AnotherWriteRequired'
+	'CompositeChild'
+	'DecompressDelay'
+	'NeedsActivation'
+	'NeedsReboot'
+	'RegistrationSupported'
+	'RequestDelay'
+	'RequestSupported'
+	'VerifyDelay'
+	'WriteDelay'
+	'WriteSupported'
+)
+
+redfish_modify_config_opts=(
+	'CACheck'
+	'IpmiDisableCreateUser'
+	'ManagerResetTimeout'
+	'Password'
+	'Uri'
+	'Username'
+	'UserUri'
+)
+
+uefi_capsule_modify_config_opts=(
+	'DisableCapsuleUpdateOnDisk'
+	'DisableShimForSecureBoot'
+	'EnableEfiDebugging'
+	'EnableGrubChainLoad'
+	'OverrideESPMountPoint'
+	'RebootCleanup'
+	'RequireESPFreeSpace'
+	'ScreenWidth'
+	'ScreenHeight'
+)
+
+dell_kestrel_modify_config_opts=(
+	'UpdateOnDisconnect'
+)
+
+reset_config_opts=(
+	'fwupd'
+	'msr'
+	'redfish'
+	'test'
+	'thunderbolt'
+	'uefi_capsule'
 )
 
 _show_file_in_dir()
@@ -196,9 +253,39 @@ _show_release_versions()
 	COMPREPLY+=( $(compgen -W "${description}" -- "$cur") )
 }
 
-_show_modify_config()
+_show_fwupd_modify_sections()
 {
-	COMPREPLY+=( $(compgen -W '${modify_config_opts[@]}' -- "$cur") )
+	COMPREPLY+=( $(compgen -W '${fwupd_modify_config_sections[@]}' -- "$cur") )
+}
+
+_show_fwupd_modify_config()
+{
+	COMPREPLY+=( $(compgen -W '${fwupd_modify_config_opts[@]}' -- "$cur") )
+}
+
+_show_test_modify_config()
+{
+	COMPREPLY+=( $(compgen -W '${test_modify_config_opts[@]}' -- "$cur") )
+}
+
+_show_redfish_modify_config()
+{
+	COMPREPLY+=( $(compgen -W '${redfish_modify_config_opts[@]}' -- "$cur") )
+}
+
+_show_uefi_capsule_modify_config()
+{
+	COMPREPLY+=( $(compgen -W '${uefi_capsule_modify_config_opts[@]}' -- "$cur") )
+}
+
+_show_dell_kestrel_modify_config()
+{
+	COMPREPLY+=( $(compgen -W '${dell_kestrel_modify_config_opts[@]}' -- "$cur") )
+}
+
+_show_reset_config()
+{
+	COMPREPLY+=( $(compgen -W '${reset_config_opts[@]}' -- "$cur") )
 }
 
 _show_remotes()
@@ -313,11 +400,39 @@ _fwupdmgr()
 		;;
 	modify-config)
 		if [[ "$args" = "2" ]]; then
-			_show_modify_config
+			_show_fwupd_modify_sections
 			return 0
 		elif [[ "$args" = "3" ]]; then
 			case $prev in
-			AllowEmulation|EnumerateAllDevices|OnlyTrusted|IgnorePower|UpdateMotd|ShowDevicePrivate|ReleaseDedupe|TestDevices)
+			test)
+				_show_test_modify_config
+				;;
+			msr)
+				COMPREPLY+=( $(compgen -W 'DelayedActivation MinimumSmeKernelVersion' -- "$cur") )
+				;;
+			thunderbolt)
+				COMPREPLY+=( $(compgen -W 'DelayedActivation MinimumKernelVersion' -- "$cur") )
+				;;
+			fwupd)
+				_show_fwupd_modify_config
+				;;
+			redfish)
+				_show_redfish_modify_config
+				;;
+			uefi_capsule)
+				_show_uefi_capsule_modify_config
+				;;
+			dell_kestrel)
+				_show_dell_kestrel_modify_config
+				;;
+			esac
+			return 0
+		elif [[ "$args" = "4" ]]; then
+			case $prev in
+			EnumerateAllDevices|OnlyTrusted|IgnorePower|UpdateMotd|ShowDevicePrivate|ReleaseDedupe|TestDevices)
+				COMPREPLY=( $(compgen -W "True False" -- "$cur") )
+				;;
+			AnotherWriteRequired|NeedsActivation|NeedsReboot|RegistrationSupported|RequestSupported|WriteSupported)
 				COMPREPLY=( $(compgen -W "True False" -- "$cur") )
 				;;
 			ReleasePriority)
@@ -346,7 +461,14 @@ _fwupdmgr()
 			VerboseDomains)
 				;;
 			esac
-			return 0;
+			return 0
+		fi
+		;;
+	reset-config)
+		#find files
+		if [[ "$args" = "2" ]]; then
+			_show_reset_config
+			return 0
 		fi
 		;;
 	refresh)

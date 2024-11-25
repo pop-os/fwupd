@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -9,6 +9,13 @@
 #include "fu-wac-android-device.h"
 #include "fu-wac-device.h"
 #include "fu-wac-firmware.h"
+#include "fu-wac-module-bluetooth-id6.h"
+#include "fu-wac-module-bluetooth-id9.h"
+#include "fu-wac-module-bluetooth.h"
+#include "fu-wac-module-scaler.h"
+#include "fu-wac-module-sub-cpu.h"
+#include "fu-wac-module-touch-id7.h"
+#include "fu-wac-module-touch.h"
 #include "fu-wac-plugin.h"
 
 struct _FuWacPlugin {
@@ -20,7 +27,7 @@ G_DEFINE_TYPE(FuWacPlugin, fu_wac_plugin, FU_TYPE_PLUGIN)
 static gboolean
 fu_wac_plugin_write_firmware(FuPlugin *plugin,
 			     FuDevice *device,
-			     GBytes *blob_fw,
+			     GInputStream *stream,
 			     FuProgress *progress,
 			     FwupdInstallFlags flags,
 			     GError **error)
@@ -30,7 +37,7 @@ fu_wac_plugin_write_firmware(FuPlugin *plugin,
 	locker = fu_device_locker_new(parent != NULL ? parent : device, error);
 	if (locker == NULL)
 		return FALSE;
-	return fu_device_write_firmware(device, blob_fw, progress, flags, error);
+	return fu_device_write_firmware(device, stream, progress, flags, error);
 }
 
 static gboolean
@@ -86,6 +93,13 @@ fu_wac_plugin_constructed(GObject *obj)
 	FuPlugin *plugin = FU_PLUGIN(obj);
 	fu_plugin_set_device_gtype_default(plugin, FU_TYPE_WAC_DEVICE);
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_ANDROID_DEVICE);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_MODULE_BLUETOOTH);     /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_MODULE_BLUETOOTH_ID6); /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_MODULE_BLUETOOTH_ID9); /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_MODULE_SCALER);	      /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_MODULE_SUB_CPU);	      /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_MODULE_TOUCH);	      /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_WAC_MODULE_TOUCH_ID7);     /* coverage */
 	fu_plugin_add_firmware_gtype(plugin, "wacom", FU_TYPE_WAC_FIRMWARE);
 }
 

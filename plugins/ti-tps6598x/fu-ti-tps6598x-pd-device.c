@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR MIT
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
  */
 
 #include "config.h"
@@ -181,9 +181,9 @@ fu_ti_tps6598x_pd_device_init(FuTiTps6598xPdDevice *self)
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_VENDOR);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_VENDOR);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_PARENT_FOR_OPEN);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_TI_TPS6598X_FIRMWARE);
 	fu_device_set_remove_delay(FU_DEVICE(self), 30000);
 }
@@ -191,13 +191,13 @@ fu_ti_tps6598x_pd_device_init(FuTiTps6598xPdDevice *self)
 static void
 fu_ti_tps6598x_pd_device_class_init(FuTiTps6598xPdDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_ti_tps6598x_pd_device_write_firmware;
-	klass_device->attach = fu_ti_tps6598x_pd_device_attach;
-	klass_device->setup = fu_ti_tps6598x_pd_device_setup;
-	klass_device->probe = fu_ti_tps6598x_pd_device_probe;
-	klass_device->report_metadata_pre = fu_ti_tps6598x_pd_device_report_metadata_pre;
-	klass_device->set_progress = fu_ti_tps6598x_pd_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_ti_tps6598x_pd_device_write_firmware;
+	device_class->attach = fu_ti_tps6598x_pd_device_attach;
+	device_class->setup = fu_ti_tps6598x_pd_device_setup;
+	device_class->probe = fu_ti_tps6598x_pd_device_probe;
+	device_class->report_metadata_pre = fu_ti_tps6598x_pd_device_report_metadata_pre;
+	device_class->set_progress = fu_ti_tps6598x_pd_device_set_progress;
 }
 
 FuDevice *

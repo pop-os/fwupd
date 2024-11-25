@@ -9,18 +9,9 @@ fi
 
 # install deps
 if [ "$(id -u)" -eq 0 ]; then
+    dnf install -y python3
+    dnf install -y xvfb-run
     ./contrib/ci/fwupd_setup_helpers.py --yes -o fedora -v mingw64 install-dependencies
-fi
-
-# update to latest version of meson
-if [ "$(id -u)" -eq 0 ]; then
-    dnf install -y python-pip
-    pip install meson --force-reinstall
-fi
-
-# get a libxmlb with the workaround for the GLib regression
-if [ "$(id -u)" -eq 0 ]; then
-    dnf upgrade --enablerepo=updates-testing --refresh --advisory=FEDORA-2024-584ab295c8 -y
 fi
 
 #prep
@@ -30,6 +21,10 @@ export DESTDIR=${root}/dist
 build=$root/build-win32
 
 rm -rf $DESTDIR $build
+mkdir -p $build $DESTDIR && cd $build
+
+# run before using meson
+export WINEPREFIX=$build/.wine
 
 # For logitech bulk controller being disabled (-Dplugin_logitech_bulkcontroller=disabled):
 # See https://bugzilla.redhat.com/show_bug.cgi?id=1991749
@@ -39,8 +34,7 @@ rm -rf $DESTDIR $build
 # 3. Only enable when not a tagged release (Unsupported by Logitech)
 
 # try to keep this and ../contrib/build-windows.sh in sync as much as makes sense
-mkdir -p $build $DESTDIR && cd $build
-meson setup .. \
+xvfb-run meson setup .. \
     --cross-file=/usr/share/mingw/toolchain-mingw64.meson \
     --cross-file=../contrib/mingw64.cross \
     --prefix=/ \
@@ -56,15 +50,12 @@ meson setup .. \
     -Dbash_completion=false \
     -Dfirmware-packager=false \
     -Dmetainfo=false \
-    -Dcompat_cli=false \
+    -Dpassim=disabled \
     -Dlibjcat:man=false \
     -Dlibjcat:gpg=false \
     -Dlibjcat:tests=false \
     -Dlibjcat:introspection=false \
-    -Dgusb:tests=false \
-    -Dgusb:docs=false \
-    -Dgusb:introspection=false \
-    -Dgusb:vapi=false $@
+    $@
 VERSION=$(meson introspect . --projectinfo | jq -r .version)
 ninja --verbose -C "$build" -v install
 
@@ -95,7 +86,6 @@ find $MINGW32BINDIR \
 	-o -name libgmp-10.dll \
 	-o -name libgnutls-30.dll \
 	-o -name libgobject-2.0-0.dll \
-	-o -name libgusb-2.dll \
 	-o -name "libhogweed-*.dll" \
 	-o -name libidn2-0.dll \
 	-o -name libintl-8.dll \
@@ -172,10 +162,9 @@ wixl -v \
 
 # check the msi archive can be installed and removed (use "wine uninstaller" to do manually)
 wine msiexec /i "${MSI_FILENAME}"
-ls -R ~/.wine/drive_c/Program\ Files/fwupd/
-wine ~/.wine/drive_c/Program\ Files/fwupd/bin/fwupdtool.exe get-plugins --json
+ls -R ${WINEPREFIX}/drive_c/Program\ Files/fwupd/
+wine ${WINEPREFIX}/drive_c/Program\ Files/fwupd/bin/fwupdtool.exe get-plugins --json
 wine msiexec /x "${MSI_FILENAME}"
 
 #generate news release
 contrib/ci/generate_news.py $VERSION > $DESTDIR/news.txt
-echo $VERSION > $DESTDIR/VERSION

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCommon"
@@ -54,7 +54,7 @@ fu_cpuid(guint32 leaf, guint32 *eax, guint32 *ebx, guint32 *ecx, guint32 *edx, G
 		*edx = edx_tmp;
 	return TRUE;
 #else
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no <cpuid.h> support");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no <cpuid.h> support");
 	return FALSE;
 #endif
 }
@@ -186,8 +186,8 @@ fu_common_check_full_disk_encryption(GError **error)
 			continue;
 		if (g_strcmp0(g_variant_get_string(id_type, NULL), "BitLocker") == 0) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_WOULD_BLOCK,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_AUTH_EXPIRED,
 				    "%s device %s is encrypted",
 				    g_variant_get_string(id_type, NULL),
 				    g_variant_get_bytestring(device));
@@ -251,36 +251,6 @@ fu_common_align_up(gsize value, guint8 alignment)
 }
 
 /**
- * fu_power_state_to_string:
- * @power_state: a power state, e.g. %FU_POWER_STATE_AC_FULLY_CHARGED
- *
- * Converts an enumerated type to a string.
- *
- * Returns: a string, or %NULL for invalid
- *
- * Since: 1.8.11
- **/
-const gchar *
-fu_power_state_to_string(FuPowerState power_state)
-{
-	if (power_state == FU_POWER_STATE_UNKNOWN)
-		return "unknown";
-	if (power_state == FU_POWER_STATE_BATTERY)
-		return "battery";
-	if (power_state == FU_POWER_STATE_BATTERY_DISCHARGING)
-		return "battery-discharging";
-	if (power_state == FU_POWER_STATE_BATTERY_EMPTY)
-		return "battery-empty";
-	if (power_state == FU_POWER_STATE_AC)
-		return "ac";
-	if (power_state == FU_POWER_STATE_AC_CHARGING)
-		return "ac-charging";
-	if (power_state == FU_POWER_STATE_AC_FULLY_CHARGED)
-		return "ac-fully-charged";
-	return NULL;
-}
-
-/**
  * fu_power_state_is_ac:
  * @power_state: a power state, e.g. %FU_POWER_STATE_AC_FULLY_CHARGED
  *
@@ -301,47 +271,35 @@ fu_power_state_is_ac(FuPowerState power_state)
 }
 
 /**
- * fu_lid_state_to_string:
- * @lid_state: a lid state, e.g. %FU_LID_STATE_CLOSED
+ * fu_error_convert:
+ * @perror: (nullable): A #GError, perhaps with domain #GIOError
  *
- * Converts an enumerated type to a string.
+ * Convert the error to a #FwupdError, if required.
  *
- * Returns: a string, or %NULL for invalid
- *
- * Since: 1.7.4
+ * Since: 2.0.0
  **/
-const gchar *
-fu_lid_state_to_string(FuLidState lid_state)
+void
+fu_error_convert(GError **perror)
 {
-	if (lid_state == FU_LID_STATE_UNKNOWN)
-		return "unknown";
-	if (lid_state == FU_LID_STATE_OPEN)
-		return "open";
-	if (lid_state == FU_LID_STATE_CLOSED)
-		return "closed";
-	return NULL;
-}
+	GError *error = (perror != NULL) ? *perror : NULL;
 
-/**
- * fu_display_state_to_string:
- * @display_state: a lid state, e.g. %FU_DISPLAY_STATE_CONNECTED
- *
- * Converts an enumerated type to a string.
- *
- * Returns: a string, or %NULL for invalid
- *
- * Since: 1.9.6
- **/
-const gchar *
-fu_display_state_to_string(FuDisplayState display_state)
-{
-	if (display_state == FU_DISPLAY_STATE_UNKNOWN)
-		return "unknown";
-	if (display_state == FU_DISPLAY_STATE_CONNECTED)
-		return "connected";
-	if (display_state == FU_DISPLAY_STATE_DISCONNECTED)
-		return "disconnected";
-	return NULL;
+	/* sanity check */
+	if (error == NULL)
+		return;
+
+	/* convert GIOError and GFileError */
+	fwupd_error_convert(perror);
+	if (error->domain == FWUPD_ERROR)
+		return;
+
+#ifndef SUPPORTED_BUILD
+	/* fallback */
+	g_critical("GError %s:%i sending over D-Bus was not converted to FwupdError",
+		   g_quark_to_string(error->domain),
+		   error->code);
+#endif
+	error->domain = FWUPD_ERROR;
+	error->code = FWUPD_ERROR_INTERNAL;
 }
 
 /**

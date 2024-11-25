@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -11,10 +11,10 @@
 #include "fu-wacom-common.h"
 
 #define FU_TYPE_WACOM_DEVICE (fu_wacom_device_get_type())
-G_DECLARE_DERIVABLE_TYPE(FuWacomDevice, fu_wacom_device, FU, WACOM_DEVICE, FuUdevDevice)
+G_DECLARE_DERIVABLE_TYPE(FuWacomDevice, fu_wacom_device, FU, WACOM_DEVICE, FuHidrawDevice)
 
 struct _FuWacomDeviceClass {
-	FuUdevDeviceClass parent_class;
+	FuHidrawDeviceClass parent_class;
 	gboolean (*write_firmware)(FuDevice *self,
 				   FuChunkArray *chunks,
 				   FuProgress *progress,
@@ -27,16 +27,18 @@ typedef enum {
 	FU_WACOM_DEVICE_CMD_FLAG_NO_ERROR_CHECK = 1 << 1,
 } FuWacomDeviceCmdFlags;
 
-#define FU_WACOM_RAW_DEVICE_FLAG_REQUIRES_WAIT_FOR_REPLUG (1 << 0)
+#define FU_WACOM_RAW_DEVICE_FLAG_REQUIRES_WAIT_FOR_REPLUG "requires-wait-for-replug"
 
+guint8
+fu_wacom_device_get_echo_next(FuWacomDevice *self);
 gboolean
 fu_wacom_device_set_feature(FuWacomDevice *self, const guint8 *data, guint datasz, GError **error);
 gboolean
 fu_wacom_device_get_feature(FuWacomDevice *self, guint8 *data, guint datasz, GError **error);
 gboolean
 fu_wacom_device_cmd(FuWacomDevice *self,
-		    FuWacomRawRequest *req,
-		    FuWacomRawResponse *rsp,
+		    const FuStructWacomRawRequest *st_req,
+		    guint8 *rsp_value,
 		    guint delay_ms,
 		    FuWacomDeviceCmdFlags flags,
 		    GError **error);

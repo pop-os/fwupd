@@ -1,4 +1,4 @@
-if gusb.found()
+if libusb.found()
 cargs = ['-DG_LOG_DOMAIN="FuPluginParadeUsbhub"']
 
 plugins += {meson.current_source_dir().split('/')[-1]: true}
@@ -14,5 +14,9 @@ plugin_builtins += static_library('fu_plugin_parade_usbhub',
   link_with: plugin_libs,
   c_args: cargs,
   dependencies: plugin_deps,
+)
+
+device_tests += files(
+  'tests/parade-ps5512evb.json',
 )
 endif

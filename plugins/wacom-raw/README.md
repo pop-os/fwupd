@@ -39,17 +39,11 @@ Base address for firmware.
 
 Since: 1.2.4
 
-### WacomI2cFlashSize
-
-Maximum size of the firmware zone.
-
-Since: 1.2.4
-
 ### Flags:requires-wait-for-replug
 
 The device needs to replug into a bootloader mode.
 
-Since: 1.9.15
+Since: 1.9.14
 
 ## Update Behavior
 

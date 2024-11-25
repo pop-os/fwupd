@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2023 Denis Pynkin <denis.pynkin@collabora.com>
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2023 Ben Chuang <benchuanggli@gmail.com>
+ * Copyright 2023 Denis Pynkin <denis.pynkin@collabora.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Ben Chuang <benchuanggli@gmail.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -21,41 +21,49 @@ G_DEFINE_TYPE(FuGenesysGl32xxFirmware, fu_genesys_gl32xx_firmware, FU_TYPE_FIRMW
 
 static gboolean
 fu_genesys_gl32xx_firmware_parse(FuFirmware *firmware,
-				 GBytes *fw,
-				 gsize offset,
+				 GInputStream *stream,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
-	gsize bufsz = 0;
 	guint8 ver[4] = {0};
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autofree gchar *version = NULL;
 
 	/* version */
-	if (!fu_memcpy_safe(ver,
-			    sizeof(ver),
-			    0x0,
-			    buf,
-			    g_bytes_get_size(fw),
-			    FU_GENESYS_GL32XX_VERSION_ADDR,
-			    sizeof(ver),
-			    error))
+	if (!fu_input_stream_read_safe(stream,
+				       ver,
+				       sizeof(ver),
+				       0x0,
+				       FU_GENESYS_GL32XX_VERSION_ADDR,
+				       sizeof(ver),
+				       error))
 		return FALSE;
 	version = g_strdup_printf("%c%c%c%c", ver[0x0], ver[0x1], ver[0x2], ver[0x3]);
 	fu_firmware_set_version(firmware, version);
 
 	/* verify checksum */
-	if (bufsz < 2) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "buf was too small");
-		return FALSE;
-	}
 	if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
-		guint8 chksum_expected = buf[bufsz - 1];
-		guint8 chksum_actual = FU_GENESYS_GL32XX_CHECKSUM_MAGIC - fu_sum8(buf, bufsz - 2);
-		if (chksum_actual != chksum_expected) {
+		gsize streamsz = 0;
+		guint8 chksum_actual = 0;
+		guint8 chksum_expected = 0;
+		g_autoptr(GInputStream) stream_tmp = NULL;
+
+		if (!fu_input_stream_size(stream, &streamsz, error))
+			return FALSE;
+		if (streamsz < 2) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
+					    "image is too small");
+			return FALSE;
+		}
+		if (!fu_input_stream_read_u8(stream, streamsz - 1, &chksum_expected, error))
+			return FALSE;
+		stream_tmp = fu_partial_input_stream_new(stream, 0, streamsz - 2, error);
+		if (stream_tmp == NULL)
+			return FALSE;
+		if (!fu_input_stream_compute_sum8(stream_tmp, &chksum_actual, error))
+			return FALSE;
+		if (FU_GENESYS_GL32XX_CHECKSUM_MAGIC - chksum_actual != chksum_expected) {
 			g_set_error(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INTERNAL,
@@ -66,8 +74,7 @@ fu_genesys_gl32xx_firmware_parse(FuFirmware *firmware,
 		}
 	}
 
-	/* payload is entire blob */
-	fu_firmware_set_bytes(firmware, fw);
+	/* success */
 	return TRUE;
 }
 
@@ -80,8 +87,8 @@ fu_genesys_gl32xx_firmware_init(FuGenesysGl32xxFirmware *self)
 static void
 fu_genesys_gl32xx_firmware_class_init(FuGenesysGl32xxFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_genesys_gl32xx_firmware_parse;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_genesys_gl32xx_firmware_parse;
 }
 
 FuFirmware *

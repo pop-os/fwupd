@@ -38,42 +38,191 @@
     <binary>fwupdtool</binary>
   </provides>
   <releases>
-    <release version="1.9.26" date="2024-10-14">
+    <release version="2.0.2" date="2024-11-25">
       <description>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Add fwupdtool 'get-version-formats' and 'vercmp' commands</li>
+          <li>Add support for checking AMD HW configuration MSR</li>
+          <li>Add support for enumerate-only device emulation to increase test coverage</li>
+          <li>Add support for passing a JSON file for emulation instead of ZIP</li>
+          <li>Remove support for now-obsolete CSR DFU and Nitrokey devices</li>
+        </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
-          <li>Add HSI tests for Arrow and Meteor Lake CSME</li>
-          <li>Allow UEFI capsule config values to be set with fwupdmgr modify-config</li>
-          <li>Check for the logitech-bulkcontroller response packet length correctly</li>
-          <li>Fix using ID_LIKE for fallback when ESP isn't mounted</li>
-          <li>Fix various Coverity-reported overflowed constants</li>
-          <li>Only compare the first 10 characters of the AMD GPU part number</li>
+          <li>Add additional version checks for AMD Sinkclose</li>
+          <li>Check that getpid() returned a sensible value to detect minijail failure</li>
+          <li>Check the VLI USB3 firmware size before erasing</li>
+          <li>Correctly parse the ThunderBolt controller NVM</li>
+          <li>Disallow DBX updates on the Samsung Galaxy Book2 360</li>
+          <li>Do not create zero-sized archive entries when loading some ZIP files</li>
+          <li>Fix a critical warning when parsing a corrupt ELF file</li>
+          <li>Fix a small memory leak when checking algoltek-usb status</li>
+          <li>Fix a small memory leak when writing telink-dfu firmware</li>
+          <li>Fix eMMC probing regression in 2.0.x</li>
+          <li>Fix endianness parsing of msgpack float64</li>
+          <li>Fix failure to load the EFI DEVICE_PATH when there is no payload</li>
+          <li>Fix polkit message for emulation data collection</li>
+          <li>Fix sector erasing on Algoltek AG941x</li>
+          <li>Fix type confusion when saving emulation data</li>
+          <li>Fix UFS device feature discovery</li>
+          <li>Fix various device enumerations on s390x</li>
+          <li>Ignore LIBUSB_ERROR_NO_DEVICE when rebooting VIA VL103</li>
+          <li>Improve the algorithm for detecting multiple device-id matches</li>
+          <li>Mark all UEFI dbx updates as FWUPD_DEVICE_FLAG_AFFECTS_FDE</li>
+          <li>Only check for fwupdx64.efi when not using capsule-on-disk</li>
+          <li>Only set can-verify-image when CURRENT.UF2 exists</li>
+          <li>Parse install flags from apps compiled against old libfwupd versions</li>
+          <li>Repair the cros-ec device after flush failure</li>
+          <li>Reset the SteelSeries device only for certain models</li>
+          <li>Save the usb.ids and pci.ids name in the quirk database</li>
+          <li>Speed up decompressing large cab archives by 30%</li>
+          <li>Use a much more efficient method to calculate chunk sizes</li>
         </ul>
         <p>This release adds support for the following hardware:</p>
         <ul>
-          <li>Jabra PanaCast</li>
-          <li>Some Lenovo Legion HID devices</li>
+          <li>ASUS ROG ally and ROG ally X (initial support, community provided)</li>
+          <li>Google GID8 headset</li>
+          <li>j5create USB-C JCD373</li>
+          <li>Logitech Sight (as standalone device)</li>
+          <li>MNT Pocket Reform</li>
+          <li>Netprisma LCUR57 and FCUN69</li>
+          <li>Parade PS188</li>
+          <li>Quectel DFOTA devices</li>
+          <li>Raspberry Pi Pico</li>
+          <li>SteelSeries Nova 5</li>
+          <li>Telink DFU-HID devices</li>
         </ul>
       </description>
     </release>
-    <release version="1.9.25" date="2024-09-25">
+    <release version="2.0.1" date="2024-10-15">
       <description>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Add API so that gnome-firmware can record devices for emulation</li>
+          <li>Save the emulation-tag devices to the database rather than the config file</li>
+        </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
-          <li>Fix checking new Synaptics MST firmware size</li>
-          <li>Make another ModemManager instance ID visible for firmware matching</li>
-          <li>Never set a zero-length device name when matching the vendor name</li>
+          <li>Allow controlling the libdrm dependency when building</li>
+          <li>Check the logitech-bulkcontroller response packet length correctly</li>
+          <li>Convert the wacom-raw device command buffers to Rust format</li>
+          <li>Convert the wacom-usb descriptor to Rust format</li>
+          <li>Fix a kinetic-dp enumeration regression</li>
+          <li>Fix compiling on Android</li>
+          <li>Fix compiling without git installed</li>
+          <li>Fix FU_PLUGIN_RULE_BETTER_THAN to ignore lower priority devices</li>
+          <li>Ignore needs-reboot and needs-shutdown for emulated devices</li>
+          <li>Read the Intel Thunderbot NVM firmware in a more efficient way</li>
+          <li>Simplify firmware loading from a specific offset</li>
+          <li>Skip the serio self tests if gnutls support was disabled</li>
+          <li>Speed up fwupdtool by only loading engine features when required</li>
+          <li>Speed up getting details about local firmware archives</li>
+        </ul>
+      </description>
+    </release>
+    <release version="2.0.0" date="2024-10-04">
+      <description>
+        <p>
+          This new major release beaks the libfwupd ABI to make the following changes:
+        </p>
+        <ul>
+          <li>Drop legacy signing formats for verification of metadata and firmware</li>
+          <li>Reduce the runtime memory usage and CPU startup cost significantly</li>
+          <li>Remove all the long-deprecated legacy CLI tools</li>
+          <li>Remove libgusb and GUdev from plugins and use libusb and sysfs instead</li>
+          <li>Stream firmware binaries over a file descriptor rather than into memory</li>
+        </ul>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Add a config option to ignore firmware requirements for development</li>
+          <li>Add a device problem when the device needs a reboot</li>
+          <li>Add API to allow uploading reports in gnome-firmware</li>
+          <li>Add Darwin support to the build helper</li>
+          <li>Add HSI tests for Arrow and Meteor Lake CSME</li>
+          <li>Add support for fwupdtool esp-list --json</li>
+          <li>Add support for more modify-config options</li>
+          <li>Add the privacy policy URL in the remote config</li>
+          <li>Allow device flags to be loaded from the local cab archive</li>
+          <li>Allow overriding the detected EFI framebuffer size in the config file</li>
+          <li>Allow specifying devices to emulate in the config file</li>
+          <li>Apply revocations to SbatLevelRT when required</li>
+          <li>Choose the ESP correctly in more cases when using UEFI capsule updates</li>
+          <li>Detect BlueTooth devices by GATT service UUID</li>
+          <li>Drop the SuperIO plugin as it will not work without rawio</li>
+          <li>Listen to the netlink udev socket rather than using GUdev</li>
+          <li>Parse EFI LZ77 compressed sections when required</li>
+          <li>Support large sections in EFI FFS3 volumes</li>
+          <li>Support more CRC-32 and CRC-16 types</li>
+        </ul>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Abstract out the D-Bus IPC layer to allow using Android Binder in the future</li>
+          <li>Apply systemd hardening to the service files</li>
+          <li>Coldplug udev devices with a predictable order</li>
+          <li>Completely deallocate devices when physically removed</li>
+          <li>Create the fuzzing corpus at build time to avoid shipping binary test blobs</li>
+          <li>Do not add counterpart IDs as visible firmware-matchable GUIDs</li>
+          <li>Do not allow system suspend during a composite update</li>
+          <li>Do not assume all block devices are backed by USB devices</li>
+          <li>Do not create a FuSynapticsMstDevice for every DPAUX device</li>
+          <li>Do not read OptionROM on Apple hardware</li>
+          <li>Do not run the quirk query multiple times on the same device</li>
+          <li>Do not set a zero-length device name when matching the vendor name</li>
+          <li>Do not skip closing the USB device if the HID interface is not found</li>
+          <li>Do not skip the first EFI_FILE in the EFI_FILESYSTEM</li>
+          <li>Do not verify the SSL hostname when using DISABLE_SSL_STRICT=1</li>
+          <li>Do SG_IO INQUIRY_CMD directly rather than relying on the udev prober</li>
+          <li>Emit a signal when a request is no longer valid</li>
+          <li>Fix several 'underflowed constants' found using Coverity</li>
+          <li>Get the DT-provided 'BIOS version' correctly</li>
+          <li>Get the new bluetooth revision after deploying the update</li>
+          <li>Keep polling Redfish even when encountering task errors</li>
+          <li>Only generate the client certificate when required</li>
+          <li>Only read back the thunderbolt firmware if we can parse the NVM</li>
+          <li>Pass emulation data using a file descriptor</li>
           <li>Recalculate the device supported flag when reparenting devices</li>
-          <li>Reduce idle power consumption of paired logitech-hidpp devices</li>
-          <li>Retry the open action to fix BC901 NVMe reload</li>
+          <li>Reduce memory allocations by ~2Mb when loading the BGRT image</li>
+          <li>Remove the polling for Logitech Unifying receivers to improve battery life</li>
+          <li>Require a DPCD OUI to match DPAUX devices</li>
+          <li>Respect the device priority when matching in the device list</li>
+          <li>Respect the interface retry count when using an auto-detected FuHidDevice</li>
+          <li>Retry the post-update NVMe open action to fix BC901 reload</li>
+          <li>Save the metadata with a more predictable name so we can use jcat-tool</li>
+          <li>Upload reports from fwupd-refresh if AutomaticReports is true</li>
+          <li>Use a more standard ATA OUI vendor name match</li>
+          <li>Use the first preferred CRTC screen resolution if not using efifb</li>
+          <li>Use /usr/bin/env for wider Python compatibility</li>
+          <li>Warn users needing to fwupdmgr activate before uploading signed reports</li>
         </ul>
         <p>This release adds support for the following hardware:</p>
         <ul>
-          <li>Algoltek devices supporting sector erase</li>
-          <li>Dell K2 dock</li>
-          <li>Intel USB4 hub 5787</li>
-          <li>More MediaTek scaler devices</li>
-          <li>Nordic HID devices supporting DFUv1</li>
+          <li>Algoltek USB card readers</li>
+          <li>AMD Kria SoM</li>
+          <li>Cable Matters USB Hub</li>
+          <li>Cinterion fdl-based devices</li>
+          <li>CY6611 EZ-USB HX3PD</li>
+          <li>Dell K2 Dock</li>
+          <li>Elan 0C9F fingerprint devices</li>
+          <li>HP TBT4 100W G6 Dock</li>
+          <li>HP TBT4 Ultra 180W/280W G6 Dock</li>
+          <li>Huddly L1, S1 and Crew</li>
+          <li>Jabra PanaCast</li>
+          <li>Lenovo Legion HID2 devices</li>
+          <li>Lenovo ThinkSmart Bar</li>
+          <li>Logitech Lemmy</li>
+          <li>Logitech Sight</li>
+          <li>Logitech Tap Touch Screen</li>
+          <li>MediaTek scaler devices</li>
+          <li>Parade PS185</li>
+          <li>Qualcomm S5gen2 BLE devices</li>
+          <li>Telink Dual Keyboard</li>
         </ul>
       </description>
     </release>
@@ -496,7 +645,7 @@
           <li>Rename 'fwupdmgr sync-bkc' to 'fwupdmgr sync' and also consider the branch</li>
           <li>Require additional requirements for devices using non-OEM USB VIDs</li>
           <li>Set the waiting-for-user status when sending a request</li>
-          <li>Support uSWID SBoM data with LZMA compressed payloads</li>
+          <li>Support uSWID SBOM data with LZMA compressed payloads</li>
         </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
@@ -908,14 +1057,14 @@
           This release adds the following features:
         </p>
         <ul>
-          <li>Add a PE/COFF firmware parser to allow reading coSWID SBoM data</li>
+          <li>Add a PE/COFF firmware parser to allow reading coSWID SBOM data</li>
           <li>Allow dumping CFI SPI chips using devices like CH341a</li>
           <li>Refactor the HWIDs functionality to include FDT data</li>
         </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
           <li>Add back a legacy eMMC GUID to fix a regression</li>
-          <li>Always search for uSWID SBoM data in the image</li>
+          <li>Always search for uSWID SBOM data in the image</li>
           <li>Do not allow LZX compressed cabinet archives</li>
           <li>Fallback to the checksum if the metadata artifact is invalid</li>
           <li>Improve FDT parsing compatibility with new OpenBMC images</li>
@@ -1274,7 +1423,7 @@
         </p>
         <ul>
           <li>Add a new attribute for CPUs supported by HSI</li>
-          <li>Add coSWID and uSWID parsers to libfwupdplugin for initial SBoM support</li>
+          <li>Add coSWID and uSWID parsers to libfwupdplugin for initial SBOM support</li>
           <li>Add new HSI attributes for the AMD PSP and various other system protections</li>
           <li>Add the runtime fwupd-efi version as a firmware requirement</li>
           <li>Allow 'fwupdmgr install' to install a specified firmware version</li>

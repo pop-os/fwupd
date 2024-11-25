@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -34,6 +34,6 @@ fu_ipmi_device_set_user_priv(FuIpmiDevice *self,
 			     guint8 channel,
 			     GError **error);
 gboolean
-fu_redfish_device_set_user_group_redfish_enable_advantech(FuIpmiDevice *self,
-							  guint8 user_id,
-							  GError **error);
+fu_ipmi_device_set_user_group_redfish_enable_advantech(FuIpmiDevice *self,
+						       guint8 user_id,
+						       GError **error);

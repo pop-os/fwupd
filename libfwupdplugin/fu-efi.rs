@@ -1,15 +1,15 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(ToString)]
-enum EfiSignatureKind {
+#[derive(ToString, FromString)]
+enum FuEfiSignatureKind {
     Unknown,
     Sha256,
     X509,
 }
 
 #[repr(u8)]
-enum EfiFileAttrib {
+enum FuEfiFileAttrib {
     None = 0x00,
     LargeFile = 0x01,
     DataAlignment2 = 0x02,
@@ -20,7 +20,7 @@ enum EfiFileAttrib {
 
 #[repr(u8)]
 #[derive(ToString)]
-enum EfiFileType {
+enum FuEfiFileType {
     All = 0x00,
     Raw = 0x01,
     Freeform = 0x02,
@@ -40,23 +40,60 @@ enum EfiFileType {
     FfsPad = 0xF0,
 }
 
-#[derive(New, Validate, ParseBytes)]
-struct EfiFile {
+#[derive(New, Validate, ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructEfiFile {
     name: Guid,
     hdr_checksum: u8,
     data_checksum: u8,
-    type: EfiFileType,
+    type: FuEfiFileType,
     attrs: u8,
     size: u24le,
-    state: u8 == 0xF8,
+    state: u8 = 0xF8,
+}
+
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiFile2 {
+    _base: FuStructEfiFile,
+    extended_size: u64le,
+}
+
+#[repr(u8)]
+enum FuEfiCompressionType {
+    NotCompressed = 0x00,
+    StandardCompression = 0x01,
+}
+
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiSectionCompression {
+    uncompressed_length: u32le,
+    compression_type: FuEfiCompressionType,
+}
+
+#[derive(ToString)]
+enum FuEfiLz77DecompressorVersion {
+    None = 0,
+    Legacy = 1,
+    Tiano = 2,
+}
+
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiLz77DecompressorHeader {
+    src_size: u32le,
+    dst_size: u32le,
 }
 
 #[repr(u8)]
 #[derive(ToString)]
-enum EfiSectionType {
+enum FuEfiSectionType {
+    // encapsulation section type values
     Compression = 0x01,
     GuidDefined = 0x02,
     Disposable = 0x03,
+    // leaf section type values
     Pe32 = 0x10,
     Pic = 0x11,
     Te = 0x12,
@@ -69,21 +106,42 @@ enum EfiSectionType {
     Raw = 0x19,
     PeiDepex = 0x1B,
     MmDepex = 0x1C,
+    // vendor-specific
+    PhoenixSectionPostcode = 0xF0,  // Phoenix SCT
+    InsydeSectionPostcode = 0x20,   // Insyde H2O
 }
 
-#[derive(New, Validate, ParseBytes)]
-struct EfiSection {
+#[derive(New, ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiSection {
     size: u24le,
-    type: EfiSectionType,
+    type: FuEfiSectionType,
 }
-#[derive(New, Validate, ParseBytes)]
-struct EfiSectionGuidDefined {
+
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiSection2 {
+    _base: FuStructEfiSection,
+    extended_size: u32le,
+}
+
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiSectionFreeformSubtypeGuid {
+    guid: Guid,
+}
+
+#[derive(New, ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiSectionGuidDefined {
     name: Guid,
     offset: u16le,
     attr: u16le,
 }
-#[derive(New, ValidateBytes, ParseBytes)]
-struct EfiVolume {
+
+#[derive(New, ValidateStream, ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructEfiVolume {
     zero_vector: Guid,
     guid: Guid,
     length: u64le,
@@ -95,13 +153,39 @@ struct EfiVolume {
     reserved: u8,
     revision: u8 == 0x02,
 }
-#[derive(New, Validate, ParseBytes)]
-struct EfiVolumeBlockMap {
+
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiVolumeExtHeader {
+    fv_name: Guid,
+    size: u32le,
+}
+
+#[repr(u16le)]
+#[derive(ToString)]
+enum FuEfiVolumeExtEntryType {
+    Oem = 0x01,
+    Guid = 0x02,
+    Size = 0x03,
+}
+
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiVolumeExtEntry {
+    size: u16le,
+    type: FuEfiVolumeExtEntryType,
+}
+
+#[derive(New, ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiVolumeBlockMap {
     num_blocks: u32le,
     length: u32le,
 }
-#[derive(New, Validate, Parse)]
-struct EfiSignatureList {
+
+#[derive(New, ParseStream)]
+#[repr(C, packed)]
+struct FuStructEfiSignatureList {
     type: Guid,
     list_size: u32le,
     header_size: u32le,
@@ -109,7 +193,7 @@ struct EfiSignatureList {
 }
 
 #[repr(u32le)]
-enum EfiLoadOptionAttrs {
+enum FuEfiLoadOptionAttrs {
     Active = 0x1,
     ForceReconnect = 0x2,
     Hidden = 0x8,
@@ -118,14 +202,15 @@ enum EfiLoadOptionAttrs {
     CategoryAp = 0x100,
 }
 
-#[derive(ParseBytes, New)]
-struct EfiLoadOption {
-    attrs: EfiLoadOptionAttrs,
+#[derive(ParseStream, New)]
+#[repr(C, packed)]
+struct FuStructEfiLoadOption {
+    attrs: FuEfiLoadOptionAttrs,
     dp_size: u16le,
 }
 
 #[repr(u8)]
-enum EfiDevicePathType {
+enum FuEfiDevicePathType {
     Hardware = 0x01,
     Acpi,
     Message,
@@ -134,15 +219,16 @@ enum EfiDevicePathType {
     End = 0x7F,
 }
 
-#[derive(ParseBytes, New)]
-struct EfiDevicePath {
-    type: EfiDevicePathType,
+#[derive(ParseStream, New, Default)]
+#[repr(C, packed)]
+struct FuStructEfiDevicePath {
+    type: FuEfiDevicePathType,
     subtype: u8 = 0xFF,
     length: u16le = $struct_size,
 }
 
 #[repr(u8)]
-enum EfiHardDriveDevicePathSubtype {
+enum FuEfiHardDriveDevicePathSubtype {
     HardDrive = 0x01,
     Cdrom = 0x02,
     Vendor = 0x03,
@@ -156,28 +242,49 @@ enum EfiHardDriveDevicePathSubtype {
 
 #[repr(u8)]
 #[derive(ToString, FromString)]
-enum EfiHardDriveDevicePathPartitionFormat {
+enum FuEfiHardDriveDevicePathPartitionFormat {
     LegacyMbr = 0x01,
     GuidPartitionTable = 0x02,
 }
 
 #[repr(u8)]
 #[derive(ToString, FromString)]
-enum EfiHardDriveDevicePathSignatureType {
+enum FuEfiHardDriveDevicePathSignatureType {
     None,
     Addr1b8,
     Guid,
 }
 
-#[derive(ParseBytes, New)]
-struct EfiHardDriveDevicePath {
-    type: EfiDevicePathType == Media,
-    subtype: EfiHardDriveDevicePathSubtype = HardDrive,
+#[derive(ParseStream, New, Default)]
+#[repr(C, packed)]
+struct FuStructEfiHardDriveDevicePath {
+    type: FuEfiDevicePathType == Media,
+    subtype: FuEfiHardDriveDevicePathSubtype = HardDrive,
     length: u16le == $struct_size,
     partition_number: u32le,
     partition_start: u64le,
     partition_size: u64le,
     partition_signature: Guid,
-    partition_format: EfiHardDriveDevicePathPartitionFormat = GuidPartitionTable,
-    signature_type: EfiHardDriveDevicePathSignatureType = Guid,
+    partition_format: FuEfiHardDriveDevicePathPartitionFormat = GuidPartitionTable,
+    signature_type: FuEfiHardDriveDevicePathSignatureType = Guid,
+}
+
+#[derive(ParseStream, New, Default)]
+#[repr(C, packed)]
+struct FuStructShimHive {
+    magic: [char; 4] == "HIVE",
+    header_version: u8 = 0x1,
+    items_count: u8,
+    items_offset: u8,    // for forwards and backwards compatibility
+    crc32: u32le,        // of the entire hive (excluding padding)
+    //items: [ShimHiveItems; items_count]
+}
+
+#[derive(ParseStream, New)]
+#[repr(C, packed)]
+struct FuStructShimHiveItem {
+    key_length: u8,
+    value_length: u32le,
+    // key string, no trailing NUL
+    // value string, no trailing NUL
 }

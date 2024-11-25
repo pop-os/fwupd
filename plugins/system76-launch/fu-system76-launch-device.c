@@ -1,18 +1,18 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 Jeremy Soller <jeremy@system76.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Jeremy Soller <jeremy@system76.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-system76-launch-device.h"
 
-#define SYSTEM76_LAUNCH_CMD_VERSION 3
-#define SYSTEM76_LAUNCH_CMD_RESET   6
+#define SYSTEM76_LAUNCH_CMD_VERSION	 3
+#define SYSTEM76_LAUNCH_CMD_RESET	 6
 #define SYSTEM76_LAUNCH_CMD_SECURITY_SET 21
-#define SYSTEM76_LAUNCH_TIMEOUT	    1000
+#define SYSTEM76_LAUNCH_TIMEOUT		 1000
 
 enum SecurityState {
 	/* Default value, flashing is prevented, cannot be set with CMD_SECURITY_SET */
@@ -44,21 +44,21 @@ fu_system76_launch_device_response_cb(FuDevice *device, gpointer user_data, GErr
 	FuSystem76LaunchDeviceHelper *helper = (FuSystem76LaunchDeviceHelper *)user_data;
 
 	/* receive response */
-	if (!g_usb_device_interrupt_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(device)),
-					     ep_in,
-					     helper->data,
-					     helper->len,
-					     &actual_len,
-					     SYSTEM76_LAUNCH_TIMEOUT,
-					     NULL,
-					     error)) {
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(device),
+					      ep_in,
+					      helper->data,
+					      helper->len,
+					      &actual_len,
+					      SYSTEM76_LAUNCH_TIMEOUT,
+					      NULL,
+					      error)) {
 		g_prefix_error(error, "failed to read response: ");
 		return FALSE;
 	}
 	if (actual_len < helper->len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "response truncated: received %" G_GSIZE_FORMAT " bytes",
 			    actual_len);
 		return FALSE;
@@ -71,27 +71,26 @@ fu_system76_launch_device_response_cb(FuDevice *device, gpointer user_data, GErr
 static gboolean
 fu_system76_launch_device_command(FuDevice *device, guint8 *data, gsize len, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	const guint8 ep_out = 0x03;
 	gsize actual_len = 0;
 	FuSystem76LaunchDeviceHelper helper = {.data = data, .len = len};
 
 	/* send command */
-	if (!g_usb_device_interrupt_transfer(usb_device,
-					     ep_out,
-					     data,
-					     len,
-					     &actual_len,
-					     SYSTEM76_LAUNCH_TIMEOUT,
-					     NULL,
-					     error)) {
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(device),
+					      ep_out,
+					      data,
+					      len,
+					      &actual_len,
+					      SYSTEM76_LAUNCH_TIMEOUT,
+					      NULL,
+					      error)) {
 		g_prefix_error(error, "failed to send command: ");
 		return FALSE;
 	}
 	if (actual_len < len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "command truncated: sent %" G_GSIZE_FORMAT " bytes",
 			    actual_len);
 		return FALSE;
@@ -194,7 +193,7 @@ fu_system76_launch_device_detach(FuDevice *device, FuProgress *progress, GError 
 	if (fu_device_get_update_message(device) == NULL) {
 		g_autofree gchar *msg = NULL;
 		const gchar *unlock_keys;
-		switch (fu_usb_device_get_pid(FU_USB_DEVICE(device))) {
+		switch (fu_device_get_pid(device)) {
 		case 0x0001: /* launch_1 */
 			unlock_keys = "Fn+Esc";
 			break;
@@ -255,10 +254,10 @@ fu_system76_launch_device_init(FuSystem76LaunchDevice *self)
 {
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ADD_INSTANCE_ID_REV);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ADD_COUNTERPART_GUIDS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ADD_INSTANCE_ID_REV);
 	fu_device_add_request_flag(FU_DEVICE(self), FWUPD_REQUEST_FLAG_NON_GENERIC_MESSAGE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_add_protocol(FU_DEVICE(self), "com.microsoft.uf2");
@@ -270,8 +269,8 @@ fu_system76_launch_device_init(FuSystem76LaunchDevice *self)
 static void
 fu_system76_launch_device_class_init(FuSystem76LaunchDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_system76_launch_device_setup;
-	klass_device->detach = fu_system76_launch_device_detach;
-	klass_device->set_progress = fu_system76_launch_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_system76_launch_device_setup;
+	device_class->detach = fu_system76_launch_device_detach;
+	device_class->set_progress = fu_system76_launch_device_set_progress;
 }

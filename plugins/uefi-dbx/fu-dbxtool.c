@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2015 Peter Jones <pjones@redhat.com>
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Peter Jones <pjones@redhat.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -27,14 +27,19 @@ fu_util_ignore_cb(const gchar *log_domain,
 }
 
 static FuFirmware *
-fu_dbxtool_get_siglist_system(GError **error)
+fu_dbxtool_get_siglist_system(FuContext *ctx, GError **error)
 {
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(FuFirmware) dbx = fu_efi_signature_list_new();
-	blob = fu_efivar_get_data_bytes(FU_EFIVAR_GUID_SECURITY_DATABASE, "dbx", NULL, error);
+	blob = fu_efivars_get_data_bytes(efivars,
+					 FU_EFIVARS_GUID_SECURITY_DATABASE,
+					 "dbx",
+					 NULL,
+					 error);
 	if (blob == NULL)
 		return NULL;
-	if (!fu_firmware_parse(dbx, blob, FWUPD_INSTALL_FLAG_NO_SEARCH, error))
+	if (!fu_firmware_parse_bytes(dbx, blob, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, error))
 		return NULL;
 	return g_steal_pointer(&dbx);
 }
@@ -42,12 +47,10 @@ fu_dbxtool_get_siglist_system(GError **error)
 static FuFirmware *
 fu_dbxtool_get_siglist_local(const gchar *filename, GError **error)
 {
-	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GFile) file = NULL;
 	g_autoptr(FuFirmware) siglist = fu_efi_signature_list_new();
-	blob = fu_bytes_get_contents(filename, error);
-	if (blob == NULL)
-		return NULL;
-	if (!fu_firmware_parse(siglist, blob, FWUPD_INSTALL_FLAG_NONE, error))
+	file = g_file_new_for_path(filename);
+	if (!fu_firmware_parse_file(siglist, file, FWUPD_INSTALL_FLAG_NONE, error))
 		return NULL;
 	return g_steal_pointer(&siglist);
 }
@@ -164,11 +167,6 @@ main(int argc, char *argv[])
 	bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8");
 	textdomain(GETTEXT_PACKAGE);
 
-#ifndef SUPPORTED_BUILD
-	/* make critical warnings fatal */
-	(void)g_setenv("G_DEBUG", "fatal-criticals", FALSE);
-#endif
-
 	/* get a action_list of the commands */
 	context = g_option_context_new(NULL);
 	g_option_context_set_description(
@@ -211,7 +209,7 @@ main(int argc, char *argv[])
 				return EXIT_FAILURE;
 			}
 		} else {
-			dbx = fu_dbxtool_get_siglist_system(&error);
+			dbx = fu_dbxtool_get_siglist_system(ctx, &error);
 			if (dbx == NULL) {
 				g_printerr("%s: %s\n",
 					   /* TRANSLATORS: could not read existing system data */
@@ -251,6 +249,7 @@ main(int argc, char *argv[])
 
 	/* apply update */
 	if (action_apply) {
+		FuEfivars *efivars = fu_context_get_efivars(ctx);
 		g_autoptr(FuFirmware) dbx_system = NULL;
 		g_autoptr(FuFirmware) dbx_update = fu_efi_signature_list_new();
 		g_autoptr(GBytes) blob = NULL;
@@ -263,7 +262,7 @@ main(int argc, char *argv[])
 
 		/* TRANSLATORS: reading existing dbx from the system */
 		g_print("%s\n", _("Parsing system dbx…"));
-		dbx_system = fu_dbxtool_get_siglist_system(&error);
+		dbx_system = fu_dbxtool_get_siglist_system(ctx, &error);
 		if (dbx_system == NULL) {
 			/* TRANSLATORS: could not read existing system data */
 			g_printerr("%s: %s\n", _("Failed to load system dbx"), error->message);
@@ -278,7 +277,11 @@ main(int argc, char *argv[])
 			g_printerr("%s: %s\n", _("Failed to load local dbx"), error->message);
 			return EXIT_FAILURE;
 		}
-		if (!fu_firmware_parse(dbx_update, blob, FWUPD_INSTALL_FLAG_NONE, &error)) {
+		if (!fu_firmware_parse_bytes(dbx_update,
+					     blob,
+					     0x0,
+					     FWUPD_INSTALL_FLAG_NONE,
+					     &error)) {
 			/* TRANSLATORS: could not parse file */
 			g_printerr("%s: %s\n", _("Failed to parse local dbx"), error->message);
 			return EXIT_FAILURE;
@@ -318,14 +321,15 @@ main(int argc, char *argv[])
 
 		/* TRANSLATORS: actually sending the update to the hardware */
 		g_print("%s\n", _("Applying update…"));
-		if (!fu_efivar_set_data_bytes(
-			FU_EFIVAR_GUID_SECURITY_DATABASE,
+		if (!fu_efivars_set_data_bytes(
+			efivars,
+			FU_EFIVARS_GUID_SECURITY_DATABASE,
 			"dbx",
 			blob,
-			FU_EFIVAR_ATTR_APPEND_WRITE |
-			    FU_EFIVAR_ATTR_TIME_BASED_AUTHENTICATED_WRITE_ACCESS |
-			    FU_EFIVAR_ATTR_RUNTIME_ACCESS | FU_EFIVAR_ATTR_BOOTSERVICE_ACCESS |
-			    FU_EFIVAR_ATTR_NON_VOLATILE,
+			FU_EFIVARS_ATTR_APPEND_WRITE |
+			    FU_EFIVARS_ATTR_TIME_BASED_AUTHENTICATED_WRITE_ACCESS |
+			    FU_EFIVARS_ATTR_RUNTIME_ACCESS | FU_EFIVARS_ATTR_BOOTSERVICE_ACCESS |
+			    FU_EFIVARS_ATTR_NON_VOLATILE,
 			&error)) {
 			/* TRANSLATORS: dbx file failed to be applied as an update */
 			g_printerr("%s: %s\n", _("Failed to apply update"), error->message);

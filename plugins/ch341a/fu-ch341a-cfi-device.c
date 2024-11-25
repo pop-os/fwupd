@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -57,7 +57,7 @@ fu_ch341a_cfi_device_wait_for_status_cb(FuDevice *device, gpointer user_data, GE
 			    FWUPD_ERROR_INTERNAL,
 			    "wanted 0x%x, got 0x%x",
 			    helper->value,
-			    buf[0x1] & helper->mask);
+			    (guint)(buf[0x1] & helper->mask));
 		return FALSE;
 	}
 
@@ -83,7 +83,7 @@ fu_ch341a_cfi_device_wait_for_status(FuCh341aCfiDevice *self,
 }
 
 static gboolean
-fu_ch341a_cfi_device_read_jedec(FuCh341aCfiDevice *self, GError **error)
+fu_ch341a_cfi_device_read_jedec(FuCfiDevice *self, GError **error)
 {
 	FuCh341aDevice *proxy = FU_CH341A_DEVICE(fu_device_get_proxy(FU_DEVICE(self)));
 	guint8 buf[CH341A_PAYLOAD_SIZE] = {0x9F};
@@ -108,14 +108,8 @@ fu_ch341a_cfi_device_read_jedec(FuCh341aCfiDevice *self, GError **error)
 		return FALSE;
 	}
 	if (buf[1] == 0xFF && buf[2] == 0xFF && buf[3] == 0xFF) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "device not detected, flash ID 0x%02X%02X%02X",
-			    buf[1],
-			    buf[2],
-			    buf[3]);
-		return FALSE;
+		fu_cfi_device_set_flash_id(FU_CFI_DEVICE(self), NULL);
+		return TRUE;
 	}
 	g_string_append_printf(flash_id, "%02X", buf[1]);
 	g_string_append_printf(flash_id, "%02X", buf[2]);
@@ -124,23 +118,6 @@ fu_ch341a_cfi_device_read_jedec(FuCh341aCfiDevice *self, GError **error)
 
 	/* success */
 	return TRUE;
-}
-
-static gboolean
-fu_ch341a_cfi_device_setup(FuDevice *device, GError **error)
-{
-	FuCh341aCfiDevice *self = FU_CH341A_CFI_DEVICE(device);
-
-	/* setup SPI chip */
-	if (!fu_ch341a_cfi_device_read_jedec(self, error))
-		return FALSE;
-
-	/* this is a generic SPI chip */
-	fu_device_add_instance_id(device, "SPI");
-	fu_device_add_vendor_id(device, "SPI:*");
-
-	/* FuCfiDevice->setup */
-	return FU_DEVICE_CLASS(fu_ch341a_cfi_device_parent_class)->setup(device, error);
 }
 
 static gboolean
@@ -219,10 +196,18 @@ fu_ch341a_cfi_device_write_page(FuCh341aCfiDevice *self, FuChunk *page, GError *
 		return FALSE;
 
 	/* send data */
-	chunks = fu_chunk_array_new_from_bytes(page_blob, 0x0, CH341A_PAYLOAD_SIZE);
+	chunks = fu_chunk_array_new_from_bytes(page_blob,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       CH341A_PAYLOAD_SIZE);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		guint8 buf2[CH341A_PAYLOAD_SIZE] = {0x0};
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_memcpy_safe(buf2,
 				    sizeof(buf2),
 				    0x0, /* dst */
@@ -252,7 +237,9 @@ fu_ch341a_cfi_device_write_pages(FuCh341aCfiDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(pages));
 	for (guint i = 0; i < fu_chunk_array_length(pages); i++) {
-		g_autoptr(FuChunk) page = fu_chunk_array_index(pages, i);
+		g_autoptr(FuChunk) page = fu_chunk_array_index(pages, i, error);
+		if (page == NULL)
+			return FALSE;
 		if (!fu_ch341a_cfi_device_write_page(self, page, error))
 			return FALSE;
 		fu_progress_step_done(progress);
@@ -355,7 +342,8 @@ fu_ch341a_cfi_device_write_firmware(FuDevice *device,
 
 	/* write each block */
 	pages = fu_chunk_array_new_from_bytes(fw,
-					      0x0,
+					      FU_CHUNK_ADDR_OFFSET_NONE,
+					      FU_CHUNK_PAGESZ_NONE,
 					      fu_cfi_device_get_page_size(FU_CFI_DEVICE(self)));
 	if (!fu_ch341a_cfi_device_write_pages(self,
 					      pages,
@@ -421,7 +409,6 @@ static void
 fu_ch341a_cfi_device_init(FuCh341aCfiDevice *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "org.jedec.cfi");
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 }
@@ -429,13 +416,13 @@ fu_ch341a_cfi_device_init(FuCh341aCfiDevice *self)
 static void
 fu_ch341a_cfi_device_class_init(FuCh341aCfiDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	FuCfiDeviceClass *klass_cfi = FU_CFI_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	FuCfiDeviceClass *cfi_class = FU_CFI_DEVICE_CLASS(klass);
 
-	klass_cfi->chip_select = fu_ch341a_cfi_device_chip_select;
+	cfi_class->chip_select = fu_ch341a_cfi_device_chip_select;
+	cfi_class->read_jedec = fu_ch341a_cfi_device_read_jedec;
 
-	klass_device->setup = fu_ch341a_cfi_device_setup;
-	klass_device->write_firmware = fu_ch341a_cfi_device_write_firmware;
-	klass_device->dump_firmware = fu_ch341a_cfi_device_dump_firmware;
-	klass_device->set_progress = fu_ch341a_cfi_device_set_progress;
+	device_class->write_firmware = fu_ch341a_cfi_device_write_firmware;
+	device_class->dump_firmware = fu_ch341a_cfi_device_dump_firmware;
+	device_class->set_progress = fu_ch341a_cfi_device_set_progress;
 }

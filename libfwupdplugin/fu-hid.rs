@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString, FromString)]
-enum HidItemTag {
+enum FuHidItemTag {
 	Unknown			= 0b0,
 	// Main
 	Input			= 0b1000_00,
@@ -37,7 +37,7 @@ enum HidItemTag {
 }
 
 #[derive(ToString)]
-enum HidItemKind {
+enum FuHidItemKind {
 	Main,
 	Global,
 	Local,

@@ -1,4 +1,4 @@
-if gudev.found() and gusb.found()
+if enable_udev
 cargs = ['-DG_LOG_DOMAIN="FuPluginLogitechHidpp"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -25,6 +25,18 @@ plugin_builtin_logitech_hidpp = static_library('fu_plugin_logitech_hidpp',
   dependencies: plugin_deps,
 )
 plugin_builtins += plugin_builtin_logitech_hidpp
+
+device_tests += files(
+  'tests/logitech-bolt-receiver.json',
+  'tests/logitech-k780.json',
+  'tests/logitech-m650.json',
+  'tests/logitech-m750.json',
+  'tests/logitech-mr0077.json',
+  'tests/logitech-rqr12.json',
+  'tests/logitech-rqr12-signed.json',
+  'tests/logitech-rqr24.json',
+  'tests/logitech-rqr24-signed.json',
+)
 
 if get_option('tests')
   env = environment()

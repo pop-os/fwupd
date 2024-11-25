@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
-enum MeiFamily {
+enum FuMeiFamily {
     Unknown,
     Sps,
     Txe,
@@ -79,6 +79,7 @@ enum FuMeiFirmwareSku {
 
 /* CSME11 - Host Firmware Status register 1 */
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuMeiCsme11Hfsts1 {
     _working_state: FuMeHfsCws,
     mfg_mode: u1,
@@ -100,12 +101,13 @@ struct FuMeiCsme11Hfsts1 {
 }
 
 /* CSME11 - Host Firmware Status register 2 */
+#[repr(C, packed)]
 struct FuMeiCsme11Hfsts2 {
     nftp_load_failure: u1,
     icc_prog_status: u2,
     invoke_mebx: u1,
     cpu_replaced: u1,
-    rsvd0: u1,
+    _rsvd0: u1,
     mfs_failure: u1,
     warm_reset_rqst: u1,
     cpu_replaced_valid: u1,
@@ -113,7 +115,7 @@ struct FuMeiCsme11Hfsts2 {
     me_power_gate: u1,
     ipu_needed: u1,
     forced_safe_boot: u1,
-    rsvd1: u2,
+    _rsvd1: u2,
     listener_change: u1,
     status_data: u8,
     current_pmevent: u4,
@@ -121,6 +123,7 @@ struct FuMeiCsme11Hfsts2 {
 }
 
 /* CSME11 - Host Firmware Status register 3 */
+#[repr(C, packed)]
 struct FuMeiCsme11Hfsts3 {
     chunk0: u1,
     chunk1: u1,
@@ -139,19 +142,21 @@ struct FuMeiCsme11Hfsts3 {
 }
 
 /* CSME11 - Host Firmware Status register 4 */
+#[repr(C, packed)]
 struct FuMeiCsme11Hfsts4 {
-    rsvd0: u9,
+    _rsvd0: u9,
     enforcement_flow: u1,
     sx_resume_type: u1,
-    rsvd1: u1,
+    _rsvd1: u1,
     tpms_disconnected: u1,
     rvsd2: u1,
     fwsts_valid: u1,
     boot_guard_self_test: u1,
-    rsvd3: u16,
+    _rsvd3: u16,
 }
 
 /* CSME11 - Host Firmware Status register 5 */
+#[repr(C, packed)]
 struct FuMeiCsme11Hfsts5 {
     acm_active: u1,
     valid: u1,
@@ -163,12 +168,13 @@ struct FuMeiCsme11Hfsts5 {
     inc_boot_guard_acm: u4,
     inc_key_manifest: u4,
     inc_boot_policy: u4,
-    rsvd0: u2,
+    _rsvd0: u2,
     start_enforcement: u1,
 }
 
 /* CSME11 - Host Firmware Status register 6 */
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuMeiCsme11Hfsts6 {
     force_boot_guard_acm: u1,
     _cpu_debug_disable: u1,
@@ -192,6 +198,7 @@ struct FuMeiCsme11Hfsts6 {
 
 /* CSME18 - Host Firmware Status register 1 */
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuMeiCsme18Hfsts1 {
     _working_state: FuMeHfsCws,
     spi_protection_mode: u1,
@@ -214,19 +221,20 @@ struct FuMeiCsme18Hfsts1 {
 
 
 /* CSME18 - Host Firmware Status register 2 */
+#[repr(C, packed)]
 struct FuMeiCsme18Hfsts2 {
     nftp_load_failure: u1,
     icc_prog_status: u2,
     invoke_mebx: u1,
     cpu_replaced: u1,
-    rsvd0: u1,
+    _rsvd0: u1,
     mfs_failure: u1,
     warm_reset_rqst: u1,
     cpu_replaced_valid: u1,
     low_power_state: u1,
     me_power_gate: u1,
     ipu_needed: u1,
-    rsvd1: u2,
+    _rsvd1: u2,
     cse_way_to_disabled: u1,
     listener_change: u1,
     status_data: u8,
@@ -235,6 +243,7 @@ struct FuMeiCsme18Hfsts2 {
 }
 
 /* CSME18 - Host Firmware Status register 3 */
+#[repr(C, packed)]
 struct FuMeiCsme18Hfsts3 {
     reserved: u4,
     fw_sku: FuMeiFirmwareSku,
@@ -249,10 +258,11 @@ struct FuMeiCsme18Hfsts3 {
 }
 
 /* CSME18 - Host Firmware Status register 4 */
+#[repr(C, packed)]
 struct FuMeiCsme18Hfsts4 {
-    rsvd0: u2,
+    _rsvd0: u2,
     flash_log_exist: u1,
-    rsvd1: u29,
+    _rsvd1: u29,
 }
 
 #[repr(u5)]
@@ -273,6 +283,7 @@ enum FuMeiCsme18ErrorStatusCode {
 
 /* CSME18 - Host Firmware Status register 5 */
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuMeiCsme18Hfsts5 {
     btg_acm_active: u1,
     valid: u1,
@@ -294,6 +305,7 @@ struct FuMeiCsme18Hfsts5 {
 
 /* CSME18 - Host Firmware Status register 6 */
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuMeiCsme18Hfsts6 {
     _reserved0: u21,
     manufacturing_lock: u1,

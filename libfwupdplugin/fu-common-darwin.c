@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCommon"
@@ -15,10 +15,10 @@
 GPtrArray *
 fu_common_get_block_devices(GError **error)
 {
-	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_SUPPORTED,
-		    "getting block devices is not supported on Darwin");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "getting block devices is not supported on Darwin");
 	return NULL;
 }
 
@@ -44,9 +44,9 @@ fu_common_get_kernel_cmdline_impl(GError **error)
 gchar *
 fu_common_get_olson_timezone_id_impl(GError **error)
 {
-	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_SUPPORTED,
-		    "getting the Olson timezone ID is not supported on Darwin");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "getting the Olson timezone ID is not supported on Darwin");
 	return NULL;
 }

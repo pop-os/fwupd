@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -21,8 +21,8 @@ fu_wac_firmware_parse_func(void)
 	g_autoptr(FuFirmware) firmware = fu_wac_firmware_new();
 	g_autoptr(FuFirmware) img = NULL;
 	g_autoptr(GBytes) blob_block = NULL;
-	g_autoptr(GBytes) bytes = NULL;
 	g_autoptr(GError) error = NULL;
+	g_autoptr(GFile) file = NULL;
 
 	/* parse the test file */
 	fn = g_test_build_filename(G_TEST_DIST, "tests", "test.wac", NULL);
@@ -30,10 +30,8 @@ fu_wac_firmware_parse_func(void)
 		g_test_skip("no data file found");
 		return;
 	}
-	bytes = fu_bytes_get_contents(fn, &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(bytes);
-	ret = fu_firmware_parse(firmware, bytes, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	file = g_file_new_for_path(fn);
+	ret = fu_firmware_parse_file(firmware, file, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 

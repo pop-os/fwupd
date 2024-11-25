@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
-enum ScsiSenseKey {
+enum FuScsiSenseKey {
     NoSense = 0x00,
     RecoveredError = 0x01,
     NotReady = 0x02,
@@ -18,4 +18,14 @@ enum ScsiSenseKey {
     Equal = 0x0C,
     VolumeOverflow = 0x0D,
     Miscompare = 0x0E,
+}
+
+// see https://tldp.org/HOWTO/archived/SCSI-Programming-HOWTO/SCSI-Programming-HOWTO-9.html
+#[derive(Parse)]
+#[repr(C, packed)]
+struct FuStructScsiInquiry {
+    reserved: [u8; 8],
+    vendor_id: [char; 8],
+    product_id: [char; 16],
+    product_rev: [char; 4],
 }

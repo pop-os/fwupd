@@ -1,5 +1,5 @@
-if get_option('plugin_bcm57xx').require(gudev.found(),
-    error_message: 'gudev is needed for plugin_bcm57xx').allowed()
+if get_option('plugin_bcm57xx').require(enable_udev,
+    error_message: 'udev is needed for plugin_bcm57xx').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginBcm57xx"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -24,6 +24,12 @@ plugin_builtin_bcm57xx = static_library('fu_plugin_bcm57xx',
   ],
 )
 plugin_builtins += plugin_builtin_bcm57xx
+
+enumeration_data += files('tests/bcm5719-setup.json')
+device_tests += files(
+  'tests/bcm5719.json',
+  'tests/dell-kh08p.json',
+)
 
 if get_option('tests')
   install_data(['tests/bcm57xx.builder.xml'],

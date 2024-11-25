@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2015 Peter Jones <pjones@redhat.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Peter Jones <pjones@redhat.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -22,13 +22,7 @@
 gchar *
 fu_uefi_get_esp_app_path(const gchar *base, const gchar *cmd, GError **error);
 gchar *
-fu_uefi_get_built_app_path(const gchar *binary, GError **error);
-gboolean
-fu_uefi_get_bitmap_size(const guint8 *buf,
-			gsize bufsz,
-			guint32 *width,
-			guint32 *height,
-			GError **error);
+fu_uefi_get_built_app_path(FuEfivars *efivars, const gchar *binary, GError **error);
 gboolean
 fu_uefi_get_framebuffer_size(guint32 *width, guint32 *height, GError **error);
 gchar *

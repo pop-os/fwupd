@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2019 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Mario Limonciello <mario.limonciello@dell.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuVolume"
@@ -34,7 +34,9 @@ struct _FuVolume {
 	GDBusProxy *proxy_blk;
 	GDBusProxy *proxy_fs;
 	GDBusProxy *proxy_part;
-	gchar *mount_path; /* only when mounted ourselves */
+	gchar *mount_path;     /* only when mounted ourselves */
+	gchar *partition_kind; /* only for tests */
+	gchar *partition_uuid; /* only for tests */
 };
 
 enum {
@@ -46,13 +48,48 @@ enum {
 	PROP_LAST
 };
 
-G_DEFINE_TYPE(FuVolume, fu_volume, G_TYPE_OBJECT)
+static void
+fu_volume_codec_iface_init(FwupdCodecInterface *iface);
+
+G_DEFINE_TYPE_EXTENDED(FuVolume,
+		       fu_volume,
+		       G_TYPE_OBJECT,
+		       0,
+		       G_IMPLEMENT_INTERFACE(FWUPD_TYPE_CODEC, fu_volume_codec_iface_init))
+
+static void
+fu_volume_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags flags)
+{
+	FuVolume *self = FU_VOLUME(codec);
+	g_autofree gchar *mount_point = fu_volume_get_mount_point(self);
+	g_autofree gchar *partition_kind = fu_volume_get_partition_kind(self);
+	g_autofree gchar *partition_name = fu_volume_get_partition_name(self);
+	g_autofree gchar *partition_uuid = fu_volume_get_partition_uuid(self);
+
+	fwupd_codec_json_append_bool(builder, "IsMounted", fu_volume_is_mounted(self));
+	fwupd_codec_json_append_bool(builder, "IsEncrypted", fu_volume_is_encrypted(self));
+	fwupd_codec_json_append_int(builder, "Size", fu_volume_get_size(self));
+	fwupd_codec_json_append_int(builder, "BlockSize", fu_volume_get_block_size(self, NULL));
+	fwupd_codec_json_append(builder, "MountPoint", mount_point);
+	fwupd_codec_json_append(builder, "PartitionKind", partition_kind);
+	fwupd_codec_json_append(builder, "PartitionName", partition_name);
+	fwupd_codec_json_append_int(builder, "PartitionSize", fu_volume_get_partition_size(self));
+	fwupd_codec_json_append_int(builder,
+				    "PartitionOffset",
+				    fu_volume_get_partition_offset(self));
+	fwupd_codec_json_append_int(builder,
+				    "PartitionNumber",
+				    fu_volume_get_partition_number(self));
+	fwupd_codec_json_append(builder, "PartitionUuid", partition_uuid);
+}
 
 static void
 fu_volume_finalize(GObject *obj)
 {
 	FuVolume *self = FU_VOLUME(obj);
 	g_free(self->mount_path);
+	g_free(self->partition_kind);
+	g_free(self->partition_uuid);
 	if (self->proxy_blk != NULL)
 		g_object_unref(self->proxy_blk);
 	if (self->proxy_fs != NULL)
@@ -324,6 +361,8 @@ fu_volume_get_partition_uuid(FuVolume *self)
 
 	g_return_val_if_fail(FU_IS_VOLUME(self), NULL);
 
+	if (self->partition_uuid != NULL)
+		return g_strdup(self->partition_uuid);
 	if (self->proxy_part == NULL)
 		return NULL;
 	val = g_dbus_proxy_get_cached_property(self->proxy_part, "UUID");
@@ -352,12 +391,50 @@ fu_volume_get_partition_kind(FuVolume *self)
 
 	g_return_val_if_fail(FU_IS_VOLUME(self), NULL);
 
+	if (self->partition_kind != NULL)
+		return g_strdup(self->partition_kind);
 	if (self->proxy_part == NULL)
 		return NULL;
 	val = g_dbus_proxy_get_cached_property(self->proxy_part, "Type");
 	if (val == NULL)
 		return NULL;
 	return g_variant_dup_string(val, NULL);
+}
+
+/**
+ * fu_volume_set_partition_kind:
+ * @self: a @FuVolume
+ * @partition_kind: a partition kind, e.g. %FU_VOLUME_KIND_ESP
+ *
+ * Sets the partition name of the volume mount point.
+ *
+ * Since: 2.0.0
+ **/
+void
+fu_volume_set_partition_kind(FuVolume *self, const gchar *partition_kind)
+{
+	g_return_if_fail(FU_IS_VOLUME(self));
+	g_return_if_fail(partition_kind != NULL);
+	g_return_if_fail(self->partition_kind == NULL);
+	self->partition_kind = g_strdup(partition_kind);
+}
+
+/**
+ * fu_volume_set_partition_uuid:
+ * @self: a @FuVolume
+ * @partition_uuid: a UUID
+ *
+ * Sets the partition UUID of the volume mount point.
+ *
+ * Since: 2.0.0
+ **/
+void
+fu_volume_set_partition_uuid(FuVolume *self, const gchar *partition_uuid)
+{
+	g_return_if_fail(FU_IS_VOLUME(self));
+	g_return_if_fail(partition_uuid != NULL);
+	g_return_if_fail(self->partition_uuid == NULL);
+	self->partition_uuid = g_strdup(partition_uuid);
 }
 
 /**
@@ -428,21 +505,23 @@ fu_volume_get_block_size_from_device_name(const gchar *device_name, GError **err
 	fd = g_open(device_name, O_RDONLY, 0);
 	if (fd < 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
+				    G_IO_ERROR, /* nocheck:error */
 				    g_io_error_from_errno(errno),
 				    g_strerror(errno));
+		fwupd_error_convert(error);
 		return 0;
 	}
-	rc = ioctl(fd, BLKSSZGET, &sector_size);
+	rc = ioctl(fd, BLKSSZGET, &sector_size); /* nocheck:blocked */
 	if (rc < 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
+				    G_IO_ERROR, /* nocheck:error */
 				    g_io_error_from_errno(errno),
 				    g_strerror(errno));
+		fwupd_error_convert(error);
 	} else if (sector_size == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "failed to get non-zero logical sector size");
 	}
 	g_close(fd, NULL);
@@ -689,8 +768,8 @@ fu_volume_mount(FuVolume *self, GError **error)
 		if (g_error_matches(error_local, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_INTERFACE) ||
 		    g_error_matches(error_local, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD)) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_NOT_SUPPORTED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
 					    error_local->message);
 			return FALSE;
 		}
@@ -882,23 +961,10 @@ fu_volume_check_block_device_symlinks(const gchar *const *symlinks, GError **err
 	return TRUE;
 }
 
-/**
- * fu_volume_new_by_kind:
- * @kind: a volume kind, typically a GUID
- * @error: (nullable): optional return location for an error
- *
- * Finds all volumes of a specific partition type.
- * For ESP type partitions exclude any known partitions names that
- * correspond to recovery partitions.
- *
- * Returns: (transfer container) (element-type FuVolume): a #GPtrArray, or %NULL if the kind was not
- *found
- *
- * Since: 1.8.2
- **/
-GPtrArray *
-fu_volume_new_by_kind(const gchar *kind, GError **error)
+static gboolean
+fu_volume_check_is_recovery(const gchar *name)
 {
+	g_autoptr(GString) name_safe = g_string_new(name);
 	const gchar *recovery_partitions[] = {
 	    "DELLRESTORE",
 	    "DELLUTILITY",
@@ -917,6 +983,36 @@ fu_volume_new_by_kind(const gchar *kind, GError **error)
 	    "WINRE_DRV",
 	    NULL,
 	}; /* from https://github.com/storaged-project/udisks/blob/master/data/80-udisks2.rules */
+
+	g_string_replace(name_safe, " ", "_", 0);
+	g_string_replace(name_safe, "\"", "", 0);
+	g_string_ascii_up(name_safe);
+	return g_strv_contains(recovery_partitions, name_safe->str);
+}
+
+static void
+fu_volume_codec_iface_init(FwupdCodecInterface *iface)
+{
+	iface->add_json = fu_volume_add_json;
+}
+
+/**
+ * fu_volume_new_by_kind:
+ * @kind: a volume kind, typically a GUID
+ * @error: (nullable): optional return location for an error
+ *
+ * Finds all volumes of a specific partition type.
+ * For ESP type partitions exclude any known partitions names that
+ * correspond to recovery partitions.
+ *
+ * Returns: (transfer container) (element-type FuVolume): a #GPtrArray, or %NULL if the kind was not
+ *found
+ *
+ * Since: 1.8.2
+ **/
+GPtrArray *
+fu_volume_new_by_kind(const gchar *kind, GError **error)
+{
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GPtrArray) volumes = NULL;
 
@@ -1020,18 +1116,8 @@ fu_volume_new_by_kind(const gchar *kind, GError **error)
 			if (name == NULL)
 				name = fu_volume_get_block_name(vol);
 			if (name != NULL) {
-				g_autoptr(GString) name_safe = g_string_new(name);
-				g_string_replace(name_safe, " ", "_", 0);
-				g_string_replace(name_safe, "\"", "", 0);
-				g_string_ascii_up(name_safe);
-				if (g_strv_contains(recovery_partitions, name_safe->str)) {
-					if (g_strcmp0(name_safe->str, name) == 0) {
-						g_debug("skipping partition '%s'", name);
-					} else {
-						g_debug("skipping partition '%s' -> '%s'",
-							name,
-							name_safe->str);
-					}
+				if (fu_volume_check_is_recovery(name)) {
+					g_debug("skipping partition '%s'", name);
 					continue;
 				}
 				g_debug("adding partition '%s'", name);
@@ -1040,7 +1126,11 @@ fu_volume_new_by_kind(const gchar *kind, GError **error)
 		g_ptr_array_add(volumes, g_steal_pointer(&vol));
 	}
 	if (volumes->len == 0) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "no volumes of type %s", kind);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "no volumes of type %s",
+			    kind);
 		return NULL;
 	}
 	return g_steal_pointer(&volumes);
@@ -1111,7 +1201,7 @@ fu_volume_new_by_device(const gchar *device, GError **error)
 	}
 
 	/* failed */
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "no volumes for device %s", device);
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no volumes for device %s", device);
 	return NULL;
 }
 
@@ -1149,61 +1239,6 @@ fu_volume_new_by_devnum(guint32 devnum, GError **error)
 	}
 
 	/* failed */
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "no volumes for devnum %u", devnum);
-	return NULL;
-}
-
-/**
- * fu_volume_new_esp_for_path:
- * @esp_path: a path to the ESP
- * @error: (nullable): optional return location for an error
- *
- * Gets the platform ESP using a UNIX or UDisks path
- *
- * Returns: (transfer full): a #volume, or %NULL if the ESP was not found
- *
- * Since: 1.8.2
- **/
-FuVolume *
-fu_volume_new_esp_for_path(const gchar *esp_path, GError **error)
-{
-	g_autofree gchar *basename = NULL;
-	g_autoptr(GPtrArray) volumes = NULL;
-	g_autoptr(GError) error_local = NULL;
-
-	g_return_val_if_fail(esp_path != NULL, NULL);
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	volumes = fu_volume_new_by_kind(FU_VOLUME_KIND_ESP, &error_local);
-	if (volumes == NULL) {
-		/* check if it's a valid directory already */
-		if (g_file_test(esp_path, G_FILE_TEST_IS_DIR))
-			return fu_volume_new_from_mount_path(esp_path);
-		g_propagate_prefixed_error(error,
-					   g_steal_pointer(&error_local),
-					   "cannot fall back to %s as not a directory: ",
-					   esp_path);
-		return NULL;
-	}
-	basename = g_path_get_basename(esp_path);
-	for (guint i = 0; i < volumes->len; i++) {
-		FuVolume *vol = g_ptr_array_index(volumes, i);
-		g_autofree gchar *mount_point = fu_volume_get_mount_point(vol);
-		g_autofree gchar *vol_basename = NULL;
-		if (mount_point == NULL)
-			continue;
-		vol_basename = g_path_get_basename(mount_point);
-		if (g_strcmp0(basename, vol_basename) == 0)
-			return g_object_ref(vol);
-	}
-	if (g_file_test(esp_path, G_FILE_TEST_IS_DIR)) {
-		g_info("using user requested path %s for ESP", esp_path);
-		return fu_volume_new_from_mount_path(esp_path);
-	}
-	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_INVALID_FILENAME,
-		    "No ESP with path %s",
-		    esp_path);
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no volumes for devnum %u", devnum);
 	return NULL;
 }

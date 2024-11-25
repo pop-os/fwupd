@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
-enum LogitechBulkcontrollerDeviceState {
+enum FuLogitechBulkcontrollerDeviceState {
     Unknown = -1,
     Offline,
     Online,
@@ -13,7 +13,7 @@ enum LogitechBulkcontrollerDeviceState {
 }
 
 #[derive(ToString)]
-enum LogitechBulkcontrollerUpdateState {
+enum FuLogitechBulkcontrollerUpdateState {
     Unknown = -1,
     Current,
     Available,
@@ -27,7 +27,7 @@ enum LogitechBulkcontrollerUpdateState {
 
 #[repr(u32le)]
 #[derive(ToString)]
-enum LogitechBulkcontrollerCmd {
+enum FuLogitechBulkcontrollerCmd {
     CheckBuffersize = 0xCC00,
     Init = 0xCC01,
     StartTransfer = 0xCC02,
@@ -43,32 +43,37 @@ enum LogitechBulkcontrollerCmd {
 }
 
 #[derive(New, ToString, Getters)]
-struct LogitechBulkcontrollerSendSyncReq {
-    cmd: LogitechBulkcontrollerCmd,
+#[repr(C, packed)]
+struct FuStructLogitechBulkcontrollerSendSyncReq {
+    cmd: FuLogitechBulkcontrollerCmd,
     payload_length: u32le,
     sequence_id: u32le,
 }
+
 #[derive(Parse)]
-struct LogitechBulkcontrollerSendSyncRes {
-    cmd: LogitechBulkcontrollerCmd,
+#[repr(C, packed)]
+struct FuStructLogitechBulkcontrollerSendSyncRes {
+    cmd: FuLogitechBulkcontrollerCmd,
     payload_length: u32le,
     sequence_id: u32le,
 }
 
 #[derive(New)]
-struct LogitechBulkcontrollerUpdateReq {
-    cmd: LogitechBulkcontrollerCmd,
+#[repr(C, packed)]
+struct FuStructLogitechBulkcontrollerUpdateReq {
+    cmd: FuLogitechBulkcontrollerCmd,
     payload_length: u32le,
 }
 
 #[derive(Getters)]
-struct LogitechBulkcontrollerUpdateRes {
-    cmd: LogitechBulkcontrollerCmd,
+#[repr(C, packed)]
+struct FuStructLogitechBulkcontrollerUpdateRes {
+    cmd: FuLogitechBulkcontrollerCmd,
     _payload_length: u32le,
-    cmd_req: LogitechBulkcontrollerCmd,
+    cmd_req: FuLogitechBulkcontrollerCmd,
 }
 
-enum LogitechBulkcontrollerChecksumType {
+enum FuLogitechBulkcontrollerChecksumType {
     Sha256,
     Sha512,
     Md5,

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuFirmware"
@@ -13,10 +13,12 @@
 #endif
 
 #include "fu-byte-array.h"
+#include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-coswid-common.h"
 #include "fu-coswid-firmware.h"
 #include "fu-coswid-struct.h"
+#include "fu-input-stream.h"
 
 /**
  * FuCoswidFirmware:
@@ -202,15 +204,15 @@ fu_coswid_firmware_parse_hash(cbor_item_t *item, gpointer user_data, GError **er
 	/* sanity check */
 	if (!cbor_isa_array(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "hash item is not an array");
 		return FALSE;
 	}
 	if (cbor_array_size(item) != 2) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "hash array has invalid size");
 		return FALSE;
 	}
@@ -218,8 +220,8 @@ fu_coswid_firmware_parse_hash(cbor_item_t *item, gpointer user_data, GError **er
 	hash_item_value = cbor_array_get(item, 1);
 	if (hash_item_alg_id == NULL || hash_item_value == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "invalid hash item");
 		return FALSE;
 	}
@@ -293,8 +295,8 @@ fu_coswid_firmware_parse_file(cbor_item_t *item, gpointer user_data, GError **er
 				}
 			} else {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "hashes neither an array or array of array");
 				return FALSE;
 			}
@@ -397,6 +399,93 @@ fu_coswid_firmware_parse_payload(cbor_item_t *item, gpointer user_data, GError *
 	return TRUE;
 }
 
+static gboolean
+fu_coswid_firmware_parse_entity_name(FuCoswidFirmwareEntity *entity,
+				     cbor_item_t *item,
+				     GError **error)
+{
+	/* we might be calling this twice... */
+	g_free(entity->name);
+
+	entity->name = fu_coswid_read_string(item, error);
+	if (entity->name == NULL) {
+		g_prefix_error(error, "failed to parse entity name: ");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_coswid_firmware_parse_entity_regid(FuCoswidFirmwareEntity *entity,
+				      cbor_item_t *item,
+				      GError **error)
+{
+	/* we might be calling this twice... */
+	g_free(entity->regid);
+
+	entity->regid = fu_coswid_read_string(item, error);
+	if (entity->regid == NULL) {
+		g_prefix_error(error, "failed to parse entity regid: ");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_coswid_firmware_parse_entity_role(FuCoswidFirmwareEntity *entity,
+				     cbor_item_t *item,
+				     GError **error)
+{
+	if (cbor_isa_uint(item)) {
+		guint8 role8 = 0;
+		if (!fu_coswid_read_u8(item, &role8, error)) {
+			g_prefix_error(error, "failed to parse entity role: ");
+			return FALSE;
+		}
+		if (role8 >= FU_COSWID_ENTITY_ROLE_LAST) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "invalid entity role 0x%x",
+				    role8);
+			return FALSE;
+		}
+		FU_BIT_SET(entity->roles, role8);
+
+	} else if (cbor_isa_array(item)) {
+		for (guint j = 0; j < cbor_array_size(item); j++) {
+			guint8 role8 = 0;
+			g_autoptr(cbor_item_t) value = cbor_array_get(item, j);
+			if (!fu_coswid_read_u8(value, &role8, error)) {
+				g_prefix_error(error, "failed to parse entity role: ");
+				return FALSE;
+			}
+			if (role8 >= FU_COSWID_ENTITY_ROLE_LAST) {
+				g_set_error(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
+					    "invalid entity role 0x%x",
+					    role8);
+				return FALSE;
+			}
+			FU_BIT_SET(entity->roles, role8);
+		}
+	} else {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "entity role item is not an uint or array");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+}
+
 /* @userdata: a #FuCoswidFirmware */
 static gboolean
 fu_coswid_firmware_parse_entity(cbor_item_t *item, gpointer user_data, GError **error)
@@ -411,62 +500,14 @@ fu_coswid_firmware_parse_entity(cbor_item_t *item, gpointer user_data, GError **
 		if (!fu_coswid_read_tag(pairs[i].key, &tag_id, error))
 			return FALSE;
 		if (tag_id == FU_COSWID_TAG_ENTITY_NAME) {
-			g_free(entity->name);
-			entity->name = fu_coswid_read_string(pairs[i].value, error);
-			if (entity->name == NULL) {
-				g_prefix_error(error, "failed to parse entity name: ");
+			if (!fu_coswid_firmware_parse_entity_name(entity, pairs[i].value, error))
 				return FALSE;
-			}
 		} else if (tag_id == FU_COSWID_TAG_REG_ID) {
-			g_free(entity->regid);
-			entity->regid = fu_coswid_read_string(pairs[i].value, error);
-			if (entity->regid == NULL) {
-				g_prefix_error(error, "failed to parse entity regid: ");
+			if (!fu_coswid_firmware_parse_entity_regid(entity, pairs[i].value, error))
 				return FALSE;
-			}
 		} else if (tag_id == FU_COSWID_TAG_ROLE) {
-			if (cbor_isa_uint(pairs[i].value)) {
-				guint8 role8 = 0;
-				if (!fu_coswid_read_u8(pairs[i].value, &role8, error)) {
-					g_prefix_error(error, "failed to parse entity role: ");
-					return FALSE;
-				}
-				if (role8 >= FU_COSWID_ENTITY_ROLE_LAST) {
-					g_set_error(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_INVALID_DATA,
-						    "invalid entity role 0x%x",
-						    role8);
-					return FALSE;
-				}
-				entity->roles |= 1u << role8;
-			} else if (cbor_isa_array(pairs[i].value)) {
-				for (guint j = 0; j < cbor_array_size(pairs[i].value); j++) {
-					guint8 role8 = 0;
-					g_autoptr(cbor_item_t) value =
-					    cbor_array_get(pairs[i].value, j);
-					if (!fu_coswid_read_u8(value, &role8, error)) {
-						g_prefix_error(error,
-							       "failed to parse entity role: ");
-						return FALSE;
-					}
-					if (role8 >= FU_COSWID_ENTITY_ROLE_LAST) {
-						g_set_error(error,
-							    G_IO_ERROR,
-							    G_IO_ERROR_INVALID_DATA,
-							    "invalid entity role 0x%x",
-							    role8);
-						return FALSE;
-					}
-					entity->roles |= 1u << role8;
-				}
-			} else {
-				g_set_error_literal(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_INVALID_DATA,
-						    "entity role item is not an uint or array");
+			if (!fu_coswid_firmware_parse_entity_role(entity, pairs[i].value, error))
 				return FALSE;
-			}
 		} else {
 			g_debug("unhandled tag %s from %s",
 				fu_coswid_tag_to_string(tag_id),
@@ -512,8 +553,7 @@ fu_coswid_firmware_free(void *ptr)
 
 static gboolean
 fu_coswid_firmware_parse(FuFirmware *firmware,
-			 GBytes *fw,
-			 gsize offset,
+			 GInputStream *stream,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
@@ -523,7 +563,11 @@ fu_coswid_firmware_parse(FuFirmware *firmware,
 	struct cbor_load_result result = {0x0};
 	struct cbor_pair *pairs = NULL;
 	g_autoptr(cbor_item_t) item = NULL;
+	g_autoptr(GBytes) fw = NULL;
 
+	fw = fu_input_stream_read_bytes(stream, 0x0, G_MAXSIZE, NULL, error);
+	if (fw == NULL)
+		return FALSE;
 	item = cbor_load(g_bytes_get_data(fw, NULL), g_bytes_get_size(fw), &result);
 	if (item == NULL) {
 		g_set_error(error,
@@ -545,8 +589,8 @@ fu_coswid_firmware_parse(FuFirmware *firmware,
 	/* sanity check */
 	if (!cbor_isa_map(item)) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "root item is not a map");
 		return FALSE;
 	}
@@ -618,9 +662,9 @@ fu_coswid_firmware_parse(FuFirmware *firmware,
 	if (fu_firmware_get_id(firmware) == NULL && fu_firmware_get_version(firmware) == NULL &&
 	    priv->product == NULL && priv->entities->len == 0 && priv->links->len == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
-				    "not enough SBoM data");
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "not enough SBOM data");
 		return FALSE;
 	}
 
@@ -628,8 +672,8 @@ fu_coswid_firmware_parse(FuFirmware *firmware,
 	return TRUE;
 #else
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "not compiled with CBOR support");
 	return FALSE;
 #endif
@@ -658,8 +702,8 @@ fu_coswid_firmware_get_checksum(FuFirmware *firmware, GChecksumType csum_kind, G
 	}
 	if (alg_id == FU_COSWID_HASH_ALG_UNKNOWN) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "cannot convert %s",
 			    fwupd_checksum_type_to_string_display(csum_kind));
 		return NULL;
@@ -675,8 +719,8 @@ fu_coswid_firmware_get_checksum(FuFirmware *firmware, GChecksumType csum_kind, G
 		}
 	}
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_SUPPORTED,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "no hash kind %s",
 		    fwupd_checksum_type_to_string_display(csum_kind));
 	return NULL;
@@ -792,7 +836,7 @@ fu_coswid_firmware_write(FuFirmware *firmware, GError **error)
 							   entity->regid);
 			}
 			for (guint j = 0; j < FU_COSWID_ENTITY_ROLE_LAST; j++) {
-				if (entity->roles & (1u << j)) {
+				if (FU_BIT_IS_SET(entity->roles, j)) {
 					g_autoptr(cbor_item_t) item_role = cbor_build_uint8(j);
 					if (!cbor_array_push(item_roles, item_role))
 						g_critical("failed to push to indefinite array");
@@ -837,16 +881,16 @@ fu_coswid_firmware_write(FuFirmware *firmware, GError **error)
 	buflen = cbor_serialize_alloc(root, &buf, &bufsz);
 	if (buflen > bufsz) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "CBOR allocation failure");
 		return NULL;
 	}
 	return g_byte_array_new_take(g_steal_pointer(&buf), buflen);
 #else
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "not compiled with CBOR support");
 	return NULL;
 #endif
@@ -881,13 +925,13 @@ fu_coswid_firmware_build_entity(FuCoswidFirmware *self, XbNode *n, GError **erro
 			if (role == FU_COSWID_ENTITY_ROLE_UNKNOWN ||
 			    role >= FU_COSWID_ENTITY_ROLE_LAST) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "failed to parse entity role %s",
 					    tmp);
 				return FALSE;
 			}
-			entity->roles |= 1u << role;
+			FU_BIT_SET(entity->roles, role);
 		}
 	}
 
@@ -915,8 +959,8 @@ fu_coswid_firmware_build_link(FuCoswidFirmware *self, XbNode *n, GError **error)
 		link->rel = fu_coswid_link_rel_from_string(tmp);
 		if (link->rel == FU_COSWID_LINK_REL_UNKNOWN) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to parse link rel %s",
 				    tmp);
 			return FALSE;
@@ -951,8 +995,8 @@ fu_coswid_firmware_build_hash(FuCoswidFirmware *self,
 		hash->alg_id = fu_coswid_hash_alg_from_string(tmp);
 		if (hash->alg_id == FU_COSWID_HASH_ALG_UNKNOWN) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to parse alg_id %s",
 				    tmp);
 			return FALSE;
@@ -1022,8 +1066,8 @@ fu_coswid_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 		priv->version_scheme = fu_coswid_version_scheme_from_string(tmp);
 		if (priv->version_scheme == FU_COSWID_VERSION_SCHEME_UNKNOWN) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to parse version_scheme %s",
 				    tmp);
 			return FALSE;
@@ -1108,7 +1152,7 @@ fu_coswid_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbB
 		fu_xmlb_builder_insert_kv(bc, "name", entity->name);
 		fu_xmlb_builder_insert_kv(bc, "regid", entity->regid);
 		for (guint j = 0; j < FU_COSWID_ENTITY_ROLE_LAST; j++) {
-			if (entity->roles & (1u << j)) {
+			if (FU_BIT_IS_SET(entity->roles, j)) {
 				fu_xmlb_builder_insert_kv(bc,
 							  "role",
 							  fu_coswid_entity_role_to_string(j));
@@ -1149,13 +1193,13 @@ static void
 fu_coswid_firmware_class_init(FuCoswidFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_coswid_firmware_finalize;
-	klass_firmware->parse = fu_coswid_firmware_parse;
-	klass_firmware->write = fu_coswid_firmware_write;
-	klass_firmware->build = fu_coswid_firmware_build;
-	klass_firmware->export = fu_coswid_firmware_export;
-	klass_firmware->get_checksum = fu_coswid_firmware_get_checksum;
+	firmware_class->parse = fu_coswid_firmware_parse;
+	firmware_class->write = fu_coswid_firmware_write;
+	firmware_class->build = fu_coswid_firmware_build;
+	firmware_class->export = fu_coswid_firmware_export;
+	firmware_class->get_checksum = fu_coswid_firmware_get_checksum;
 
 #ifdef HAVE_CBOR_SET_ALLOCS
 	/* limit for protection, yes; this is global and there is no context */

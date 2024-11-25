@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -41,31 +41,30 @@ fu_uf2_firmware_parse_chunk(FuUf2Firmware *self, FuChunk *chk, GByteArray *tmp, 
 	st = fu_struct_uf2_parse(fu_chunk_get_data(chk),
 				 fu_chunk_get_data_sz(chk),
 				 0, /* offset */
-
 				 error);
 	if (st == NULL)
 		return FALSE;
 	flags = fu_struct_uf2_get_flags(st);
 	if (flags & FU_UF2_FIRMWARE_BLOCK_FLAG_IS_CONTAINER) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "container U2F firmware not supported");
 		return FALSE;
 	}
 	datasz = fu_struct_uf2_get_payload_size(st);
 	if (datasz > 476) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "data size impossible got 0x%08x",
 			    datasz);
 		return FALSE;
 	}
 	if (fu_struct_uf2_get_block_no(st) != fu_chunk_get_idx(chk)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "block count invalid, expected 0x%04x and got 0x%04x",
 			    fu_chunk_get_idx(chk),
 			    fu_struct_uf2_get_block_no(st));
@@ -73,16 +72,16 @@ fu_uf2_firmware_parse_chunk(FuUf2Firmware *self, FuChunk *chk, GByteArray *tmp, 
 	}
 	if (fu_struct_uf2_get_num_blocks(st) == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "block count invalid, expected > 0");
 		return FALSE;
 	}
 	if (flags & FU_UF2_FIRMWARE_BLOCK_FLAG_HAS_FAMILY) {
 		if (fu_struct_uf2_get_family_id(st) == 0) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "family_id required but not supplied");
 			return FALSE;
 		}
@@ -99,8 +98,8 @@ fu_uf2_firmware_parse_chunk(FuUf2Firmware *self, FuChunk *chk, GByteArray *tmp, 
 	if (flags & FU_UF2_FIRMWARE_BLOCK_FLAG_HAS_MD5) {
 		if (datasz < 24) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "not enough space for MD5 checksum");
 			return FALSE;
 		}
@@ -116,8 +115,8 @@ fu_uf2_firmware_parse_chunk(FuUf2Firmware *self, FuChunk *chk, GByteArray *tmp, 
 				return FALSE;
 			if (sz < 4) {
 				g_set_error_literal(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_INVALID_DATA,
+						    FWUPD_ERROR,
+						    FWUPD_ERROR_INVALID_DATA,
 						    "invalid extension tag size");
 				return FALSE;
 			}
@@ -169,8 +168,7 @@ fu_uf2_firmware_parse_chunk(FuUf2Firmware *self, FuChunk *chk, GByteArray *tmp, 
 
 static gboolean
 fu_uf2_firmware_parse(FuFirmware *firmware,
-		      GBytes *fw,
-		      gsize offset,
+		      GInputStream *stream,
 		      FwupdInstallFlags flags,
 		      GError **error)
 {
@@ -180,9 +178,20 @@ fu_uf2_firmware_parse(FuFirmware *firmware,
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* read in fixed sized chunks */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, 512);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						512,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_uf2_firmware_parse_chunk(self, chk, tmp, error))
 			return FALSE;
 	}
@@ -226,19 +235,30 @@ fu_uf2_firmware_write(FuFirmware *firmware, GError **error)
 {
 	FuUf2Firmware *self = FU_UF2_FIRMWARE(firmware);
 	g_autoptr(GByteArray) buf = g_byte_array_new();
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* data first */
-	fw = fu_firmware_get_bytes_with_patches(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return NULL;
 
 	/* write in chunks */
-	chunks = fu_chunk_array_new_from_bytes(fw, fu_firmware_get_addr(firmware), 256);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						fu_firmware_get_addr(firmware),
+						FU_CHUNK_PAGESZ_NONE,
+						256,
+						error);
+	if (chunks == NULL)
+		return NULL;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) tmp = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return NULL;
 		tmp = fu_uf2_firmware_write_chunk(self, chk, fu_chunk_array_length(chunks), error);
 		if (tmp == NULL)
 			return NULL;
@@ -257,9 +277,9 @@ fu_uf2_firmware_init(FuUf2Firmware *self)
 static void
 fu_uf2_firmware_class_init(FuUf2FirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_uf2_firmware_parse;
-	klass_firmware->write = fu_uf2_firmware_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_uf2_firmware_parse;
+	firmware_class->write = fu_uf2_firmware_write;
 }
 
 FuFirmware *

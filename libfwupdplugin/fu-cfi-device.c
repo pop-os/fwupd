@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCfiDevice"
@@ -222,7 +222,7 @@ fu_cfi_device_wait_for_status_cb(FuDevice *device, gpointer user_data, GError **
 			    FWUPD_ERROR_INTERNAL,
 			    "wanted 0x%x, got 0x%x",
 			    helper->value,
-			    buf[0x1] & helper->mask);
+			    (guint)(buf[0x1] & helper->mask));
 		return FALSE;
 	}
 
@@ -250,11 +250,16 @@ fu_cfi_device_wait_for_status(FuCfiDevice *self,
 static gboolean
 fu_cfi_device_read_jedec(FuCfiDevice *self, GError **error)
 {
+	FuCfiDeviceClass *klass = FU_CFI_DEVICE_GET_CLASS(self);
 	guint8 buf_res[] = {0x9F};
 	guint8 buf_req[3] = {0x0};
 	g_autoptr(FuDeviceLocker) cslocker = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GString) flash_id = g_string_new(NULL);
+
+	/* has to be handled by the baseclass */
+	if (klass->read_jedec != NULL)
+		return klass->read_jedec(self, error);
 
 	/* enable chip */
 	cslocker = fu_cfi_device_chip_select_locker_new(self, error);
@@ -274,14 +279,8 @@ fu_cfi_device_read_jedec(FuCfiDevice *self, GError **error)
 	}
 	if ((buf_req[0] == 0x0 && buf_req[1] == 0x0 && buf_req[2] == 0x0) ||
 	    (buf_req[0] == 0xFF && buf_req[1] == 0xFF && buf_req[2] == 0xFF)) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "device not detected, flash ID 0x%02X%02X%02X",
-			    buf_req[0],
-			    buf_req[1],
-			    buf_req[2]);
-		return FALSE;
+		fu_cfi_device_set_flash_id(self, NULL);
+		return TRUE;
 	}
 	g_string_append_printf(flash_id, "%02X", buf_req[0]);
 	g_string_append_printf(flash_id, "%02X", buf_req[1]);
@@ -304,14 +303,16 @@ fu_cfi_device_setup(FuDevice *device, GError **error)
 		if (!fu_cfi_device_read_jedec(self, error))
 			return FALSE;
 	}
+	if (priv->flash_id == NULL)
+		return TRUE;
 
 	/* sanity check */
 	if (priv->flash_id != NULL)
 		flash_idsz = strlen(priv->flash_id);
 	if (flash_idsz == 0 || flash_idsz % 2 != 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "not a valid flash-id");
 		return FALSE;
 	}
@@ -331,6 +332,7 @@ fu_cfi_device_setup(FuDevice *device, GError **error)
 	}
 
 	/* success */
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	return TRUE;
 }
 
@@ -356,13 +358,16 @@ fu_cfi_device_get_cmd(FuCfiDevice *self, FuCfiDeviceCmd cmd, guint8 *value, GErr
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	if (cmd >= FU_CFI_DEVICE_CMD_LAST) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "CFI cmd invalid");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "CFI cmd invalid");
 		return FALSE;
 	}
 	if (priv->cmds[cmd] == 0x0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "No defined CFI cmd for %s",
 			    fu_cfi_device_cmd_to_string(cmd));
 		return FALSE;
@@ -491,79 +496,79 @@ fu_cfi_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *valu
 	guint64 tmp;
 
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_READ_ID) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_READ_ID] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_READ_ID_SZ) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmd_read_id_sz = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_CHIP_ERASE) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_CHIP_ERASE] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_BLOCK_ERASE) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_BLOCK_ERASE] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_SECTOR_ERASE) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_SECTOR_ERASE] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_WRITE_STATUS) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_WRITE_STATUS] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_PAGE_PROG) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_PAGE_PROG] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_READ_DATA) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_READ_DATA] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_READ_STATUS) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_READ_STATUS] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_CMD_WRITE_EN) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->cmds[FU_CFI_DEVICE_CMD_WRITE_EN] = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_PAGE_SIZE) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->page_size = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_SECTOR_SIZE) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->sector_size = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_CFI_DEVICE_BLOCK_SIZE) == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->block_size = tmp;
 		return TRUE;
@@ -580,16 +585,16 @@ fu_cfi_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCfiDevice *self = FU_CFI_DEVICE(device);
 	FuCfiDevicePrivate *priv = GET_PRIVATE(self);
-	fu_string_append(str, idt, "FlashId", priv->flash_id);
+	fwupd_codec_string_append(str, idt, "FlashId", priv->flash_id);
 	for (guint i = 0; i < FU_CFI_DEVICE_CMD_LAST; i++) {
-		fu_string_append_kx(str, idt, fu_cfi_device_cmd_to_string(i), priv->cmds[i]);
+		fwupd_codec_string_append_hex(str,
+					      idt,
+					      fu_cfi_device_cmd_to_string(i),
+					      priv->cmds[i]);
 	}
-	if (priv->page_size > 0)
-		fu_string_append_kx(str, idt, "PageSize", priv->page_size);
-	if (priv->sector_size > 0)
-		fu_string_append_kx(str, idt, "SectorSize", priv->sector_size);
-	if (priv->block_size > 0)
-		fu_string_append_kx(str, idt, "BlockSize", priv->block_size);
+	fwupd_codec_string_append_hex(str, idt, "PageSize", priv->page_size);
+	fwupd_codec_string_append_hex(str, idt, "SectorSize", priv->sector_size);
+	fwupd_codec_string_append_hex(str, idt, "BlockSize", priv->block_size);
 }
 
 /**
@@ -784,7 +789,12 @@ fu_cfi_device_write_pages(FuCfiDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(pages));
 	for (guint i = 0; i < fu_chunk_array_length(pages); i++) {
-		g_autoptr(FuChunk) page = fu_chunk_array_index(pages, i);
+		g_autoptr(FuChunk) page = NULL;
+
+		/* prepare chunk */
+		page = fu_chunk_array_index(pages, i, error);
+		if (page == NULL)
+			return FALSE;
 		if (!fu_cfi_device_write_page(self, page, fu_progress_get_child(progress), error))
 			return FALSE;
 		fu_progress_step_done(progress);
@@ -906,7 +916,10 @@ fu_cfi_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* write each block */
-	pages = fu_chunk_array_new_from_bytes(fw, 0x0, fu_cfi_device_get_page_size(self));
+	pages = fu_chunk_array_new_from_bytes(fw,
+					      FU_CHUNK_ADDR_OFFSET_NONE,
+					      FU_CHUNK_PAGESZ_NONE,
+					      fu_cfi_device_get_page_size(self));
 	if (!fu_cfi_device_write_pages(self, pages, fu_progress_get_child(progress), error)) {
 		g_prefix_error(error, "failed to write pages: ");
 		return FALSE;
@@ -958,11 +971,10 @@ fu_cfi_device_init(FuCfiDevice *self)
 	priv->cmds[FU_CFI_DEVICE_CMD_CHIP_ERASE] = 0x60;
 	priv->cmds[FU_CFI_DEVICE_CMD_READ_ID] = 0x9f;
 	fu_device_add_protocol(FU_DEVICE(self), "org.jedec.cfi");
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
-	fu_device_add_vendor_id(FU_DEVICE(self), "SPI:*");
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_PARENT_FOR_OPEN);
+	fu_device_build_vendor_id(FU_DEVICE(self), "SPI", "*");
 	fu_device_set_summary(FU_DEVICE(self), "CFI flash chip");
 }
 
@@ -977,19 +989,19 @@ static void
 fu_cfi_device_class_init(FuCfiDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GParamSpec *pspec;
 
 	object_class->finalize = fu_cfi_device_finalize;
 	object_class->get_property = fu_cfi_device_get_property;
 	object_class->set_property = fu_cfi_device_set_property;
 	object_class->constructed = fu_cfi_device_constructed;
-	klass_device->setup = fu_cfi_device_setup;
-	klass_device->to_string = fu_cfi_device_to_string;
-	klass_device->set_quirk_kv = fu_cfi_device_set_quirk_kv;
-	klass_device->write_firmware = fu_cfi_device_write_firmware;
-	klass_device->dump_firmware = fu_cfi_device_dump_firmware;
-	klass_device->set_progress = fu_cfi_device_set_progress;
+	device_class->setup = fu_cfi_device_setup;
+	device_class->to_string = fu_cfi_device_to_string;
+	device_class->set_quirk_kv = fu_cfi_device_set_quirk_kv;
+	device_class->write_firmware = fu_cfi_device_write_firmware;
+	device_class->dump_firmware = fu_cfi_device_dump_firmware;
+	device_class->set_progress = fu_cfi_device_set_progress;
 
 	/**
 	 * FuCfiDevice:flash-id:

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -11,6 +11,8 @@
 #include "fu-chunk.h"
 #include "fu-firmware.h"
 
+void
+fu_chunk_set_data_sz(FuChunk *self, gsize data_sz) G_GNUC_NON_NULL(1);
 void
 fu_chunk_export(FuChunk *self, FuFirmwareExportFlags flags, XbBuilderNode *bn)
     G_GNUC_NON_NULL(1, 3);

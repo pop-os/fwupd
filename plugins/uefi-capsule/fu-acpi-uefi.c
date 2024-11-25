@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Mario Limonciello <mario.limonciello@amd.com>
+ * Copyright 2023 Mario Limonciello <mario.limonciello@amd.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -34,18 +34,18 @@ fu_acpi_uefi_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuilder
 }
 
 static gboolean
-fu_acpi_uefi_parse_insyde(FuAcpiUefi *self,
-			  const guint8 *buf,
-			  gsize bufsz,
-			  gsize offset,
-			  GError **error)
+fu_acpi_uefi_parse_insyde(FuAcpiUefi *self, GInputStream *stream, GError **error)
 {
 	const gchar *needle = "$QUIRK";
 	gsize data_offset = 0;
 	g_autoptr(GByteArray) st_qrk = NULL;
+	g_autoptr(GBytes) fw = NULL;
 
-	if (!fu_memmem_safe(buf,
-			    bufsz,
+	fw = fu_input_stream_read_bytes(stream, 0x0, G_MAXSIZE, NULL, error);
+	if (fw == NULL)
+		return FALSE;
+	if (!fu_memmem_safe(g_bytes_get_data(fw, NULL),
+			    g_bytes_get_size(fw),
 			    (const guint8 *)needle,
 			    strlen(needle),
 			    &data_offset,
@@ -53,10 +53,9 @@ fu_acpi_uefi_parse_insyde(FuAcpiUefi *self,
 		g_prefix_error(error, "$QUIRK not found");
 		return FALSE;
 	}
-	offset += data_offset;
 
 	/* parse */
-	st_qrk = fu_struct_acpi_insyde_quirk_parse(buf, bufsz, offset, error);
+	st_qrk = fu_struct_acpi_insyde_quirk_parse_stream(stream, data_offset, error);
 	if (st_qrk == NULL)
 		return FALSE;
 	if (fu_struct_acpi_insyde_quirk_get_size(st_qrk) < st_qrk->len) {
@@ -73,40 +72,36 @@ fu_acpi_uefi_parse_insyde(FuAcpiUefi *self,
 
 static gboolean
 fu_acpi_uefi_parse(FuFirmware *firmware,
-		   GBytes *fw,
-		   gsize offset,
+		   GInputStream *stream,
 		   FwupdInstallFlags flags,
 		   GError **error)
 {
 	FuAcpiUefi *self = FU_ACPI_UEFI(firmware);
 	fwupd_guid_t guid = {0x0};
-	gsize bufsz = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
 	/* FuAcpiTable->parse */
 	if (!FU_FIRMWARE_CLASS(fu_acpi_uefi_parent_class)
-		 ->parse(FU_FIRMWARE(self), fw, offset, FWUPD_INSTALL_FLAG_NONE, error))
+		 ->parse(FU_FIRMWARE(self), stream, FWUPD_INSTALL_FLAG_NONE, error))
 		return FALSE;
 
 	/* check signature and read flags */
 	if (g_strcmp0(fu_firmware_get_id(FU_FIRMWARE(self)), "UEFI") != 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "Not a UEFI table, got %s",
 			    fu_firmware_get_id(FU_FIRMWARE(self)));
 		return FALSE;
 	}
 
 	/* GUID for the table */
-	if (!fu_memcpy_safe((guint8 *)guid,
-			    sizeof(guid),
-			    0x0, /* dst */
-			    buf,
-			    bufsz,
-			    offset + 0x24, /* src */
-			    sizeof(guid),
-			    error))
+	if (!fu_input_stream_read_safe(stream,
+				       (guint8 *)guid,
+				       sizeof(guid),
+				       0x0,  /* dst */
+				       0x24, /* src */
+				       sizeof(guid),
+				       error))
 		return FALSE;
 	self->guid = fwupd_guid_to_string(&guid, FWUPD_GUID_FLAG_MIXED_ENDIAN);
 
@@ -114,7 +109,7 @@ fu_acpi_uefi_parse(FuFirmware *firmware,
 	self->is_insyde = (g_strcmp0(self->guid, FU_EFI_INSYDE_GUID) == 0);
 	if (self->is_insyde) {
 		g_autoptr(GError) error_local = NULL;
-		if (!fu_acpi_uefi_parse_insyde(self, buf, bufsz, offset, &error_local))
+		if (!fu_acpi_uefi_parse_insyde(self, stream, &error_local))
 			g_debug("%s", error_local->message);
 	}
 
@@ -139,10 +134,10 @@ static void
 fu_acpi_uefi_class_init(FuAcpiUefiClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_acpi_uefi_finalize;
-	klass_firmware->parse = fu_acpi_uefi_parse;
-	klass_firmware->export = fu_acpi_uefi_export;
+	firmware_class->parse = fu_acpi_uefi_parse;
+	firmware_class->export = fu_acpi_uefi_export;
 }
 
 FuFirmware *
@@ -158,8 +153,8 @@ fu_acpi_uefi_cod_functional(FuAcpiUefi *self, GError **error)
 	if (!self->is_insyde || self->insyde_cod_status > 0)
 		return TRUE;
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "Capsule-on-Disk may have a firmware bug");
 	return FALSE;
 }

@@ -83,23 +83,19 @@ The firmware is deployed when the device is in normal runtime mode, and the
 device will reset when the new firmware has been written. On some hardware the
 DRM device may not enumerate if there is no monitor actually plugged in.
 
+## Vendor ID security
+
+The vendor ID is set from the PCI vendor, for instance `PCI:0x1028` on Dell systems.
+
 ## Quirk Use
 
 This plugin uses the following plugin-specific quirks:
 
-### Flags: `probe-vcp`
-
-This flag is used if the VCP should be probed.
-
-### Flags: `bank2-only`
+### `bank2-only`
 
 Install firmware to bank 2 only.
 
-Since: 1.9.25
-
-## Vendor ID security
-
-The vendor ID is set from the PCI vendor, for instance `PCI:0x1028` on Dell systems.
+Since: 2.0.0
 
 ## External Interface Access
 

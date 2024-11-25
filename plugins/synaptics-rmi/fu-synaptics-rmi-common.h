@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2012 Andrew Duggan
- * Copyright (C) 2012 Synaptics Inc.
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2012 Andrew Duggan
+ * Copyright 2012 Synaptics Inc.
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -35,7 +35,7 @@ fu_synaptics_rmi_function_parse(GByteArray *buf,
 gboolean
 fu_synaptics_rmi_device_writeln(const gchar *fn, const gchar *buf, GError **error);
 gboolean
-fu_synaptics_verify_sha256_signature(GBytes *payload,
-				     GBytes *pubkey,
-				     GBytes *signature,
-				     GError **error);
+fu_synaptics_rmi_verify_sha256_signature(GBytes *payload,
+					 GBytes *pubkey,
+					 GBytes *signature,
+					 GError **error);

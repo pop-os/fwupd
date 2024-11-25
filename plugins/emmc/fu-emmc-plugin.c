@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2019 Mario Limonciello <mario.limonciello@dell.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -27,7 +27,7 @@ fu_emmc_plugin_constructed(GObject *obj)
 	FuContext *ctx = fu_plugin_get_context(plugin);
 
 	fu_context_add_quirk_key(ctx, "EmmcBlockSize");
-	fu_plugin_add_device_udev_subsystem(plugin, "block");
+	fu_plugin_add_device_udev_subsystem(plugin, "block:disk");
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_EMMC_DEVICE);
 }
 

@@ -1,15 +1,15 @@
 /*
- * Copyright (C) {{Year}} {{Author}} <{{Email}}>
+ * Copyright {{Year}} {{Author}} <{{Email}}>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
-#include "fu-{{vendor}}-{{example}}-common.h"
+#include "fu-{{vendor_dash_example}}-common.h"
 
 const gchar *
-fu_{{vendor}}_{{example}}_strerror(guint8 code)
+fu_{{vendor_example}}_strerror(guint8 code)
 {
 	if (code == 0)
 		return "success";

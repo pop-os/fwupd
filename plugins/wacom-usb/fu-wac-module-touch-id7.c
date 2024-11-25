@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2023 Joshua Dickens <joshua.dickens@wacom.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Joshua Dickens <joshua.dickens@wacom.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -201,7 +201,9 @@ fu_wac_module_touch_id7_write_block(FuWacModule *self,
 		buf[2] = record_hdr->ma_id;
 		fu_memwrite_uint32(&buf[3], info->op_id, G_LITTLE_ENDIAN);
 		fu_memwrite_uint32(&buf[7], fu_chunk_get_address(chk), G_LITTLE_ENDIAN);
-		memcpy(&buf[11], fu_chunk_get_data(chk), FU_WAC_MODULE_CHUNK_SIZE);
+		memcpy(&buf[11], /* nocheck:blocked */
+		       fu_chunk_get_data(chk),
+		       FU_WAC_MODULE_CHUNK_SIZE);
 		blob_chunk = g_bytes_new(buf, sizeof(buf));
 		if (!fu_wac_module_set_feature(self,
 					       FU_WAC_MODULE_COMMAND_DATA,
@@ -383,8 +385,8 @@ fu_wac_module_touch_id7_init(FuWacModuleTouchId7 *self)
 static void
 fu_wac_module_touch_id7_class_init(FuWacModuleTouchId7Class *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_wac_module_touch_id7_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_wac_module_touch_id7_write_firmware;
 }
 
 FuWacModule *

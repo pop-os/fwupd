@@ -1,4 +1,3 @@
-if gusb.found()
 cargs = ['-DG_LOG_DOMAIN="FuPluginCh341a"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -14,4 +13,6 @@ plugin_builtins += static_library('fu_plugin_ch341a',
   c_args: cargs,
   dependencies: plugin_deps,
 )
-endif
+
+enumeration_data += files('tests/ch341a-setup.json')
+device_tests += files('tests/ch341a.json')

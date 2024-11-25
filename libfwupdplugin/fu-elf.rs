@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[repr(u16le)]
-enum ElfFileHeaderType {
+enum FuElfFileHeaderType {
     None = 0x00,
     Rel = 0x01,
     Exec = 0x02,
@@ -10,8 +10,9 @@ enum ElfFileHeaderType {
     Core = 0x04,
 }
 
-#[derive(ParseBytes, ValidateBytes)]
-struct ElfFileHeader64le {
+#[derive(ParseStream, ValidateStream, New, Default)]
+#[repr(C, packed)]
+struct FuStructElfFileHeader64le {
     ei_magic: [char; 4] == "\x7F\x45\x4C\x46",
     ei_class: u8 == 0x2, // 64-bit format
     ei_data: u8 == 0x1, // LE
@@ -19,7 +20,7 @@ struct ElfFileHeader64le {
     ei_osabi: u8 = 0x3,
     ei_abiversion: u8,
     _ei_padding: [u8; 7] = 0x00000000000000,
-    type: ElfFileHeaderType,
+    type: FuElfFileHeaderType,
     machine: u16le,
     version: u32le == 0x1,
     entry: u64le,
@@ -34,8 +35,9 @@ struct ElfFileHeader64le {
     shstrndx: u16le,
 }
 
-#[derive(ParseBytes)]
-struct ElfProgramHeader64le {
+#[derive(ParseStream, New)]
+#[repr(C, packed)]
+struct FuStructElfProgramHeader64le {
     flags: u32le,
     offset: u64le,
     vaddr: u64le,
@@ -47,7 +49,8 @@ struct ElfProgramHeader64le {
 }
 
 #[repr(u32le)]
-enum ElfSectionHeaderType {
+#[derive(ToString)]
+enum FuElfSectionHeaderType {
     Null = 0x0,
     Progbits = 0x1,
     Symtab = 0x2,
@@ -68,10 +71,11 @@ enum ElfSectionHeaderType {
     Num = 0x13,
 }
 
-#[derive(ParseBytes)]
-struct ElfSectionHeader64le {
+#[derive(ParseStream, New)]
+#[repr(C, packed)]
+struct FuStructElfSectionHeader64le {
     name: u32le,
-    type: ElfSectionHeaderType,
+    type: FuElfSectionHeaderType,
     flags: u64le,
     addr: u64le,
     offset: u64le,

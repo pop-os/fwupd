@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Cypress Semiconductor Corporation.
+ * Copyright 2020 Cypress Semiconductor Corporation.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -106,7 +106,7 @@ typedef enum {
 	CY_DEVICE_RESET_CMD = 0xE3, /* performs a device reset from firmware */
 } CyVendorCommand;
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint32 frequency;     /* frequency of operation. Only valid values are 100KHz and 400KHz */
 	guint8 target_address; /* target address to be used when in target mode */
 	guint8 is_msb_first;   /* whether to transmit most significant bit first */
@@ -182,7 +182,7 @@ typedef enum {
 	HPI_REG_SECTION_ALL	 /* select all registers */
 } HPIRegSection;
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint16 event_code;
 	guint16 event_length;
 	guint8 event_data[128];
@@ -230,6 +230,7 @@ typedef enum {
 	FU_CCGX_PD_RESP_REG_FWDATA_MEMORY_ADDR = 0xC0,
 } CyPDReg;
 
+#define FU_CCGX_PD_RESP_BRIDGE_MODE_CMD_SIG	     0x42
 #define FU_CCGX_PD_RESP_GET_SILICON_ID_CMD_SIG	     0x53
 #define FU_CCGX_PD_RESP_REG_INTR_REG_CLEAR_RQT	     0x01
 #define FU_CCGX_PD_RESP_JUMP_TO_BOOT_CMD_SIG	     0x4A
@@ -243,18 +244,19 @@ typedef enum {
 #define FU_CCGX_PD_RESP_REG_FLASH_READ_WRITE_ROW_LSB 0x02
 #define FU_CCGX_PD_RESP_REG_FLASH_READ_WRITE_ROW_MSB 0x03
 #define FU_CCGX_PD_RESP_U_VDM_TYPE		     0x00
-#define HPI_GET_SILICON_ID_CMD_SIG	   0x53
-#define HPI_REG_INTR_REG_CLEAR_RQT	   0x01
-#define HPI_JUMP_TO_BOOT_CMD_SIG	   0x4A
-#define HPI_DEVICE_RESET_CMD_SIG	   0x52
-#define HPI_REG_RESET_DEVICE_CMD	   0x01
-#define HPI_ENTER_FLASHING_MODE_CMD_SIG	   0x50
-#define HPI_FLASH_READ_WRITE_CMD_SIG	   0x46
-#define HPI_REG_FLASH_ROW_READ_CMD	   0x00
-#define HPI_REG_FLASH_ROW_WRITE_CMD	   0x01
-#define HPI_REG_FLASH_READ_WRITE_ROW_LSB   0x02
-#define HPI_REG_FLASH_READ_WRITE_ROW_MSB   0x03
-#define HPI_PORT_DISABLE_CMD		   0x11
+
+#define HPI_GET_SILICON_ID_CMD_SIG	 0x53
+#define HPI_REG_INTR_REG_CLEAR_RQT	 0x01
+#define HPI_JUMP_TO_BOOT_CMD_SIG	 0x4A
+#define HPI_DEVICE_RESET_CMD_SIG	 0x52
+#define HPI_REG_RESET_DEVICE_CMD	 0x01
+#define HPI_ENTER_FLASHING_MODE_CMD_SIG	 0x50
+#define HPI_FLASH_READ_WRITE_CMD_SIG	 0x46
+#define HPI_REG_FLASH_ROW_READ_CMD	 0x00
+#define HPI_REG_FLASH_ROW_WRITE_CMD	 0x01
+#define HPI_REG_FLASH_READ_WRITE_ROW_LSB 0x02
+#define HPI_REG_FLASH_READ_WRITE_ROW_MSB 0x03
+#define HPI_PORT_DISABLE_CMD		 0x11
 
 #define HPI_DEVICE_VERSION_SIZE_HPIV1 16
 #define HPI_DEVICE_VERSION_SIZE_HPIV2 24

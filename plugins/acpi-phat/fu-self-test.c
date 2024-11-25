@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -26,10 +26,11 @@ fu_acpi_phat_parse_func(void)
 	blob = fu_bytes_get_contents(fn, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob);
-	ret = fu_firmware_parse(phat,
-				blob,
-				FWUPD_INSTALL_FLAG_FORCE | FWUPD_INSTALL_FLAG_NO_SEARCH,
-				&error);
+	ret = fu_firmware_parse_bytes(phat,
+				      blob,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_FORCE | FWUPD_INSTALL_FLAG_NO_SEARCH,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	str = fu_acpi_phat_to_report_string(FU_ACPI_PHAT(phat));

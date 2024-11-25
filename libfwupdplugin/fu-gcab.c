@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -45,18 +45,13 @@ main(int argc, char **argv)
 
 	setlocale(LC_ALL, "");
 
-#ifndef SUPPORTED_BUILD
-	/* make critical warnings fatal */
-	(void)g_setenv("G_DEBUG", "fatal-criticals", FALSE);
-#endif
-
 	g_option_context_add_main_entries(context, options, NULL);
 	if (!g_option_context_parse(context, &argc, &argv, &error)) {
 		g_printerr("Failed to parse arguments: %s\n", error->message);
 		return EXIT_FAILURE;
 	}
 	if (verbose)
-		g_setenv("G_MESSAGES_DEBUG", "all", TRUE);
+		(void)g_setenv("G_MESSAGES_DEBUG", "all", TRUE);
 
 	if (do_create && argc > 1) {
 		g_autoptr(GFile) file = g_file_new_for_path(argv[1]);
@@ -86,19 +81,13 @@ main(int argc, char **argv)
 		return EXIT_SUCCESS;
 	}
 	if (do_list && argc > 1) {
-		g_autoptr(GBytes) img_blob = NULL;
 		g_autofree gchar *str = NULL;
-
-		img_blob = fu_bytes_get_contents(argv[1], &error);
-		if (img_blob == NULL) {
-			g_printerr("Failed to load file %s: %s\n", argv[1], error->message);
-			return EXIT_FAILURE;
-		}
-		if (!fu_firmware_parse(FU_FIRMWARE(cab_firmware),
-				       img_blob,
-				       FWUPD_INSTALL_FLAG_NONE,
-				       &error)) {
-			g_printerr("Failed to parse file: %s\n", error->message);
+		g_autoptr(GFile) file = g_file_new_for_path(argv[1]);
+		if (!fu_firmware_parse_file(FU_FIRMWARE(cab_firmware),
+					    file,
+					    FWUPD_INSTALL_FLAG_NONE,
+					    &error)) {
+			g_printerr("Failed to parse %s: %s\n", argv[1], error->message);
 			return EXIT_FAILURE;
 		}
 		str = fu_firmware_to_string(FU_FIRMWARE(cab_firmware));

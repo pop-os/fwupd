@@ -112,11 +112,6 @@ The `[fwupd]` section can contain the following parameters:
 
   Show data such as device serial numbers which some users may consider private.
 
-**AllowEmulation={{AllowEmulation}}**
-
-  Allow capturing and loading device emulation by logging all USB transfers.
-  Enabling this will greatly increase the amount of memory fwupd uses when upgrading devices.
-
 **TrustedUids={{TrustedUids}}**
 
   UIDs matching these values that call the D-Bus interface should marked as trusted.
@@ -261,6 +256,15 @@ The `[uefi_capsule]` section can contain the following parameters:
 
   **NOTE:** disabling this option is only required when debugging the flash process and normal
   users should not need to change this setting.
+
+**ScreenWidth={{uefi_capsule_ScreenWidth}}**
+
+  Override the screen width in pixels of the EFI framebuffer as used by the UX capsule.
+
+**ScreenHeight={{uefi_capsule_ScreenHeight}}**
+
+  Override the screen height in pixels of the EFI framebuffer as used by the UX capsule.
+
 {% endif %}
 
 {% if plugin_msr %}
@@ -324,6 +328,14 @@ The `[thunderbolt]` section can contain the following parameters:
 **DelayedActivation={{thunderbolt_DelayedActivation}}**
 
   Forces delaying activation until shutdown/logout/reboot.
+
+## DELL_KESTREL PARAMETERS
+
+The `[dell_kestrel]` section can contain the following parameters:
+
+**UpdateOnDisconnect={{dell_kestrel_UpdateOnDisconnect}}**
+
+  Delaying firmware activation until the dock cable is unplugged.
 
 ## TEST PARAMETERS
 

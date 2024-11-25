@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -62,17 +62,17 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 		 * OTP = one time programmable */
 		return g_strdup(_("Intel BootGuard OTP fuse"));
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_CET_ENABLED) == 0) {
 		/* TRANSLATORS: Title: CET = Control-flow Enforcement Technology,
 		 * enabled means supported by the processor */
 		return g_strdup(_("CET Platform"));
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_CET_ACTIVE) == 0) {
 		/* TRANSLATORS: Title: CET = Control-flow Enforcement Technology,
 		 * Utilized by OS means the distribution enabled it*/
 		return g_strdup(_("CET OS Support"));
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_SMAP) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_SMAP) == 0) {
 		/* TRANSLATORS: Title: SMAP = Supervisor Mode Access Prevention */
 		return g_strdup(_("SMAP"));
 	}
@@ -223,6 +223,10 @@ fu_security_attr_get_name(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: Title: Whether BIOS Firmware updates is enabled */
 		return g_strdup(_("BIOS firmware updates"));
 	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SMM_LOCKED) == 0) {
+		/* TRANSLATORS: Title: Whether firmware is locked down */
+		return g_strdup(_("SMM locked down"));
+	}
 	/* we should not get here */
 	return g_strdup(fwupd_security_attr_get_name(attr));
 }
@@ -274,12 +278,12 @@ fu_security_attr_get_title(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: Title: BootGuard is a trademark from Intel */
 		return _("Intel BootGuard Fuse");
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED) == 0 ||
-	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_CET_ENABLED) == 0 ||
+	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_CET_ACTIVE) == 0) {
 		/* TRANSLATORS: Title: CET = Control-flow Enforcement Technology */
 		return _("Control-flow Enforcement Technology");
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_SMAP) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_SMAP) == 0) {
 		/* TRANSLATORS: Title: SMAP = Supervisor Mode Access Prevention */
 		return _("Supervisor Mode Access Prevention");
 	}
@@ -404,6 +408,10 @@ fu_security_attr_get_title(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: Title: Whether BIOS Firmware updates is enabled */
 		return _("BIOS Firmware Updates");
 	}
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SMM_LOCKED) == 0) {
+		/* TRANSLATORS: Title: Whether firmware is locked down */
+		return g_strdup(_("System Management Mode"));
+	}
 	return NULL;
 }
 
@@ -448,13 +456,13 @@ fu_security_attr_get_description(FwupdSecurityAttr *attr)
 		    "Intel BootGuard Error Policy ensures the device does not continue to start if "
 		    "its device software has been tampered with.");
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED) == 0 ||
-	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_CET_ENABLED) == 0 ||
+	    g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_CET_ACTIVE) == 0) {
 		/* TRANSLATORS: longer description */
 		return _("Control-Flow Enforcement Technology detects and prevents certain "
 			 "methods for running malicious software on the device.");
 	}
-	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_INTEL_SMAP) == 0) {
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_SMAP) == 0) {
 		/* TRANSLATORS: longer description */
 		return _("Supervisor Mode Access Prevention ensures critical parts of "
 			 "device memory are not accessed by less secure programs.");
@@ -592,6 +600,10 @@ fu_security_attr_get_description(FwupdSecurityAttr *attr)
 		/* TRANSLATORS: longer description */
 		return _("Enabling firmware updates for the BIOS allows fixing security issues.");
 	}
-
+	if (g_strcmp0(appstream_id, FWUPD_SECURITY_ATTR_ID_AMD_SMM_LOCKED) == 0) {
+		/* TRANSLATORS: longer description */
+		return g_strdup(_("System management mode is used by the firmware to access "
+				  "resident BIOS code and data."));
+	}
 	return NULL;
 }

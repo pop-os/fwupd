@@ -1,13 +1,10 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
-
-#include <linux/hidraw.h>
-#include <linux/input.h>
 
 #include "fu-elantp-common.h"
 #include "fu-elantp-firmware.h"
@@ -15,7 +12,7 @@
 #include "fu-elantp-hid-haptic-device.h"
 
 struct _FuElantpHidDevice {
-	FuUdevDevice parent_instance;
+	FuHidrawDevice parent_instance;
 	guint16 ic_page_count;
 	guint16 ic_type;
 	guint16 iap_type;
@@ -29,9 +26,7 @@ struct _FuElantpHidDevice {
 	guint8 pattern;
 };
 
-G_DEFINE_TYPE(FuElantpHidDevice, fu_elantp_hid_device, FU_TYPE_UDEV_DEVICE)
-
-#define FU_ELANTP_DEVICE_IOCTL_TIMEOUT 5000 /* ms */
+G_DEFINE_TYPE(FuElantpHidDevice, fu_elantp_hid_device, FU_TYPE_HIDRAW_DEVICE)
 
 static gboolean
 fu_elantp_hid_device_detach(FuDevice *device, FuProgress *progress, GError **error);
@@ -40,18 +35,18 @@ static void
 fu_elantp_hid_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuElantpHidDevice *self = FU_ELANTP_HID_DEVICE(device);
-	fu_string_append_kx(str, idt, "ModuleId", self->module_id);
-	fu_string_append_kx(str, idt, "Pattern", self->pattern);
-	fu_string_append_kx(str, idt, "FwPageSize", self->fw_page_size);
-	fu_string_append_kx(str, idt, "IcPageCount", self->ic_page_count);
-	fu_string_append_kx(str, idt, "IapType", self->iap_type);
-	fu_string_append_kx(str, idt, "IapCtrl", self->iap_ctrl);
+	fwupd_codec_string_append_hex(str, idt, "ModuleId", self->module_id);
+	fwupd_codec_string_append_hex(str, idt, "Pattern", self->pattern);
+	fwupd_codec_string_append_hex(str, idt, "FwPageSize", self->fw_page_size);
+	fwupd_codec_string_append_hex(str, idt, "IcPageCount", self->ic_page_count);
+	fwupd_codec_string_append_hex(str, idt, "IapType", self->iap_type);
+	fwupd_codec_string_append_hex(str, idt, "IapCtrl", self->iap_ctrl);
 }
 
 static gboolean
 fu_elantp_hid_device_probe(FuDevice *device, GError **error)
 {
-	guint16 device_id = fu_udev_device_get_model(FU_UDEV_DEVICE(device));
+	guint16 device_id = fu_device_get_pid(device);
 
 	/* check is valid */
 	if (g_strcmp0(fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)), "hidraw") != 0) {
@@ -72,8 +67,8 @@ fu_elantp_hid_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 	}
 
-	/* set the physical ID */
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error);
+	/* success */
+	return TRUE;
 }
 
 static gboolean
@@ -87,13 +82,11 @@ fu_elantp_hid_device_send_cmd(FuElantpHidDevice *self,
 	g_autofree guint8 *buf = NULL;
 	gsize bufsz = rxsz + 3;
 
-	fu_dump_raw(G_LOG_DOMAIN, "SetReport", tx, txsz);
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCSFEATURE(txsz),
-				  tx,
-				  NULL,
-				  FU_ELANTP_DEVICE_IOCTL_TIMEOUT,
-				  error))
+	if (!fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(self),
+					  tx,
+					  txsz,
+					  FU_IOCTL_FLAG_NONE,
+					  error))
 		return FALSE;
 	if (rxsz == 0)
 		return TRUE;
@@ -101,14 +94,12 @@ fu_elantp_hid_device_send_cmd(FuElantpHidDevice *self,
 	/* GetFeature */
 	buf = g_malloc0(bufsz);
 	buf[0] = tx[0]; /* report number */
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCGFEATURE(bufsz),
-				  buf,
-				  NULL,
-				  FU_ELANTP_DEVICE_IOCTL_TIMEOUT,
-				  error))
+	if (!fu_hidraw_device_get_feature(FU_HIDRAW_DEVICE(self),
+					  buf,
+					  bufsz,
+					  FU_IOCTL_FLAG_NONE,
+					  error))
 		return FALSE;
-	fu_dump_raw(G_LOG_DOMAIN, "GetReport", buf, bufsz);
 
 	/* success */
 	return fu_memcpy_safe(rx,
@@ -305,7 +296,6 @@ static gboolean
 fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 {
 	FuElantpHidDevice *self = FU_ELANTP_HID_DEVICE(device);
-	FuUdevDevice *udev_device = FU_UDEV_DEVICE(device);
 	guint16 fwver;
 	guint16 tmp;
 	guint8 buf[2] = {0x0};
@@ -329,7 +319,7 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 	fwver = fu_memread_uint16(buf, G_LITTLE_ENDIAN);
 	if (fwver == 0xFFFF || fwver == ETP_CMD_I2C_FW_VERSION)
 		fwver = 0;
-	fu_device_set_version_u16(device, fwver);
+	fu_device_set_version_raw(device, fwver);
 
 	/* get IAP firmware version */
 	if (!fu_elantp_hid_device_read_cmd(self,
@@ -357,8 +347,8 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 	self->module_id = fu_memread_uint16(buf, G_LITTLE_ENDIAN);
 
 	/* define the extra instance IDs */
-	fu_device_add_instance_u16(device, "VEN", fu_udev_device_get_vendor(udev_device));
-	fu_device_add_instance_u16(device, "DEV", fu_udev_device_get_model(udev_device));
+	fu_device_add_instance_u16(device, "VEN", fu_device_get_vid(device));
+	fu_device_add_instance_u16(device, "DEV", fu_device_get_pid(device));
 	fu_device_add_instance_u16(device, "MOD", self->module_id);
 	if (!fu_device_build_instance_id(device, error, "HIDRAW", "VEN", "DEV", "MOD", NULL))
 		return FALSE;
@@ -435,7 +425,7 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 	if (!fu_elantp_hid_device_read_haptic_enable(self, &error_local)) {
 		g_debug("no haptic device detected: %s", error_local->message);
 	} else {
-		g_autoptr(FuElantpHidHapticDevice) cfg = fu_elantp_haptic_device_new(device);
+		g_autoptr(FuElantpHidHapticDevice) cfg = fu_elantp_hid_haptic_device_new(device);
 		fu_device_add_child(FU_DEVICE(device), FU_DEVICE(cfg));
 	}
 
@@ -449,7 +439,8 @@ fu_elantp_hid_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_elantp_hid_device_prepare_firmware(FuDevice *device,
-				      GBytes *fw,
+				      GInputStream *stream,
+				      FuProgress *progress,
 				      FwupdInstallFlags flags,
 				      GError **error)
 {
@@ -460,7 +451,7 @@ fu_elantp_hid_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware = fu_elantp_firmware_new();
 
 	/* check is compatible with hardware */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	module_id = fu_elantp_firmware_get_module_id(FU_ELANTP_FIRMWARE(firmware));
 	if (self->module_id != module_id) {
@@ -911,18 +902,21 @@ fu_elantp_hid_device_set_quirk_kv(FuDevice *device,
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "ElantpIcPageCount") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->ic_page_count = (guint16)tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "ElantpIapPassword") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->iap_password = (guint16)tmp;
 		return TRUE;
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -937,20 +931,27 @@ fu_elantp_hid_device_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
+static gchar *
+fu_elantp_hid_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint16(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_elantp_hid_device_init(FuElantpHidDevice *self)
 {
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_set_summary(FU_DEVICE(self), "Touchpad");
 	fu_device_add_icon(FU_DEVICE(self), "input-touchpad");
 	fu_device_add_protocol(FU_DEVICE(self), "tw.com.emc.elantp");
 	fu_device_set_vendor(FU_DEVICE(self), "ELAN Microelectronics");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_HEX);
 	fu_device_set_priority(FU_DEVICE(self), 1); /* better than i2c */
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),
-				 FU_UDEV_DEVICE_FLAG_OPEN_READ | FU_UDEV_DEVICE_FLAG_OPEN_WRITE |
-				     FU_UDEV_DEVICE_FLAG_OPEN_NONBLOCK);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_NONBLOCK);
 }
 
 static void
@@ -963,15 +964,16 @@ static void
 fu_elantp_hid_device_class_init(FuElantpHidDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_elantp_hid_device_finalize;
-	klass_device->to_string = fu_elantp_hid_device_to_string;
-	klass_device->attach = fu_elantp_hid_device_attach;
-	klass_device->set_quirk_kv = fu_elantp_hid_device_set_quirk_kv;
-	klass_device->setup = fu_elantp_hid_device_setup;
-	klass_device->reload = fu_elantp_hid_device_setup;
-	klass_device->write_firmware = fu_elantp_hid_device_write_firmware;
-	klass_device->prepare_firmware = fu_elantp_hid_device_prepare_firmware;
-	klass_device->probe = fu_elantp_hid_device_probe;
-	klass_device->set_progress = fu_elantp_hid_device_set_progress;
+	device_class->to_string = fu_elantp_hid_device_to_string;
+	device_class->attach = fu_elantp_hid_device_attach;
+	device_class->set_quirk_kv = fu_elantp_hid_device_set_quirk_kv;
+	device_class->setup = fu_elantp_hid_device_setup;
+	device_class->reload = fu_elantp_hid_device_setup;
+	device_class->write_firmware = fu_elantp_hid_device_write_firmware;
+	device_class->prepare_firmware = fu_elantp_hid_device_prepare_firmware;
+	device_class->probe = fu_elantp_hid_device_probe;
+	device_class->set_progress = fu_elantp_hid_device_set_progress;
+	device_class->convert_version = fu_elantp_hid_device_convert_version;
 }

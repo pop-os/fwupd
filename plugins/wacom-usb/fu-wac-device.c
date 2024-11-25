@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -46,7 +46,7 @@ struct _FuWacDevice {
 G_DEFINE_TYPE(FuWacDevice, fu_wac_device, FU_TYPE_HID_DEVICE)
 
 static gboolean
-fu_wav_device_flash_descriptor_is_wp(const FuWacFlashDescriptor *fd)
+fu_wac_device_flash_descriptor_is_wp(const FuWacFlashDescriptor *fd)
 {
 	return fd->write_sz & 0x8000;
 }
@@ -54,10 +54,13 @@ fu_wav_device_flash_descriptor_is_wp(const FuWacFlashDescriptor *fd)
 static void
 fu_wac_device_flash_descriptor_to_string(FuWacFlashDescriptor *fd, guint idt, GString *str)
 {
-	fu_string_append_kx(str, idt, "StartAddr", fd->start_addr);
-	fu_string_append_kx(str, idt, "BlockSize", fd->block_sz);
-	fu_string_append_kx(str, idt, "WriteSize", fd->write_sz & ~0x8000);
-	fu_string_append_kb(str, idt, "Protected", fu_wav_device_flash_descriptor_is_wp(fd));
+	fwupd_codec_string_append_hex(str, idt, "StartAddr", fd->start_addr);
+	fwupd_codec_string_append_hex(str, idt, "BlockSize", fd->block_sz);
+	fwupd_codec_string_append_hex(str, idt, "WriteSize", fd->write_sz & ~0x8000);
+	fwupd_codec_string_append_bool(str,
+				       idt,
+				       "Protected",
+				       fu_wac_device_flash_descriptor_is_wp(fd));
 }
 
 static void
@@ -68,40 +71,40 @@ fu_wac_device_to_string(FuDevice *device, guint idt, GString *str)
 
 	if (self->firmware_index != 0xffff) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", self->firmware_index);
-		fu_string_append(str, idt, "FwIndex", tmp);
+		fwupd_codec_string_append(str, idt, "FwIndex", tmp);
 	}
 	if (self->loader_ver > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->loader_ver);
-		fu_string_append(str, idt, "LoaderVer", tmp);
+		fwupd_codec_string_append(str, idt, "LoaderVer", tmp);
 	}
 	if (self->read_data_sz > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->read_data_sz);
-		fu_string_append(str, idt, "ReadDataSize", tmp);
+		fwupd_codec_string_append(str, idt, "ReadDataSize", tmp);
 	}
 	if (self->write_word_sz > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->write_word_sz);
-		fu_string_append(str, idt, "WriteWordSize", tmp);
+		fwupd_codec_string_append(str, idt, "WriteWordSize", tmp);
 	}
 	if (self->write_block_sz > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->write_block_sz);
-		fu_string_append(str, idt, "WriteBlockSize", tmp);
+		fwupd_codec_string_append(str, idt, "WriteBlockSize", tmp);
 	}
 	if (self->nr_flash_blocks > 0) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->nr_flash_blocks);
-		fu_string_append(str, idt, "NrFlashBlocks", tmp);
+		fwupd_codec_string_append(str, idt, "NrFlashBlocks", tmp);
 	}
 	if (self->configuration != 0xffff) {
 		g_autofree gchar *tmp = g_strdup_printf("0x%04x", (guint)self->configuration);
-		fu_string_append(str, idt, "Configuration", tmp);
+		fwupd_codec_string_append(str, idt, "Configuration", tmp);
 	}
 	for (guint i = 0; i < self->flash_descriptors->len; i++) {
 		FuWacFlashDescriptor *fd = g_ptr_array_index(self->flash_descriptors, i);
 		g_autofree gchar *title = g_strdup_printf("FlashDescriptor%02u", i);
-		fu_string_append(str, idt, title, NULL);
+		fwupd_codec_string_append(str, idt, title, "");
 		fu_wac_device_flash_descriptor_to_string(fd, idt + 1, str);
 	}
 	status_str = fu_wac_device_status_to_string(self->status_word);
-	fu_string_append(str, idt, "Status", status_str);
+	fwupd_codec_string_append(str, idt, "Status", status_str);
 }
 
 gboolean
@@ -480,7 +483,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 	/* clear all checksums of pages */
 	for (guint i = 0; i < self->flash_descriptors->len; i++) {
 		FuWacFlashDescriptor *fd = g_ptr_array_index(self->flash_descriptors, i);
-		if (fu_wav_device_flash_descriptor_is_wp(fd))
+		if (fu_wac_device_flash_descriptor_is_wp(fd))
 			continue;
 		if (!fu_wac_device_set_checksum_of_block(self, i, 0x0, error))
 			return FALSE;
@@ -497,7 +500,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 		GBytes *blob_block;
 		g_autoptr(GBytes) blob_tmp = NULL;
 
-		if (fu_wav_device_flash_descriptor_is_wp(fd))
+		if (fu_wac_device_flash_descriptor_is_wp(fd))
 			continue;
 		blob_tmp = fu_firmware_write_chunk(img, fd->start_addr, fd->block_sz, NULL);
 		if (blob_tmp == NULL)
@@ -517,7 +520,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 		g_autoptr(FuChunkArray) chunks = NULL;
 
 		/* if page is protected */
-		if (fu_wav_device_flash_descriptor_is_wp(fd))
+		if (fu_wac_device_flash_descriptor_is_wp(fd))
 			continue;
 
 		/* get data for page */
@@ -539,11 +542,19 @@ fu_wac_device_write_firmware(FuDevice *device,
 			return FALSE;
 
 		/* write block in chunks */
-		chunks =
-		    fu_chunk_array_new_from_bytes(blob_block, fd->start_addr, self->write_block_sz);
+		chunks = fu_chunk_array_new_from_bytes(blob_block,
+						       fd->start_addr,
+						       FU_CHUNK_PAGESZ_NONE,
+						       self->write_block_sz);
 		for (guint j = 0; j < fu_chunk_array_length(chunks); j++) {
-			g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, j);
-			g_autoptr(GBytes) blob_chunk = fu_chunk_get_bytes(chk);
+			g_autoptr(FuChunk) chk = NULL;
+			g_autoptr(GBytes) blob_chunk = NULL;
+
+			/* prepare chunk */
+			chk = fu_chunk_array_index(chunks, j, error);
+			if (chk == NULL)
+				return FALSE;
+			blob_chunk = fu_chunk_get_bytes(chk);
 			if (!fu_wac_device_write_block(self,
 						       fu_chunk_get_address(chk),
 						       blob_chunk,
@@ -588,7 +599,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 		guint32 csum_rom;
 
 		/* if page is protected */
-		if (fu_wav_device_flash_descriptor_is_wp(fd))
+		if (fu_wac_device_flash_descriptor_is_wp(fd))
 			continue;
 
 		/* no more written pages */
@@ -660,14 +671,14 @@ fu_wac_device_add_modules_bluetooth(FuWacDevice *self, GError **error)
 	module = fu_wac_module_bluetooth_new(FU_DEVICE(self));
 	fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 	fu_device_set_name(FU_DEVICE(module), name);
-	fu_device_set_version_u16(FU_DEVICE(module), fw_ver);
+	fu_device_set_version_raw(FU_DEVICE(module), fw_ver);
 
 	name_id6 = g_strdup_printf("%s [Legacy Bluetooth Module (ID6)]",
 				   fu_device_get_name(FU_DEVICE(self)));
 	module_id6 = fu_wac_module_bluetooth_id6_new(FU_DEVICE(self));
 	fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module_id6));
 	fu_device_set_name(FU_DEVICE(module_id6), name_id6);
-	fu_device_set_version_u16(FU_DEVICE(module_id6), fw_ver);
+	fu_device_set_version_raw(FU_DEVICE(module_id6), fw_ver);
 	return TRUE;
 }
 
@@ -736,7 +747,7 @@ fu_wac_device_add_modules_cb(FuDevice *device, gpointer user_data, GError **erro
 		if (ver == 0) {
 			g_set_error(error,
 				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "module %u has error state",
 				    fw_type);
 			return FALSE;
@@ -751,6 +762,9 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 {
 	g_autofree gchar *version_bootloader = NULL;
 	guint16 boot_ver;
+	guint8 number_modules;
+	gsize offset = 0;
+	g_autoptr(FuStructModuleDesc) st_desc = NULL;
 	g_autoptr(GByteArray) buf = g_byte_array_new();
 	g_autoptr(GError) error_local = NULL;
 
@@ -762,7 +776,7 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 				  FU_WAC_DEVICE_TIMEOUT / FU_WAC_DEVICE_MODULE_RETRY_DELAY,
 				  buf,
 				  &error_local)) {
-		if (error_local->code != FWUPD_ERROR_INVALID_FILE) {
+		if (error_local->code != FWUPD_ERROR_INVALID_DATA) {
 			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
 		}
@@ -771,27 +785,44 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 	fu_dump_raw(G_LOG_DOMAIN, "modules", buf->data, buf->len);
 
 	/* bootloader version */
-	if (!fu_memread_uint16_safe(buf->data, buf->len, 1, &boot_ver, G_BIG_ENDIAN, error))
+	st_desc = fu_struct_module_desc_parse(buf->data, buf->len, offset, error);
+	if (st_desc == NULL)
 		return FALSE;
+	boot_ver = fu_struct_module_desc_get_bootloader_version(st_desc);
 	version_bootloader = fu_version_from_uint16(boot_ver, FWUPD_VERSION_FORMAT_BCD);
 	fu_device_set_version_bootloader(FU_DEVICE(self), version_bootloader);
 	fu_device_set_version_bootloader_raw(FU_DEVICE(self), boot_ver);
 
-	/* get versions of each module */
-	for (guint8 i = 0; i < buf->data[3]; i++) {
-		guint8 fw_type = buf->data[(i * 4) + 4] & ~0x80;
-		g_autofree gchar *name = NULL;
-		g_autoptr(FuWacModule) module = NULL;
-		guint16 ver;
+	/* no padding */
+	offset += FU_STRUCT_MODULE_DESC_SIZE;
 
-		if (!fu_memread_uint16_safe(buf->data,
-					    buf->len,
-					    (i * 4) + 5,
-					    &ver,
-					    G_BIG_ENDIAN,
-					    error))
+	/* get versions of each module */
+	number_modules = fu_struct_module_desc_get_number_modules(st_desc);
+	for (guint8 i = 0; i < number_modules; i++) {
+		guint32 ver;
+		guint16 ver2;
+		FuWacModuleFwType fw_type;
+		g_autofree gchar *name = NULL;
+		g_autoptr(FuStructModuleItem) st_item = NULL;
+		g_autoptr(FuWacModule) module = NULL;
+
+		st_item = fu_struct_module_item_parse(buf->data, buf->len, offset, error);
+		if (st_item == NULL)
 			return FALSE;
 
+		ver = fu_struct_module_item_get_version(st_item);
+		ver2 = fu_struct_module_item_get_version2(st_item);
+
+		/*
+  		* When ver2 is available and not 0, it is appended to ver in order to make it BCD
+  		* 32bits, otherwise it stays BCD 16bits.
+    		*/
+		if (ver2 != 0xFF && ver2 != 0) {
+			ver = (ver << 16);
+			ver |= (ver2 << 8);
+		}
+
+		fw_type = fu_struct_module_item_get_kind(st_item) & 0x7F;
 		switch (fw_type) {
 		case FU_WAC_MODULE_FW_TYPE_TOUCH:
 			module = fu_wac_module_touch_new(FU_DEVICE(self));
@@ -799,7 +830,7 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 					       fu_device_get_name(FU_DEVICE(self)));
 			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 			fu_device_set_name(FU_DEVICE(module), name);
-			fu_device_set_version_u16(FU_DEVICE(module), ver);
+			fu_device_set_version_raw(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_TOUCH_ID7:
 			module = fu_wac_module_touch_id7_new(FU_DEVICE(self));
@@ -808,7 +839,7 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 			fu_device_set_name(FU_DEVICE(module), name);
 			fu_device_set_summary(FU_DEVICE(module), "ID7");
-			fu_device_set_version_u16(FU_DEVICE(module), ver);
+			fu_device_set_version_raw(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_BLUETOOTH:
 			module = fu_wac_module_bluetooth_new(FU_DEVICE(self));
@@ -816,7 +847,7 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 					       fu_device_get_name(FU_DEVICE(self)));
 			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 			fu_device_set_name(FU_DEVICE(module), name);
-			fu_device_set_version_u16(FU_DEVICE(module), ver);
+			fu_device_set_version_raw(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_BLUETOOTH_ID6:
 			module = fu_wac_module_bluetooth_id6_new(FU_DEVICE(self));
@@ -825,7 +856,7 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 			fu_device_set_name(FU_DEVICE(module), name);
 			fu_device_set_summary(FU_DEVICE(module), "ID6");
-			fu_device_set_version_u16(FU_DEVICE(module), ver);
+			fu_device_set_version_raw(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_SCALER:
 			module = fu_wac_module_scaler_new(FU_DEVICE(self));
@@ -833,7 +864,7 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 					       fu_device_get_name(FU_DEVICE(self)));
 			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 			fu_device_set_name(FU_DEVICE(module), name);
-			fu_device_set_version_u16(FU_DEVICE(module), ver);
+			fu_device_set_version_raw(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_BLUETOOTH_ID9:
 			module = fu_wac_module_bluetooth_id9_new(FU_DEVICE(self));
@@ -842,7 +873,7 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 			fu_device_add_child(FU_DEVICE(self), FU_DEVICE(module));
 			fu_device_set_name(FU_DEVICE(module), name);
 			fu_device_set_summary(FU_DEVICE(module), "ID9");
-			fu_device_set_version_u16(FU_DEVICE(module), ver);
+			fu_device_set_version_raw(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_SUB_CPU:
 			module = fu_wac_module_sub_cpu_new(FU_DEVICE(self));
@@ -853,12 +884,13 @@ fu_wac_device_add_modules(FuWacDevice *self, GError **error)
 			fu_device_set_version_raw(FU_DEVICE(module), ver);
 			break;
 		case FU_WAC_MODULE_FW_TYPE_MAIN:
-			fu_device_set_version_u16(FU_DEVICE(self), ver);
+			fu_device_set_version_raw(FU_DEVICE(self), ver);
 			break;
 		default:
 			g_warning("unknown submodule type 0x%0x", fw_type);
 			break;
 		}
+		offset += FU_STRUCT_MODULE_ITEM_SIZE;
 	}
 	return TRUE;
 }
@@ -877,7 +909,7 @@ fu_wac_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* get version of each sub-module */
-	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_USE_RUNTIME_VERSION)) {
+	if (fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_USE_RUNTIME_VERSION)) {
 		if (!fu_wac_device_add_modules_legacy(self, error))
 			return FALSE;
 	} else {
@@ -892,13 +924,11 @@ fu_wac_device_setup(FuDevice *device, GError **error)
 static gboolean
 fu_wac_device_close(FuDevice *device, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-
 	/* reattach wacom.ko */
-	if (!g_usb_device_release_interface(usb_device,
-					    0x00, /* HID */
-					    G_USB_DEVICE_CLAIM_INTERFACE_BIND_KERNEL_DRIVER,
-					    error)) {
+	if (!fu_usb_device_release_interface(FU_USB_DEVICE(device),
+					     0x00, /* HID */
+					     FU_USB_DEVICE_CLAIM_FLAG_KERNEL_DRIVER,
+					     error)) {
 		g_prefix_error(error, "failed to re-attach interface: ");
 		return FALSE;
 	}
@@ -924,6 +954,15 @@ fu_wac_device_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
 }
 
+static gchar *
+fu_wac_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	if (version_raw > G_MAXUINT16)
+		return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
+
+	return fu_version_from_uint16(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_wac_device_init(FuWacDevice *self)
 {
@@ -935,7 +974,7 @@ fu_wac_device_init(FuWacDevice *self)
 	fu_device_add_icon(FU_DEVICE(self), "input-tablet");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_FLAGS);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_BCD);
 	fu_device_set_install_duration(FU_DEVICE(self), 10);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
@@ -958,11 +997,12 @@ static void
 fu_wac_device_class_init(FuWacDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_wac_device_finalize;
-	klass_device->write_firmware = fu_wac_device_write_firmware;
-	klass_device->to_string = fu_wac_device_to_string;
-	klass_device->setup = fu_wac_device_setup;
-	klass_device->close = fu_wac_device_close;
-	klass_device->set_progress = fu_wac_device_set_progress;
+	device_class->write_firmware = fu_wac_device_write_firmware;
+	device_class->to_string = fu_wac_device_to_string;
+	device_class->setup = fu_wac_device_setup;
+	device_class->close = fu_wac_device_close;
+	device_class->set_progress = fu_wac_device_set_progress;
+	device_class->convert_version = fu_wac_device_convert_version;
 }

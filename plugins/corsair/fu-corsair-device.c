@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Andrii Dushko <andrii.dushko@developex.net>
+ * Copyright 2022 Andrii Dushko <andrii.dushko@developex.net>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -22,6 +22,10 @@
 #define CORSAIR_SUBDEVICE_RECONNECT_PERIOD  1000
 #define CORSAIR_SUBDEVICE_FIRST_POLL_DELAY  2000 /* ms */
 
+#define FU_CORSAIR_DEVICE_FLAG_LEGACY_ATTACH		"legacy-attach"
+#define FU_CORSAIR_DEVICE_FLAG_IS_SUBDEVICE		"is-subdevice"
+#define FU_CORSAIR_DEVICE_FLAG_NO_VERSION_IN_BOOTLOADER "no-version-in-bl"
+
 struct _FuCorsairDevice {
 	FuUsbDevice parent_instance;
 	FuCorsairDeviceKind device_kind;
@@ -38,10 +42,9 @@ static gboolean
 fu_corsair_device_probe(FuDevice *device, GError **error)
 {
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-	GUsbInterface *iface = NULL;
-	GUsbEndpoint *ep1 = NULL;
-	GUsbEndpoint *ep2 = NULL;
+	FuUsbInterface *iface = NULL;
+	FuUsbEndpoint *ep1 = NULL;
+	FuUsbEndpoint *ep2 = NULL;
 	g_autoptr(GPtrArray) ifaces = NULL;
 	g_autoptr(GPtrArray) endpoints = NULL;
 	guint16 cmd_write_size;
@@ -56,7 +59,7 @@ fu_corsair_device_probe(FuDevice *device, GError **error)
 	if (!FU_DEVICE_CLASS(fu_corsair_device_parent_class)->probe(device, error))
 		return FALSE;
 
-	ifaces = g_usb_device_get_interfaces(usb_device, error);
+	ifaces = fu_usb_device_get_interfaces(FU_USB_DEVICE(self), error);
 	if (ifaces == NULL || (ifaces->len < (self->vendor_interface + 1u))) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -66,7 +69,7 @@ fu_corsair_device_probe(FuDevice *device, GError **error)
 	}
 
 	iface = g_ptr_array_index(ifaces, self->vendor_interface);
-	endpoints = g_usb_interface_get_endpoints(iface);
+	endpoints = fu_usb_interface_get_endpoints(iface);
 	/* expecting to have two endpoints for communication */
 	if (endpoints == NULL || endpoints->len != 2) {
 		g_set_error_literal(error,
@@ -78,16 +81,16 @@ fu_corsair_device_probe(FuDevice *device, GError **error)
 
 	ep1 = g_ptr_array_index(endpoints, 0);
 	ep2 = g_ptr_array_index(endpoints, 1);
-	if (g_usb_endpoint_get_direction(ep1) == G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST) {
-		epin = g_usb_endpoint_get_address(ep1);
-		epout = g_usb_endpoint_get_address(ep2);
-		cmd_read_size = g_usb_endpoint_get_maximum_packet_size(ep1);
-		cmd_write_size = g_usb_endpoint_get_maximum_packet_size(ep2);
+	if (fu_usb_endpoint_get_direction(ep1) == FU_USB_DIRECTION_DEVICE_TO_HOST) {
+		epin = fu_usb_endpoint_get_address(ep1);
+		epout = fu_usb_endpoint_get_address(ep2);
+		cmd_read_size = fu_usb_endpoint_get_maximum_packet_size(ep1);
+		cmd_write_size = fu_usb_endpoint_get_maximum_packet_size(ep2);
 	} else {
-		epin = g_usb_endpoint_get_address(ep2);
-		epout = g_usb_endpoint_get_address(ep1);
-		cmd_read_size = g_usb_endpoint_get_maximum_packet_size(ep2);
-		cmd_write_size = g_usb_endpoint_get_maximum_packet_size(ep1);
+		epin = fu_usb_endpoint_get_address(ep2);
+		epout = fu_usb_endpoint_get_address(ep1);
+		cmd_read_size = fu_usb_endpoint_get_maximum_packet_size(ep2);
+		cmd_write_size = fu_usb_endpoint_get_maximum_packet_size(ep1);
 	}
 
 	if (cmd_write_size > FU_CORSAIR_MAX_CMD_SIZE || cmd_read_size > FU_CORSAIR_MAX_CMD_SIZE) {
@@ -100,7 +103,7 @@ fu_corsair_device_probe(FuDevice *device, GError **error)
 
 	fu_usb_device_add_interface(FU_USB_DEVICE(self), self->vendor_interface);
 
-	self->bp = fu_corsair_bp_new(usb_device, FALSE);
+	self->bp = fu_corsair_bp_new(FU_USB_DEVICE(device), FALSE);
 	fu_corsair_bp_set_cmd_size(self->bp, cmd_write_size, cmd_read_size);
 	fu_corsair_bp_set_endpoints(self->bp, epin, epout);
 
@@ -108,10 +111,9 @@ fu_corsair_device_probe(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_corsair_poll_subdevice(FuDevice *device, gboolean *subdevice_added, GError **error)
+fu_corsair_device_poll_subdevice(FuDevice *device, gboolean *subdevice_added, GError **error)
 {
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	guint32 subdevices;
 	g_autoptr(FuCorsairDevice) child = NULL;
 	g_autoptr(FuCorsairBp) child_bp = NULL;
@@ -129,13 +131,15 @@ fu_corsair_poll_subdevice(FuDevice *device, gboolean *subdevice_added, GError **
 		return TRUE;
 	}
 
-	child_bp = fu_corsair_bp_new(usb_device, TRUE);
-	fu_device_incorporate(FU_DEVICE(child_bp), FU_DEVICE(self->bp));
+	child_bp = fu_corsair_bp_new(FU_USB_DEVICE(device), TRUE);
+	fu_device_incorporate(FU_DEVICE(child_bp),
+			      FU_DEVICE(self->bp),
+			      FU_DEVICE_INCORPORATE_FLAG_ALL);
 
 	child = fu_corsair_device_new(self, child_bp);
 	fu_device_add_instance_id(FU_DEVICE(child), self->subdevice_id);
 	fu_device_set_logical_id(FU_DEVICE(child), "subdevice");
-	fu_device_add_internal_flag(FU_DEVICE(child), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(child), FU_DEVICE_PRIVATE_FLAG_USE_PARENT_FOR_OPEN);
 
 	if (!fu_device_probe(FU_DEVICE(child), error))
 		return FALSE;
@@ -249,7 +253,7 @@ fu_corsair_device_setup(FuDevice *device, GError **error)
 		 * Without this delay a subdevice may be not present even if it is
 		 * turned on. */
 		fu_device_sleep(device, CORSAIR_SUBDEVICE_FIRST_POLL_DELAY);
-		if (!fu_corsair_poll_subdevice(device, &subdevice_added, &local_error)) {
+		if (!fu_corsair_device_poll_subdevice(device, &subdevice_added, &local_error)) {
 			g_warning("error polling subdevice: %s", local_error->message);
 		} else {
 			/* start polling if a subdevice was not added */
@@ -273,7 +277,7 @@ fu_corsair_device_reload(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_corsair_is_subdevice_connected_cb(FuDevice *device, gpointer user_data, GError **error)
+fu_corsair_device_is_subdevice_connected_cb(FuDevice *device, gpointer user_data, GError **error)
 {
 	guint32 subdevices = 0;
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
@@ -294,7 +298,7 @@ fu_corsair_is_subdevice_connected_cb(FuDevice *device, gpointer user_data, GErro
 }
 
 static gboolean
-fu_corsair_reconnect_subdevice(FuDevice *device, GError **error)
+fu_corsair_device_reconnect_subdevice(FuDevice *device, GError **error)
 {
 	FuDevice *parent = fu_device_get_parent(device);
 
@@ -307,7 +311,7 @@ fu_corsair_reconnect_subdevice(FuDevice *device, GError **error)
 	fu_device_sleep(device, CORSAIR_SUBDEVICE_REBOOT_DELAY);
 
 	if (!fu_device_retry_full(parent,
-				  fu_corsair_is_subdevice_connected_cb,
+				  fu_corsair_device_is_subdevice_connected_cb,
 				  CORSAIR_SUBDEVICE_RECONNECT_RETRIES,
 				  CORSAIR_SUBDEVICE_RECONNECT_PERIOD,
 				  NULL,
@@ -320,7 +324,7 @@ fu_corsair_reconnect_subdevice(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_corsair_ensure_mode(FuDevice *device, FuCorsairDeviceMode mode, GError **error)
+fu_corsair_device_ensure_mode(FuDevice *device, FuCorsairDeviceMode mode, GError **error)
 {
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
 	FuCorsairDeviceMode current_mode;
@@ -347,7 +351,7 @@ fu_corsair_ensure_mode(FuDevice *device, FuCorsairDeviceMode mode, GError **erro
 	}
 
 	if (fu_device_has_private_flag(device, FU_CORSAIR_DEVICE_FLAG_IS_SUBDEVICE)) {
-		if (!fu_corsair_reconnect_subdevice(device, error)) {
+		if (!fu_corsair_device_reconnect_subdevice(device, error)) {
 			g_prefix_error(error, "subdevice did not reconnect: ");
 			return FALSE;
 		}
@@ -366,13 +370,13 @@ fu_corsair_ensure_mode(FuDevice *device, FuCorsairDeviceMode mode, GError **erro
 static gboolean
 fu_corsair_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 {
-	return fu_corsair_ensure_mode(device, FU_CORSAIR_DEVICE_MODE_APPLICATION, error);
+	return fu_corsair_device_ensure_mode(device, FU_CORSAIR_DEVICE_MODE_APPLICATION, error);
 }
 
 static gboolean
 fu_corsair_device_detach(FuDevice *device, FuProgress *progress, GError **error)
 {
-	return fu_corsair_ensure_mode(device, FU_CORSAIR_DEVICE_MODE_BOOTLOADER, error);
+	return fu_corsair_device_ensure_mode(device, FU_CORSAIR_DEVICE_MODE_BOOTLOADER, error);
 }
 
 static gboolean
@@ -383,10 +387,10 @@ fu_corsair_device_write_firmware(FuDevice *device,
 				 GError **error)
 {
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
-	g_autoptr(GBytes) firmware_bytes = fu_firmware_get_bytes(firmware, error);
+	g_autoptr(GInputStream) stream = fu_firmware_get_stream(firmware, error);
 
-	if (firmware_bytes == NULL) {
-		g_prefix_error(error, "cannot get firmware data: ");
+	if (stream == NULL) {
+		g_prefix_error(error, "cannot get firmware stream: ");
 		return FALSE;
 	}
 
@@ -395,7 +399,7 @@ fu_corsair_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 5, NULL);
 
 	if (!fu_device_write_firmware(FU_DEVICE(self->bp),
-				      firmware_bytes,
+				      stream,
 				      fu_progress_get_child(progress),
 				      flags,
 				      error)) {
@@ -422,15 +426,12 @@ static void
 fu_corsair_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
-
-	FU_DEVICE_CLASS(fu_corsair_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append(str,
-			 idt,
-			 "DeviceKind",
-			 fu_corsair_device_kind_to_string(self->device_kind));
-
-	fu_device_add_string(FU_DEVICE(self->bp), idt, str);
+	fwupd_codec_string_append(str,
+				  idt,
+				  "DeviceKind",
+				  fu_corsair_device_kind_to_string(self->device_kind));
+	if (self->bp != NULL)
+		fu_device_add_string(FU_DEVICE(self->bp), idt, str);
 }
 
 static void
@@ -444,7 +445,10 @@ fu_corsair_device_set_progress(FuDevice *self, FuProgress *progress)
 }
 
 static gboolean
-fu_corsair_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *value, GError **error)
+fu_corsair_device_set_quirk_kv(FuDevice *device,
+			       const gchar *key,
+			       const gchar *value,
+			       GError **error)
 {
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(device);
 	guint64 vendor_interface;
@@ -455,14 +459,19 @@ fu_corsair_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *value, 
 			return TRUE;
 
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "unsupported device in quirk");
 		return FALSE;
 	}
 	if (g_strcmp0(key, "CorsairVendorInterfaceId") == 0) {
 		/* clapped to uint8 because bNumInterfaces is 8 bits long */
-		if (!fu_strtoull(value, &vendor_interface, 0, 255, error)) {
+		if (!fu_strtoull(value,
+				 &vendor_interface,
+				 0,
+				 G_MAXUINT8,
+				 FU_INTEGER_BASE_AUTO,
+				 error)) {
 			g_prefix_error(error, "cannot parse CorsairVendorInterface: ");
 			return FALSE;
 		}
@@ -474,7 +483,10 @@ fu_corsair_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *value, 
 		return TRUE;
 	}
 
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -490,7 +502,7 @@ fu_corsair_device_poll(FuDevice *device, GError **error)
 		return FALSE;
 	}
 
-	if (!fu_corsair_poll_subdevice(device, &subdevice_added, error)) {
+	if (!fu_corsair_device_poll_subdevice(device, &subdevice_added, error)) {
 		return FALSE;
 	}
 
@@ -512,7 +524,8 @@ fu_corsair_device_finalize(GObject *object)
 	FuCorsairDevice *self = FU_CORSAIR_DEVICE(object);
 
 	g_free(self->subdevice_id);
-	g_object_unref(self->bp);
+	if (self->bp != NULL)
+		g_object_unref(self->bp);
 
 	G_OBJECT_CLASS(fu_corsair_device_parent_class)->finalize(object);
 }
@@ -520,19 +533,19 @@ fu_corsair_device_finalize(GObject *object)
 static void
 fu_corsair_device_class_init(FuCorsairDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	klass_device->poll = fu_corsair_device_poll;
-	klass_device->probe = fu_corsair_device_probe;
-	klass_device->set_quirk_kv = fu_corsair_set_quirk_kv;
-	klass_device->setup = fu_corsair_device_setup;
-	klass_device->reload = fu_corsair_device_reload;
-	klass_device->attach = fu_corsair_device_attach;
-	klass_device->detach = fu_corsair_device_detach;
-	klass_device->write_firmware = fu_corsair_device_write_firmware;
-	klass_device->to_string = fu_corsair_device_to_string;
-	klass_device->set_progress = fu_corsair_device_set_progress;
+	device_class->poll = fu_corsair_device_poll;
+	device_class->probe = fu_corsair_device_probe;
+	device_class->set_quirk_kv = fu_corsair_device_set_quirk_kv;
+	device_class->setup = fu_corsair_device_setup;
+	device_class->reload = fu_corsair_device_reload;
+	device_class->attach = fu_corsair_device_attach;
+	device_class->detach = fu_corsair_device_detach;
+	device_class->write_firmware = fu_corsair_device_write_firmware;
+	device_class->to_string = fu_corsair_device_to_string;
+	device_class->set_progress = fu_corsair_device_set_progress;
 
 	object_class->finalize = fu_corsair_device_finalize;
 }
@@ -545,22 +558,17 @@ fu_corsair_device_init(FuCorsairDevice *device)
 	self->device_kind = FU_CORSAIR_DEVICE_KIND_MOUSE;
 	self->vendor_interface = CORSAIR_DEFAULT_VENDOR_INTERFACE_ID;
 
+	fu_device_register_private_flag(FU_DEVICE(device), FU_CORSAIR_DEVICE_FLAG_IS_SUBDEVICE);
+	fu_device_register_private_flag(FU_DEVICE(device), FU_CORSAIR_DEVICE_FLAG_LEGACY_ATTACH);
 	fu_device_register_private_flag(FU_DEVICE(device),
-					FU_CORSAIR_DEVICE_FLAG_IS_SUBDEVICE,
-					"is-subdevice");
-	fu_device_register_private_flag(FU_DEVICE(device),
-					FU_CORSAIR_DEVICE_FLAG_LEGACY_ATTACH,
-					"legacy-attach");
-	fu_device_register_private_flag(FU_DEVICE(device),
-					FU_CORSAIR_DEVICE_FLAG_NO_VERSION_IN_BOOTLOADER,
-					"no-version-in-bl");
+					FU_CORSAIR_DEVICE_FLAG_NO_VERSION_IN_BOOTLOADER);
 
 	fu_device_set_remove_delay(FU_DEVICE(device), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_set_version_format(FU_DEVICE(device), FWUPD_VERSION_FORMAT_TRIPLET);
 
 	fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 
-	fu_device_add_internal_flag(FU_DEVICE(device), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(device), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_add_protocol(FU_DEVICE(device), "com.corsair.bp");
 }
 
@@ -568,14 +576,12 @@ static FuCorsairDevice *
 fu_corsair_device_new(FuCorsairDevice *parent, FuCorsairBp *bp)
 {
 	FuCorsairDevice *self = NULL;
-	FuDevice *device = FU_DEVICE(parent);
 
 	self = g_object_new(FU_TYPE_CORSAIR_DEVICE,
 			    "context",
-			    fu_device_get_context(device),
-			    "usb_device",
-			    fu_usb_device_get_dev(FU_USB_DEVICE(device)),
+			    fu_device_get_context(FU_DEVICE(parent)),
 			    NULL);
+	fu_device_incorporate(FU_DEVICE(self), FU_DEVICE(parent), FU_DEVICE_INCORPORATE_FLAG_ALL);
 	self->bp = g_object_ref(bp);
 	return self;
 }

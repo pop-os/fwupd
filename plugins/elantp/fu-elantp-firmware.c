@@ -1,13 +1,14 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-elantp-common.h"
 #include "fu-elantp-firmware.h"
+#include "fu-elantp-struct.h"
 
 struct _FuElantpFirmware {
 	FuFirmwareClass parent_instance;
@@ -73,80 +74,58 @@ fu_elantp_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbB
 }
 
 static gboolean
-fu_elantp_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_elantp_firmware_validate(FuFirmware *firmware,
+			    GInputStream *stream,
+			    gsize offset,
+			    GError **error)
 {
 	FuElantpFirmware *self = FU_ELANTP_FIRMWARE(firmware);
-	gsize bufsz = g_bytes_get_size(fw);
-	const guint8 *buf = g_bytes_get_data(fw, NULL);
+	gsize streamsz = 0;
 
-	for (gsize i = 0; i < sizeof(elantp_signature); i++) {
-		guint8 tmp = 0x0;
-		if (!fu_memread_uint8_safe(buf,
-					   bufsz,
-					   bufsz - sizeof(elantp_signature) + i,
-					   &tmp,
-					   error))
-			return FALSE;
-		if (tmp != elantp_signature[i]) {
-			g_set_error(error,
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (streamsz < FU_STRUCT_ELANTP_FIRMWARE_HDR_SIZE) {
+		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INVALID_FILE,
-				    "signature[%u] invalid: got 0x%2x, expected 0x%02x",
-				    (guint)i,
-				    tmp,
-				    elantp_signature[i]);
+				    "stream was too small");
+		return FALSE;
+	}
+	if (!fu_struct_elantp_firmware_hdr_validate_stream(stream,
+							   streamsz -
+							       FU_STRUCT_ELANTP_FIRMWARE_HDR_SIZE,
+							   error))
+		return FALSE;
+	if (self->force_table_addr != 0) {
+		if (!fu_struct_elantp_firmware_hdr_validate_stream(
+			stream,
+			self->force_table_addr - 1 + FU_STRUCT_ELANTP_FIRMWARE_HDR_SIZE,
+			error))
 			return FALSE;
-		}
 	}
 
-	if (self->force_table_addr != 0) {
-		for (gsize i = 0; i < sizeof(elantp_signature); i++) {
-			guint8 tmp = 0x0;
-			if (!fu_memread_uint8_safe(buf,
-						   bufsz,
-						   self->force_table_addr - 1 -
-						       sizeof(elantp_signature) + i,
-						   &tmp,
-						   error))
-				return FALSE;
-			if (tmp != elantp_signature[i]) {
-				g_set_error(error,
-					    FWUPD_ERROR,
-					    FWUPD_ERROR_INVALID_FILE,
-					    "signature[%u] invalid: got 0x%2x, expected 0x%02x",
-					    (guint)i,
-					    tmp,
-					    elantp_signature[i]);
-				return FALSE;
-			}
-		}
-	}
 	/* success */
 	return TRUE;
 }
 
 static gboolean
 fu_elantp_firmware_parse(FuFirmware *firmware,
-			 GBytes *fw,
-			 gsize offset,
+			 GInputStream *stream,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuElantpFirmware *self = FU_ELANTP_FIRMWARE(firmware);
-	gsize bufsz = 0;
 	guint16 iap_addr_wrds;
 	guint16 force_table_addr_wrds;
 	guint16 module_id_wrds;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autoptr(GError) error_local = NULL;
 
 	/* presumably in words */
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    offset + ETP_IAP_START_ADDR_WRDS * 2,
-				    &iap_addr_wrds,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u16(stream,
+				      ETP_IAP_START_ADDR_WRDS * 2,
+				      &iap_addr_wrds,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
 	if (iap_addr_wrds < ETP_IAP_START_ADDR_WRDS || iap_addr_wrds > 0x7FFF) {
 		g_set_error(error,
@@ -159,12 +138,11 @@ fu_elantp_firmware_parse(FuFirmware *firmware,
 	self->iap_addr = iap_addr_wrds * 2;
 
 	/* read module ID */
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    offset + self->iap_addr,
-				    &module_id_wrds,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u16(stream,
+				      self->iap_addr,
+				      &module_id_wrds,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
 	if (module_id_wrds > 0x7FFF) {
 		g_set_error(error,
@@ -174,48 +152,43 @@ fu_elantp_firmware_parse(FuFirmware *firmware,
 			    module_id_wrds);
 		return FALSE;
 	}
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    offset + module_id_wrds * 2,
-				    &self->module_id,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u16(stream,
+				      module_id_wrds * 2,
+				      &self->module_id,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    offset + ETP_IC_TYPE_ADDR_WRDS * 2,
-				    &self->ic_type,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u16(stream,
+				      ETP_IC_TYPE_ADDR_WRDS * 2,
+				      &self->ic_type,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    offset + ETP_IAP_VER_ADDR_WRDS * 2,
-				    &self->iap_ver,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u16(stream,
+				      ETP_IAP_VER_ADDR_WRDS * 2,
+				      &self->iap_ver,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
 
 	if (self->ic_type != 0x12 && self->ic_type != 0x13)
 		return TRUE;
 
 	if (self->iap_ver <= 4) {
-		if (!fu_memread_uint16_safe(buf,
-					    bufsz,
-					    offset + (self->iap_addr + 6),
-					    &force_table_addr_wrds,
-					    G_LITTLE_ENDIAN,
-					    &error_local)) {
+		if (!fu_input_stream_read_u16(stream,
+					      self->iap_addr + 6,
+					      &force_table_addr_wrds,
+					      G_LITTLE_ENDIAN,
+					      &error_local)) {
 			g_debug("forcetable address wrong: %s", error_local->message);
 			return TRUE;
 		}
 	} else {
-		if (!fu_memread_uint16_safe(buf,
-					    bufsz,
-					    offset + ETP_IAP_FORCETABLE_ADDR_V5 * 2,
-					    &force_table_addr_wrds,
-					    G_LITTLE_ENDIAN,
-					    &error_local)) {
+		if (!fu_input_stream_read_u16(stream,
+					      ETP_IAP_FORCETABLE_ADDR_V5 * 2,
+					      &force_table_addr_wrds,
+					      G_LITTLE_ENDIAN,
+					      &error_local)) {
 			g_debug("forcetable address wrong: %s", error_local->message);
 			return TRUE;
 		}
@@ -304,12 +277,12 @@ fu_elantp_firmware_init(FuElantpFirmware *self)
 static void
 fu_elantp_firmware_class_init(FuElantpFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_elantp_firmware_check_magic;
-	klass_firmware->parse = fu_elantp_firmware_parse;
-	klass_firmware->build = fu_elantp_firmware_build;
-	klass_firmware->write = fu_elantp_firmware_write;
-	klass_firmware->export = fu_elantp_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_elantp_firmware_validate;
+	firmware_class->parse = fu_elantp_firmware_parse;
+	firmware_class->build = fu_elantp_firmware_build;
+	firmware_class->write = fu_elantp_firmware_write;
+	firmware_class->export = fu_elantp_firmware_export;
 }
 
 FuFirmware *

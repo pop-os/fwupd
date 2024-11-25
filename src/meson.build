@@ -10,8 +10,7 @@ engine_dep = [
   libxmlb,
   giounix,
   gmodule,
-  gudev,
-  gusb,
+  libusb,
   libjsonglib,
   polkit,
   sqlite,
@@ -24,8 +23,6 @@ if get_option('passim').allowed()
 endif
 
 client_dep = [
-  gudev,
-  gusb,
   libcurl,
   libjcat,
   libjsonglib,
@@ -42,7 +39,6 @@ endif
 
 fwupd_engine_src = [
   'fu-cabinet.c',
-  'fu-cabinet-common.c',
   'fu-debug.c',
   'fu-device-list.c',
   'fu-engine.c',
@@ -56,17 +52,19 @@ fwupd_engine_src = [
   'fu-engine-requirements.c',
   'fu-release-common.c',
   'fu-plugin-list.c',
+  'fu-remote.c',
   'fu-remote-list.c',
   'fu-security-attr-common.c',
+  'fu-usb-backend.c',
   'fu-client.c',
   'fu-client-list.c',
 ] + systemd_src
 
-if gudev.found()
-  fwupd_engine_src += 'fu-udev-backend.c'
+if giounix.found()
+  fwupd_engine_src += 'fu-unix-seekable-input-stream.c'
 endif
-if gusb.found()
-  fwupd_engine_src += 'fu-usb-backend.c'
+if enable_udev
+  fwupd_engine_src += 'fu-udev-backend.c'
 endif
 if bluez.allowed()
   fwupd_engine_src += 'fu-bluez-backend.c'
@@ -147,43 +145,6 @@ fwupdmgr = executable(
   install: true,
   install_rpath: libdir_pkg,
   install_dir: bindir
-)
-
-# for compatibility
-if get_option('compat_cli')
-  install_symlink('fwupdagent',
-    install_dir: join_paths(get_option('prefix'), get_option('bindir')),
-    pointing_to: 'fwupdmgr',
-  )
-endif
-endif
-
-if offline.allowed()
-fwupdoffline = executable(
-  'fwupdoffline',
-  sources: [
-    'fu-history.c',
-    'fu-offline.c',
-    'fu-spawn.c',
-    systemd_src
-  ],
-  include_directories: [
-    root_incdir,
-    fwupd_incdir,
-    fwupdplugin_incdir,
-  ],
-  dependencies: [
-    libfwupd_deps,
-    client_dep,
-  ],
-  link_with: [
-    fwupd,
-    fwupdplugin,
-    fwupdutil,
-  ],
-  install: true,
-  install_rpath: libdir_pkg,
-  install_dir: join_paths(libexecdir, 'fwupd')
 )
 endif
 
@@ -296,32 +257,6 @@ if build_daemon
       )
       man_md += ['"fwupdmgr.md"']
   endif
-  if get_option('compat_cli')
-    if get_option('man')
-      custom_target('fwupdagent.1',
-        input: 'fwupdagent.md',
-        output: 'fwupdagent.1',
-        command: [
-          generate_man, '@INPUT@', '-o', '@OUTPUT@',
-          '--replace', 'PACKAGE_VERSION', fwupd_version,
-        ],
-        install: true,
-        install_dir: join_paths(mandir, 'man1'),
-      )
-    endif
-    if build_docs
-      md_targets += custom_target('fwupdagent.md',
-        input: 'fwupdagent.md',
-        output: 'fwupdagent.md',
-        command: [
-          generate_man, '@INPUT@', '-o', '@OUTPUT@',
-          '--replace', 'PACKAGE_VERSION', fwupd_version,
-          '--md',
-        ],
-      )
-      man_md += ['"fwupdagent.md"']
-    endif
-  endif
 endif
 if build_standalone
   if get_option('man')
@@ -376,6 +311,7 @@ executable(
   sources: [
     daemon_loader_src,
     'fu-daemon.c',
+    'fu-dbus-daemon.c',
   ],
   include_directories: [
     root_incdir,
@@ -391,9 +327,6 @@ executable(
     fwupdengine,
     plugin_libs,
   ],
-  c_args: [
-    '-DFU_OFFLINE_DESTDIR=""',
-  ],
   install: true,
   install_rpath: libdir_pkg,
   install_dir: daemon_dir
@@ -403,6 +336,7 @@ endif
 
 if get_option('tests')
   env = environment()
+  env.set('G_DEBUG', 'fatal-criticals')
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
   env.set('FWUPD_LOCALSTATEDIR', '/tmp/fwupd-self-test/var')
@@ -414,8 +348,8 @@ if get_option('tests')
     multiple_rels_test_firmware,
     noreqs_test_firmware,
     plugins_hdr,
+    firmware_xml_gz_jcat,
     sources: [
-      'fu-spawn.c',
       'fu-self-test.c',
     ],
     include_directories: [

@@ -1,4 +1,4 @@
-if gudev.found() and gusb.found()
+if enable_udev
 cargs = ['-DG_LOG_DOMAIN="FuPluginNordicHid"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -18,3 +18,7 @@ plugin_builtins += static_library('fu_plugin_nordic_hid',
   dependencies: plugin_deps,
 )
 endif
+
+device_tests += files('tests/nordic-hid-nrf52840-mcuboot.json',
+                      'tests/nordic-hid-nrf52840-b0.json',
+)

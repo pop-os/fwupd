@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -16,7 +16,7 @@ G_DECLARE_FINAL_TYPE(FuVliPdParadeDevice,
 		     fu_vli_pd_parade_device,
 		     FU,
 		     VLI_PD_PARADE_DEVICE,
-		     FuDevice)
+		     FuUsbDevice)
 
 FuDevice *
 fu_vli_pd_parade_device_new(FuVliDevice *parent);

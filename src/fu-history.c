@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuHistory"
@@ -19,6 +19,7 @@
 
 #include "fu-device-private.h"
 #include "fu-history.h"
+#include "fu-release.h"
 #include "fu-security-attr-common.h"
 
 /*
@@ -34,14 +35,17 @@
  * v10	add version_format to history
  * v11	no changes, bumped due to bungled migration to v10
  * v12	add install_duration to history
+ * v13	add release_flags to history
+ * v14	create table emulation_tag
  */
-#define FU_HISTORY_CURRENT_SCHEMA_VERSION 12
+#define FU_HISTORY_CURRENT_SCHEMA_VERSION 14
 
 static void
 fu_history_finalize(GObject *object);
 
 struct _FuHistory {
 	GObject parent_instance;
+	FuContext *ctx;
 #ifdef HAVE_SQLITE
 	sqlite3 *db;
 #endif
@@ -60,11 +64,11 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 {
 	const gchar *tmp;
 	FuDevice *device;
-	g_autoptr(FwupdRelease) release = fwupd_release_new();
+	g_autoptr(FuRelease) release = fu_release_new();
 
 	/* create new result */
 	device = fu_device_new(NULL);
-	fu_device_add_release(device, release);
+	fu_device_add_release(device, FWUPD_RELEASE(release));
 
 	/* device_id */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 0);
@@ -74,7 +78,7 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 	/* checksum */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 1);
 	if (tmp != NULL)
-		fwupd_release_add_checksum(release, tmp);
+		fu_release_add_checksum(release, tmp);
 
 	/* plugin */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 2);
@@ -82,10 +86,10 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 		fu_device_set_plugin(device, tmp);
 
 	/* device_created */
-	fu_device_set_created(device, sqlite3_column_int64(stmt, 3));
+	fu_device_set_created_usec(device, sqlite3_column_int64(stmt, 3) * G_USEC_PER_SEC);
 
 	/* device_modified */
-	fu_device_set_modified(device, sqlite3_column_int64(stmt, 4));
+	fu_device_set_modified_usec(device, sqlite3_column_int64(stmt, 4) * G_USEC_PER_SEC);
 
 	/* display_name */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 5);
@@ -95,7 +99,7 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 	/* filename */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 6);
 	if (tmp != NULL)
-		fwupd_release_set_filename(release, tmp);
+		fu_release_set_filename(release, tmp);
 
 	/* flags */
 	fu_device_set_flags(device, sqlite3_column_int64(stmt, 7) | FWUPD_DEVICE_FLAG_HISTORICAL);
@@ -108,7 +112,7 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 			g_auto(GStrv) kv = g_strsplit(split[i], "=", 2);
 			if (g_strv_length(kv) != 2)
 				continue;
-			fwupd_release_add_metadata_item(release, kv[0], kv[1]);
+			fu_release_add_metadata_item(release, kv[0], kv[1]);
 		}
 	}
 
@@ -127,7 +131,7 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 	/* version_new */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 12);
 	if (tmp != NULL)
-		fwupd_release_set_version(release, tmp);
+		fu_release_set_version(release, tmp);
 
 	/* version_old */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 13);
@@ -142,23 +146,26 @@ fu_history_device_from_stmt(sqlite3_stmt *stmt)
 	/* protocol */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 15);
 	if (tmp != NULL)
-		fwupd_release_set_protocol(release, tmp);
+		fu_release_set_protocol(release, tmp);
 
 	/* release_id */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 16);
 	if (tmp != NULL)
-		fwupd_release_set_id(release, tmp);
+		fu_release_set_id(release, tmp);
 
 	/* appstream_id */
 	tmp = (const gchar *)sqlite3_column_text(stmt, 17);
 	if (tmp != NULL)
-		fwupd_release_set_appstream_id(release, tmp);
+		fu_release_set_appstream_id(release, tmp);
 
 	/* version_format */
 	fu_device_set_version_format(device, sqlite3_column_int(stmt, 18));
 
 	/* install_duration */
 	fu_device_set_install_duration(device, sqlite3_column_int(stmt, 19));
+
+	/* release flags */
+	fu_release_set_flags(release, sqlite3_column_int(stmt, 20));
 
 	/* success */
 	return device;
@@ -204,8 +211,8 @@ fu_history_create_database(FuHistory *self, GError **error)
 			  "filename TEXT,"
 			  "display_name TEXT,"
 			  "plugin TEXT,"
-			  "device_created INTEGER DEFAULT 0,"
-			  "device_modified INTEGER DEFAULT 0,"
+			  "device_created INTEGER DEFAULT 0,"  /* seconds */
+			  "device_modified INTEGER DEFAULT 0," /* seconds */
 			  "checksum TEXT DEFAULT NULL,"
 			  "flags INTEGER DEFAULT 0,"
 			  "metadata TEXT DEFAULT NULL,"
@@ -217,7 +224,8 @@ fu_history_create_database(FuHistory *self, GError **error)
 			  "release_id TEXT DEFAULT NULL,"
 			  "appstream_id TEXT DEFAULT NULL,"
 			  "version_format INTEGER DEFAULT 0,"
-			  "install_duration INTEGER DEFAULT 0);"
+			  "install_duration INTEGER DEFAULT 0,"
+			  "release_flags INTEGER DEFAULT 0);"
 			  "CREATE TABLE IF NOT EXISTS approved_firmware ("
 			  "checksum TEXT);"
 			  "CREATE TABLE IF NOT EXISTS blocked_firmware ("
@@ -226,6 +234,8 @@ fu_history_create_database(FuHistory *self, GError **error)
 			  "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
 			  "hsi_details TEXT DEFAULT NULL,"
 			  "hsi_score TEXT DEFAULT NULL);"
+			  "CREATE TABLE emulation_tag (device_id TEXT);"
+			  "CREATE UNIQUE INDEX idx_device_id ON emulation_tag (device_id);"
 			  "COMMIT;",
 			  NULL,
 			  NULL,
@@ -264,7 +274,7 @@ fu_history_migrate_database_v1(FuHistory *self, GError **error)
 			  "device_id, update_state, update_error, filename, "
 			  "display_name, plugin, device_created, device_modified, "
 			  "checksum, flags, metadata, guid_default, version_old, "
-			  "version_new, NULL, NULL, NULL, NULL, NULL, 0 FROM history_old;"
+			  "version_new, NULL, NULL, NULL, NULL, NULL, 0, 0 FROM history_old;"
 			  "DROP TABLE history_old;",
 			  NULL,
 			  NULL,
@@ -429,6 +439,44 @@ fu_history_migrate_database_v10(FuHistory *self, GError **error)
 	return TRUE;
 }
 
+static gboolean
+fu_history_migrate_database_v11(FuHistory *self, GError **error)
+{
+	gint rc;
+	rc = sqlite3_exec(self->db,
+			  "ALTER TABLE history ADD COLUMN release_flags INTEGER DEFAULT 0;",
+			  NULL,
+			  NULL,
+			  NULL);
+	if (rc != SQLITE_OK)
+		g_debug("ignoring database error: %s", sqlite3_errmsg(self->db));
+	return TRUE;
+}
+
+static gboolean
+fu_history_migrate_database_v12(FuHistory *self, GError **error)
+{
+	gint rc;
+	rc = sqlite3_exec(
+	    self->db,
+	    "BEGIN TRANSACTION;"
+	    "CREATE TABLE IF NOT EXISTS emulation_tag (device_id TEXT);"
+	    "CREATE UNIQUE INDEX IF NOT EXISTS idx_device_id ON emulation_tag (device_id);"
+	    "COMMIT;",
+	    NULL,
+	    NULL,
+	    NULL);
+	if (rc != SQLITE_OK) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "Failed to create table: %s",
+			    sqlite3_errmsg(self->db));
+		return FALSE;
+	}
+	return TRUE;
+}
+
 /* returns 0 if database is not initialized */
 static guint
 fu_history_get_schema_version(FuHistory *self)
@@ -505,6 +553,14 @@ fu_history_create_or_migrate(FuHistory *self, guint schema_ver, GError **error)
 	/* fall through */
 	case 11:
 		if (!fu_history_migrate_database_v10(self, error))
+			return FALSE;
+	/* fall through */
+	case 12:
+		if (!fu_history_migrate_database_v11(self, error))
+			return FALSE;
+	/* fall through */
+	case 13:
+		if (!fu_history_migrate_database_v12(self, error))
 			return FALSE;
 		/* no longer fall through */
 		break;
@@ -622,7 +678,7 @@ fu_history_load(FuHistory *self, GError **error)
 }
 
 static gchar *
-_convert_hash_to_string(GHashTable *hash)
+fu_history_convert_hash_to_string(GHashTable *hash)
 {
 	GString *str = g_string_new(NULL);
 	g_autoptr(GList) keys = g_hash_table_get_keys(hash);
@@ -641,7 +697,6 @@ static FwupdDeviceFlags
 fu_history_get_device_flags_filtered(FuDevice *device)
 {
 	FwupdDeviceFlags flags = fu_device_get_flags(device);
-	flags &= ~FWUPD_DEVICE_FLAG_REGISTERED;
 	flags &= ~FWUPD_DEVICE_FLAG_SUPPORTED;
 	return flags;
 }
@@ -707,7 +762,7 @@ fu_history_modify_device(FuHistory *self, FuDevice *device, GError **error)
 	    fwupd_checksum_get_by_kind(fu_device_get_checksums(device), G_CHECKSUM_SHA1),
 	    -1,
 	    SQLITE_STATIC);
-	sqlite3_bind_int64(stmt, 7, fu_device_get_modified(device));
+	sqlite3_bind_int64(stmt, 7, fu_device_get_modified_usec(device) / G_USEC_PER_SEC);
 	sqlite3_bind_int64(stmt, 8, fu_device_get_install_duration(device));
 
 	if (!fu_history_stmt_exec(self, stmt, NULL, error))
@@ -728,7 +783,7 @@ fu_history_modify_device(FuHistory *self, FuDevice *device, GError **error)
  * fu_history_modify_device_release:
  * @self: a #FuHistory
  * @device: a #FuDevice
- * @release: a #FwupdRelease
+ * @release: a #FuRelease
  * @error: (nullable): optional return location for an error
  *
  * Modify a device in the history database, also changing metadata from the new release.
@@ -740,7 +795,7 @@ fu_history_modify_device(FuHistory *self, FuDevice *device, GError **error)
 gboolean
 fu_history_modify_device_release(FuHistory *self,
 				 FuDevice *device,
-				 FwupdRelease *release,
+				 FuRelease *release,
 				 GError **error)
 {
 #ifdef HAVE_SQLITE
@@ -756,7 +811,7 @@ fu_history_modify_device_release(FuHistory *self,
 		return FALSE;
 
 	/* metadata is stored as a simple string */
-	metadata = _convert_hash_to_string(fwupd_release_get_metadata(release));
+	metadata = fu_history_convert_hash_to_string(fu_release_get_metadata(release));
 
 	/* overwrite entry if it exists */
 	g_debug("modifying device %s [%s]", fu_device_get_name(device), fu_device_get_id(device));
@@ -792,7 +847,7 @@ fu_history_modify_device_release(FuHistory *self,
 	    fwupd_checksum_get_by_kind(fu_device_get_checksums(device), G_CHECKSUM_SHA1),
 	    -1,
 	    SQLITE_STATIC);
-	sqlite3_bind_int64(stmt, 7, fu_device_get_modified(device));
+	sqlite3_bind_int64(stmt, 7, fu_device_get_modified_usec(device) / G_USEC_PER_SEC);
 	sqlite3_bind_text(stmt, 8, metadata, -1, SQLITE_STATIC);
 
 	return fu_history_stmt_exec(self, stmt, NULL, error);
@@ -815,7 +870,7 @@ fu_history_modify_device_release(FuHistory *self,
  * Since: 1.0.4
  **/
 gboolean
-fu_history_add_device(FuHistory *self, FuDevice *device, FwupdRelease *release, GError **error)
+fu_history_add_device(FuHistory *self, FuDevice *device, FuRelease *release, GError **error)
 {
 #ifdef HAVE_SQLITE
 	const gchar *checksum_device;
@@ -826,7 +881,7 @@ fu_history_add_device(FuHistory *self, FuDevice *device, FwupdRelease *release, 
 
 	g_return_val_if_fail(FU_IS_HISTORY(self), FALSE);
 	g_return_val_if_fail(FU_IS_DEVICE(device), FALSE);
-	g_return_val_if_fail(FWUPD_IS_RELEASE(release), FALSE);
+	g_return_val_if_fail(FU_IS_RELEASE(release), FALSE);
 
 	/* lazy load */
 	if (!fu_history_load(self, error))
@@ -836,15 +891,12 @@ fu_history_add_device(FuHistory *self, FuDevice *device, FwupdRelease *release, 
 	if (!fu_history_remove_device(self, device, error))
 		return FALSE;
 	g_debug("add device %s [%s]", fu_device_get_name(device), fu_device_get_id(device));
-	if (release != NULL) {
-		GPtrArray *checksums = fwupd_release_get_checksums(release);
-		checksum = fwupd_checksum_get_by_kind(checksums, G_CHECKSUM_SHA1);
-	}
+	checksum = fwupd_checksum_get_by_kind(fu_release_get_checksums(release), G_CHECKSUM_SHA1);
 	checksum_device =
 	    fwupd_checksum_get_by_kind(fu_device_get_checksums(device), G_CHECKSUM_SHA1);
 
 	/* metadata is stored as a simple string */
-	metadata = _convert_hash_to_string(fwupd_release_get_metadata(release));
+	metadata = fu_history_convert_hash_to_string(fu_release_get_metadata(release));
 
 	/* add */
 	rc = sqlite3_prepare_v2(self->db,
@@ -867,9 +919,10 @@ fu_history_add_device(FuHistory *self, FuDevice *device, FwupdRelease *release, 
 				"release_id,"
 				"appstream_id,"
 				"version_format,"
-				"install_duration) "
+				"install_duration,"
+				"release_flags) "
 				"VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,"
-				"?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+				"?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
 				-1,
 				&stmt,
 				NULL);
@@ -885,22 +938,23 @@ fu_history_add_device(FuHistory *self, FuDevice *device, FwupdRelease *release, 
 	sqlite3_bind_int(stmt, 2, fu_device_get_update_state(device));
 	sqlite3_bind_text(stmt, 3, fu_device_get_update_error(device), -1, SQLITE_STATIC);
 	sqlite3_bind_int64(stmt, 4, fu_history_get_device_flags_filtered(device));
-	sqlite3_bind_text(stmt, 5, fwupd_release_get_filename(release), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 5, fu_release_get_filename(release), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 6, checksum, -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 7, fu_device_get_name(device), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 8, fu_device_get_plugin(device), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 9, fu_device_get_guid_default(device), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 10, metadata, -1, SQLITE_STATIC);
-	sqlite3_bind_int64(stmt, 11, fu_device_get_created(device));
-	sqlite3_bind_int64(stmt, 12, fu_device_get_modified(device));
+	sqlite3_bind_int64(stmt, 11, fu_device_get_created_usec(device) / G_USEC_PER_SEC);
+	sqlite3_bind_int64(stmt, 12, fu_device_get_modified_usec(device) / G_USEC_PER_SEC);
 	sqlite3_bind_text(stmt, 13, fu_device_get_version(device), -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 14, fwupd_release_get_version(release), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 14, fu_release_get_version(release), -1, SQLITE_STATIC);
 	sqlite3_bind_text(stmt, 15, checksum_device, -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 16, fwupd_release_get_protocol(release), -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 17, fwupd_release_get_id(release), -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 18, fwupd_release_get_appstream_id(release), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 16, fu_release_get_protocol(release), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 17, fu_release_get_id(release), -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 18, fu_release_get_appstream_id(release), -1, SQLITE_STATIC);
 	sqlite3_bind_int(stmt, 19, fu_device_get_version_format(device));
 	sqlite3_bind_int(stmt, 20, fu_device_get_install_duration(device));
+	sqlite3_bind_int(stmt, 21, fu_release_get_flags(release));
 	return fu_history_stmt_exec(self, stmt, NULL, error);
 #else
 	return TRUE;
@@ -1044,7 +1098,8 @@ fu_history_get_device_by_id(FuHistory *self, const gchar *device_id, GError **er
 				"release_id, "
 				"appstream_id, "
 				"version_format, "
-				"install_duration FROM history WHERE "
+				"install_duration, "
+				"release_flags FROM history WHERE "
 				"device_id = ?1 ORDER BY device_created DESC "
 				"LIMIT 1",
 				-1,
@@ -1121,7 +1176,8 @@ fu_history_get_devices(FuHistory *self, GError **error)
 				"release_id, "
 				"appstream_id, "
 				"version_format, "
-				"install_duration FROM history "
+				"install_duration, "
+				"release_flags FROM history "
 				"ORDER BY device_modified ASC;",
 				-1,
 				&stmt,
@@ -1521,7 +1577,6 @@ fu_history_get_security_attrs(FuHistory *self, guint limit, GError **error)
 		guint hash;
 		const gchar *timestamp;
 		g_autoptr(FuSecurityAttrs) attrs = fu_security_attrs_new();
-		g_autoptr(JsonParser) parser = NULL;
 		g_autoptr(GDateTime) created_dt = NULL;
 		g_autoptr(GTimeZone) tz_utc = g_time_zone_new_utc();
 
@@ -1544,11 +1599,8 @@ fu_history_get_security_attrs(FuHistory *self, guint limit, GError **error)
 		old_hash = hash;
 
 		/* parse JSON */
-		parser = json_parser_new();
 		g_debug("parsing %s", timestamp);
-		if (!json_parser_load_from_data(parser, json, -1, error))
-			return NULL;
-		if (!fu_security_attrs_from_json(attrs, json_parser_get_root(parser), error))
+		if (!fwupd_codec_from_json_string(FWUPD_CODEC(attrs), json, error))
 			return NULL;
 
 		/* parse timestamp */
@@ -1581,11 +1633,212 @@ fu_history_get_security_attrs(FuHistory *self, guint limit, GError **error)
 	return g_steal_pointer(&array);
 }
 
+/**
+ * fu_history_has_emulation_tag:
+ * @self: a #FuHistory
+ * @device_id: (nullable): a device ID, or %NULL for "any"
+ * @error: (nullable): optional return location for an error
+ *
+ * Returns if the device has been tagged for emulation.
+ *
+ * Returns: %TRUE if tagged
+ *
+ * Since: 2.0.1
+ **/
+gboolean
+fu_history_has_emulation_tag(FuHistory *self, const gchar *device_id, GError **error)
+{
+#ifdef HAVE_SQLITE
+	gint rc;
+	g_autoptr(sqlite3_stmt) stmt = NULL;
+
+	g_return_val_if_fail(FU_IS_HISTORY(self), FALSE);
+
+	/* lazy load */
+	if (self->db == NULL) {
+		if (!fu_history_load(self, error))
+			return FALSE;
+	}
+
+	/* get tagged device ID */
+	if (device_id != NULL) {
+		rc = sqlite3_prepare_v2(self->db,
+					"SELECT device_id FROM emulation_tag "
+					"WHERE device_id = ?1 LIMIT 1;",
+					-1,
+					&stmt,
+					NULL);
+	} else {
+		rc = sqlite3_prepare_v2(self->db,
+					"SELECT device_id FROM emulation_tag LIMIT 1;",
+					-1,
+					&stmt,
+					NULL);
+	}
+	if (rc != SQLITE_OK) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "failed to prepare SQL to get emulation tag: %s",
+			    sqlite3_errmsg(self->db));
+		return FALSE;
+	}
+	sqlite3_bind_text(stmt, 1, device_id, -1, SQLITE_STATIC);
+	rc = sqlite3_step(stmt);
+	if (rc == SQLITE_DONE) {
+		if (device_id == NULL) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_FOUND,
+					    "no devices were found for emulation tag");
+			return FALSE;
+		}
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "%s was not found for emulation tag",
+			    device_id);
+		return FALSE;
+	}
+	if (rc != SQLITE_ROW) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_WRITE,
+			    "failed to execute prepared statement: %s",
+			    sqlite3_errmsg(self->db));
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+#else
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no sqlite support");
+	return FALSE;
+#endif
+}
+
+/**
+ * fu_history_add_emulation_tag:
+ * @self: a #FuHistory
+ * @device_id: a device ID
+ * @error: (nullable): optional return location for an error
+ *
+ * Add a hash of a device to be tagged for emulation to the database
+ *
+ * Returns: #TRUE for success, #FALSE for failure
+ *
+ * Since: 2.0.1
+ **/
+gboolean
+fu_history_add_emulation_tag(FuHistory *self, const gchar *device_id, GError **error)
+{
+#ifdef HAVE_SQLITE
+	gint rc;
+	g_autoptr(sqlite3_stmt) stmt = NULL;
+
+	g_return_val_if_fail(FU_IS_HISTORY(self), FALSE);
+	g_return_val_if_fail(device_id != NULL, FALSE);
+
+	/* lazy load */
+	if (!fu_history_load(self, error))
+		return FALSE;
+
+	/* add */
+	rc = sqlite3_prepare_v2(self->db,
+				"INSERT INTO emulation_tag (device_id) "
+				"VALUES (?1)",
+				-1,
+				&stmt,
+				NULL);
+	if (rc != SQLITE_OK) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "failed to prepare SQL to insert emulation tag: %s",
+			    sqlite3_errmsg(self->db));
+		return FALSE;
+	}
+	sqlite3_bind_text(stmt, 1, device_id, -1, SQLITE_STATIC);
+	return fu_history_stmt_exec(self, stmt, NULL, error);
+#else
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no sqlite support");
+	return FALSE;
+#endif
+}
+
+/**
+ * fu_history_remove_emulation_tag:
+ * @self: a #FuHistory
+ * @error: (nullable): optional return location for an error
+ *
+ * Remove a hash of a device to be tagged for emulation from the database
+ *
+ * Returns: #TRUE for success, #FALSE for failure
+ *
+ * Since: 2.0.1
+ **/
+gboolean
+fu_history_remove_emulation_tag(FuHistory *self, const gchar *device_id, GError **error)
+{
+#ifdef HAVE_SQLITE
+	gint rc;
+	g_autoptr(sqlite3_stmt) stmt = NULL;
+
+	g_return_val_if_fail(FU_IS_HISTORY(self), FALSE);
+	g_return_val_if_fail(device_id != NULL, FALSE);
+
+	/* lazy load */
+	if (!fu_history_load(self, error))
+		return FALSE;
+
+	/* remove entries */
+	rc = sqlite3_prepare_v2(self->db,
+				"DELETE FROM emulation_tag WHERE device_id = ?1;",
+				-1,
+				&stmt,
+				NULL);
+	if (rc != SQLITE_OK) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "Failed to prepare SQL to delete emulation tag: %s",
+			    sqlite3_errmsg(self->db));
+		return FALSE;
+	}
+	sqlite3_bind_text(stmt, 1, device_id, -1, SQLITE_STATIC);
+	return fu_history_stmt_exec(self, stmt, NULL, error);
+#else
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no sqlite support");
+	return FALSE;
+#endif
+}
+
+static void
+fu_history_housekeeping_cb(FuContext *ctx, FuHistory *self)
+{
+#ifdef HAVE_SQLITE
+	sqlite3_release_memory(G_MAXINT32);
+	if (self->db != NULL)
+		sqlite3_db_release_memory(self->db);
+#endif
+}
+
+static void
+fu_history_dispose(GObject *object)
+{
+	FuHistory *self = FU_HISTORY(object);
+	if (self->ctx != NULL)
+		g_signal_handlers_disconnect_by_data(self->ctx, self);
+	g_clear_object(&self->ctx);
+	G_OBJECT_CLASS(fu_history_parent_class)->dispose(object);
+}
+
 static void
 fu_history_class_init(FuHistoryClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_history_finalize;
+	object_class->dispose = fu_history_dispose;
 }
 
 static void
@@ -1613,9 +1866,11 @@ fu_history_finalize(GObject *object)
  * Since: 1.0.4
  **/
 FuHistory *
-fu_history_new(void)
+fu_history_new(FuContext *ctx)
 {
 	FuHistory *self;
 	self = g_object_new(FU_TYPE_PENDING, NULL);
+	self->ctx = g_object_ref(ctx);
+	g_signal_connect(self->ctx, "housekeeping", G_CALLBACK(fu_history_housekeeping_cb), self);
 	return FU_HISTORY(self);
 }

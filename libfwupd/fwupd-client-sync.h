@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -82,10 +82,16 @@ fwupd_client_uninhibit(FwupdClient *self,
 		       GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 gboolean
 fwupd_client_modify_config(FwupdClient *self,
+			   const gchar *section,
 			   const gchar *key,
 			   const gchar *value,
 			   GCancellable *cancellable,
 			   GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
+gboolean
+fwupd_client_reset_config(FwupdClient *self,
+			  const gchar *section,
+			  GCancellable *cancellable,
+			  GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 gboolean
 fwupd_client_activate(FwupdClient *self,
 		      GCancellable *cancellable,
@@ -143,22 +149,14 @@ fwupd_client_install_bytes(FwupdClient *self,
 			   FwupdInstallFlags install_flags,
 			   GCancellable *cancellable,
 			   GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 3);
-G_DEPRECATED_FOR(fwupd_client_install_release2)
 gboolean
 fwupd_client_install_release(FwupdClient *self,
 			     FwupdDevice *device,
 			     FwupdRelease *release,
 			     FwupdInstallFlags install_flags,
+			     FwupdClientDownloadFlags download_flags,
 			     GCancellable *cancellable,
-			     GError **error) G_GNUC_NON_NULL(1, 2, 3);
-gboolean
-fwupd_client_install_release2(FwupdClient *self,
-			      FwupdDevice *device,
-			      FwupdRelease *release,
-			      FwupdInstallFlags install_flags,
-			      FwupdClientDownloadFlags download_flags,
-			      GCancellable *cancellable,
-			      GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2, 3);
+			     GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2, 3);
 gboolean
 fwupd_client_update_metadata(FwupdClient *self,
 			     const gchar *remote_id,
@@ -174,18 +172,12 @@ fwupd_client_update_metadata_bytes(FwupdClient *self,
 				   GCancellable *cancellable,
 				   GError **error) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1, 2, 3, 4);
-G_DEPRECATED_FOR(fwupd_client_refresh_remote2)
 gboolean
 fwupd_client_refresh_remote(FwupdClient *self,
 			    FwupdRemote *remote,
+			    FwupdClientDownloadFlags download_flags,
 			    GCancellable *cancellable,
-			    GError **error) G_GNUC_NON_NULL(1, 2);
-gboolean
-fwupd_client_refresh_remote2(FwupdClient *self,
-			     FwupdRemote *remote,
-			     FwupdClientDownloadFlags download_flags,
-			     GCancellable *cancellable,
-			     GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
+			    GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 gboolean
 fwupd_client_modify_remote(FwupdClient *self,
 			   const gchar *remote_id,
@@ -273,13 +265,14 @@ fwupd_client_upload_report(FwupdClient *self,
 			   GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2, 3);
 gboolean
 fwupd_client_emulation_load(FwupdClient *self,
-			    GBytes *data,
+			    const gchar *filename,
 			    GCancellable *cancellable,
 			    GError **error) G_GNUC_NON_NULL(1, 2);
-GBytes *
+gboolean
 fwupd_client_emulation_save(FwupdClient *self,
+			    const gchar *filename,
 			    GCancellable *cancellable,
-			    GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1);
+			    GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 gboolean
 fwupd_client_fix_host_security_attr(FwupdClient *self,
 				    const gchar *appstream_id,

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -61,8 +61,8 @@ fu_hailuck_tp_device_cmd_cb(FuDevice *device, gpointer user_data, GError **error
 		success_tmp = req->type - 0x10;
 	if (buf[0] != FU_HAILUCK_REPORT_ID_SHORT || buf[1] != success_tmp) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "report mismatch for type=0x%02x[%s]: "
 			    "expected=0x%02x, received=0x%02x",
 			    req->type,
@@ -83,7 +83,7 @@ fu_hailuck_tp_device_write_firmware(FuDevice *device,
 {
 	FuDevice *parent = fu_device_get_parent(device);
 	const guint block_size = 1024;
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 	FuHailuckTpDeviceReq req = {
 	    .type = 0xff,
@@ -100,8 +100,8 @@ fu_hailuck_tp_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "pass");
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* erase */
@@ -114,10 +114,21 @@ fu_hailuck_tp_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* write */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, block_size);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						block_size,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) buf = g_byte_array_new();
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* write block */
 		fu_byte_array_append_uint8(buf, FU_HAILUCK_REPORT_ID_LONG);
@@ -133,8 +144,8 @@ fu_hailuck_tp_device_write_firmware(FuDevice *device,
 		fu_byte_array_append_uint16(buf, 0xCCCC, G_LITTLE_ENDIAN);
 		if (buf->len != block_size + 16) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "packet mismatch: len=0x%04x, expected=0x%04x",
 				    buf->len,
 				    block_size + 16);
@@ -220,7 +231,7 @@ fu_hailuck_tp_device_init(FuHailuckTpDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_USE_PARENT_FOR_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_PARENT_FOR_OPEN);
 	fu_device_add_icon(FU_DEVICE(self), "input-touchpad");
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 }
@@ -228,10 +239,10 @@ fu_hailuck_tp_device_init(FuHailuckTpDevice *self)
 static void
 fu_hailuck_tp_device_class_init(FuHailuckTpDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_hailuck_tp_device_write_firmware;
-	klass_device->probe = fu_hailuck_tp_device_probe;
-	klass_device->set_progress = fu_hailuck_tp_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_hailuck_tp_device_write_firmware;
+	device_class->probe = fu_hailuck_tp_device_probe;
+	device_class->set_progress = fu_hailuck_tp_device_set_progress;
 }
 
 FuHailuckTpDevice *

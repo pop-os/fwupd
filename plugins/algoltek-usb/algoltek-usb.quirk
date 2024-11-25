@@ -13,11 +13,13 @@ Plugin = algoltek_usb
 # AG9411
 [USB\VID_25A4&PID_9411]
 Plugin = algoltek_usb
-
-# AG9412
-[USB\VID_25A4&PID_9412]
-Plugin = algoltek_usb
+Flags = ers-skip-first-sector
 
 # AG9421
 [USB\VID_25A4&PID_9421]
+Plugin = algoltek_usb
+Flags = ers-skip-first-sector
+
+# j5create USB-C JCD373
+[USB\VID_2DE5&PID_373E]
 Plugin = algoltek_usb

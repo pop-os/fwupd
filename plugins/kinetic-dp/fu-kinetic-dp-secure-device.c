@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Jeffrey Lin <jlin@kinet-ic.com>
- * Copyright (C) 2022 Hai Su <hsu@kinet-ic.com>
+ * Copyright 2021 Jeffrey Lin <jlin@kinet-ic.com>
+ * Copyright 2022 Hai Su <hsu@kinet-ic.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -47,15 +47,14 @@ static void
 fu_kinetic_dp_secure_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuKineticDpSecureDevice *self = FU_KINETIC_DP_SECURE_DEVICE(device);
-
-	/* FuKineticDpDevice->to_string */
-	FU_DEVICE_CLASS(fu_kinetic_dp_secure_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append_kx(str, idt, "ReadFlashProgTime", self->read_flash_prog_time);
-	fu_string_append_kx(str, idt, "FlashId", self->flash_id);
-	fu_string_append_kx(str, idt, "FlashSize", self->flash_size);
-	fu_string_append_kx(str, idt, "IspSecureAuthMode", self->isp_secure_auth_mode);
-	fu_string_append(str, idt, "FlashBank", fu_kinetic_dp_bank_to_string(self->flash_bank));
+	fwupd_codec_string_append_hex(str, idt, "ReadFlashProgTime", self->read_flash_prog_time);
+	fwupd_codec_string_append_hex(str, idt, "FlashId", self->flash_id);
+	fwupd_codec_string_append_hex(str, idt, "FlashSize", self->flash_size);
+	fwupd_codec_string_append_hex(str, idt, "IspSecureAuthMode", self->isp_secure_auth_mode);
+	fwupd_codec_string_append(str,
+				  idt,
+				  "FlashBank",
+				  fu_kinetic_dp_bank_to_string(self->flash_bank));
 }
 
 static gboolean
@@ -136,14 +135,14 @@ fu_kinetic_dp_secure_device_send_kt_prop_cmd_cb(FuDevice *device,
 			status &= DPCD_KT_COMMAND_MASK;
 			if (status == (guint8)FU_KINETIC_DP_DPCD_STS_CRC_FAILURE) {
 				g_set_error_literal(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_FAILED_HANDLED,
+						    FWUPD_ERROR,
+						    FWUPD_ERROR_INVALID_DATA,
 						    "chunk data CRC failed: ");
 				return FALSE;
 			}
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "Invalid value in DPCD_KT_CMD_STATUS_REG: 0x%x",
 				    status);
 			return FALSE;
@@ -154,8 +153,8 @@ fu_kinetic_dp_secure_device_send_kt_prop_cmd_cb(FuDevice *device,
 
 	/* failed */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_FAILED,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_INVALID_DATA,
 		    "waiting for prop cmd, got %s",
 		    fu_kinetic_dp_dpcd_to_string(status));
 	return FALSE;
@@ -209,8 +208,8 @@ fu_kinetic_dp_secure_device_read_dpcd_reply_data_reg(FuKineticDpSecureDevice *se
 
 	if (bufsz < read_data_len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_ARGUMENT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "buffer size [%u] is not enough to read DPCD_ISP_REPLY_DATA_REG [%u]",
 			    (guint)bufsz,
 			    read_data_len);
@@ -243,8 +242,8 @@ fu_kinetic_dp_secure_device_write_dpcd_reply_data_reg(FuKineticDpSecureDevice *s
 
 	if (len > DPCD_SIZE_ISP_REPLY_DATA_REG) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "length bigger than DPCD_SIZE_ISP_REPLY_DATA_REG [%u]",
 			    (guint)len);
 		return FALSE;
@@ -324,18 +323,15 @@ fu_kinetic_dp_secure_device_enter_code_loading_mode(FuKineticDpSecureDevice *sel
  * Returns: CRC value
  **/
 static guint16
-fu_kinetic_dp_secure_device_crc16(const guint8 *buf, guint16 bufsize)
+fu_kinetic_dp_secure_device_crc16(const guint8 *buf, gsize bufsize)
 {
 	guint16 crc = 0x1021;
-	guint16 i, crc_tmp;
-	guint8 data, flag, j;
+	for (gsize i = 0; i < bufsize; i++) {
+		guint16 crc_tmp = crc;
+		guint8 data = buf[i];
 
-	for (i = 0; i < bufsize; i++) {
-		crc_tmp = crc;
-		data = buf[i];
-
-		for (j = 8; j; j--) {
-			flag = data ^ (crc_tmp >> 8);
+		for (guint8 j = 8; j; j--) {
+			guint8 flag = data ^ (crc_tmp >> 8);
 			crc_tmp <<= 1;
 			if (flag & 0x80)
 				crc_tmp ^= 0x1021;
@@ -352,20 +348,26 @@ fu_kinetic_dp_secure_device_send_chunk(FuKineticDpSecureDevice *self,
 				       FuProgress *progress,
 				       GError **error)
 {
-	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(fw, 0x0, 16);
+	g_autoptr(FuChunkArray) chunks =
+	    fu_chunk_array_new_from_bytes(fw, FU_CHUNK_ADDR_OFFSET_NONE, FU_CHUNK_PAGESZ_NONE, 16);
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_dpaux_device_write(FU_DPAUX_DEVICE(self),
 					   DPCD_ADDR_KT_AUX_WIN + fu_chunk_get_address(chk),
 					   fu_chunk_get_data(chk),
 					   fu_chunk_get_data_sz(chk),
 					   FU_KINETIC_DP_DEVICE_TIMEOUT,
 					   error)) {
-			g_prefix_error(error, "failed at 0x%x: ", fu_chunk_get_address(chk));
+			g_prefix_error(error, "failed at 0x%x: ", (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 		fu_progress_step_done(progress);
@@ -383,26 +385,34 @@ fu_kinetic_dp_secure_device_send_payload(FuKineticDpSecureDevice *self,
 					 FuProgress *progress,
 					 GError **error)
 {
-	g_autoptr(FuChunkArray) chunks =
-	    fu_chunk_array_new_from_bytes(fw, 0x0, DPCD_SIZE_KT_AUX_WIN);
+	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(fw,
+								       FU_CHUNK_ADDR_OFFSET_NONE,
+								       FU_CHUNK_PAGESZ_NONE,
+								       DPCD_SIZE_KT_AUX_WIN);
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(GBytes) fw_chk = NULL;
 		guint8 buf_crc16[0x4] = {0x0};
 		guint8 status = 0;
-		g_autoptr(GBytes) fw_chk = fu_chunk_get_bytes(chk);
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* send a maximum 32KB chunk of payload to AUX window */
+		fw_chk = fu_chunk_get_bytes(chk);
 		if (!fu_kinetic_dp_secure_device_send_chunk(self,
 							    fw_chk,
 							    fu_progress_get_child(progress),
 							    error)) {
 			g_prefix_error(error,
 				       "failed to AUX write at 0x%x: ",
-				       fu_chunk_get_address(chk));
+				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 
@@ -462,22 +472,22 @@ fu_kinetic_dp_secure_device_wait_dpcd_cmd_cleared_cb(FuDevice *device,
 		 * it means that target responded with failure */
 		if (status == FU_KINETIC_DP_DPCD_STS_INVALID_IMAGE) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_FAILED_HANDLED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
 					    "invalid ISP driver");
 			return FALSE;
 		}
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
 				    "failed to execute ISP driver");
 		return FALSE;
 	}
 
 	/* failed */
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "waiting for sink to clear status");
 	return FALSE;
 }
@@ -526,8 +536,8 @@ fu_kinetic_dp_secure_device_execute_isp_drv(FuKineticDpSecureDevice *self, GErro
 	if (status != FU_KINETIC_DP_DPCD_STS_SECURE_ENABLED &&
 	    status != FU_KINETIC_DP_DPCD_STS_SECURE_DISABLED) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_TIMED_OUT,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_TIMED_OUT,
 				    "waiting for ISP driver ready failed!");
 		return FALSE;
 	}
@@ -554,14 +564,14 @@ fu_kinetic_dp_secure_device_execute_isp_drv(FuKineticDpSecureDevice *self, GErro
 	if (self->flash_size == 0) {
 		if (self->flash_id > 0) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_NOT_SUPPORTED,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
 					    "SPI flash not supported");
 			return FALSE;
 		}
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "SPI flash not connected");
 		return FALSE;
 	}
@@ -803,16 +813,16 @@ fu_kinetic_dp_secure_device_install_fw_images_cb(FuDevice *device,
 		if ((status & FU_KINETIC_DP_DPCD_CMD_INSTALL_IMAGES) > 0)
 			return TRUE;
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED_HANDLED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "failed to install images");
 		return FALSE;
 	}
 
 	/* failed */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_FAILED,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_INVALID_DATA,
 		    "waiting for status, got %s",
 		    fu_kinetic_dp_dpcd_to_string(status));
 	return FALSE;
@@ -876,7 +886,7 @@ fu_kinetic_dp_secure_device_get_flash_bank_idx(FuKineticDpSecureDevice *self, GE
 	g_debug("secure aux got active flash bank 0x%x (0=BankA, 1=BankB, 2=TotalBanks)", res);
 	self->flash_bank = (FuKineticDpBank)res;
 	if (self->flash_bank == FU_KINETIC_DP_BANK_NONE) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "bank not NONE");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "bank not NONE");
 		return FALSE;
 	}
 
@@ -1011,18 +1021,18 @@ fu_kinetic_dp_secure_device_init(FuKineticDpSecureDevice *self)
 	self->isp_secure_auth_mode = TRUE;
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_KINETIC_DP_SECURE_FIRMWARE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
-	fu_device_retry_add_recovery(FU_DEVICE(self), G_IO_ERROR, G_IO_ERROR_FAILED_HANDLED, NULL);
+	fu_device_retry_add_recovery(FU_DEVICE(self), FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, NULL);
 }
 
 static void
 fu_kinetic_dp_secure_device_class_init(FuKineticDpSecureDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_kinetic_dp_secure_device_to_string;
-	klass_device->prepare = fu_kinetic_dp_secure_device_prepare;
-	klass_device->cleanup = fu_kinetic_dp_secure_device_cleanup;
-	klass_device->setup = fu_kinetic_dp_secure_device_setup;
-	klass_device->write_firmware = fu_kinetic_dp_secure_device_write_firmware;
-	klass_device->set_progress = fu_kinetic_dp_secure_device_set_progress;
-	klass_device->convert_version = fu_kinetic_dp_secure_device_convert_version;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_kinetic_dp_secure_device_to_string;
+	device_class->prepare = fu_kinetic_dp_secure_device_prepare;
+	device_class->cleanup = fu_kinetic_dp_secure_device_cleanup;
+	device_class->setup = fu_kinetic_dp_secure_device_setup;
+	device_class->write_firmware = fu_kinetic_dp_secure_device_write_firmware;
+	device_class->set_progress = fu_kinetic_dp_secure_device_set_progress;
+	device_class->convert_version = fu_kinetic_dp_secure_device_convert_version;
 }

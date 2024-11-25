@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -25,9 +25,8 @@ static void
 fu_gpio_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuGpioDevice *self = FU_GPIO_DEVICE(device);
-	FU_DEVICE_CLASS(fu_gpio_device_parent_class)->to_string(device, idt, str);
-	fu_string_append_ku(str, idt, "NumLines", self->num_lines);
-	fu_string_append_kb(str, idt, "FdOpen", self->fd > 0);
+	fwupd_codec_string_append_int(str, idt, "NumLines", self->num_lines);
+	fwupd_codec_string_append_bool(str, idt, "FdOpen", self->fd > 0);
 }
 
 static gboolean
@@ -51,14 +50,17 @@ fu_gpio_device_setup(FuDevice *device, GError **error)
 {
 	FuGpioDevice *self = FU_GPIO_DEVICE(device);
 	struct gpiochip_info info = {0x0};
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 
 	/* get info */
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  GPIO_GET_CHIPINFO_IOCTL,
-				  (guint8 *)&info,
-				  NULL,
-				  FU_GPIO_DEVICE_IOCTL_TIMEOUT,
-				  error)) {
+	if (!fu_ioctl_execute(ioctl,
+			      GPIO_GET_CHIPINFO_IOCTL,
+			      (guint8 *)&info,
+			      sizeof(info),
+			      NULL,
+			      FU_GPIO_DEVICE_IOCTL_TIMEOUT,
+			      FU_IOCTL_FLAG_NONE,
+			      error)) {
 		g_prefix_error(error, "failed to get chipinfo: ");
 		return FALSE;
 	}
@@ -112,6 +114,7 @@ fu_gpio_device_assign_full(FuGpioDevice *self, guint64 line, gboolean value, GEr
 	    .config.attrs[0].attr.values = value ? 0x1 : 0x0,
 	    .config.attrs[0].mask = 0x1,
 	};
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 
 	/* this is useful if we have contention with other tools */
 	if (!fu_memcpy_safe((guint8 *)req.consumer,
@@ -129,12 +132,14 @@ fu_gpio_device_assign_full(FuGpioDevice *self, guint64 line, gboolean value, GEr
 	       fu_device_get_logical_id(FU_DEVICE(self)),
 	       (guint)line,
 	       value);
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  GPIO_V2_GET_LINE_IOCTL,
-				  (guint8 *)&req,
-				  NULL,
-				  FU_GPIO_DEVICE_IOCTL_TIMEOUT,
-				  error)) {
+	if (!fu_ioctl_execute(ioctl,
+			      GPIO_V2_GET_LINE_IOCTL,
+			      (guint8 *)&req,
+			      sizeof(req),
+			      NULL,
+			      FU_GPIO_DEVICE_IOCTL_TIMEOUT,
+			      FU_IOCTL_FLAG_NONE,
+			      error)) {
 		g_prefix_error(error, "failed to assign: ");
 		return FALSE;
 	}
@@ -160,27 +165,34 @@ fu_gpio_device_assign(FuGpioDevice *self, const gchar *id, gboolean value, GErro
 	}
 
 	/* specified as a number, or look for @id as named pin */
-	if (fu_strtoull(id, &line, 0, self->num_lines - 1, NULL)) {
+	if (self->num_lines > 0 &&
+	    fu_strtoull(id, &line, 0, self->num_lines - 1, FU_INTEGER_BASE_AUTO, NULL)) {
 		struct gpio_v2_line_info info = {.offset = line};
-		if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-					  GPIO_V2_GET_LINEINFO_IOCTL,
-					  (guint8 *)&info,
-					  NULL,
-					  FU_GPIO_DEVICE_IOCTL_TIMEOUT,
-					  error)) {
+		g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
+		if (!fu_ioctl_execute(ioctl,
+				      GPIO_V2_GET_LINEINFO_IOCTL,
+				      (guint8 *)&info,
+				      sizeof(info),
+				      NULL,
+				      FU_GPIO_DEVICE_IOCTL_TIMEOUT,
+				      FU_IOCTL_FLAG_NONE,
+				      error)) {
 			g_prefix_error(error, "failed to get lineinfo: ");
 			return FALSE;
 		}
 	} else {
+		g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 		for (guint i = 0; i < self->num_lines; i++) {
 			struct gpio_v2_line_info info = {.offset = i};
 			g_autofree gchar *name = NULL;
-			if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-						  GPIO_V2_GET_LINEINFO_IOCTL,
-						  (guint8 *)&info,
-						  NULL,
-						  FU_GPIO_DEVICE_IOCTL_TIMEOUT,
-						  error)) {
+			if (!fu_ioctl_execute(ioctl,
+					      GPIO_V2_GET_LINEINFO_IOCTL,
+					      (guint8 *)&info,
+					      sizeof(info),
+					      NULL,
+					      FU_GPIO_DEVICE_IOCTL_TIMEOUT,
+					      FU_IOCTL_FLAG_NONE,
+					      error)) {
 				g_prefix_error(error, "failed to get lineinfo: ");
 				return FALSE;
 			}
@@ -201,7 +213,7 @@ fu_gpio_device_assign(FuGpioDevice *self, const gchar *id, gboolean value, GErro
 static void
 fu_gpio_device_init(FuGpioDevice *self)
 {
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self), FU_UDEV_DEVICE_FLAG_OPEN_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
 }
 
 static void
@@ -217,9 +229,9 @@ static void
 fu_gpio_device_class_init(FuGpioDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_gpio_device_finalize;
-	klass_device->to_string = fu_gpio_device_to_string;
-	klass_device->setup = fu_gpio_device_setup;
-	klass_device->probe = fu_gpio_device_probe;
+	device_class->to_string = fu_gpio_device_to_string;
+	device_class->setup = fu_gpio_device_setup;
+	device_class->probe = fu_gpio_device_probe;
 }

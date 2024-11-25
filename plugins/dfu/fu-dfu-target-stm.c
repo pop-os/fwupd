@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -255,12 +255,14 @@ fu_dfu_target_stm_download_element1(FuDfuTarget *target,
 				    GError **error)
 {
 	g_autoptr(GHashTable) sectors_hash = g_hash_table_new(g_direct_hash, g_direct_equal);
-	guint32 address = 0;
-	guint32 transfer_size = 0;
+	gsize address = 0;
+	gsize transfer_size = 0;
 
 	/* start offset */
 	if (fu_chunk_array_length(chunks) > 0) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, 0);
+		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, 0, error);
+		if (chk == NULL)
+			return FALSE;
 		address = fu_chunk_get_address(chk);
 		transfer_size = fu_chunk_get_data_sz(chk);
 	}
@@ -347,29 +349,33 @@ fu_dfu_target_stm_download_element3(FuDfuTarget *target,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk_tmp = fu_chunk_array_index(chunks, i);
 		FuDfuSector *sector;
-		guint32 offset_dev = fu_chunk_get_address(chk_tmp);
+		g_autoptr(FuChunk) chk_tmp = NULL;
 		g_autoptr(GByteArray) buf = g_byte_array_new();
 		g_autoptr(GBytes) bytes_tmp = NULL;
 
+		/* prepare chunk */
+		chk_tmp = fu_chunk_array_index(chunks, i, error);
+		if (chk_tmp == NULL)
+			return FALSE;
+
 		/* for DfuSe devices we need to set the address manually */
-		sector = fu_dfu_target_get_sector_for_addr(target, offset_dev);
+		sector = fu_dfu_target_get_sector_for_addr(target, fu_chunk_get_address(chk_tmp));
 		if (sector == NULL) {
 			g_set_error(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INVALID_FILE,
-				    "no valid sector for %x",
-				    offset_dev);
+				    "no valid sector for 0x%x",
+				    (guint)fu_chunk_get_address(chk_tmp));
 			return FALSE;
 		}
 
 		/* manually set the sector address */
 		if (fu_dfu_sector_get_zone(sector) != zone_last) {
 			g_autoptr(FuProgress) progress_tmp = fu_progress_new(G_STRLOC);
-			g_debug("setting address to 0x%04x", (guint)offset_dev);
+			g_debug("setting address to 0x%04x", (guint)fu_chunk_get_address(chk_tmp));
 			if (!fu_dfu_target_stm_set_address(target,
-							   (guint32)offset_dev,
+							   (guint32)fu_chunk_get_address(chk_tmp),
 							   progress_tmp,
 							   error))
 				return FALSE;
@@ -379,7 +385,7 @@ fu_dfu_target_stm_download_element3(FuDfuTarget *target,
 		/* we have to write one final zero-sized chunk for EOF */
 		bytes_tmp = fu_chunk_get_bytes(chk_tmp);
 		g_debug("writing sector at 0x%04x (0x%" G_GSIZE_FORMAT ")",
-			offset_dev,
+			(guint)fu_chunk_get_address(chk_tmp),
 			g_bytes_get_size(bytes_tmp));
 
 		/* ST uses wBlockNum=0 for DfuSe commands and wBlockNum=1 is reserved */
@@ -428,6 +434,7 @@ fu_dfu_target_stm_download_element(FuDfuTarget *target,
 	bytes = fu_chunk_get_bytes(chk);
 	chunks = fu_chunk_array_new_from_bytes(bytes,
 					       fu_chunk_get_address(chk),
+					       FU_CHUNK_PAGESZ_NONE,
 					       fu_dfu_device_get_transfer_size(device));
 	if (!fu_dfu_target_stm_download_element1(target,
 						 chunks,
@@ -466,11 +473,11 @@ fu_dfu_target_stm_init(FuDfuTargetStm *self)
 static void
 fu_dfu_target_stm_class_init(FuDfuTargetStmClass *klass)
 {
-	FuDfuTargetClass *klass_target = FU_DFU_TARGET_CLASS(klass);
-	klass_target->attach = fu_dfu_target_stm_attach;
-	klass_target->mass_erase = fu_dfu_target_stm_mass_erase;
-	klass_target->upload_element = fu_dfu_target_stm_upload_element;
-	klass_target->download_element = fu_dfu_target_stm_download_element;
+	FuDfuTargetClass *target_class = FU_DFU_TARGET_CLASS(klass);
+	target_class->attach = fu_dfu_target_stm_attach;
+	target_class->mass_erase = fu_dfu_target_stm_mass_erase;
+	target_class->upload_element = fu_dfu_target_stm_upload_element;
+	target_class->download_element = fu_dfu_target_stm_download_element;
 }
 
 FuDfuTarget *

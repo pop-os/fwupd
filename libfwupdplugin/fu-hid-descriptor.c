@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuHidDevice"
@@ -12,6 +12,7 @@
 #include "fu-hid-descriptor.h"
 #include "fu-hid-report-item.h"
 #include "fu-hid-struct.h"
+#include "fu-input-stream.h"
 #include "fu-mem.h"
 
 /**
@@ -50,38 +51,41 @@ fu_hid_descriptor_count_table_dupes(GPtrArray *table, FuHidReportItem *item)
 
 static gboolean
 fu_hid_descriptor_parse(FuFirmware *firmware,
-			GBytes *fw,
-			gsize offset,
+			GInputStream *stream,
 			FwupdInstallFlags flags,
 			GError **error)
 {
+	gsize offset = 0;
+	gsize streamsz = 0;
 	g_autoptr(GPtrArray) table_state =
 	    g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	g_autoptr(GPtrArray) table_local =
 	    g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
-	while (offset < g_bytes_get_size(fw)) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	while (offset < streamsz) {
 		g_autofree gchar *itemstr = NULL;
 		g_autoptr(FuHidReportItem) item = fu_hid_report_item_new();
 
 		/* sanity check */
 		if (table_state->len > FU_HID_DESCRIPTOR_TABLE_GLOBAL_SIZE_MAX) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "HID table state too large, limit is %u",
 				    (guint)FU_HID_DESCRIPTOR_TABLE_GLOBAL_SIZE_MAX);
 			return FALSE;
 		}
 		if (table_local->len > FU_HID_DESCRIPTOR_TABLE_LOCAL_SIZE_MAX) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "HID table state too large, limit is %u",
 				    (guint)FU_HID_DESCRIPTOR_TABLE_LOCAL_SIZE_MAX);
 			return FALSE;
 		}
 
-		if (!fu_firmware_parse_full(FU_FIRMWARE(item), fw, offset, flags, error))
+		if (!fu_firmware_parse_stream(FU_FIRMWARE(item), stream, offset, flags, error))
 			return FALSE;
 		offset += fu_firmware_get_size(FU_FIRMWARE(item));
 
@@ -95,8 +99,8 @@ fu_hid_descriptor_parse(FuFirmware *firmware,
 			    FU_HID_DESCRIPTOR_TABLE_GLOBAL_DUPES_MAX) {
 				g_set_error(
 				    error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "table invalid @0x%x, too many duplicate global %s tokens",
 				    (guint)offset,
 				    fu_firmware_get_id(FU_FIRMWARE(item)));
@@ -109,8 +113,8 @@ fu_hid_descriptor_parse(FuFirmware *firmware,
 			    FU_HID_DESCRIPTOR_TABLE_LOCAL_DUPES_MAX) {
 				g_set_error(
 				    error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "table invalid @0x%x, too many duplicate %s %s:0x%x tokens",
 				    (guint)offset,
 				    fu_hid_item_kind_to_string(fu_hid_report_item_get_kind(item)),
@@ -278,7 +282,7 @@ fu_hid_descriptor_find_report(FuHidDescriptor *self, GError **error, ...)
 		if (matched)
 			return g_object_ref(report);
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "no report found");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no report found");
 	return NULL;
 }
 
@@ -296,9 +300,9 @@ fu_hid_descriptor_init(FuHidDescriptor *self)
 static void
 fu_hid_descriptor_class_init(FuHidDescriptorClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_hid_descriptor_parse;
-	klass_firmware->write = fu_hid_descriptor_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_hid_descriptor_parse;
+	firmware_class->write = fu_hid_descriptor_write;
 }
 
 /**

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2020 Cypress Semiconductor Corporation.
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Cypress Semiconductor Corporation.
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -35,12 +35,7 @@ struct _FuCcgxDmcDevice {
 	guint8 custom_meta_flag;
 };
 
-/**
- * FU_CCGX_DMC_DEVICE_FLAG_HAS_MANUAL_REPLUG:
- *
- * Needs a manual replug from the end-user.
- */
-#define FU_CCGX_DMC_DEVICE_FLAG_HAS_MANUAL_REPLUG (1 << 0)
+#define FU_CCGX_DMC_DEVICE_FLAG_HAS_MANUAL_REPLUG "has-manual-replug"
 
 G_DEFINE_TYPE(FuCcgxDmcDevice, fu_ccgx_dmc_device, FU_TYPE_USB_DEVICE)
 
@@ -48,19 +43,19 @@ static gboolean
 fu_ccgx_dmc_device_ensure_dock_id(FuCcgxDmcDevice *self, GError **error)
 {
 	g_autoptr(GByteArray) st_id = fu_struct_ccgx_dmc_dock_identity_new();
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_DOCK_IDENTITY, /* request */
-					   0,				       /* value */
-					   0,				       /* index */
-					   st_id->data,
-					   st_id->len,
-					   NULL, /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_DOCK_IDENTITY, /* request */
+					    0,					/* value */
+					    0,					/* index */
+					    st_id->data,
+					    st_id->len,
+					    NULL, /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "get_dock_id error: ");
 		return FALSE;
 	}
@@ -79,19 +74,19 @@ fu_ccgx_dmc_device_ensure_status(FuCcgxDmcDevice *self, GError **error)
 
 	/* read minimum status length */
 	fu_byte_array_set_size(st, 32, 0x0);
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_DOCK_STATUS, /* request */
-					   0,				     /* value */
-					   0,				     /* index */
-					   st->data,
-					   st->len,
-					   NULL, /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_DOCK_STATUS, /* request */
+					    0,				      /* value */
+					    0,				      /* index */
+					    st->data,
+					    st->len,
+					    NULL, /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "get_dock_status min size error: ");
 		return FALSE;
 	}
@@ -105,19 +100,19 @@ fu_ccgx_dmc_device_ensure_status(FuCcgxDmcDevice *self, GError **error)
 		if (!fu_memcpy_safe(buf, bufsz, 0x0, st->data, st->len, 0x0, st->len, error))
 			return FALSE;
 	}
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_DOCK_STATUS, /* request */
-					   0,				     /* value */
-					   0,				     /* index */
-					   buf,
-					   bufsz,
-					   NULL, /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_DOCK_STATUS, /* request */
+					    0,				      /* value */
+					    0,				      /* index */
+					    buf,
+					    bufsz,
+					    NULL, /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "get_dock_status actual size error: ");
 		return FALSE;
 	}
@@ -125,12 +120,17 @@ fu_ccgx_dmc_device_ensure_status(FuCcgxDmcDevice *self, GError **error)
 
 	/* add devx children */
 	for (guint i = 0; i < fu_struct_ccgx_dmc_dock_status_get_device_count(st); i++) {
+		g_autoptr(FuDeviceLocker) locker = NULL;
 		g_autoptr(FuCcgxDmcDevxDevice) devx =
 		    fu_ccgx_dmc_devx_device_new(FU_DEVICE(self), buf, bufsz, offset, error);
 		if (devx == NULL)
 			return FALSE;
+		locker = fu_device_locker_new(devx, error);
+		if (locker == NULL)
+			return FALSE;
 		remove_delay += fu_ccgx_dmc_devx_device_get_remove_delay(devx);
 		fu_device_add_child(FU_DEVICE(self), FU_DEVICE(devx));
+		offset += FU_STRUCT_CCGX_DMC_DEVX_STATUS_SIZE;
 	}
 
 	/* ensure the remove delay is set */
@@ -141,7 +141,7 @@ fu_ccgx_dmc_device_ensure_status(FuCcgxDmcDevice *self, GError **error)
 
 	/* success */
 	self->device_status = fu_struct_ccgx_dmc_dock_status_get_device_status(st);
-	fu_device_set_version_u32(FU_DEVICE(self),
+	fu_device_set_version_raw(FU_DEVICE(self),
 				  fu_struct_ccgx_dmc_dock_status_get_composite_version(st));
 	return TRUE;
 }
@@ -149,19 +149,19 @@ fu_ccgx_dmc_device_ensure_status(FuCcgxDmcDevice *self, GError **error)
 static gboolean
 fu_ccgx_dmc_device_send_reset_state_machine(FuCcgxDmcDevice *self, GError **error)
 {
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_RESET_STATE_MACHINE, /* request */
-					   0,					     /* value */
-					   0,					     /* index */
-					   0,					     /* data */
-					   0,					     /* length */
-					   NULL, /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_RESET_STATE_MACHINE, /* request */
+					    0,					      /* value */
+					    0,					      /* index */
+					    0,					      /* data */
+					    0,					      /* length */
+					    NULL, /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "send reset state machine error: ");
 		return FALSE;
 	}
@@ -171,19 +171,19 @@ fu_ccgx_dmc_device_send_reset_state_machine(FuCcgxDmcDevice *self, GError **erro
 static gboolean
 fu_ccgx_dmc_device_send_soft_reset(FuCcgxDmcDevice *self, gboolean reset_later, GError **error)
 {
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_SOFT_RESET, /* request */
-					   reset_later,			    /* value */
-					   0,				    /* index */
-					   0,				    /* data */
-					   0,				    /* length */
-					   NULL,			    /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_SOFT_RESET, /* request */
+					    reset_later,		     /* value */
+					    0,				     /* index */
+					    0,				     /* data */
+					    0,				     /* length */
+					    NULL,			     /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "send reset error: ");
 		return FALSE;
 	}
@@ -204,19 +204,19 @@ fu_ccgx_dmc_device_send_start_upgrade(FuCcgxDmcDevice *self, GBytes *fw, GError 
 		if (buf_mut == NULL)
 			return FALSE;
 	}
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_UPGRADE_START, /* request */
-					   bufsz > 0 ? 1 : 0,		       /* value */
-					   1,	    /* index, forced update */
-					   buf_mut, /* data */
-					   bufsz,   /* length */
-					   NULL,    /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_UPGRADE_START, /* request */
+					    bufsz > 0 ? 1 : 0,			/* value */
+					    1,	     /* index, forced update */
+					    buf_mut, /* data */
+					    bufsz,   /* length */
+					    NULL,    /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "send reset error: ");
 		return FALSE;
 	}
@@ -226,19 +226,19 @@ fu_ccgx_dmc_device_send_start_upgrade(FuCcgxDmcDevice *self, GBytes *fw, GError 
 static gboolean
 fu_ccgx_dmc_device_send_download_trigger(FuCcgxDmcDevice *self, guint16 trigger, GError **error)
 {
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_TRIGGER, /* request */
-					   trigger,			 /* value */
-					   0,				 /* index */
-					   0,				 /* data */
-					   0,				 /* length */
-					   NULL,			 /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_TRIGGER, /* request */
+					    trigger,			  /* value */
+					    0,				  /* index */
+					    0,				  /* data */
+					    0,				  /* length */
+					    NULL,			  /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "send download trigger error: ");
 		return FALSE;
 	}
@@ -258,19 +258,19 @@ fu_ccgx_dmc_device_send_fwct(FuCcgxDmcDevice *self,
 	buf_mut = fu_memdup_safe(buf, bufsz, error);
 	if (buf_mut == NULL)
 		return FALSE;
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_FWCT_WRITE, /* request */
-					   0,				    /* value */
-					   0,				    /* index */
-					   buf_mut,			    /* data */
-					   bufsz,			    /* length */
-					   NULL,			    /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_FWCT_WRITE, /* request */
+					    0,				     /* value */
+					    0,				     /* index */
+					    buf_mut,			     /* data */
+					    bufsz,			     /* length */
+					    NULL,			     /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "send fwct error: ");
 		return FALSE;
 	}
@@ -285,14 +285,14 @@ fu_ccgx_dmc_device_read_intr_req(FuCcgxDmcDevice *self, GByteArray *intr_rqt, GE
 
 	g_return_val_if_fail(intr_rqt != NULL, FALSE);
 
-	if (!g_usb_device_interrupt_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					     self->ep_intr_in,
-					     intr_rqt->data,
-					     intr_rqt->len,
-					     NULL,
-					     DMC_GET_REQUEST_TIMEOUT,
-					     NULL,
-					     error)) {
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+					      self->ep_intr_in,
+					      intr_rqt->data,
+					      intr_rqt->len,
+					      NULL,
+					      DMC_GET_REQUEST_TIMEOUT,
+					      NULL,
+					      error)) {
 		g_prefix_error(error, "read intr rqt error: ");
 		return FALSE;
 	}
@@ -316,19 +316,19 @@ fu_ccgx_dmc_device_send_write_command(FuCcgxDmcDevice *self,
 				      guint16 num_of_row,
 				      GError **error)
 {
-	if (!g_usb_device_control_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   FU_CCGX_DMC_RQT_CODE_IMG_WRITE, /* request */
-					   start_row,			   /* value */
-					   num_of_row,			   /* index */
-					   0,				   /* data */
-					   0,				   /* length */
-					   NULL,			   /* actual length */
-					   DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    FU_CCGX_DMC_RQT_CODE_IMG_WRITE, /* request */
+					    start_row,			    /* value */
+					    num_of_row,			    /* index */
+					    0,				    /* data */
+					    0,				    /* length */
+					    NULL,			    /* actual length */
+					    DMC_CONTROL_TRANSFER_DEFAULT_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "send fwct error: ");
 		return FALSE;
 	}
@@ -343,14 +343,14 @@ fu_ccgx_dmc_device_send_row_data(FuCcgxDmcDevice *self,
 {
 	g_return_val_if_fail(row_buffer != NULL, FALSE);
 
-	if (!g_usb_device_bulk_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					self->ep_bulk_out,
-					(guint8 *)row_buffer,
-					row_size,
-					NULL,
-					DMC_BULK_OUT_PIPE_TIMEOUT,
-					NULL,
-					error)) {
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->ep_bulk_out,
+					 (guint8 *)row_buffer,
+					 row_size,
+					 NULL,
+					 DMC_BULK_OUT_PIPE_TIMEOUT,
+					 NULL,
+					 error)) {
 		g_prefix_error(error, "write row data error: ");
 		return FALSE;
 	}
@@ -361,21 +361,21 @@ static void
 fu_ccgx_dmc_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE(device);
-	fu_string_append(str,
-			 idt,
-			 "UpdateModel",
-			 fu_ccgx_dmc_update_model_to_string(self->update_model));
-	fu_string_append_kx(str, idt, "EpBulkOut", self->ep_bulk_out);
-	fu_string_append_kx(str, idt, "EpIntrIn", self->ep_intr_in);
-	fu_string_append_kx(str, idt, "TriggerCode", self->trigger_code);
-	fu_string_append(str,
-			 idt,
-			 "DeviceStatus",
-			 fu_ccgx_dmc_device_status_to_string(self->device_status));
+	fwupd_codec_string_append(str,
+				  idt,
+				  "UpdateModel",
+				  fu_ccgx_dmc_update_model_to_string(self->update_model));
+	fwupd_codec_string_append_hex(str, idt, "EpBulkOut", self->ep_bulk_out);
+	fwupd_codec_string_append_hex(str, idt, "EpIntrIn", self->ep_intr_in);
+	fwupd_codec_string_append_hex(str, idt, "TriggerCode", self->trigger_code);
+	fwupd_codec_string_append(str,
+				  idt,
+				  "DeviceStatus",
+				  fu_ccgx_dmc_device_status_to_string(self->device_status));
 }
 
 static gboolean
-fu_ccgx_dmc_get_image_write_status_cb(FuDevice *device, gpointer user_data, GError **error)
+fu_ccgx_dmc_device_get_image_write_status_cb(FuDevice *device, gpointer user_data, GError **error)
 {
 	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE(device);
 	const guint8 *req_data;
@@ -415,11 +415,11 @@ fu_ccgx_dmc_get_image_write_status_cb(FuDevice *device, gpointer user_data, GErr
 }
 
 static gboolean
-fu_ccgx_dmc_write_firmware_record(FuCcgxDmcDevice *self,
-				  FuCcgxDmcFirmwareSegmentRecord *seg_rcd,
-				  gsize *fw_data_written,
-				  FuProgress *progress,
-				  GError **error)
+fu_ccgx_dmc_device_write_firmware_record(FuCcgxDmcDevice *self,
+					 FuCcgxDmcFirmwareSegmentRecord *seg_rcd,
+					 gsize *fw_data_written,
+					 FuProgress *progress,
+					 GError **error)
 {
 	GPtrArray *data_records = NULL;
 
@@ -453,7 +453,7 @@ fu_ccgx_dmc_write_firmware_record(FuCcgxDmcDevice *self,
 
 		/* get status */
 		if (!fu_device_retry(FU_DEVICE(self),
-				     fu_ccgx_dmc_get_image_write_status_cb,
+				     fu_ccgx_dmc_device_get_image_write_status_cb,
 				     DMC_FW_WRITE_STATUS_RETRY_COUNT,
 				     NULL,
 				     error))
@@ -471,12 +471,12 @@ fu_ccgx_dmc_write_firmware_record(FuCcgxDmcDevice *self,
 }
 
 static gboolean
-fu_ccgx_dmc_write_firmware_image(FuDevice *device,
-				 FuCcgxDmcFirmwareRecord *img_rcd,
-				 gsize *fw_data_written,
-				 const gsize fw_data_size,
-				 FuProgress *progress,
-				 GError **error)
+fu_ccgx_dmc_device_write_firmware_image(FuDevice *device,
+					FuCcgxDmcFirmwareRecord *img_rcd,
+					gsize *fw_data_written,
+					const gsize fw_data_size,
+					FuProgress *progress,
+					GError **error)
 {
 	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE(device);
 	GPtrArray *seg_records;
@@ -490,11 +490,11 @@ fu_ccgx_dmc_write_firmware_image(FuDevice *device,
 	fu_progress_set_steps(progress, seg_records->len);
 	for (guint32 seg_index = 0; seg_index < seg_records->len; seg_index++) {
 		FuCcgxDmcFirmwareSegmentRecord *seg_rcd = g_ptr_array_index(seg_records, seg_index);
-		if (!fu_ccgx_dmc_write_firmware_record(self,
-						       seg_rcd,
-						       fw_data_written,
-						       fu_progress_get_child(progress),
-						       error))
+		if (!fu_ccgx_dmc_device_write_firmware_record(self,
+							      seg_rcd,
+							      fw_data_written,
+							      fu_progress_get_child(progress),
+							      error))
 			return FALSE;
 		fu_progress_step_done(progress);
 	}
@@ -502,11 +502,11 @@ fu_ccgx_dmc_write_firmware_image(FuDevice *device,
 }
 
 static gboolean
-fu_ccgx_dmc_write_firmware(FuDevice *device,
-			   FuFirmware *firmware,
-			   FuProgress *progress,
-			   FwupdInstallFlags flags,
-			   GError **error)
+fu_ccgx_dmc_device_write_firmware(FuDevice *device,
+				  FuFirmware *firmware,
+				  FuProgress *progress,
+				  FwupdInstallFlags flags,
+				  GError **error)
 {
 	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE(device);
 	FuCcgxDmcFirmwareRecord *img_rcd = NULL;
@@ -585,12 +585,12 @@ fu_ccgx_dmc_write_firmware(FuDevice *device,
 		/* write image */
 		g_debug("writing image index %u/%u", img_index, image_records->len - 1);
 		img_rcd = g_ptr_array_index(image_records, img_index);
-		if (!fu_ccgx_dmc_write_firmware_image(device,
-						      img_rcd,
-						      &fw_data_written,
-						      fw_data_size,
-						      fu_progress_get_child(progress),
-						      error))
+		if (!fu_ccgx_dmc_device_write_firmware_image(device,
+							     img_rcd,
+							     &fw_data_written,
+							     fw_data_size,
+							     fu_progress_get_child(progress),
+							     error))
 			return FALSE;
 	}
 	if (rqt_opcode != FU_CCGX_DMC_INT_OPCODE_FW_UPGRADE_STATUS) {
@@ -640,7 +640,8 @@ fu_ccgx_dmc_write_firmware(FuDevice *device,
 
 static FuFirmware *
 fu_ccgx_dmc_device_prepare_firmware(FuDevice *device,
-				    GBytes *fw,
+				    GInputStream *stream,
+				    FuProgress *progress,
 				    FwupdInstallFlags flags,
 				    GError **error)
 {
@@ -650,7 +651,7 @@ fu_ccgx_dmc_device_prepare_firmware(FuDevice *device,
 	gboolean custom_meta_exist = FALSE;
 
 	/* parse all images */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 
 	/* get custom meta record */
@@ -726,10 +727,24 @@ fu_ccgx_dmc_device_ensure_factory_version(FuCcgxDmcDevice *self)
 		if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_DMC && fwver_img1 == fwver_img2 &&
 		    fwver_img1 != 0) {
 			g_info("overriding version as device is in factory mode");
-			fu_device_set_version_u32(FU_DEVICE(self), 0x1);
+			fu_device_set_version_raw(FU_DEVICE(self), 0x1);
 			return;
 		}
 	}
+}
+
+static gboolean
+fu_ccgx_dmc_device_probe(FuDevice *device, GError **error)
+{
+	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE(device);
+	g_autoptr(FuUsbInterface) intf = NULL;
+
+	/* find the correct vendor-specific interface */
+	intf = fu_usb_device_get_interface(FU_USB_DEVICE(self), 0xFF, 0x03, 0x00, error);
+	if (intf == NULL)
+		return FALSE;
+	fu_usb_device_add_interface(FU_USB_DEVICE(self), fu_usb_interface_get_number(intf));
+	return TRUE;
 }
 
 static gboolean
@@ -775,12 +790,12 @@ fu_ccgx_dmc_device_set_quirk_kv(FuDevice *device,
 	FuCcgxDmcDevice *self = FU_CCGX_DMC_DEVICE(device);
 	if (g_strcmp0(key, "CcgxDmcTriggerCode") == 0) {
 		guint64 tmp = 0;
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->trigger_code = tmp;
 		return TRUE;
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no supported");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no supported");
 	return FALSE;
 }
 
@@ -795,6 +810,12 @@ fu_ccgx_dmc_device_set_progress(FuDevice *self, FuProgress *progress)
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 25, "reload");
 }
 
+static gchar *
+fu_ccgx_dmc_device_convert_version(FuDevice *device, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
+}
+
 static void
 fu_ccgx_dmc_device_init(FuCcgxDmcDevice *self)
 {
@@ -807,23 +828,22 @@ fu_ccgx_dmc_device_init(FuCcgxDmcDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_REQUIRE_AC);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
-	fu_usb_device_add_interface(FU_USB_DEVICE(self), 0x01);
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_CCGX_DMC_DEVICE_FLAG_HAS_MANUAL_REPLUG,
-					"has-manual-replug");
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_register_private_flag(FU_DEVICE(self), FU_CCGX_DMC_DEVICE_FLAG_HAS_MANUAL_REPLUG);
 }
 
 static void
 fu_ccgx_dmc_device_class_init(FuCcgxDmcDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_ccgx_dmc_device_to_string;
-	klass_device->write_firmware = fu_ccgx_dmc_write_firmware;
-	klass_device->prepare_firmware = fu_ccgx_dmc_device_prepare_firmware;
-	klass_device->attach = fu_ccgx_dmc_device_attach;
-	klass_device->setup = fu_ccgx_dmc_device_setup;
-	klass_device->set_quirk_kv = fu_ccgx_dmc_device_set_quirk_kv;
-	klass_device->set_progress = fu_ccgx_dmc_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_ccgx_dmc_device_to_string;
+	device_class->write_firmware = fu_ccgx_dmc_device_write_firmware;
+	device_class->prepare_firmware = fu_ccgx_dmc_device_prepare_firmware;
+	device_class->attach = fu_ccgx_dmc_device_attach;
+	device_class->probe = fu_ccgx_dmc_device_probe;
+	device_class->setup = fu_ccgx_dmc_device_setup;
+	device_class->set_quirk_kv = fu_ccgx_dmc_device_set_quirk_kv;
+	device_class->set_progress = fu_ccgx_dmc_device_set_progress;
+	device_class->convert_version = fu_ccgx_dmc_device_convert_version;
 }

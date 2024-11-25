@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -12,7 +12,7 @@
 G_DECLARE_DERIVABLE_TYPE(FuTpmDevice, fu_tpm_device, FU, TPM_DEVICE, FuUdevDevice)
 
 struct _FuTpmDeviceClass {
-	FuDeviceClass parent_class;
+	FuUdevDeviceClass parent_class;
 };
 
 void

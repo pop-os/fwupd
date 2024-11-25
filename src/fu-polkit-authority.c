@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuPolkitAuthority"
@@ -13,16 +13,6 @@
 #endif
 
 #include "fu-polkit-authority.h"
-
-#ifdef HAVE_POLKIT
-#ifndef HAVE_POLKIT_0_114
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-G_DEFINE_AUTOPTR_CLEANUP_FUNC(PolkitAuthorizationResult, g_object_unref)
-G_DEFINE_AUTOPTR_CLEANUP_FUNC(PolkitSubject, g_object_unref)
-#pragma clang diagnostic pop
-#endif /* HAVE_POLKIT_0_114 */
-#endif /* HAVE_POLKIT */
 
 struct _FuPolkitAuthority {
 	GObject parent_instance;

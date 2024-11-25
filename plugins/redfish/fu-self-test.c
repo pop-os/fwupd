@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -103,7 +103,7 @@ fu_test_redfish_ipmi_func(void)
 
 	/* create device */
 	locker = fu_device_locker_new(device, &error);
-	if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED)) {
+	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_PERMISSION_DENIED)) {
 		g_test_skip("permission denied for access to IPMI hardware");
 		return;
 	}
@@ -217,10 +217,11 @@ fu_test_redfish_network_mac_addr_func(void)
 	FuRedfishNetworkDeviceState state = FU_REDFISH_NETWORK_DEVICE_STATE_UNKNOWN;
 	gboolean ret;
 	g_autofree gchar *ip_addr = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(FuRedfishNetworkDevice) device = NULL;
 	g_autoptr(GError) error = NULL;
 
-	device = fu_redfish_network_device_for_mac_addr("00:13:F7:29:C2:D8", &error);
+	device = fu_redfish_network_device_for_mac_addr(ctx, "00:13:F7:29:C2:D8", &error);
 	if (device == NULL && g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 		g_test_skip("no hardware");
 		return;
@@ -249,10 +250,11 @@ static void
 fu_test_redfish_network_vid_pid_func(void)
 {
 	g_autofree gchar *ip_addr = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(FuRedfishNetworkDevice) device = NULL;
 	g_autoptr(GError) error = NULL;
 
-	device = fu_redfish_network_device_for_vid_pid(0x0707, 0x0201, &error);
+	device = fu_redfish_network_device_for_vid_pid(ctx, 0x0707, 0x0201, &error);
 	if (device == NULL && g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 		g_test_skip("no hardware");
 		return;
@@ -382,6 +384,7 @@ fu_test_redfish_update_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GBytes) blob_fw = NULL;
+	g_autoptr(GInputStream) stream_fw = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 
 	devices = fu_plugin_get_devices(self->plugin);
@@ -395,9 +398,10 @@ fu_test_redfish_update_func(gconstpointer user_data)
 	/* BMC */
 	dev = g_ptr_array_index(devices, 1);
 	blob_fw = g_bytes_new_static("hello", 5);
+	stream_fw = g_memory_input_stream_new_from_bytes(blob_fw);
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      blob_fw,
+					      stream_fw,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
@@ -408,7 +412,7 @@ fu_test_redfish_update_func(gconstpointer user_data)
 	/* try again */
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      blob_fw,
+					      stream_fw,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
@@ -423,8 +427,11 @@ fu_test_redfish_smc_update_func(gconstpointer user_data)
 	FuTest *self = (FuTest *)user_data;
 	GPtrArray *devices;
 	gboolean ret;
+	g_autoptr(GBytes) blob_fw1 = NULL;
+	g_autoptr(GBytes) blob_fw2 = NULL;
 	g_autoptr(GError) error = NULL;
-	g_autoptr(GBytes) blob_fw = NULL;
+	g_autoptr(GInputStream) stream_fw1 = NULL;
+	g_autoptr(GInputStream) stream_fw2 = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 
 	devices = fu_plugin_get_devices(self->smc_plugin);
@@ -437,10 +444,11 @@ fu_test_redfish_smc_update_func(gconstpointer user_data)
 
 	/* BMC */
 	dev = g_ptr_array_index(devices, 1);
-	blob_fw = g_bytes_new_static("hello", 5);
+	blob_fw1 = g_bytes_new_static("hello", 5);
+	stream_fw1 = g_memory_input_stream_new_from_bytes(blob_fw1);
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      blob_fw,
+					      stream_fw1,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
@@ -448,10 +456,11 @@ fu_test_redfish_smc_update_func(gconstpointer user_data)
 	g_assert_true(ret);
 
 	/* stuck update */
-	blob_fw = g_bytes_new_static("stuck", 5);
+	blob_fw2 = g_bytes_new_static("stuck", 5);
+	stream_fw2 = g_memory_input_stream_new_from_bytes(blob_fw2);
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      blob_fw,
+					      stream_fw2,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
@@ -491,7 +500,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_REDFISH_VERBOSE", "1", TRUE);
 
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
-	smbios_data_fn = g_build_filename(testdatadir, "redfish-smbios.bin", NULL);
+	smbios_data_fn = g_build_filename(testdatadir, "redfish-smbios.builder.xml", NULL);
 	(void)g_setenv("FWUPD_REDFISH_SMBIOS_DATA", smbios_data_fn, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 	(void)g_setenv("CONFIGURATION_DIRECTORY", testdatadir, TRUE);

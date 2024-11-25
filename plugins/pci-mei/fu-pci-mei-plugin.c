@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -22,7 +22,7 @@ struct _FuPciMeiPlugin {
 G_DEFINE_TYPE(FuPciMeiPlugin, fu_pci_mei_plugin, FU_TYPE_PLUGIN)
 
 static FuMeiFamily
-fu_mei_detect_family(FuPlugin *plugin)
+fu_pci_mei_plugin_detect_family(FuPlugin *plugin)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	guint8 ver = self->vers.major;
@@ -30,7 +30,7 @@ fu_mei_detect_family(FuPlugin *plugin)
 	if (ver == 0)
 		return FU_MEI_FAMILY_UNKNOWN;
 	if (ver == 1 || ver == 2) {
-		g_autoptr(GByteArray) hfsts1 = NULL;
+		g_autoptr(FuMeiCsme11Hfsts1) hfsts1 = NULL;
 		hfsts1 = fu_mei_csme11_hfsts1_parse(self->hfsts_buf[1],
 						    sizeof(self->hfsts_buf[1]),
 						    0x0,
@@ -51,7 +51,7 @@ fu_mei_detect_family(FuPlugin *plugin)
 }
 
 static gboolean
-fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
+fu_pci_mei_plugin_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	guint64 tmp64 = 0;
@@ -63,8 +63,8 @@ fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 	lines = g_strsplit(fwvers, "\n", -1);
 	if (g_strv_length(lines) < 1) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "expected data, got %s",
 			    fwvers);
 		return FALSE;
@@ -74,15 +74,15 @@ fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 	sections = g_strsplit(lines[0], ":", -1);
 	if (g_strv_length(sections) != 2) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "expected platform:major.minor.micro.build, got %s",
 			    lines[0]);
 		return FALSE;
 	}
 
 	/* parse platform and versions */
-	if (!fu_strtoull(sections[0], &tmp64, 0, G_MAXUINT8, error)) {
+	if (!fu_strtoull(sections[0], &tmp64, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "failed to process platform version %s: ", sections[0]);
 		return FALSE;
 	}
@@ -90,29 +90,29 @@ fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 	split = g_strsplit(sections[1], ".", -1);
 	if (g_strv_length(split) != 4) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "expected major.minor.micro.build, got %s",
 			    sections[1]);
 		return FALSE;
 	}
 
-	if (!fu_strtoull(split[0], &tmp64, 0, G_MAXUINT8, error)) {
+	if (!fu_strtoull(split[0], &tmp64, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "failed to process major version %s: ", split[0]);
 		return FALSE;
 	}
 	self->vers.major = tmp64;
-	if (!fu_strtoull(split[1], &tmp64, 0, G_MAXUINT8, error)) {
+	if (!fu_strtoull(split[1], &tmp64, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "failed to process minor version %s: ", split[1]);
 		return FALSE;
 	}
 	self->vers.minor = tmp64;
-	if (!fu_strtoull(split[2], &tmp64, 0, G_MAXUINT8, error)) {
+	if (!fu_strtoull(split[2], &tmp64, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "failed to process hotfix version %s: ", split[2]);
 		return FALSE;
 	}
 	self->vers.hotfix = tmp64;
-	if (!fu_strtoull(split[3], &tmp64, 0, G_MAXUINT16, error)) {
+	if (!fu_strtoull(split[3], &tmp64, 0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "failed to process buildno version %s: ", split[3]);
 		return FALSE;
 	}
@@ -120,7 +120,7 @@ fu_mei_parse_fwvers(FuPlugin *plugin, const gchar *fwvers, GError **error)
 
 	/* check the AMT version for issues using the data from:
 	 * https://downloadcenter.intel.com/download/28632 */
-	self->family = fu_mei_detect_family(plugin);
+	self->family = fu_pci_mei_plugin_detect_family(plugin);
 	if (self->family == FU_MEI_FAMILY_CSME || self->family == FU_MEI_FAMILY_CSME18)
 		self->issue = fu_mei_common_is_csme_vulnerable(&self->vers);
 	else if (self->family == FU_MEI_FAMILY_TXE)
@@ -142,21 +142,20 @@ fu_pci_mei_plugin_backend_device_added(FuPlugin *plugin,
 				       GError **error)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
-	const gchar *fwvers = NULL;
 	const guint hfs_cfg_addrs[] = {0x0, 0x40, 0x48, 0x60, 0x64, 0x68, 0x6c};
 	g_autofree gchar *device_file = NULL;
+	g_autofree gchar *fwvers = NULL;
 	g_autoptr(FuDeviceLocker) locker = NULL;
 
 	/* interesting device? */
-	if (!FU_IS_UDEV_DEVICE(device))
-		return TRUE;
-	if (g_strcmp0(fu_udev_device_get_subsystem(FU_UDEV_DEVICE(device)), "pci") != 0)
+	if (!FU_IS_PCI_DEVICE(device))
 		return TRUE;
 
 	/* open the config */
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(device), FU_UDEV_DEVICE_FLAG_USE_CONFIG);
-	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "pci", error))
-		return FALSE;
+	device_file =
+	    g_build_filename(fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device)), "config", NULL);
+	fu_udev_device_set_device_file(FU_UDEV_DEVICE(device), device_file);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(device), FU_IO_CHANNEL_OPEN_FLAG_READ);
 	locker = fu_device_locker_new(device, error);
 	if (locker == NULL)
 		return FALSE;
@@ -175,9 +174,12 @@ fu_pci_mei_plugin_backend_device_added(FuPlugin *plugin,
 	}
 
 	/* check firmware version */
-	fwvers = fu_udev_device_get_sysfs_attr(FU_UDEV_DEVICE(device), "mei/mei0/fw_ver", NULL);
+	fwvers = fu_udev_device_read_sysfs(FU_UDEV_DEVICE(device),
+					   "mei/mei0/fw_ver",
+					   FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
+					   NULL);
 	if (fwvers != NULL) {
-		if (!fu_mei_parse_fwvers(plugin, fwvers, error))
+		if (!fu_pci_mei_plugin_parse_fwvers(plugin, fwvers, error))
 			return FALSE;
 	}
 
@@ -186,9 +188,9 @@ fu_pci_mei_plugin_backend_device_added(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme11_manufacturing_mode(FuPlugin *plugin,
-						       GByteArray *hfsts1,
-						       FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme11_manufacturing_mode(FuPlugin *plugin,
+						      FuMeiCsme11Hfsts1 *hfsts1,
+						      FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -217,9 +219,9 @@ fu_plugin_add_security_attrs_csme11_manufacturing_mode(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme18_manufacturing_mode(FuPlugin *plugin,
-						       GByteArray *hfsts1,
-						       FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme18_manufacturing_mode(FuPlugin *plugin,
+						      FuMeiCsme18Hfsts1 *hfsts1,
+						      FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -255,9 +257,9 @@ fu_plugin_add_security_attrs_csme18_manufacturing_mode(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme11_override_strap(FuPlugin *plugin,
-						   GByteArray *hfsts1,
-						   FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme11_override_strap(FuPlugin *plugin,
+						  FuMeiCsme11Hfsts1 *hfsts1,
+						  FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -286,9 +288,9 @@ fu_plugin_add_security_attrs_csme11_override_strap(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme18_override_strap(FuPlugin *plugin,
-						   GByteArray *hfsts1,
-						   FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme18_override_strap(FuPlugin *plugin,
+						  FuMeiCsme18Hfsts1 *hfsts1,
+						  FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -317,9 +319,9 @@ fu_plugin_add_security_attrs_csme18_override_strap(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme11_bootguard_enabled(FuPlugin *plugin,
-						      GByteArray *hfsts6,
-						      FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme11_bootguard_enabled(FuPlugin *plugin,
+						     FuMeiCsme11Hfsts6 *hfsts6,
+						     FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -347,9 +349,9 @@ fu_plugin_add_security_attrs_csme11_bootguard_enabled(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme18_bootguard_enabled(FuPlugin *plugin,
-						      GByteArray *hfsts5,
-						      FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme18_bootguard_enabled(FuPlugin *plugin,
+						     FuMeiCsme18Hfsts5 *hfsts5,
+						     FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -377,9 +379,9 @@ fu_plugin_add_security_attrs_csme18_bootguard_enabled(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme11_bootguard_verified(FuPlugin *plugin,
-						       GByteArray *hfsts6,
-						       FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme11_bootguard_verified(FuPlugin *plugin,
+						      FuMeiCsme11Hfsts6 *hfsts6,
+						      FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -413,9 +415,9 @@ fu_plugin_add_security_attrs_csme11_bootguard_verified(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme11_bootguard_acm(FuPlugin *plugin,
-						  GByteArray *hfsts6,
-						  FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme11_bootguard_acm(FuPlugin *plugin,
+						 FuMeiCsme11Hfsts6 *hfsts6,
+						 FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -449,9 +451,9 @@ fu_plugin_add_security_attrs_csme11_bootguard_acm(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme18_bootguard_acm(FuPlugin *plugin,
-						  GByteArray *hfsts5,
-						  FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme18_bootguard_acm(FuPlugin *plugin,
+						 FuMeiCsme18Hfsts5 *hfsts5,
+						 FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -484,9 +486,9 @@ fu_plugin_add_security_attrs_csme18_bootguard_acm(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme11_bootguard_policy(FuPlugin *plugin,
-						     GByteArray *hfsts6,
-						     FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme11_bootguard_policy(FuPlugin *plugin,
+						    FuMeiCsme11Hfsts6 *hfsts6,
+						    FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -524,9 +526,9 @@ fu_plugin_add_security_attrs_csme11_bootguard_policy(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme11_bootguard_otp(FuPlugin *plugin,
-						  GByteArray *hfsts6,
-						  FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme11_bootguard_otp(FuPlugin *plugin,
+						 FuMeiCsme11Hfsts6 *hfsts6,
+						 FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -560,9 +562,9 @@ fu_plugin_add_security_attrs_csme11_bootguard_otp(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_csme18_bootguard_otp(FuPlugin *plugin,
-						  GByteArray *hfsts6,
-						  FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_csme18_bootguard_otp(FuPlugin *plugin,
+						 FuMeiCsme18Hfsts6 *hfsts6,
+						 FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autoptr(FwupdSecurityAttr) attr = NULL;
@@ -575,12 +577,6 @@ fu_plugin_add_security_attrs_csme18_bootguard_otp(FuPlugin *plugin,
 	/* no device */
 	if (self->pci_device == NULL) {
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_FOUND);
-		return;
-	}
-
-	/* actively disabled */
-	if (fu_mei_csme11_hfsts6_get_boot_guard_disable(hfsts6)) {
-		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED);
 		return;
 	}
 
@@ -601,7 +597,7 @@ fu_plugin_add_security_attrs_csme18_bootguard_otp(FuPlugin *plugin,
 }
 
 static void
-fu_plugin_add_security_attrs_mei_version(FuPlugin *plugin, FuSecurityAttrs *attrs)
+fu_pci_mei_plugin_add_attrs_mei_version(FuPlugin *plugin, FuSecurityAttrs *attrs)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(plugin);
 	g_autofree gchar *version = NULL;
@@ -662,8 +658,8 @@ fu_pci_mei_plugin_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 
 	/* run CSME-specific tests depending on version */
 	if (self->family == FU_MEI_FAMILY_CSME) {
-		g_autoptr(GByteArray) hfsts1 = NULL;
-		g_autoptr(GByteArray) hfsts6 = NULL;
+		g_autoptr(FuMeiCsme11Hfsts1) hfsts1 = NULL;
+		g_autoptr(FuMeiCsme11Hfsts6) hfsts6 = NULL;
 
 		/* CSME 11 to 17 */
 		hfsts1 = fu_mei_csme11_hfsts1_parse(self->hfsts_buf[1],
@@ -678,18 +674,18 @@ fu_pci_mei_plugin_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 						    NULL);
 		if (hfsts6 == NULL)
 			return;
-		fu_plugin_add_security_attrs_csme11_manufacturing_mode(plugin, hfsts1, attrs);
-		fu_plugin_add_security_attrs_csme11_override_strap(plugin, hfsts1, attrs);
-		fu_plugin_add_security_attrs_csme11_bootguard_enabled(plugin, hfsts6, attrs);
-		fu_plugin_add_security_attrs_csme11_bootguard_verified(plugin, hfsts6, attrs);
-		fu_plugin_add_security_attrs_csme11_bootguard_acm(plugin, hfsts6, attrs);
-		fu_plugin_add_security_attrs_csme11_bootguard_policy(plugin, hfsts6, attrs);
-		fu_plugin_add_security_attrs_csme11_bootguard_otp(plugin, hfsts6, attrs);
+		fu_pci_mei_plugin_add_attrs_csme11_manufacturing_mode(plugin, hfsts1, attrs);
+		fu_pci_mei_plugin_add_attrs_csme11_override_strap(plugin, hfsts1, attrs);
+		fu_pci_mei_plugin_add_attrs_csme11_bootguard_enabled(plugin, hfsts6, attrs);
+		fu_pci_mei_plugin_add_attrs_csme11_bootguard_verified(plugin, hfsts6, attrs);
+		fu_pci_mei_plugin_add_attrs_csme11_bootguard_acm(plugin, hfsts6, attrs);
+		fu_pci_mei_plugin_add_attrs_csme11_bootguard_policy(plugin, hfsts6, attrs);
+		fu_pci_mei_plugin_add_attrs_csme11_bootguard_otp(plugin, hfsts6, attrs);
 
 	} else if (self->family == FU_MEI_FAMILY_CSME18) {
-		g_autoptr(GByteArray) hfsts1 = NULL;
-		g_autoptr(GByteArray) hfsts5 = NULL;
-		g_autoptr(GByteArray) hfsts6 = NULL;
+		g_autoptr(FuMeiCsme18Hfsts1) hfsts1 = NULL;
+		g_autoptr(FuMeiCsme18Hfsts5) hfsts5 = NULL;
+		g_autoptr(FuMeiCsme18Hfsts6) hfsts6 = NULL;
 
 		/* CSME 18+ */
 		hfsts1 = fu_mei_csme18_hfsts1_parse(self->hfsts_buf[1],
@@ -710,11 +706,11 @@ fu_pci_mei_plugin_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 						    NULL);
 		if (hfsts6 == NULL)
 			return;
-		fu_plugin_add_security_attrs_csme18_manufacturing_mode(plugin, hfsts1, attrs);
-		fu_plugin_add_security_attrs_csme18_override_strap(plugin, hfsts1, attrs);
-		fu_plugin_add_security_attrs_csme18_bootguard_enabled(plugin, hfsts5, attrs);
-		fu_plugin_add_security_attrs_csme18_bootguard_acm(plugin, hfsts5, attrs);
-		fu_plugin_add_security_attrs_csme18_bootguard_otp(plugin, hfsts6, attrs);
+		fu_pci_mei_plugin_add_attrs_csme18_manufacturing_mode(plugin, hfsts1, attrs);
+		fu_pci_mei_plugin_add_attrs_csme18_override_strap(plugin, hfsts1, attrs);
+		fu_pci_mei_plugin_add_attrs_csme18_bootguard_enabled(plugin, hfsts5, attrs);
+		fu_pci_mei_plugin_add_attrs_csme18_bootguard_acm(plugin, hfsts5, attrs);
+		fu_pci_mei_plugin_add_attrs_csme18_bootguard_otp(plugin, hfsts6, attrs);
 	} else {
 		g_autoptr(FwupdSecurityAttr) attr = NULL;
 
@@ -727,7 +723,7 @@ fu_pci_mei_plugin_add_security_attrs(FuPlugin *plugin, FuSecurityAttrs *attrs)
 	}
 
 	/* all */
-	fu_plugin_add_security_attrs_mei_version(plugin, attrs);
+	fu_pci_mei_plugin_add_attrs_mei_version(plugin, attrs);
 }
 
 static void
@@ -743,7 +739,7 @@ fu_pci_mei_plugin_constructed(GObject *obj)
 }
 
 static void
-fu_pci_mei_finalize(GObject *obj)
+fu_pci_mei_plugin_finalize(GObject *obj)
 {
 	FuPciMeiPlugin *self = FU_PCI_MEI_PLUGIN(obj);
 	if (self->pci_device != NULL)
@@ -757,7 +753,7 @@ fu_pci_mei_plugin_class_init(FuPciMeiPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->finalize = fu_pci_mei_finalize;
+	object_class->finalize = fu_pci_mei_plugin_finalize;
 	plugin_class->constructed = fu_pci_mei_plugin_constructed;
 	plugin_class->add_security_attrs = fu_pci_mei_plugin_add_security_attrs;
 	plugin_class->backend_device_added = fu_pci_mei_plugin_backend_device_added;

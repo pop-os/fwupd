@@ -1,14 +1,22 @@
-fwupd (1.9.26-2) unstable; urgency=medium
+fwupd (2.0.2-1) UNRELEASED; urgency=medium
 
-  * Backport a patch to fix FTBFS without git in source tree.
+  * New upstream version (2.0.2)
 
- -- Mario Limonciello <superm1@gmail.com>  Mon, 14 Oct 2024 20:42:12 -0500
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 25 Nov 2024 06:49:00 -0600
 
-fwupd (1.9.26-1) unstable; urgency=medium
+fwupd (2.0.1-1) experimental; urgency=medium
 
-  * New upstream version (1.9.26)
+  * New upstream version (2.0.1)
 
- -- Mario Limonciello <superm1@gmail.com>  Mon, 14 Oct 2024 16:28:57 -0500
+ -- Mario Limonciello <superm1@gmail.com>  Tue, 15 Oct 2024 08:38:45 -0500
+
+fwupd (2.0.0-1) experimental; urgency=medium
+
+  * New upstream version (2.0.0)
+  * Breaks ABI, introduce new libfwupd3 library for other software to use.
+  * Adjust build depends for new version.
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 09 Oct 2024 09:34:25 -0500
 
 fwupd (1.9.25-1) unstable; urgency=medium
 

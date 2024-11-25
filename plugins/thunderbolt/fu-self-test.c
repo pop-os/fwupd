@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Christian J. Kellner <christian@kellner.me>
+ * Copyright 2017 Christian J. Kellner <christian@kellner.me>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -321,18 +321,25 @@ mock_tree_node_have_fu_device(const MockTree *node, gpointer data)
 static void
 write_controller_fw(const gchar *nvm)
 {
+	gboolean ret;
 	g_autoptr(GFile) nvm_device = NULL;
 	g_autoptr(GFile) nvmem = NULL;
 	g_autofree gchar *fw_path = NULL;
-	g_autoptr(GFile) fw_file = NULL;
+	g_autoptr(GBytes) fw_blob = NULL;
 	g_autoptr(GInputStream) is = NULL;
 	g_autoptr(GOutputStream) os = NULL;
 	g_autoptr(GError) error = NULL;
+	g_autoptr(FuFirmware) firmware_ctl = fu_intel_thunderbolt_nvm_new();
 	gssize n;
 
-	fw_path = g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw-controller.bin", NULL);
-	fw_file = g_file_new_for_path(fw_path);
-	g_assert_nonnull(fw_file);
+	fw_path =
+	    g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw-controller.builder.xml", NULL);
+	ret = fu_firmware_build_from_filename(firmware_ctl, fw_path, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	fw_blob = fu_firmware_write(firmware_ctl, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(fw_blob);
 
 	nvm_device = g_file_new_for_path(nvm);
 	g_assert_nonnull(nvm_device);
@@ -344,9 +351,7 @@ write_controller_fw(const gchar *nvm)
 	g_assert_no_error(error);
 	g_assert_nonnull(os);
 
-	is = (GInputStream *)g_file_read(fw_file, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(is);
+	is = g_memory_input_stream_new_from_bytes(fw_blob);
 
 	n = g_output_stream_splice(os, is, G_OUTPUT_STREAM_SPLICE_NONE, NULL, &error);
 	g_assert_no_error(error);
@@ -849,8 +854,8 @@ typedef struct ThunderboltTest {
 	MockTree *tree;
 
 	/* if TestParam::firmware_file is nonnull */
-	GMappedFile *fw_file;
 	GBytes *fw_data;
+	GInputStream *fw_stream;
 
 } ThunderboltTest;
 
@@ -865,7 +870,7 @@ fu_thunderbolt_gudev_uevent_cb(GUdevClient *gudev_client,
 		g_autoptr(GError) error_local = NULL;
 		g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 
-		device = fu_udev_device_new(tt->ctx, udev_device);
+		device = fu_udev_device_new(tt->ctx, g_udev_device_get_sysfs_path(udev_device));
 		if (!fu_device_probe(FU_DEVICE(device), &error_local)) {
 			g_warning("failed to probe: %s", error_local->message);
 			return;
@@ -883,7 +888,8 @@ fu_thunderbolt_gudev_uevent_cb(GUdevClient *gudev_client,
 		return;
 	}
 	if (g_strcmp0(action, "change") == 0) {
-		const gchar *uuid = g_udev_device_get_sysfs_attr(udev_device, "unique_id");
+		const gchar *uuid =
+		    g_udev_device_get_sysfs_attr(udev_device, "unique_id"); /* nocheck:blocked */
 		MockTree *target = (MockTree *)mock_tree_find_uuid(tt->tree, uuid);
 		g_assert_nonnull(target);
 		fu_udev_device_emit_changed(FU_UDEV_DEVICE(target->fu_device));
@@ -931,7 +937,7 @@ test_set_up(ThunderboltTest *tt, gconstpointer params)
 		return;
 	}
 
-	tt->udev_client = g_udev_client_new(udev_subsystems);
+	tt->udev_client = g_udev_client_new(udev_subsystems); /* nocheck:blocked */
 	g_assert_nonnull(tt->udev_client);
 	g_signal_connect(G_UDEV_CLIENT(tt->udev_client),
 			 "uevent",
@@ -947,14 +953,19 @@ test_set_up(ThunderboltTest *tt, gconstpointer params)
 
 	if (flags & TEST_PREPARE_FIRMWARE) {
 		g_autofree gchar *fw_path = NULL;
+		g_autoptr(GBytes) fw_blob = NULL;
+		g_autoptr(FuFirmware) firmware = fu_intel_thunderbolt_firmware_new();
 
-		fw_path = g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw.bin", NULL);
-		tt->fw_file = g_mapped_file_new(fw_path, FALSE, &error);
+		fw_path =
+		    g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw.builder.xml", NULL);
+		ret = fu_firmware_build_from_filename(firmware, fw_path, &error);
 		g_assert_no_error(error);
-		g_assert_nonnull(tt->fw_file);
-
-		tt->fw_data = g_mapped_file_get_bytes(tt->fw_file);
+		g_assert_true(ret);
+		tt->fw_data = fu_firmware_write(firmware, &error);
+		g_assert_no_error(error);
 		g_assert_nonnull(tt->fw_data);
+		tt->fw_stream = g_memory_input_stream_new_from_bytes(tt->fw_data);
+		g_assert_nonnull(tt->fw_stream);
 	}
 }
 
@@ -971,9 +982,8 @@ test_tear_down(ThunderboltTest *tt, gconstpointer user_data)
 
 	if (tt->fw_data)
 		g_bytes_unref(tt->fw_data);
-
-	if (tt->fw_file)
-		g_mapped_file_unref(tt->fw_file);
+	if (tt->fw_stream)
+		g_object_unref(tt->fw_stream);
 }
 
 static gboolean
@@ -1028,11 +1038,7 @@ test_image_validation(ThunderboltTest *tt, gconstpointer user_data)
 	g_autofree gchar *ctl_path = NULL;
 	g_autofree gchar *fwi_path = NULL;
 	g_autofree gchar *bad_path = NULL;
-	g_autoptr(GMappedFile) fwi_file = NULL;
-	g_autoptr(GMappedFile) ctl_file = NULL;
 	g_autoptr(GMappedFile) bad_file = NULL;
-	g_autoptr(GBytes) fwi_data = NULL;
-	g_autoptr(GBytes) ctl_data = NULL;
 	g_autoptr(GBytes) bad_data = NULL;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(FuFirmware) firmware_fwi = fu_intel_thunderbolt_firmware_new();
@@ -1040,35 +1046,20 @@ test_image_validation(ThunderboltTest *tt, gconstpointer user_data)
 	g_autoptr(FuFirmware) firmware_bad = fu_intel_thunderbolt_nvm_new();
 
 	/* image as if read from the controller (i.e. no headers) */
-	ctl_path = g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw-controller.bin", NULL);
-	ctl_file = g_mapped_file_new(ctl_path, FALSE, &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(ctl_file);
-
-	ctl_data = g_mapped_file_get_bytes(ctl_file);
-	g_assert_nonnull(ctl_data);
-
-	/* parse controller image */
-	ret = fu_firmware_parse(firmware_ctl, ctl_data, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ctl_path =
+	    g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw-controller.builder.xml", NULL);
+	ret = fu_firmware_build_from_filename(firmware_ctl, ctl_path, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* valid firmware update image */
-	fwi_path = g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw.bin", NULL);
-	fwi_file = g_mapped_file_new(fwi_path, FALSE, &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(fwi_file);
-
-	fwi_data = g_mapped_file_get_bytes(fwi_file);
-	g_assert_nonnull(fwi_data);
-
-	/* parse */
-	ret = fu_firmware_parse(firmware_fwi, fwi_data, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	fwi_path = g_test_build_filename(G_TEST_DIST, "tests", "minimal-fw.builder.xml", NULL);
+	ret = fu_firmware_build_from_filename(firmware_fwi, fwi_path, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* a wrong/bad firmware update image */
-	bad_path = g_test_build_filename(G_TEST_DIST, "tests", "colorhug.bin", NULL);
+	bad_path = g_test_build_filename(G_TEST_DIST, "tests", "colorhug.txt", NULL);
 	bad_file = g_mapped_file_new(bad_path, FALSE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(bad_file);
@@ -1077,9 +1068,13 @@ test_image_validation(ThunderboltTest *tt, gconstpointer user_data)
 	g_assert_nonnull(bad_data);
 
 	/* parse; should fail, bad image */
-	ret = fu_firmware_parse(firmware_bad, bad_data, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret = fu_firmware_parse_bytes(firmware_bad,
+				      bad_data,
+				      0x0,
+				      FWUPD_INSTALL_FLAG_NO_SEARCH,
+				      &error);
 	g_assert_false(ret);
-	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_READ);
 	g_debug("expected image validation error [ctl]: %s", error->message);
 	g_clear_error(&error);
 
@@ -1142,7 +1137,7 @@ test_update_working(ThunderboltTest *tt, gconstpointer user_data)
 	g_assert_nonnull(up_ctx);
 	ret = fu_plugin_runner_write_firmware(plugin,
 					      tree->fu_device,
-					      fw_data,
+					      tt->fw_stream,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
@@ -1190,13 +1185,13 @@ test_update_wd19(ThunderboltTest *tt, gconstpointer user_data)
 	g_assert_nonnull(fw_data);
 
 	/* simulate a wd19 update which will not disappear / re-appear */
-	fu_device_add_flag(tree->fu_device, FWUPD_DEVICE_FLAG_SKIPS_RESTART);
+	fu_device_add_private_flag(tree->fu_device, FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
 	fu_device_add_flag(tree->fu_device, FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
 	version_before = fu_device_get_version(tree->fu_device);
 
 	ret = fu_plugin_runner_write_firmware(plugin,
 					      tree->fu_device,
-					      fw_data,
+					      tt->fw_stream,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
@@ -1234,7 +1229,7 @@ test_update_fail(ThunderboltTest *tt, gconstpointer user_data)
 
 	ret = fu_plugin_runner_write_firmware(plugin,
 					      tree->fu_device,
-					      fw_data,
+					      tt->fw_stream,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
@@ -1287,7 +1282,7 @@ test_update_fail_nowshow(ThunderboltTest *tt, gconstpointer user_data)
 
 	ret = fu_plugin_runner_write_firmware(plugin,
 					      tree->fu_device,
-					      fw_data,
+					      tt->fw_stream,
 					      progress,
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);

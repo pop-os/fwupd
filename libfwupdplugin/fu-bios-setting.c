@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuBiosSettings"
@@ -22,26 +22,13 @@ G_DEFINE_TYPE(FuBiosSetting, fu_bios_setting, FWUPD_TYPE_BIOS_SETTING)
 static gboolean
 fu_bios_setting_write_value(FwupdBiosSetting *self, const gchar *value, GError **error)
 {
-	int fd;
 	g_autofree gchar *fn =
 	    g_build_filename(fwupd_bios_setting_get_path(self), "current_value", NULL);
 	g_autoptr(FuIOChannel) io = NULL;
 
-	fd = open(fn, O_WRONLY);
-	if (fd < 0) {
-		g_set_error(error,
-			    G_IO_ERROR,
-#ifdef HAVE_ERRNO_H
-			    g_io_error_from_errno(errno),
-#else
-			    G_IO_ERROR_FAILED,
-#endif
-			    "could not open %s: %s",
-			    fn,
-			    g_strerror(errno));
+	io = fu_io_channel_new_file(fn, FU_IO_CHANNEL_OPEN_FLAG_WRITE, error);
+	if (io == NULL)
 		return FALSE;
-	}
-	io = fu_io_channel_unix_new(fd);
 	if (!fu_io_channel_write_raw(io,
 				     (const guint8 *)value,
 				     strlen(value),

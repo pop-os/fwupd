@@ -1,67 +1,41 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
-#include "fu-intel-me-common.h"
+#include <fwupd.h>
 
-static gboolean
-fu_intel_me_mkhi_result_to_error(FuMkhiResult result, GError **error)
+#include "fu-intel-me-common.h"
+#include "fu-intel-me-mkhi-struct.h"
+
+gboolean
+fu_intel_me_mkhi_result_to_error(FuMkhiStatus result, GError **error)
 {
-	if (result == MKHI_STATUS_SUCCESS)
+	if (result == FU_MKHI_STATUS_SUCCESS)
 		return TRUE;
 
 	switch (result) {
-	case MKHI_STATUS_NOT_SUPPORTED:
-	case MKHI_STATUS_NOT_AVAILABLE:
-	case MKHI_STATUS_NOT_SET:
+	case FU_MKHI_STATUS_NOT_SUPPORTED:
+	case FU_MKHI_STATUS_NOT_AVAILABLE:
+	case FU_MKHI_STATUS_NOT_SET:
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "not supported [0x%x]",
 			    result);
 		break;
 	default:
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "generic failure [0x%x]", result);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
+			    "generic failure [0x%x]",
+			    result);
 		break;
 	}
 	return FALSE;
-}
-
-gboolean
-fu_intel_me_mkhi_verify_header(const FuMkhiHeader *hdr_req,
-			       const FuMkhiHeader *hdr_res,
-			       GError **error)
-{
-	if (hdr_req->group_id != hdr_res->group_id) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
-			    "invalid response group ID, requested 0x%x and got 0x%x",
-			    hdr_req->group_id,
-			    hdr_res->group_id);
-		return FALSE;
-	}
-	if (hdr_req->command != hdr_res->command) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
-			    "invalid response command, requested 0x%x and got 0x%x",
-			    (guint)hdr_req->command,
-			    (guint)hdr_res->command);
-		return FALSE;
-	}
-	if (!hdr_res->is_resp) {
-		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
-				    "invalid response group ID, not a response!");
-		return FALSE;
-	}
-	return fu_intel_me_mkhi_result_to_error(hdr_res->result, error);
 }
 
 GString *
@@ -81,15 +55,15 @@ fu_intel_me_convert_checksum(GByteArray *buf, GError **error)
 	}
 	if (!seen_non00_data) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_INITIALIZED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "buffer was all 0x00");
 		return NULL;
 	}
 	if (!seen_nonff_data) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_INITIALIZED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "buffer was all 0xFF");
 		return NULL;
 	}

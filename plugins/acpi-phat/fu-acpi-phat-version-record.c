@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -19,32 +19,33 @@ G_DEFINE_TYPE(FuAcpiPhatVersionRecord, fu_acpi_phat_version_record, FU_TYPE_FIRM
 
 static gboolean
 fu_acpi_phat_version_record_parse(FuFirmware *firmware,
-				  GBytes *fw,
-				  gsize offset,
+				  GInputStream *stream,
 				  FwupdInstallFlags flags,
 				  GError **error)
 {
+	gsize offset = 0;
 	guint32 record_count = 0;
 	g_autoptr(GByteArray) st = NULL;
 
-	st = fu_struct_acpi_phat_version_record_parse_bytes(fw, offset, error);
+	st = fu_struct_acpi_phat_version_record_parse_stream(stream, offset, error);
 	if (st == NULL)
 		return FALSE;
 	record_count = fu_struct_acpi_phat_version_record_get_record_count(st);
 	for (guint32 i = 0; i < record_count; i++) {
 		g_autoptr(FuFirmware) firmware_tmp = fu_acpi_phat_version_element_new();
-		g_autoptr(GBytes) fw_tmp = NULL;
-		fw_tmp = fu_bytes_new_offset(fw,
-					     offset + st->len,
-					     FU_STRUCT_ACPI_PHAT_VERSION_ELEMENT_SIZE,
-					     error);
-		if (fw_tmp == NULL)
+		g_autoptr(GInputStream) stream_tmp = NULL;
+		stream_tmp = fu_partial_input_stream_new(stream,
+							 offset + st->len,
+							 FU_STRUCT_ACPI_PHAT_VERSION_ELEMENT_SIZE,
+							 error);
+		if (stream_tmp == NULL)
 			return FALSE;
 		fu_firmware_set_offset(firmware_tmp, offset + st->len);
-		if (!fu_firmware_parse(firmware_tmp,
-				       fw_tmp,
-				       flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
-				       error))
+		if (!fu_firmware_parse_stream(firmware_tmp,
+					      stream_tmp,
+					      0x0,
+					      flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      error))
 			return FALSE;
 		if (!fu_firmware_add_image_full(firmware, firmware_tmp, error))
 			return FALSE;
@@ -84,14 +85,15 @@ fu_acpi_phat_version_record_init(FuAcpiPhatVersionRecord *self)
 {
 	fu_firmware_set_images_max(FU_FIRMWARE(self), 2000);
 	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_NO_AUTO_DETECTION);
+	g_type_ensure(FU_TYPE_ACPI_PHAT_VERSION_ELEMENT);
 }
 
 static void
 fu_acpi_phat_version_record_class_init(FuAcpiPhatVersionRecordClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_acpi_phat_version_record_parse;
-	klass_firmware->write = fu_acpi_phat_version_record_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_acpi_phat_version_record_parse;
+	firmware_class->write = fu_acpi_phat_version_record_write;
 }
 
 FuFirmware *

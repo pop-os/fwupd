@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2024 Algoltek, Inc.
+ * Copyright 2024 Algoltek, Inc.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -19,4 +19,3 @@
 #define AG_UPDATE_FAIL	 2
 
 #define AG_IDENTIFICATION_128K_ADDR 31
-#define AG_IDENTIFICATION_256K_ADDR 63

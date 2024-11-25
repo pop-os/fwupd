@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 Jason Gerecke <killertofu@gmail.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Jason Gerecke <killertofu@gmail.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -41,33 +41,57 @@ fu_wac_module_bluetooth_id6_reverse_bits(guint8 value)
 	return reverse;
 }
 
+/* this doesn't appear to be any kind of standard CRC-8 */
 static guint8
-fu_wac_module_bluetooth_id6_calculate_crc(const guint8 *data, gsize sz)
+fu_wac_module_bluetooth_id6_calculate_crc(const guint8 *buf, gsize bufsz)
 {
-	guint8 crc = ~fu_crc8_full(data, sz, 0x00, FU_WAC_MODULE_BLUETOOTH_ID6_CRC8_POLYNOMIAL);
+	const guint8 polynomial = FU_WAC_MODULE_BLUETOOTH_ID6_CRC8_POLYNOMIAL;
+	guint32 crc = 0x00;
+	for (gsize j = bufsz; j > 0; j--) {
+		crc ^= (*(buf++) << 8);
+		for (guint32 i = 8; i; i--) {
+			if (crc & 0x8000)
+				crc ^= ((polynomial | 0x100) << 7);
+			crc <<= 1;
+		}
+	}
+	crc = (guint8)(crc >> 8);
 	return fu_wac_module_bluetooth_id6_reverse_bits(crc);
 }
 
 static gboolean
 fu_wac_module_bluetooth_id6_write_blob(FuWacModule *self,
-				       GBytes *fw,
+				       GInputStream *stream,
 				       FuProgress *progress,
 				       GError **error)
 {
 	g_autoptr(FuChunkArray) chunks =
-	    fu_chunk_array_new_from_bytes(fw, 0x0, FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ);
+	    fu_chunk_array_new_from_stream(stream,
+					   FU_CHUNK_ADDR_OFFSET_NONE,
+					   FU_CHUNK_PAGESZ_NONE,
+					   FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ,
+					   error);
+	if (chunks == NULL)
+		return FALSE;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		guint8 buf[FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ + 7] = {0x00, 0x01, 0xFF};
 		g_autoptr(GBytes) blob_chunk = NULL;
 
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
+
 		/* build data packet */
 		fu_memwrite_uint32(buf + 0x3, 0x0, G_LITTLE_ENDIAN); /* addr, always zero */
-		memcpy(buf + 0x7, fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
+		memcpy(buf + 0x7,				     /* nocheck:blocked */
+		       fu_chunk_get_data(chk),
+		       fu_chunk_get_data_sz(chk));
 		buf[2] = fu_wac_module_bluetooth_id6_calculate_crc(
 		    buf + 0x7,
 		    FU_WAC_MODULE_BLUETOOTH_ID6_PAYLOAD_SZ); /* include 0xFF for the possibly
@@ -104,7 +128,7 @@ fu_wac_module_bluetooth_id6_write_firmware(FuDevice *device,
 	FuWacModule *self = FU_WAC_MODULE(device);
 	const guint8 buf_start[] = {FU_WAC_MODULE_BLUETOOTH_ID6_START_NORMAL};
 	g_autoptr(GBytes) blob_start = g_bytes_new_static(buf_start, sizeof(buf_start));
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -113,9 +137,9 @@ fu_wac_module_bluetooth_id6_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 33, NULL);
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL) {
-		g_prefix_error(error, "wacom bluetooth-id6 module failed to get bytes: ");
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL) {
+		g_prefix_error(error, "wacom bluetooth-id6 module failed to get stream: ");
 		return FALSE;
 	}
 
@@ -134,7 +158,7 @@ fu_wac_module_bluetooth_id6_write_firmware(FuDevice *device,
 
 	/* data */
 	if (!fu_wac_module_bluetooth_id6_write_blob(self,
-						    fw,
+						    stream,
 						    fu_progress_get_child(progress),
 						    error)) {
 		g_prefix_error(error, "wacom bluetooth-id6 module failed to write: ");
@@ -170,8 +194,8 @@ fu_wac_module_bluetooth_id6_init(FuWacModuleBluetoothId6 *self)
 static void
 fu_wac_module_bluetooth_id6_class_init(FuWacModuleBluetoothId6Class *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_wac_module_bluetooth_id6_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_wac_module_bluetooth_id6_write_firmware;
 }
 
 FuWacModule *

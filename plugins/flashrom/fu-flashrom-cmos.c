@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Sean Rhodes <sean@starlabs.systems>
+ * Copyright 2021 Sean Rhodes <sean@starlabs.systems>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 #include "config.h"
 
@@ -57,7 +57,7 @@ fu_flashrom_cmos_reset(GError **error)
 	/* success */
 	return TRUE;
 #else
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "no <sys/io.h> support");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no <sys/io.h> support");
 	return FALSE;
 #endif
 }

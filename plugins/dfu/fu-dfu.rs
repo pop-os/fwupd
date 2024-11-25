@@ -1,7 +1,16 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-enum DfuRequest {
+enum FuDfuDeviceAttr {
+    CanDownload = 1 << 0,
+    CanUpload = 1 << 1,
+    ManifestTol = 1 << 2,
+    WillDetach = 1 << 3,
+    CanAccelerate = 1 << 7,
+}
+
+
+enum FuDfuRequest {
     Detach,
     Dnload,
     Upload,
@@ -12,7 +21,7 @@ enum DfuRequest {
 }
 
 #[derive(ToString)]
-enum DfuStatus {
+enum FuDfuStatus {
     Ok,
     ErrTarget,
     ErrFile,
@@ -32,7 +41,7 @@ enum DfuStatus {
 }
 
 #[derive(ToString)]
-enum DfuState {
+enum FuDfuState {
     AppIdle,
     AppDetach,
     DfuIdle,
@@ -47,7 +56,7 @@ enum DfuState {
 }
 
 #[derive(ToBitString)]
-enum DfuSectorCap {
+enum FuDfuSectorCap {
     None = 0, // No operations possible
     Readable = 1 << 0,
     Writeable = 1 << 1,

@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2022 Andrii Dushko <andrii.dushko@developex.net>
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Andrii Dushko <andrii.dushko@developex.net>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
+#include "fu-corsair-bp.h"
 #include "fu-corsair-device.h"
 #include "fu-corsair-plugin.h"
 
@@ -29,7 +30,8 @@ fu_corsair_plugin_constructed(GObject *obj)
 	fu_context_add_quirk_key(ctx, "CorsairDeviceKind");
 	fu_context_add_quirk_key(ctx, "CorsairVendorInterfaceId");
 	fu_context_add_quirk_key(ctx, "CorsairSubdeviceId");
-	fu_plugin_add_device_gtype(plugin, FU_TYPE_CORSAIR_DEVICE);
+	fu_plugin_set_device_gtype_default(plugin, FU_TYPE_CORSAIR_DEVICE);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_CORSAIR_BP); /* coverage */
 }
 
 static void

@@ -12,6 +12,7 @@ rename_branch()
     NEW=main
     if git log $OLD >/dev/null 2>&1 &&
        git remote get-url origin 2>&1 | grep fwupd/fwupd.git >/dev/null 2>&1; then
+        echo ""
         read -p "Rename existing $OLD branch to $NEW? (y/N) " question
         if [ "$question" = "y" ]; then
             git branch -m $OLD $NEW
@@ -26,7 +27,7 @@ setup_deps()
 {
     read -p "Install build dependencies? (y/N) " question
     if [ "$question" = "y" ]; then
-        $(which sudo) python3 $HELPER install-dependencies $HELPER_ARGS -y
+        python3 $HELPER install-dependencies $HELPER_ARGS -y
     fi
 }
 
@@ -43,6 +44,8 @@ setup_run_wrappers()
     # build wrapper
     rm -f ${BIN}/build-fwupd
     ln -s ${BASE}/build-venv.sh ${BIN}/build-fwupd
+    rm -f ${BIN}/test-fwupd
+    ln -s ${BASE}/test-venv.sh ${BIN}/test-fwupd
 }
 
 setup_vscode()
@@ -52,7 +55,8 @@ setup_vscode()
     TARGETD=./.vscode
     SETTINGS_F=settings.json
     LAUNCH_F=launch.json
-    for f in $SETTINGS_F $LAUNCH_F; do
+    TASK_F=tasks.json
+    for f in $SETTINGS_F $LAUNCH_F $TASK_F; do
         TEMPLATE=${SOURCED}/${f}
         TARGETF=${TARGETD}/${f}
         mkdir -p ${TARGETD}
@@ -72,7 +76,7 @@ install_pip()
     package=$1
     args=$2
     if ! python3 -m pip install $package $args; then
-        $(which sudo) python3 $HELPER install-pip $HELPER_ARGS -y
+        python3 $HELPER install-pip $HELPER_ARGS -y
     fi
     #try once more
     python3 -m pip install $package
@@ -90,6 +94,10 @@ setup_virtualenv()
 echo "To build or rebuild fwupd within development environment run:"
 echo ""
 echo "# build-fwupd"
+echo ""
+echo "To run the test suite run:"
+echo ""
+echo "# test-fwupd"
 echo ""
 echo "To run any tool under gdbserver add DEBUG=1 to env, for example:"
 echo ""
@@ -113,6 +121,7 @@ setup_precommit()
 
 setup_prepush()
 {
+    echo ""
     read -p "Run tests locally before pushing to remote branches? THIS WILL SLOW DOWN EVERY PUSH but reduce the risk of failing CI. (y/N) " question
     if [ "$question" = "y" ]; then
         pre-commit install -t pre-push
@@ -169,16 +178,35 @@ detect_os()
     fi
 }
 
+howto()
+{
+    echo ""
+    echo "To enter fwupd development environment run:"
+    echo ""
+    echo "# source venv/bin/activate"
+    echo ""
+}
+
+#already setup
+if [ -f venv/bin/build-fwupd ]; then
+    echo "$0 has already been run"
+    howto
+    exit 0
+fi
+
+PYTHON_VERSION=$(python3 --version 2>/dev/null)
+if [ -z "$PYTHON_VERSION" ]; then
+    echo "Install python3 to run this script" >&2
+    exit 1
+fi
+
 #needed for arguments for some commands
 detect_os "$@"
 
 #if interactive install build deps and prepare environment
 if [ -t 2 ]; then
     case $OS in
-        debian|ubuntu|arch|fedora)
-            setup_deps
-            ;;
-        void)
+        debian|ubuntu|arch|fedora|void|darwin)
             setup_deps
             ;;
     esac
@@ -198,8 +226,4 @@ if [ -t 2 ]; then
     setup_prepush
 fi
 
-echo ""
-echo "To enter fwupd development environment run:"
-echo ""
-echo "# source venv/bin/activate"
-echo ""
+howto

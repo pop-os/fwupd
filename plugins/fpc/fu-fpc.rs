@@ -1,22 +1,24 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[repr(u8)]
-enum FpcDfuState {
+enum FuFpcDfuState {
     Dnbusy = 0x04,
 }
 
 #[derive(New, Getters)]
-struct FpcDfu {
+#[repr(C, packed)]
+struct FuStructFpcDfu {
     status: u8,
     max_payload_size: u8,
     _reserved: [u8; 2],
-    state: FpcDfuState,
+    state: FuFpcDfuState,
     _reserved2: u8,
 }
 
-#[derive(ValidateBytes, ParseBytes)]
-struct FpcFf2Hdr {
+#[derive(ValidateStream, ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructFpcFf2Hdr {
     compat_sig: [char; 7] == "FPC0001",
     reserved: [u8; 20],
     blocks_num: u32le,
@@ -24,22 +26,24 @@ struct FpcFf2Hdr {
 }
 
 #[repr(u8)]
-enum FpcFf2BlockDir {
+enum FuFpcFf2BlockDir {
     Out = 0x0,
     In = 0x1,
 }
 
 // dfu_meta_content_hdr_t
-#[derive(ParseBytes)]
-struct FpcFf2BlockHdr {
+#[derive(ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructFpcFf2BlockHdr {
     meta_type: u8 == 0xCD,
     meta_id: u8,
-    dir: FpcFf2BlockDir,
+    dir: FuFpcFf2BlockDir,
 }
 
 // dfu_sec_link_t
-#[derive(ParseBytes)]
-struct FpcFf2BlockSec {
+#[derive(ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructFpcFf2BlockSec {
     header: u8 == 0xEE,
     type: u8,
     payload_len: u16le,

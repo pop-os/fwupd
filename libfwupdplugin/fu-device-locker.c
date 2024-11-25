@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuDeviceLocker"
@@ -9,12 +9,9 @@
 #include "config.h"
 
 #include <gio/gio.h>
-#ifdef HAVE_GUSB
-#include <gusb.h>
-#endif
 
 #include "fu-device-locker.h"
-#include "fu-usb-device.h"
+#include "fu-device.h"
 
 /**
  * FuDeviceLocker:
@@ -86,14 +83,10 @@ fu_device_locker_close(FuDeviceLocker *self, GError **error)
 	if (!self->device_open)
 		return TRUE;
 	if (!self->close_func(self->device, &error_local)) {
-#ifdef HAVE_GUSB
-		if (g_error_matches(error_local,
-				    G_USB_DEVICE_ERROR,
-				    G_USB_DEVICE_ERROR_NO_DEVICE)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			g_debug("ignoring: %s", error_local->message);
 			return TRUE;
 		}
-#endif
 		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
 	}
@@ -112,8 +105,7 @@ fu_device_locker_close(FuDeviceLocker *self, GError **error)
  * manually closed using g_clear_object().
  *
  * The functions used for opening and closing the device are set automatically.
- * If the @device is not a type or supertype of #GUsbDevice or #FuDevice then
- * this function will not work.
+ * If the @device is not a type or supertype of #FuDevice then this function will not work.
  *
  * For custom objects please use fu_device_locker_new_full().
  *
@@ -131,16 +123,6 @@ fu_device_locker_new(gpointer device, GError **error)
 	g_return_val_if_fail(device != NULL, NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
-#ifdef HAVE_GUSB
-	/* GUsbDevice */
-	if (G_USB_IS_DEVICE(device)) {
-		return fu_device_locker_new_full(device,
-						 (FuDeviceLockerFunc)g_usb_device_open,
-						 (FuDeviceLockerFunc)g_usb_device_close,
-						 error);
-	}
-#endif
-
 	/* FuDevice */
 	if (FU_IS_DEVICE(device)) {
 		return fu_device_locker_new_full(device,
@@ -149,8 +131,8 @@ fu_device_locker_new(gpointer device, GError **error)
 						 error);
 	}
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "device object type not supported");
 	return NULL;
 }

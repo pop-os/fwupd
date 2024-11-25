@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -15,16 +15,6 @@ fu_bytes_set_contents(const gchar *filename,
 GBytes *
 fu_bytes_get_contents(const gchar *filename, GError **error) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1);
-
-GBytes *
-fu_bytes_get_contents_stream(GInputStream *stream,
-			     gsize count,
-			     GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1);
-GBytes *
-fu_bytes_get_contents_stream_full(GInputStream *stream, gsize offset, gsize count, GError **error)
-    G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1);
-GBytes *
-fu_bytes_get_contents_fd(gint fd, gsize count, GError **error) G_GNUC_WARN_UNUSED_RESULT;
 GBytes *
 fu_bytes_align(GBytes *bytes, gsize blksz, gchar padval) G_GNUC_NON_NULL(1);
 const guint8 *

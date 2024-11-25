@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCabFirmware"
@@ -9,6 +9,7 @@
 #include "config.h"
 
 #include "fu-cab-image.h"
+#include "fu-common.h"
 #include "fu-string.h"
 
 struct _FuCabImage {
@@ -117,8 +118,8 @@ fu_cab_image_build(FuFirmware *firmware, XbNode *n, GError **error)
 		g_autoptr(GDateTime) created = g_date_time_new_from_iso8601(tmp, NULL);
 		if (created == NULL) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "not iso8601: %s",
 				    tmp);
 			return FALSE;
@@ -154,11 +155,11 @@ fu_cab_image_finalize(GObject *object)
 static void
 fu_cab_image_class_init(FuCabImageClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_cab_image_finalize;
-	klass_firmware->build = fu_cab_image_build;
-	klass_firmware->export = fu_cab_image_export;
+	firmware_class->build = fu_cab_image_build;
+	firmware_class->export = fu_cab_image_export;
 }
 
 static void

@@ -1,5 +1,7 @@
 /*
- * SPDX-License-Identifier: LGPL-2.1+
+ * Copyright 2022 Kai Michaelis <kai.michaelis@immu.ne>
+ *
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -235,7 +237,7 @@ fu_redfish_smc_device_init(FuRedfishSmcDevice *self)
 static void
 fu_redfish_smc_device_class_init(FuRedfishSmcDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_redfish_smc_device_write_firmware;
-	klass_device->set_progress = fu_redfish_smc_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_redfish_smc_device_write_firmware;
+	device_class->set_progress = fu_redfish_smc_device_set_progress;
 }

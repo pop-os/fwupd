@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -15,9 +15,17 @@
 G_DECLARE_FINAL_TYPE(FuChunkArray, fu_chunk_array, FU, CHUNK_ARRAY, GObject)
 
 FuChunkArray *
-fu_chunk_array_new_from_bytes(GBytes *blob, guint32 addr_start, guint32 packet_sz)
+fu_chunk_array_new_virtual(gsize bufsz, gsize addr_offset, gsize page_sz, gsize packet_sz);
+FuChunkArray *
+fu_chunk_array_new_from_bytes(GBytes *blob, gsize addr_offset, gsize page_sz, gsize packet_sz)
     G_GNUC_NON_NULL(1);
+FuChunkArray *
+fu_chunk_array_new_from_stream(GInputStream *stream,
+			       gsize addr_offset,
+			       gsize page_sz,
+			       gsize packet_sz,
+			       GError **error) G_GNUC_NON_NULL(1);
 guint
 fu_chunk_array_length(FuChunkArray *self) G_GNUC_NON_NULL(1);
 FuChunk *
-fu_chunk_array_index(FuChunkArray *self, guint idx) G_GNUC_NON_NULL(1);
+fu_chunk_array_index(FuChunkArray *self, guint idx, GError **error) G_GNUC_NON_NULL(1);

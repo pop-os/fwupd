@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuFirmware"
@@ -12,8 +12,10 @@
 #include "fu-bytes.h"
 #include "fu-common.h"
 #include "fu-coswid-firmware.h"
+#include "fu-input-stream.h"
 #include "fu-lzma-common.h"
 #include "fu-mem.h"
+#include "fu-partial-input-stream.h"
 #include "fu-string.h"
 #include "fu-uswid-firmware.h"
 #include "fu-uswid-struct.h"
@@ -51,15 +53,14 @@ fu_uswid_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBu
 }
 
 static gboolean
-fu_uswid_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_uswid_firmware_validate(FuFirmware *firmware, GInputStream *stream, gsize offset, GError **error)
 {
-	return fu_struct_uswid_validate_bytes(fw, offset, error);
+	return fu_struct_uswid_validate_stream(stream, offset, error);
 }
 
 static gboolean
 fu_uswid_firmware_parse(FuFirmware *firmware,
-			GBytes *fw,
-			gsize offset,
+			GInputStream *stream,
 			FwupdInstallFlags flags,
 			GError **error)
 {
@@ -67,11 +68,11 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 	FuUswidFirmwarePrivate *priv = GET_PRIVATE(self);
 	guint16 hdrsz;
 	guint32 payloadsz;
-	g_autoptr(GByteArray) st = NULL;
+	g_autoptr(FuStructUswid) st = NULL;
 	g_autoptr(GBytes) payload = NULL;
 
 	/* unpack */
-	st = fu_struct_uswid_parse_bytes(fw, offset, error);
+	st = fu_struct_uswid_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 
@@ -114,32 +115,29 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 
 	/* zlib stream */
 	if (priv->compression == FU_USWID_PAYLOAD_COMPRESSION_ZLIB) {
-		g_autoptr(GBytes) payload_tmp = NULL;
 		g_autoptr(GConverter) conv = NULL;
 		g_autoptr(GInputStream) istream1 = NULL;
 		g_autoptr(GInputStream) istream2 = NULL;
-
-		payload_tmp = fu_bytes_new_offset(fw, offset + hdrsz, payloadsz, error);
-		if (payload_tmp == NULL)
-			return FALSE;
-		istream1 = g_memory_input_stream_new_from_bytes(payload_tmp);
 		conv = G_CONVERTER(g_zlib_decompressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB));
+		istream1 = fu_partial_input_stream_new(stream, hdrsz, payloadsz, error);
+		if (istream1 == NULL)
+			return FALSE;
+		if (!g_seekable_seek(G_SEEKABLE(istream1), 0, G_SEEK_SET, NULL, error))
+			return FALSE;
 		istream2 = g_converter_input_stream_new(istream1, conv);
-		payload = fu_bytes_get_contents_stream(istream2, G_MAXSIZE, error);
+		payload = fu_input_stream_read_bytes(istream2, 0, G_MAXSIZE, NULL, error);
 		if (payload == NULL)
 			return FALSE;
-		payloadsz = g_bytes_get_size(payload);
 	} else if (priv->compression == FU_USWID_PAYLOAD_COMPRESSION_LZMA) {
 		g_autoptr(GBytes) payload_tmp = NULL;
-		payload_tmp = fu_bytes_new_offset(fw, offset + hdrsz, payloadsz, error);
+		payload_tmp = fu_input_stream_read_bytes(stream, hdrsz, payloadsz, NULL, error);
 		if (payload_tmp == NULL)
 			return FALSE;
 		payload = fu_lzma_decompress_bytes(payload_tmp, error);
 		if (payload == NULL)
 			return FALSE;
-		payloadsz = g_bytes_get_size(payload);
 	} else if (priv->compression == FU_USWID_PAYLOAD_COMPRESSION_NONE) {
-		payload = fu_bytes_new_offset(fw, offset + hdrsz, payloadsz, error);
+		payload = fu_input_stream_read_bytes(stream, hdrsz, payloadsz, NULL, error);
 		if (payload == NULL)
 			return FALSE;
 	} else {
@@ -152,6 +150,7 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 	}
 
 	/* payload */
+	payloadsz = g_bytes_get_size(payload);
 	for (gsize offset_tmp = 0; offset_tmp < payloadsz;) {
 		g_autoptr(FuFirmware) firmware_coswid = fu_coswid_firmware_new();
 		g_autoptr(GBytes) fw2 = NULL;
@@ -160,10 +159,11 @@ fu_uswid_firmware_parse(FuFirmware *firmware,
 		fw2 = fu_bytes_new_offset(payload, offset_tmp, payloadsz - offset_tmp, error);
 		if (fw2 == NULL)
 			return FALSE;
-		if (!fu_firmware_parse(firmware_coswid,
-				       fw2,
-				       flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
-				       error))
+		if (!fu_firmware_parse_bytes(firmware_coswid,
+					     fw2,
+					     0x0,
+					     flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					     error))
 			return FALSE;
 		if (!fu_firmware_add_image_full(firmware, firmware_coswid, error))
 			return FALSE;
@@ -186,7 +186,7 @@ fu_uswid_firmware_write(FuFirmware *firmware, GError **error)
 {
 	FuUswidFirmware *self = FU_USWID_FIRMWARE(firmware);
 	FuUswidFirmwarePrivate *priv = GET_PRIVATE(self);
-	g_autoptr(GByteArray) buf = fu_struct_uswid_new();
+	g_autoptr(FuStructUswid) buf = fu_struct_uswid_new();
 	g_autoptr(GByteArray) payload = g_byte_array_new();
 	g_autoptr(GBytes) payload_blob = NULL;
 	g_autoptr(GPtrArray) images = fu_firmware_get_images(firmware);
@@ -209,7 +209,7 @@ fu_uswid_firmware_write(FuFirmware *firmware, GError **error)
 		conv = G_CONVERTER(g_zlib_compressor_new(G_ZLIB_COMPRESSOR_FORMAT_ZLIB, -1));
 		istream1 = g_memory_input_stream_new_from_data(payload->data, payload->len, NULL);
 		istream2 = g_converter_input_stream_new(istream1, conv);
-		payload_blob = fu_bytes_get_contents_stream(istream2, G_MAXSIZE, error);
+		payload_blob = fu_input_stream_read_bytes(istream2, 0, G_MAXSIZE, NULL, error);
 		if (payload_blob == NULL)
 			return NULL;
 	} else if (priv->compression == FU_USWID_PAYLOAD_COMPRESSION_LZMA) {
@@ -274,8 +274,8 @@ fu_uswid_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 		priv->compression = fu_uswid_payload_compression_from_string(str);
 		if (priv->compression == FU_USWID_PAYLOAD_COMPRESSION_NONE) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "invalid compression type %s",
 				    str);
 			return FALSE;
@@ -297,17 +297,18 @@ fu_uswid_firmware_init(FuUswidFirmware *self)
 	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_STORED_SIZE);
 	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_ALWAYS_SEARCH);
 	fu_firmware_set_images_max(FU_FIRMWARE(self), 2000);
+	g_type_ensure(FU_TYPE_COSWID_FIRMWARE);
 }
 
 static void
 fu_uswid_firmware_class_init(FuUswidFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_uswid_firmware_check_magic;
-	klass_firmware->parse = fu_uswid_firmware_parse;
-	klass_firmware->write = fu_uswid_firmware_write;
-	klass_firmware->build = fu_uswid_firmware_build;
-	klass_firmware->export = fu_uswid_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_uswid_firmware_validate;
+	firmware_class->parse = fu_uswid_firmware_parse;
+	firmware_class->write = fu_uswid_firmware_write;
+	firmware_class->build = fu_uswid_firmware_build;
+	firmware_class->export = fu_uswid_firmware_export;
 }
 
 /**

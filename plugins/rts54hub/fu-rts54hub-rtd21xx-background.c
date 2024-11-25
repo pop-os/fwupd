@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2021 Realtek Corporation
- * Copyright (C) 2021 Ricky Wu <ricky_wu@realtek.com> <spring1527@gmail.com>
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Realtek Corporation
+ * Copyright 2021 Ricky Wu <ricky_wu@realtek.com> <spring1527@gmail.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -35,7 +35,8 @@ typedef enum {
 } IspCmd;
 
 static gboolean
-fu_rts54hub_rtd21xx_ensure_version_unlocked(FuRts54hubRtd21xxBackground *self, GError **error)
+fu_rts54hub_rtd21xx_background_ensure_version_unlocked(FuRts54hubRtd21xxBackground *self,
+						       GError **error)
 {
 	guint8 buf_rep[7] = {0x00};
 	guint8 buf_req[] = {ISP_CMD_GET_FW_INFO};
@@ -166,7 +167,7 @@ fu_rts54hub_rtd21xx_background_setup(FuDevice *device, GError **error)
 					   error);
 	if (locker == NULL)
 		return FALSE;
-	if (!fu_rts54hub_rtd21xx_ensure_version_unlocked(self, error))
+	if (!fu_rts54hub_rtd21xx_background_ensure_version_unlocked(self, error))
 		return FALSE;
 
 	/* success */
@@ -194,14 +195,12 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 					      GError **error)
 {
 	FuRts54hubRtd21xxBackground *self = FU_RTS54HUB_RTD21XX_BACKGROUND(device);
-	const guint8 *fwbuf;
-	gsize fwbufsz = 0;
 	guint32 project_addr;
 	guint8 project_id_count;
 	guint8 read_buf[10] = {0x0};
 	guint8 write_buf[ISP_PACKET_SIZE] = {0x0};
 	g_autoptr(FuDeviceLocker) locker = NULL;
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* progress */
@@ -217,10 +216,9 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* simple image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
-	fwbuf = g_bytes_get_data(fw, &fwbufsz);
 
 	/* get project ID address */
 	write_buf[0] = ISP_CMD_GET_PROJECT_ID_ADDR;
@@ -247,8 +245,8 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 	}
 	if (read_buf[0] != ISP_STATUS_IDLE_SUCCESS) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "failed project ID with error 0x%02x: ",
 			    read_buf[0]);
 		return FALSE;
@@ -258,14 +256,13 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 	project_addr = fu_memread_uint32(read_buf + 1, G_BIG_ENDIAN);
 	project_id_count = read_buf[5];
 	write_buf[0] = ISP_CMD_SYNC_IDENTIFY_CODE;
-	if (!fu_memcpy_safe(write_buf,
-			    sizeof(write_buf),
-			    0x1, /* dst */
-			    fwbuf,
-			    fwbufsz,
-			    project_addr, /* src */
-			    project_id_count,
-			    error)) {
+	if (!fu_input_stream_read_safe(stream,
+				       write_buf,
+				       sizeof(write_buf),
+				       0x1,	     /* dst */
+				       project_addr, /* src */
+				       project_id_count,
+				       error)) {
 		g_prefix_error(error, "failed to write project ID from 0x%04x: ", project_addr);
 		return FALSE;
 	}
@@ -296,9 +293,20 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* send data */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x00, ISP_DATA_BLOCKSIZE);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						ISP_DATA_BLOCKSIZE,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_rts54hub_rtd21xx_device_read_status(FU_RTS54HUB_RTD21XX_DEVICE(self),
 							    NULL,
 							    error))
@@ -311,7 +319,7 @@ fu_rts54hub_rtd21xx_background_write_firmware(FuDevice *device,
 							  error)) {
 			g_prefix_error(error,
 				       "failed to write @0x%04x: ",
-				       fu_chunk_get_address(chk));
+				       (guint)fu_chunk_get_address(chk));
 			return FALSE;
 		}
 
@@ -354,10 +362,10 @@ fu_rts54hub_rtd21xx_background_init(FuRts54hubRtd21xxBackground *self)
 static void
 fu_rts54hub_rtd21xx_background_class_init(FuRts54hubRtd21xxBackgroundClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_rts54hub_rtd21xx_background_setup;
-	klass_device->reload = fu_rts54hub_rtd21xx_background_reload;
-	klass_device->attach = fu_rts54hub_rtd21xx_background_attach;
-	klass_device->detach = fu_rts54hub_rtd21xx_background_detach;
-	klass_device->write_firmware = fu_rts54hub_rtd21xx_background_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_rts54hub_rtd21xx_background_setup;
+	device_class->reload = fu_rts54hub_rtd21xx_background_reload;
+	device_class->attach = fu_rts54hub_rtd21xx_background_attach;
+	device_class->detach = fu_rts54hub_rtd21xx_background_detach;
+	device_class->write_firmware = fu_rts54hub_rtd21xx_background_write_firmware;
 }

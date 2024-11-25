@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Goodix.inc <xulinkun@goodix.com>
+ * Copyright 2023 Goodix.inc <xulinkun@goodix.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -15,21 +15,21 @@ G_DECLARE_DERIVABLE_TYPE(FuGoodixtpHidDevice,
 			 fu_goodixtp_hid_device,
 			 FU,
 			 GOODIXTP_HID_DEVICE,
-			 FuUdevDevice)
+			 FuHidrawDevice)
 
 struct _FuGoodixtpHidDeviceClass {
-	FuUdevDeviceClass parent_class;
+	FuHidrawDeviceClass parent_class;
 };
 
 gboolean
 fu_goodixtp_hid_device_get_report(FuGoodixtpHidDevice *self,
 				  guint8 *buf,
-				  guint32 bufsz,
+				  gsize bufsz,
 				  GError **error);
 gboolean
 fu_goodixtp_hid_device_set_report(FuGoodixtpHidDevice *self,
 				  guint8 *buf,
-				  guint32 len,
+				  gsize bufsz,
 				  GError **error);
 void
 fu_goodixtp_hid_device_set_patch_pid(FuGoodixtpHidDevice *self, const gchar *patch_pid);

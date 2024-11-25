@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -25,7 +25,7 @@ _g_string_isxdigit(GString *str)
 }
 
 static void
-fu_tpm_device_parse_line(const gchar *line, gpointer user_data)
+fu_tpm_v1_device_parse_line(const gchar *line, gpointer user_data)
 {
 	FuTpmDevice *self = FU_TPM_DEVICE(user_data);
 	guint64 idx;
@@ -45,7 +45,7 @@ fu_tpm_device_parse_line(const gchar *line, gpointer user_data)
 
 	/* get index */
 	idxstr = fu_strstrip(split[0]);
-	if (!fu_strtoull(idxstr, &idx, 0, 64, &error_local)) {
+	if (!fu_strtoull(idxstr, &idx, 0, 64, FU_INTEGER_BASE_AUTO, &error_local)) {
 		g_debug("unexpected index %s, skipping: %s", idxstr, error_local->message);
 		return;
 	}
@@ -68,6 +68,15 @@ fu_tpm_v1_device_probe(FuDevice *device, GError **error)
 	g_auto(GStrv) lines = NULL;
 	g_autofree gchar *buf_pcrs = NULL;
 
+	/* sanity check */
+	if (fu_udev_device_get_device_file(FU_UDEV_DEVICE(device)) == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "no device file");
+		return FALSE;
+	}
+
 	/* get entire contents */
 	if (!g_file_get_contents(fu_udev_device_get_device_file(FU_UDEV_DEVICE(device)),
 				 &buf_pcrs,
@@ -79,7 +88,7 @@ fu_tpm_v1_device_probe(FuDevice *device, GError **error)
 	lines = g_strsplit(buf_pcrs, "\n", -1);
 	for (guint i = 0; lines[i] != NULL; i++) {
 		if (g_str_has_prefix(lines[i], "PCR-"))
-			fu_tpm_device_parse_line(lines[i] + 4, self);
+			fu_tpm_v1_device_parse_line(lines[i] + 4, self);
 	}
 	return TRUE;
 }
@@ -92,8 +101,8 @@ fu_tpm_v1_device_init(FuTpmV1Device *self)
 static void
 fu_tpm_v1_device_class_init(FuTpmV1DeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->probe = fu_tpm_v1_device_probe;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->probe = fu_tpm_v1_device_probe;
 }
 
 FuTpmDevice *

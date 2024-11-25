@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -28,11 +28,12 @@ fu_test_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG);
 	fu_device_add_request_flag(device, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
 	fu_device_add_protocol(device, "com.acme.test");
 	fu_device_set_summary(device, "Fake webcam");
 	fu_device_set_vendor(device, "ACME Corp.");
-	fu_device_add_vendor_id(device, "USB:0x046D");
+	fu_device_build_vendor_id_u16(device, "USB", 0x046D);
 	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_set_version_bootloader(device, "0.1.2");
 	fu_device_set_version(device, "1.2.2");
@@ -55,7 +56,7 @@ fu_test_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 		g_autoptr(FuDevice) child2 = NULL;
 
 		child1 = fu_device_new(ctx);
-		fu_device_add_vendor_id(child1, "USB:FFFF");
+		fu_device_build_vendor_id_u16(child1, "USB", 0xFFFF);
 		fu_device_add_protocol(child1, "com.acme");
 		fu_device_set_physical_id(child1, "fake");
 		fu_device_set_logical_id(child1, "child1");
@@ -66,11 +67,11 @@ fu_test_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 		fu_device_add_parent_guid(child1, "b585990a-003e-5270-89d5-3705a17f9a43");
 		fu_device_add_flag(child1, FWUPD_DEVICE_FLAG_UPDATABLE);
 		fu_device_add_flag(child1, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-		fu_device_add_flag(child1, FWUPD_DEVICE_FLAG_INSTALL_PARENT_FIRST);
+		fu_device_add_private_flag(child1, FU_DEVICE_PRIVATE_FLAG_INSTALL_PARENT_FIRST);
 		fu_plugin_device_add(plugin, child1);
 
 		child2 = fu_device_new(ctx);
-		fu_device_add_vendor_id(child2, "USB:FFFF");
+		fu_device_build_vendor_id_u16(child2, "USB", 0xFFFF);
 		fu_device_add_protocol(child2, "com.acme");
 		fu_device_set_physical_id(child2, "fake");
 		fu_device_set_logical_id(child2, "child2");
@@ -81,11 +82,37 @@ fu_test_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 		fu_device_add_parent_guid(child2, "b585990a-003e-5270-89d5-3705a17f9a43");
 		fu_device_add_flag(child2, FWUPD_DEVICE_FLAG_UPDATABLE);
 		fu_device_add_flag(child2, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-		fu_device_add_flag(child2, FWUPD_DEVICE_FLAG_INSTALL_PARENT_FIRST);
+		fu_device_add_private_flag(child2, FU_DEVICE_PRIVATE_FLAG_INSTALL_PARENT_FIRST);
 		fu_plugin_device_add(plugin, child2);
 	}
 
 	return TRUE;
+}
+
+static gboolean
+fu_test_plugin_modify_config(FuPlugin *plugin, const gchar *key, const gchar *value, GError **error)
+{
+	const gchar *keys[] = {"AnotherWriteRequired",
+			       "CompositeChild",
+			       "DecompressDelay",
+			       "NeedsActivation",
+			       "NeedsReboot",
+			       "RegistrationSupported",
+			       "RequestDelay",
+			       "RequestSupported",
+			       "VerifyDelay",
+			       "WriteDelay",
+			       "WriteSupported",
+			       NULL};
+	if (!g_strv_contains(keys, key)) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "config key %s not supported",
+			    key);
+		return FALSE;
+	}
+	return fu_plugin_set_config_value(plugin, key, value, error);
 }
 
 static void
@@ -141,7 +168,7 @@ fu_test_plugin_get_version(GBytes *blob_fw)
 
 	if (str_safe == NULL)
 		return NULL;
-	if (!fu_strtoull(str_safe, &val, 0, G_MAXUINT32, &error_local)) {
+	if (!fu_strtoull(str_safe, &val, 0, G_MAXSIZE, FU_INTEGER_BASE_AUTO, &error_local)) {
 		g_debug("invalid version specified: %s", error_local->message);
 		return NULL;
 	}
@@ -153,7 +180,7 @@ fu_test_plugin_get_version(GBytes *blob_fw)
 static gboolean
 fu_test_plugin_write_firmware(FuPlugin *plugin,
 			      FuDevice *device,
-			      GBytes *blob_fw,
+			      GInputStream *stream,
 			      FuProgress *progress,
 			      FwupdInstallFlags flags,
 			      GError **error)
@@ -177,7 +204,12 @@ fu_test_plugin_write_firmware(FuPlugin *plugin,
 	fu_progress_set_status(progress, FWUPD_STATUS_DECOMPRESSING);
 	decompress_delay_str = fu_plugin_get_config_value(plugin, "DecompressDelay");
 	if (decompress_delay_str != NULL) {
-		if (!fu_strtoull(decompress_delay_str, &delay_decompress_ms, 0, 10000, error)) {
+		if (!fu_strtoull(decompress_delay_str,
+				 &delay_decompress_ms,
+				 0,
+				 10000,
+				 FU_INTEGER_BASE_AUTO,
+				 error)) {
 			g_prefix_error(error, "failed to parse DecompressDelay: ");
 			return FALSE;
 		}
@@ -202,18 +234,28 @@ fu_test_plugin_write_firmware(FuPlugin *plugin,
 			return FALSE;
 		request_delay_str = fu_plugin_get_config_value(plugin, "RequestDelay");
 		if (request_delay_str != NULL) {
-			if (!fu_strtoull(request_delay_str, &delay_request_ms, 0, 10000, error)) {
+			if (!fu_strtoull(request_delay_str,
+					 &delay_request_ms,
+					 0,
+					 10000,
+					 FU_INTEGER_BASE_AUTO,
+					 error)) {
 				g_prefix_error(error, "failed to parse RequestDelay: ");
 				return FALSE;
 			}
 		}
-		g_usleep(delay_request_ms * 1000);
+		fu_device_sleep(device, delay_request_ms);
 	}
 
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
 	write_delay_str = fu_plugin_get_config_value(plugin, "WriteDelay");
 	if (write_delay_str != NULL) {
-		if (!fu_strtoull(write_delay_str, &delay_write_ms, 0, 10000, error)) {
+		if (!fu_strtoull(write_delay_str,
+				 &delay_write_ms,
+				 0,
+				 10000,
+				 FU_INTEGER_BASE_AUTO,
+				 error)) {
 			g_prefix_error(error, "failed to parse WriteDelay: ");
 			return FALSE;
 		}
@@ -225,7 +267,12 @@ fu_test_plugin_write_firmware(FuPlugin *plugin,
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_VERIFY);
 	verify_delay_str = fu_plugin_get_config_value(plugin, "VerifyDelay");
 	if (verify_delay_str != NULL) {
-		if (!fu_strtoull(verify_delay_str, &delay_verify_ms, 0, 10000, error)) {
+		if (!fu_strtoull(verify_delay_str,
+				 &delay_verify_ms,
+				 0,
+				 10000,
+				 FU_INTEGER_BASE_AUTO,
+				 error)) {
 			g_prefix_error(error, "failed to parse VerifyDelay: ");
 			return FALSE;
 		}
@@ -254,7 +301,17 @@ fu_test_plugin_write_firmware(FuPlugin *plugin,
 	} else if (fu_plugin_get_config_value_boolean(plugin, "NeedsReboot")) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT);
 	} else {
-		g_autofree gchar *ver = fu_test_plugin_get_version(blob_fw);
+		gsize streamsz = 0;
+		g_autofree gchar *ver = NULL;
+		g_autoptr(GBytes) blob_fw = NULL;
+
+		/* this should not be required! */
+		if (!fu_input_stream_size(stream, &streamsz, error))
+			return FALSE;
+		blob_fw = fu_input_stream_read_bytes(stream, 0, streamsz, NULL, error);
+		if (blob_fw == NULL)
+			return FALSE;
+		ver = fu_test_plugin_get_version(blob_fw);
 		fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
 		if (ver != NULL) {
 			fu_device_set_version(device, ver);
@@ -345,7 +402,7 @@ fu_test_plugin_constructed(GObject *obj)
 }
 
 static void
-fu_test_finalize(GObject *obj)
+fu_test_plugin_finalize(GObject *obj)
 {
 	g_debug("destroy");
 	G_OBJECT_CLASS(fu_test_plugin_parent_class)->finalize(obj);
@@ -357,7 +414,7 @@ fu_test_plugin_class_init(FuTestPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->finalize = fu_test_finalize;
+	object_class->finalize = fu_test_plugin_finalize;
 	plugin_class->constructed = fu_test_plugin_constructed;
 	plugin_class->composite_cleanup = fu_test_plugin_composite_cleanup;
 	plugin_class->composite_prepare = fu_test_plugin_composite_prepare;
@@ -367,4 +424,5 @@ fu_test_plugin_class_init(FuTestPluginClass *klass)
 	plugin_class->verify = fu_test_plugin_verify;
 	plugin_class->coldplug = fu_test_plugin_coldplug;
 	plugin_class->device_registered = fu_test_plugin_device_registered;
+	plugin_class->modify_config = fu_test_plugin_modify_config;
 }

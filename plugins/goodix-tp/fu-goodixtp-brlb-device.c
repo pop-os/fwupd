@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Goodix.inc <xulinkun@goodix.com>
+ * Copyright 2023 Goodix.inc <xulinkun@goodix.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -18,9 +18,9 @@ G_DEFINE_TYPE(FuGoodixtpBrlbDevice, fu_goodixtp_brlb_device, FU_TYPE_GOODIXTP_HI
 
 static gboolean
 fu_goodixtp_brlb_device_read_pkg(FuGoodixtpBrlbDevice *self,
-				 guint32 addr,
+				 gsize addr,
 				 guint8 *buf,
-				 guint32 bufsz,
+				 gsize bufsz,
 				 GError **error)
 {
 	guint8 hidbuf[PACKAGE_LEN] = {0};
@@ -56,9 +56,9 @@ fu_goodixtp_brlb_device_read_pkg(FuGoodixtpBrlbDevice *self,
 
 static gboolean
 fu_goodixtp_brlb_device_hid_read(FuGoodixtpBrlbDevice *self,
-				 guint32 addr,
+				 gsize addr,
 				 guint8 *buf,
-				 guint32 bufsz,
+				 gsize bufsz,
 				 GError **error)
 {
 	g_autoptr(GPtrArray) chunks =
@@ -77,9 +77,9 @@ fu_goodixtp_brlb_device_hid_read(FuGoodixtpBrlbDevice *self,
 
 static gboolean
 fu_goodixtp_brlb_device_hid_write(FuGoodixtpBrlbDevice *self,
-				  guint32 addr,
+				  gsize addr,
 				  guint8 *buf,
-				  guint32 bufsz,
+				  gsize bufsz,
 				  GError **error)
 {
 	g_autoptr(GPtrArray) chunks = fu_chunk_array_new(buf, bufsz, addr, 0, PACKAGE_LEN - 12);
@@ -112,7 +112,7 @@ fu_goodixtp_brlb_device_hid_write(FuGoodixtpBrlbDevice *self,
 						       error)) {
 			g_prefix_error(error,
 				       "failed write data to addr=0x%x, len=%d: ",
-				       fu_chunk_get_address(chk),
+				       (guint)fu_chunk_get_address(chk),
 				       (gint)fu_chunk_get_data_sz(chk));
 			return FALSE;
 		}
@@ -181,7 +181,7 @@ fu_goodixtp_brlb_device_ensure_version(FuGoodixtpBrlbDevice *self, GError **erro
 
 	cfg_ver = hidbuf[4];
 	fu_goodixtp_hid_device_set_config_ver(FU_GOODIXTP_HID_DEVICE(self), cfg_ver);
-	fu_device_set_version_u32(FU_DEVICE(self), (vice_ver << 16) | (inter_ver << 8) | cfg_ver);
+	fu_device_set_version_raw(FU_DEVICE(self), (vice_ver << 16) | (inter_ver << 8) | cfg_ver);
 	return TRUE;
 }
 
@@ -359,7 +359,7 @@ fu_goodixtp_brlb_device_update_process(FuGoodixtpBrlbDevice *self, FuChunk *chk,
 				  error)) {
 		g_prefix_error(error,
 			       "load sub firmware failed, addr:0x%04x: ",
-			       fu_chunk_get_address(chk));
+			       (guint)fu_chunk_get_address(chk));
 		return FALSE;
 	}
 	return TRUE;
@@ -392,7 +392,8 @@ fu_goodixtp_brlb_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_goodixtp_brlb_device_prepare_firmware(FuDevice *device,
-					 GBytes *fw,
+					 GInputStream *stream,
+					 FuProgress *progress,
 					 FwupdInstallFlags flags,
 					 GError **error)
 {
@@ -400,7 +401,7 @@ fu_goodixtp_brlb_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware = fu_goodixtp_brlb_firmware_new();
 	if (!fu_goodixtp_brlb_firmware_parse(
 		FU_GOODIXTP_FIRMWARE(firmware),
-		fw,
+		stream,
 		fu_goodixtp_hid_device_get_sensor_id(FU_GOODIXTP_HID_DEVICE(self)),
 		error))
 		return NULL;
@@ -414,17 +415,28 @@ fu_goodixtp_brlb_device_write_image(FuGoodixtpBrlbDevice *self,
 				    GError **error)
 {
 	g_autoptr(FuChunkArray) chunks = NULL;
-	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 
-	blob = fu_firmware_get_bytes(img, error);
-	if (blob == NULL)
+	stream = fu_firmware_get_stream(img, error);
+	if (stream == NULL)
 		return FALSE;
-	chunks = fu_chunk_array_new_from_bytes(blob, fu_firmware_get_addr(img), RAM_BUFFER_SIZE);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						fu_firmware_get_addr(img),
+						FU_CHUNK_PAGESZ_NONE,
+						RAM_BUFFER_SIZE,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_goodixtp_brlb_device_update_process(self, chk, error))
 			return FALSE;
 		fu_device_sleep(FU_DEVICE(self), 20);
@@ -506,9 +518,9 @@ fu_goodixtp_brlb_device_init(FuGoodixtpBrlbDevice *self)
 static void
 fu_goodixtp_brlb_device_class_init(FuGoodixtpBrlbDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_goodixtp_brlb_device_setup;
-	klass_device->reload = fu_goodixtp_brlb_device_setup;
-	klass_device->prepare_firmware = fu_goodixtp_brlb_device_prepare_firmware;
-	klass_device->write_firmware = fu_goodixtp_brlb_device_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_goodixtp_brlb_device_setup;
+	device_class->reload = fu_goodixtp_brlb_device_setup;
+	device_class->prepare_firmware = fu_goodixtp_brlb_device_prepare_firmware;
+	device_class->write_firmware = fu_goodixtp_brlb_device_write_firmware;
 }

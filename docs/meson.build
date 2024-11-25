@@ -21,7 +21,7 @@ if build_standalone
         generate_man, '@INPUT@', '-o', '@OUTPUT@',
         '--replace', 'PACKAGE_VERSION', fwupd_version,
         '--replace', 'SYSCONFDIR', sysconfdir,
-        '--replace', 'plugin_uefi_capsule', '@0@'.format(get_option('plugin_uefi_capsule').enabled()),
+        '--replace', 'plugin_uefi_capsule', '@0@'.format(allow_uefi_capsule),
         '--replace', 'plugin_msr', '@0@'.format(get_option('plugin_msr').enabled()),
         '--replace', 'plugin_redfish', '@0@'.format(get_option('plugin_redfish').enabled()),
         '--replace', 'P2pPolicy', '@0@'.format(get_option('p2p_policy')),
@@ -42,7 +42,7 @@ if build_standalone
         '--replace', 'PACKAGE_VERSION', fwupd_version,
         '--replace', 'SYSCONFDIR', sysconfdir,
         '--replace', 'LOCALSTATEDIR', localstatedir,
-        '--defines', join_paths(meson.project_source_root(), 'libfwupd', 'fwupd-remote.c'),
+        '--defines', join_paths(meson.project_source_root(), 'src', 'fu-remote.c'),
       ],
       install: true,
       install_dir: join_paths(mandir, 'man5'),
@@ -56,7 +56,7 @@ if build_standalone
         generate_man, '@INPUT@', '-o', '@OUTPUT@',
         '--replace', 'PACKAGE_VERSION', fwupd_version,
         '--replace', 'SYSCONFDIR', sysconfdir,
-        '--replace', 'plugin_uefi_capsule', '@0@'.format(get_option('plugin_uefi_capsule').enabled()),
+        '--replace', 'plugin_uefi_capsule', '@0@'.format(allow_uefi_capsule),
         '--replace', 'plugin_msr', '@0@'.format(get_option('plugin_msr').enabled()),
         '--replace', 'plugin_redfish', '@0@'.format(get_option('plugin_redfish').enabled()),
         '--defines', join_paths(meson.project_source_root(), 'plugins', 'msr', 'fu-msr-plugin.c'),
@@ -83,7 +83,7 @@ if build_standalone
   endif
 endif
 
-if build_docs and introspection.allowed()
+if build_docs
   toml_conf = configuration_data()
   docgen_version = meson.project_version()
   toml_conf.set('version', docgen_version)

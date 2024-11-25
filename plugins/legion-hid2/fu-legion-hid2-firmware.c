@@ -14,10 +14,6 @@
 struct _FuLegionHid2Firmware {
 	FuFirmware parent_instance;
 	guint32 version;
-	guint32 sig_size;
-	guint32 data_size;
-	guint32 sig_offset;
-	guint32 data_offset;
 };
 
 G_DEFINE_TYPE(FuLegionHid2Firmware, fu_legion_hid2_firmware, FU_TYPE_FIRMWARE)
@@ -30,38 +26,6 @@ fu_legion_hid2_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags
 	    fu_version_from_uint32(self->version, FWUPD_VERSION_FORMAT_QUAD);
 
 	fu_xmlb_builder_insert_kv(bn, "version", version);
-	fu_xmlb_builder_insert_kx(bn, "sig_offset", self->sig_offset);
-	fu_xmlb_builder_insert_kx(bn, "sig_size", self->sig_size);
-	fu_xmlb_builder_insert_kx(bn, "data_offset", self->data_offset);
-	fu_xmlb_builder_insert_kx(bn, "data_size", self->data_size);
-}
-
-guint32
-fu_legion_hid2_firmware_get_sig_offset(FuFirmware *firmware)
-{
-	FuLegionHid2Firmware *self = FU_LEGION_HID2_FIRMWARE(firmware);
-	return self->sig_offset;
-}
-
-gssize
-fu_legion_hid2_firmware_get_sig_size(FuFirmware *firmware)
-{
-	FuLegionHid2Firmware *self = FU_LEGION_HID2_FIRMWARE(firmware);
-	return self->sig_size;
-}
-
-guint32
-fu_legion_hid2_firmware_get_data_offset(FuFirmware *firmware)
-{
-	FuLegionHid2Firmware *self = FU_LEGION_HID2_FIRMWARE(firmware);
-	return self->data_offset;
-}
-
-gssize
-fu_legion_hid2_firmware_get_data_size(FuFirmware *firmware)
-{
-	FuLegionHid2Firmware *self = FU_LEGION_HID2_FIRMWARE(firmware);
-	return self->data_size;
 }
 
 guint32
@@ -73,27 +37,46 @@ fu_legion_hid2_firmware_get_version(FuFirmware *firmware)
 
 static gboolean
 fu_legion_hid2_firmware_parse(FuFirmware *firmware,
-			      GBytes *fw,
-			      gsize offset,
+			      GInputStream *stream,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
 	FuLegionHid2Firmware *self = FU_LEGION_HID2_FIRMWARE(firmware);
-	gsize bufsz;
+	g_autoptr(FuFirmware) img_payload = fu_firmware_new();
+	g_autoptr(FuFirmware) img_sig = fu_firmware_new();
+	g_autoptr(GInputStream) stream_payload = NULL;
+	g_autoptr(GInputStream) stream_sig = NULL;
 	g_autoptr(GByteArray) header = NULL;
 	g_autoptr(GByteArray) version = NULL;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
-	header = fu_struct_legion_hid2_header_parse(buf, bufsz, 0x0, error);
+	header = fu_struct_legion_hid2_header_parse_stream(stream, 0x0, error);
 	if (header == NULL)
 		return FALSE;
-	self->sig_offset = fu_struct_legion_hid2_header_get_sig_add(header);
-	self->sig_size = fu_struct_legion_hid2_header_get_sig_len(header);
-	self->data_offset = fu_struct_legion_hid2_header_get_data_add(header);
-	self->data_size = fu_struct_legion_hid2_header_get_data_len(header);
 
-	buf = g_bytes_get_data(fw, &bufsz);
-	version = fu_struct_legion_hid2_version_parse(buf, bufsz, VERSION_OFFSET, error);
+	stream_sig = fu_partial_input_stream_new(stream,
+						 fu_struct_legion_hid2_header_get_sig_add(header),
+						 fu_struct_legion_hid2_header_get_sig_len(header),
+						 error);
+	if (stream_sig == NULL)
+		return FALSE;
+	if (!fu_firmware_parse_stream(img_sig, stream_sig, 0x0, flags, error))
+		return FALSE;
+	fu_firmware_set_id(img_sig, FU_FIRMWARE_ID_SIGNATURE);
+	fu_firmware_add_image(firmware, img_sig);
+
+	stream_payload =
+	    fu_partial_input_stream_new(stream,
+					fu_struct_legion_hid2_header_get_data_add(header),
+					fu_struct_legion_hid2_header_get_data_len(header),
+					error);
+	if (stream_payload == NULL)
+		return FALSE;
+	if (!fu_firmware_parse_stream(img_payload, stream_payload, 0x0, flags, error))
+		return FALSE;
+	fu_firmware_set_id(img_payload, FU_FIRMWARE_ID_PAYLOAD);
+	fu_firmware_add_image(firmware, img_payload);
+
+	version = fu_struct_legion_hid2_version_parse_stream(stream, VERSION_OFFSET, error);
 	if (version == NULL)
 		return FALSE;
 	self->version = fu_struct_legion_hid2_version_get_version(version);

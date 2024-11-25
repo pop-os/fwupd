@@ -1,14 +1,16 @@
-#!/usr/bin/python3
-# SPDX-License-Identifier: LGPL-2.1+
+#!/usr/bin/env python3
+#
+# Copyright 2022 Kai Michaelis <kai.michaelis@immu.ne>
+#
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import sys
 import argparse
-from urllib import request, parse
+from urllib import request
 import base64
 import ssl
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-u",
@@ -41,7 +43,7 @@ if __name__ == "__main__":
         print("License:")
         license = sys.stdin.read()
     else:
-        with open(args.file, "r") as fd:
+        with open(args.file) as fd:
             license = fd.read()
 
     sslctx = ssl.create_default_context()

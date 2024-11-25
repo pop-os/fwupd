@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -46,9 +46,9 @@ fu_intel_usb4_plugin_device_registered(FuPlugin *plugin, FuDevice *device)
 			const gchar *instance_id = g_ptr_array_index(instance_ids, j);
 			if (g_str_has_prefix(instance_id, "TBT-") &&
 			    fu_device_has_instance_id(device_tmp, instance_id)) {
-				fu_device_remove_internal_flag(
+				fu_device_remove_private_flag(
 				    device,
-				    FU_DEVICE_INTERNAL_FLAG_REPLUG_MATCH_GUID);
+				    FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 				fu_device_inhibit(device,
 						  "hidden",
 						  "updated by the intel-usb4 plugin instead");

@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 1999-2023 Logitech, Inc.
+ * Copyright 1999-2023 Logitech, Inc.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -29,8 +29,8 @@ static void
 fu_logitech_rallysystem_tablehub_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuLogitechRallysystemTablehubDevice *self = FU_LOGITECH_RALLYSYSTEM_TABLEHUB_DEVICE(device);
-	fu_string_append_kx(str, idt, "EpBulkIn", self->bulk_ep[EP_IN]);
-	fu_string_append_kx(str, idt, "EpBulkOut", self->bulk_ep[EP_OUT]);
+	fwupd_codec_string_append_hex(str, idt, "EpBulkIn", self->bulk_ep[EP_IN]);
+	fwupd_codec_string_append_hex(str, idt, "EpBulkOut", self->bulk_ep[EP_OUT]);
 }
 
 static gboolean
@@ -40,29 +40,29 @@ fu_logitech_rallysystem_tablehub_device_probe(FuDevice *device, GError **error)
 	guint8 bulk_iface = G_MAXUINT8;
 	g_autoptr(GPtrArray) intfs = NULL;
 
-	intfs = g_usb_device_get_interfaces(fu_usb_device_get_dev(FU_USB_DEVICE(self)), error);
+	intfs = fu_usb_device_get_interfaces(FU_USB_DEVICE(self), error);
 	if (intfs == NULL)
 		return FALSE;
 	for (guint i = 0; i < intfs->len; i++) {
-		GUsbInterface *intf = g_ptr_array_index(intfs, i);
-		if (g_usb_interface_get_class(intf) == G_USB_DEVICE_CLASS_VENDOR_SPECIFIC) {
-			g_autoptr(GPtrArray) endpoints = g_usb_interface_get_endpoints(intf);
-			bulk_iface = g_usb_interface_get_number(intf);
+		FuUsbInterface *intf = g_ptr_array_index(intfs, i);
+		if (fu_usb_interface_get_class(intf) == FU_USB_CLASS_VENDOR_SPECIFIC) {
+			g_autoptr(GPtrArray) endpoints = fu_usb_interface_get_endpoints(intf);
+			bulk_iface = fu_usb_interface_get_number(intf);
 			if (endpoints == NULL)
 				continue;
 			for (guint j = 0; j < endpoints->len; j++) {
-				GUsbEndpoint *ep = g_ptr_array_index(endpoints, j);
+				FuUsbEndpoint *ep = g_ptr_array_index(endpoints, j);
 				if (j == EP_OUT)
-					self->bulk_ep[EP_OUT] = g_usb_endpoint_get_address(ep);
+					self->bulk_ep[EP_OUT] = fu_usb_endpoint_get_address(ep);
 				else
-					self->bulk_ep[EP_IN] = g_usb_endpoint_get_address(ep);
+					self->bulk_ep[EP_IN] = fu_usb_endpoint_get_address(ep);
 			}
 		}
 	}
 	if (bulk_iface == G_MAXUINT8) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "no bulk interface found");
 		return FALSE;
 	}
@@ -73,25 +73,25 @@ fu_logitech_rallysystem_tablehub_device_probe(FuDevice *device, GError **error)
 static gboolean
 fu_logitech_rallysystem_tablehub_device_send(FuLogitechRallysystemTablehubDevice *self,
 					     guint8 *buf,
-					     guint32 bufsz,
+					     gsize bufsz,
 					     GError **error)
 {
 	gsize actual_length = 0;
-	if (!g_usb_device_bulk_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					self->bulk_ep[EP_OUT],
-					buf,
-					bufsz,
-					&actual_length,
-					FU_LOGITECH_RALLYSYSTEM_TABLEHUB_DEVICE_IOCTL_TIMEOUT,
-					NULL,
-					error)) {
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->bulk_ep[EP_OUT],
+					 buf,
+					 bufsz,
+					 &actual_length,
+					 FU_LOGITECH_RALLYSYSTEM_TABLEHUB_DEVICE_IOCTL_TIMEOUT,
+					 NULL,
+					 error)) {
 		g_prefix_error(error, "failed to send using bulk transfer: ");
 		return FALSE;
 	}
 	if (bufsz != actual_length) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to send full packet using bulk transfer");
 		return FALSE;
 	}
@@ -102,26 +102,26 @@ fu_logitech_rallysystem_tablehub_device_send(FuLogitechRallysystemTablehubDevice
 static gboolean
 fu_logitech_rallysystem_tablehub_device_recv(FuLogitechRallysystemTablehubDevice *self,
 					     guint8 *buf,
-					     guint32 bufsz,
+					     gsize bufsz,
 					     guint timeout,
 					     GError **error)
 {
 	gsize actual_length = 0;
-	if (!g_usb_device_bulk_transfer(fu_usb_device_get_dev(FU_USB_DEVICE(self)),
-					self->bulk_ep[EP_IN],
-					buf,
-					bufsz,
-					&actual_length,
-					timeout,
-					NULL,
-					error)) {
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->bulk_ep[EP_IN],
+					 buf,
+					 bufsz,
+					 &actual_length,
+					 timeout,
+					 NULL,
+					 error)) {
 		g_prefix_error(error, "failed to receive using bulk transfer: ");
 		return FALSE;
 	}
 	if (bufsz != actual_length) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "failed to receive full packet using bulk transfer");
 		return FALSE;
 	}
@@ -131,17 +131,27 @@ fu_logitech_rallysystem_tablehub_device_recv(FuLogitechRallysystemTablehubDevice
 
 static gboolean
 fu_logitech_rallysystem_tablehub_device_write_fw(FuLogitechRallysystemTablehubDevice *self,
-						 GBytes *fw,
+						 GInputStream *stream,
 						 FuProgress *progress,
 						 GError **error)
 {
-	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(fw, 0x0, 0x200);
+	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_stream(stream,
+									FU_CHUNK_ADDR_OFFSET_NONE,
+									FU_CHUNK_PAGESZ_NONE,
+									0x200,
+									error);
+	if (chunks == NULL)
+		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autofree guint8 *data_mut = NULL;
 
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		data_mut = fu_memdup_safe(fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk), error);
 		if (data_mut == NULL)
 			return FALSE;
@@ -181,8 +191,8 @@ fu_logitech_rallysystem_tablehub_device_progress_cb(FuDevice *device,
 		return FALSE;
 	if (fu_struct_usb_progress_response_get_completed(st_res) != 100) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_ARGUMENT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
 			    "percentage only %u%%",
 			    fu_struct_usb_progress_response_get_completed(st_res));
 		return FALSE;
@@ -200,8 +210,9 @@ fu_logitech_rallysystem_tablehub_device_write_firmware(FuDevice *device,
 						       GError **error)
 {
 	FuLogitechRallysystemTablehubDevice *self = FU_LOGITECH_RALLYSYSTEM_TABLEHUB_DEVICE(device);
+	gsize streamsz = 0;
 	guint8 buf[FU_STRUCT_USB_FIRMWARE_DOWNLOAD_RESPONSE_SIZE] = {0x0};
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(GByteArray) st_req = fu_struct_usb_firmware_download_request_new();
 	g_autoptr(GByteArray) st_res = NULL;
 
@@ -213,10 +224,12 @@ fu_logitech_rallysystem_tablehub_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 60, NULL);
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
-	fu_struct_usb_firmware_download_request_set_len(st_req, g_bytes_get_size(fw));
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	fu_struct_usb_firmware_download_request_set_len(st_req, streamsz);
 	if (!fu_struct_usb_firmware_download_request_set_fw_version(st_req,
 								    fu_device_get_version(device),
 								    error)) {
@@ -245,7 +258,7 @@ fu_logitech_rallysystem_tablehub_device_write_firmware(FuDevice *device,
 
 	/* push each block to device */
 	if (!fu_logitech_rallysystem_tablehub_device_write_fw(self,
-							      fw,
+							      stream,
 							      fu_progress_get_child(progress),
 							      error))
 		return FALSE;
@@ -377,16 +390,16 @@ fu_logitech_rallysystem_tablehub_device_init(FuLogitechRallysystemTablehubDevice
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_set_install_duration(FU_DEVICE(self), 5 * 60);
-	fu_device_set_remove_delay(FU_DEVICE(self), 60 * 1000); /* wait for subcomponent */
+	fu_device_set_remove_delay(FU_DEVICE(self), 5 * 60 * 1000); /* wait for subcomponent */
 }
 
 static void
 fu_logitech_rallysystem_tablehub_device_class_init(FuLogitechRallysystemTablehubDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_logitech_rallysystem_tablehub_device_to_string;
-	klass_device->write_firmware = fu_logitech_rallysystem_tablehub_device_write_firmware;
-	klass_device->probe = fu_logitech_rallysystem_tablehub_device_probe;
-	klass_device->setup = fu_logitech_rallysystem_tablehub_device_setup;
-	klass_device->set_progress = fu_logitech_rallysystem_tablehub_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_logitech_rallysystem_tablehub_device_to_string;
+	device_class->write_firmware = fu_logitech_rallysystem_tablehub_device_write_firmware;
+	device_class->probe = fu_logitech_rallysystem_tablehub_device_probe;
+	device_class->setup = fu_logitech_rallysystem_tablehub_device_setup;
+	device_class->set_progress = fu_logitech_rallysystem_tablehub_device_set_progress;
 }

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2021 Denis Pynkin <denis.pynkin@collabora.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Denis Pynkin <denis.pynkin@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -133,7 +133,12 @@ fu_nordic_hid_archive_parse_file_get_flash_area_id_v1(JsonObject *obj,
 				    "missing image_index property");
 		return FALSE;
 	}
-	if (!fu_strtoll(image_idx_str, &image_idx, G_MININT64, G_MAXINT64, error)) {
+	if (!fu_strtoll(image_idx_str,
+			&image_idx,
+			G_MININT64,
+			G_MAXINT64,
+			FU_INTEGER_BASE_AUTO,
+			error)) {
 		g_prefix_error(error, "fu_strtoll failed for image_index:");
 		return FALSE;
 	}
@@ -153,7 +158,7 @@ fu_nordic_hid_archive_parse_file_get_flash_area_id_v1(JsonObject *obj,
 				    "missing slot property");
 		return FALSE;
 	}
-	if (!fu_strtoll(slot_str, &slot, G_MININT64, G_MAXINT64, error)) {
+	if (!fu_strtoll(slot_str, &slot, G_MININT64, G_MAXINT64, FU_INTEGER_BASE_AUTO, error)) {
 		g_prefix_error(error, "fu_strtoll failed for slot:");
 		return FALSE;
 	}
@@ -209,8 +214,7 @@ fu_nordic_hid_archive_parse_file_get_flash_area_id(JsonObject *obj,
 
 static gboolean
 fu_nordic_hid_archive_parse(FuFirmware *firmware,
-			    GBytes *fw,
-			    gsize offset,
+			    GInputStream *stream,
 			    FwupdInstallFlags flags,
 			    GError **error)
 {
@@ -224,7 +228,7 @@ fu_nordic_hid_archive_parse(FuFirmware *firmware,
 	g_autoptr(JsonParser) parser = json_parser_new();
 
 	/* load archive */
-	archive = fu_archive_new(fw, FU_ARCHIVE_FLAG_IGNORE_PATH, error);
+	archive = fu_archive_new_stream(stream, FU_ARCHIVE_FLAG_IGNORE_PATH, error);
 	if (archive == NULL)
 		return FALSE;
 	manifest = fu_archive_lookup_by_fn(archive, "manifest.json", error);
@@ -333,7 +337,11 @@ fu_nordic_hid_archive_parse(FuFirmware *firmware,
 		fwupd_image_id =
 		    g_strdup_printf("%s_%s_bank%01u", board_name, bootloader_name, flash_area_id);
 
-		if (!fu_firmware_parse(image, blob, flags | FWUPD_INSTALL_FLAG_NO_SEARCH, error))
+		if (!fu_firmware_parse_bytes(image,
+					     blob,
+					     0x0,
+					     flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					     error))
 			return FALSE;
 
 		fu_firmware_set_id(image, fwupd_image_id);
@@ -361,6 +369,6 @@ fu_nordic_hid_archive_init(FuNordicHidArchive *self)
 static void
 fu_nordic_hid_archive_class_init(FuNordicHidArchiveClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_nordic_hid_archive_parse;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_nordic_hid_archive_parse;
 }

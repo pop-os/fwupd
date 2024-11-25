@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -35,26 +35,27 @@ fu_acpi_phat_health_record_export(FuFirmware *firmware,
 
 static gboolean
 fu_acpi_phat_health_record_parse(FuFirmware *firmware,
-				 GBytes *fw,
-				 gsize offset,
+				 GInputStream *stream,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
 	FuAcpiPhatHealthRecord *self = FU_ACPI_PHAT_HEALTH_RECORD(firmware);
-	gsize bufsz = g_bytes_get_size(fw);
+	gsize streamsz = 0;
 	guint16 rcdlen;
 	guint32 dataoff;
 	g_autoptr(GByteArray) st = NULL;
 
 	/* sanity check record length */
-	st = fu_struct_acpi_phat_health_record_parse_bytes(fw, offset, error);
+	st = fu_struct_acpi_phat_health_record_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 	rcdlen = fu_struct_acpi_phat_health_record_get_rcdlen(st);
-	if (rcdlen != bufsz) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (rcdlen != streamsz) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "record length not valid: %" G_GUINT16_FORMAT,
 			    rcdlen);
 		return FALSE;
@@ -66,27 +67,27 @@ fu_acpi_phat_health_record_parse(FuFirmware *firmware,
 
 	/* device path */
 	dataoff = fu_struct_acpi_phat_health_record_get_device_specific_data(st);
-	if (bufsz > 28) {
+	if (streamsz > 28) {
 		gsize ubufsz; /* bytes */
 		g_autoptr(GBytes) ubuf = NULL;
 
 		/* header -> devicepath -> data */
 		if (dataoff == 0x0) {
-			ubufsz = bufsz - 28;
+			ubufsz = streamsz - 28;
 		} else {
 			ubufsz = dataoff - 28;
 		}
 		if (ubufsz == 0) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "device path not valid: %" G_GSIZE_FORMAT,
 				    ubufsz);
 			return FALSE;
 		}
 
 		/* align and convert */
-		ubuf = fu_bytes_new_offset(fw, 28, ubufsz, error);
+		ubuf = fu_input_stream_read_bytes(stream, 28, ubufsz, NULL, error);
 		if (ubuf == NULL)
 			return FALSE;
 		self->device_path = fu_utf16_to_utf8_bytes(ubuf, G_LITTLE_ENDIAN, error);
@@ -159,15 +160,17 @@ fu_acpi_phat_health_record_build(FuFirmware *firmware, XbNode *n, GError **error
 	if (tmp != NULL)
 		fu_acpi_phat_health_record_set_guid(self, tmp);
 	tmp64 = xb_node_query_text_as_uint(n, "am_healthy", NULL);
-	if (tmp64 > G_MAXUINT8) {
-		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
-			    "am_healthy value invalid, got 0x%x",
-			    (guint)tmp64);
-		return FALSE;
+	if (tmp64 != G_MAXUINT64) {
+		if (tmp64 > G_MAXUINT8) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "am_healthy value invalid, got 0x%x",
+				    (guint)tmp64);
+			return FALSE;
+		}
+		self->am_healthy = (guint8)tmp64;
 	}
-	self->am_healthy = (guint8)tmp64;
 
 	/* success */
 	return TRUE;
@@ -193,12 +196,12 @@ static void
 fu_acpi_phat_health_record_class_init(FuAcpiPhatHealthRecordClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_acpi_phat_health_record_finalize;
-	klass_firmware->parse = fu_acpi_phat_health_record_parse;
-	klass_firmware->write = fu_acpi_phat_health_record_write;
-	klass_firmware->export = fu_acpi_phat_health_record_export;
-	klass_firmware->build = fu_acpi_phat_health_record_build;
+	firmware_class->parse = fu_acpi_phat_health_record_parse;
+	firmware_class->write = fu_acpi_phat_health_record_write;
+	firmware_class->export = fu_acpi_phat_health_record_export;
+	firmware_class->build = fu_acpi_phat_health_record_build;
 }
 
 FuFirmware *

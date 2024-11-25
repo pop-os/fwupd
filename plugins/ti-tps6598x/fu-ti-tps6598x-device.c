@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2021 Texas Instruments Incorporated
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Texas Instruments Incorporated
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR MIT
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
  */
 
 #include "config.h"
@@ -32,8 +32,8 @@ static void
 fu_ti_tps6598x_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuTiTps6598xDevice *self = FU_TI_TPS6598X_DEVICE(device);
-	fu_string_append(str, idt, "UID", self->uid);
-	fu_string_append(str, idt, "oUID", self->ouid);
+	fwupd_codec_string_append(str, idt, "UID", self->uid);
+	fwupd_codec_string_append(str, idt, "oUID", self->ouid);
 }
 
 /* read @length bytes from address @addr */
@@ -43,7 +43,6 @@ fu_ti_tps6598x_device_usbep_read_raw(FuTiTps6598xDevice *self,
 				     guint8 length,
 				     GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length = 0;
 	g_autofree gchar *title = g_strdup_printf("read@0x%x", addr);
 	g_autoptr(GByteArray) buf = g_byte_array_new();
@@ -51,27 +50,27 @@ fu_ti_tps6598x_device_usbep_read_raw(FuTiTps6598xDevice *self,
 	/* first byte is length */
 	fu_byte_array_set_size(buf, length + 1, 0x0);
 
-	if (!g_usb_device_control_transfer(usb_device,
-					   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
-					   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					   G_USB_DEVICE_RECIPIENT_DEVICE,
-					   TI_TPS6598X_USB_REQUEST_READ,
-					   addr,
-					   0x0, /* idx */
-					   buf->data,
-					   buf->len,
-					   &actual_length,
-					   TI_TPS6598X_DEVICE_USB_TIMEOUT,
-					   NULL,
-					   error)) {
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+					    FU_USB_DIRECTION_DEVICE_TO_HOST,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
+					    TI_TPS6598X_USB_REQUEST_READ,
+					    addr,
+					    0x0, /* idx */
+					    buf->data,
+					    buf->len,
+					    &actual_length,
+					    TI_TPS6598X_DEVICE_USB_TIMEOUT,
+					    NULL,
+					    error)) {
 		g_prefix_error(error, "failed to contact device: ");
 		return NULL;
 	}
 	fu_dump_raw(G_LOG_DOMAIN, title, buf->data, buf->len);
 	if (actual_length != buf->len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "got 0x%x but requested 0x%x",
 			    (guint)actual_length,
 			    (guint)buf->len);
@@ -99,8 +98,8 @@ fu_ti_tps6598x_device_usbep_read(FuTiTps6598xDevice *self,
 	/* check then remove size */
 	if (buf->data[0] < length) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "response 0x%x but requested 0x%x",
 			    (guint)buf->data[0],
 			    (guint)length);
@@ -118,7 +117,6 @@ fu_ti_tps6598x_device_usbep_write(FuTiTps6598xDevice *self,
 				  GByteArray *buf,
 				  GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	g_autoptr(GPtrArray) chunks = NULL;
 	g_autofree gchar *title = g_strdup_printf("write@0x%x", addr);
 
@@ -133,26 +131,26 @@ fu_ti_tps6598x_device_usbep_write(FuTiTps6598xDevice *self,
 		/* for the first chunk use the total data length */
 		if (i == 0)
 			idx = buf->len;
-		if (!g_usb_device_control_transfer(usb_device,
-						   G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-						   G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-						   G_USB_DEVICE_RECIPIENT_DEVICE,
-						   TI_TPS6598X_USB_REQUEST_WRITE,
-						   addr,
-						   idx, /* idx */
-						   fu_chunk_get_data_out(chk),
-						   fu_chunk_get_data_sz(chk),
-						   &actual_length,
-						   TI_TPS6598X_DEVICE_USB_TIMEOUT,
-						   NULL,
-						   error)) {
+		if (!fu_usb_device_control_transfer(FU_USB_DEVICE(self),
+						    FU_USB_DIRECTION_HOST_TO_DEVICE,
+						    FU_USB_REQUEST_TYPE_VENDOR,
+						    FU_USB_RECIPIENT_DEVICE,
+						    TI_TPS6598X_USB_REQUEST_WRITE,
+						    addr,
+						    idx, /* idx */
+						    fu_chunk_get_data_out(chk),
+						    fu_chunk_get_data_sz(chk),
+						    &actual_length,
+						    TI_TPS6598X_DEVICE_USB_TIMEOUT,
+						    NULL,
+						    error)) {
 			g_prefix_error(error, "failed to contact device: ");
 			return FALSE;
 		}
 		if (actual_length != fu_chunk_get_data_sz(chk)) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "wrote 0x%x but expected 0x%x",
 				    (guint)actual_length,
 				    (guint)fu_chunk_get_data_sz(chk));
@@ -203,8 +201,8 @@ fu_ti_tps6598x_device_write_4cc(FuTiTps6598xDevice *self,
 	/* sanity check */
 	if (strlen(cmd) != 4) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_ARGUMENT,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "expected 4-char cmd");
 		return FALSE;
 	}
@@ -237,8 +235,8 @@ fu_ti_tps6598x_device_wait_for_command_cb(FuDevice *device, gpointer user_data, 
 	/* check the value of the cmd register */
 	if (buf->data[0] != 0 || buf->data[1] != 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_ARGUMENT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid status register, got 0x%02x:0x%02x",
 			    buf->data[1],
 			    buf->data[2]);
@@ -303,8 +301,8 @@ fu_ti_tps6598x_device_sfwi(FuTiTps6598xDevice *self, GError **error)
 	res = buf->data[0] & 0b1111;
 	if (res != FU_TI_TPS6598X_SFWI_SUCCESS) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_ARGUMENT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "SFWi failed, got %s [0x%02x]",
 			    fu_ti_tps6598x_sfwi_to_string(res),
 			    res);
@@ -335,8 +333,8 @@ fu_ti_tps6598x_device_sfwd(FuTiTps6598xDevice *self, GByteArray *data, GError **
 	res = buf->data[0] & 0b1111;
 	if (res != FU_TI_TPS6598X_SFWD_SUCCESS) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_ARGUMENT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "SFWd failed, got %s [0x%02x]",
 			    fu_ti_tps6598x_sfwd_to_string(res),
 			    res);
@@ -365,8 +363,8 @@ fu_ti_tps6598x_device_sfws(FuTiTps6598xDevice *self, GByteArray *data, GError **
 	res = buf->data[0] & 0b1111;
 	if (res != FU_TI_TPS6598X_SFWS_SUCCESS) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_ARGUMENT,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "SFWs failed, got %s [0x%02x]",
 			    fu_ti_tps6598x_sfws_to_string(res),
 			    res);
@@ -407,8 +405,8 @@ fu_ti_tps6598x_device_read_target_register(FuTiTps6598xDevice *self,
 	/* check then remove response code */
 	if (buf->data[0] != 0x00) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "response code 0x%02x",
 			    (guint)buf->data[0]);
 		return NULL;
@@ -459,8 +457,8 @@ fu_ti_tps6598x_device_ensure_mode(FuTiTps6598xDevice *self, GError **error)
 
 	/* unhandled */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_INVALID_ARGUMENT,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "device in unknown mode: %s",
 		    str);
 	return FALSE;
@@ -494,10 +492,9 @@ static gboolean
 fu_ti_tps6598x_device_setup(FuDevice *device, GError **error)
 {
 	FuTiTps6598xDevice *self = FU_TI_TPS6598X_DEVICE(device);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 
 	/* there are two devices with the same VID:PID -- ignore the non-vendor one */
-	if (g_usb_device_get_device_class(usb_device) != G_USB_DEVICE_CLASS_VENDOR_SPECIFIC) {
+	if (fu_usb_device_get_class(FU_USB_DEVICE(self)) != FU_USB_CLASS_VENDOR_SPECIFIC) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -568,8 +565,13 @@ fu_ti_tps6598x_device_write_chunks(FuTiTps6598xDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) buf = g_byte_array_new();
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* align */
 		g_byte_array_append(buf, fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
@@ -597,8 +599,13 @@ fu_ti_tps6598x_device_write_sfws_chunks(FuTiTps6598xDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) buf = g_byte_array_new();
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		/* align and pad low before sending */
 		g_byte_array_append(buf, fu_chunk_get_data(chk), fu_chunk_get_data_sz(chk));
@@ -624,9 +631,7 @@ fu_ti_tps6598x_device_attach(FuDevice *device, FuProgress *progress, GError **er
 
 	/* hopefully this fails because the hardware rebooted */
 	if (!fu_ti_tps6598x_device_maybe_reboot(self, &error_local)) {
-		if (!g_error_matches(error_local,
-				     G_USB_DEVICE_ERROR,
-				     G_USB_DEVICE_ERROR_NO_DEVICE)) {
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			g_propagate_error(error, g_steal_pointer(&error_local));
 			return FALSE;
 		}
@@ -646,9 +651,9 @@ fu_ti_tps6598x_device_write_firmware(FuDevice *device,
 				     GError **error)
 {
 	FuTiTps6598xDevice *self = FU_TI_TPS6598X_DEVICE(device);
-	g_autoptr(GBytes) fw_sig = NULL;
-	g_autoptr(GBytes) fw_pubkey = NULL;
-	g_autoptr(GBytes) fw_payload = NULL;
+	g_autoptr(GInputStream) stream_sig = NULL;
+	g_autoptr(GInputStream) stream_pubkey = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 	g_autoptr(FuChunkArray) chunks_pubkey = NULL;
 	g_autoptr(FuChunkArray) chunks_sig = NULL;
 	g_autoptr(FuChunkArray) chunks_payload = NULL;
@@ -661,8 +666,9 @@ fu_ti_tps6598x_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 7, NULL);
 
 	/* get payload image */
-	fw_payload = fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_PAYLOAD, error);
-	if (fw_payload == NULL)
+	stream_payload =
+	    fu_firmware_get_image_by_id_stream(firmware, FU_FIRMWARE_ID_PAYLOAD, error);
+	if (stream_payload == NULL)
 		return FALSE;
 
 	/* SFWi */
@@ -671,7 +677,13 @@ fu_ti_tps6598x_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* write each SFWd block */
-	chunks_payload = fu_chunk_array_new_from_bytes(fw_payload, 0x0, 64);
+	chunks_payload = fu_chunk_array_new_from_stream(stream_payload,
+							FU_CHUNK_ADDR_OFFSET_NONE,
+							FU_CHUNK_PAGESZ_NONE,
+							64,
+							error);
+	if (chunks_payload == NULL)
+		return FALSE;
 	if (!fu_ti_tps6598x_device_write_chunks(self,
 						chunks_payload,
 						fu_progress_get_child(progress),
@@ -682,10 +694,16 @@ fu_ti_tps6598x_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* SFWs with signature */
-	fw_sig = fu_firmware_get_image_by_id_bytes(firmware, FU_FIRMWARE_ID_SIGNATURE, error);
-	if (fw_sig == NULL)
+	stream_sig = fu_firmware_get_image_by_id_stream(firmware, FU_FIRMWARE_ID_SIGNATURE, error);
+	if (stream_sig == NULL)
 		return FALSE;
-	chunks_sig = fu_chunk_array_new_from_bytes(fw_sig, 0x0, 64);
+	chunks_sig = fu_chunk_array_new_from_stream(stream_sig,
+						    FU_CHUNK_ADDR_OFFSET_NONE,
+						    FU_CHUNK_PAGESZ_NONE,
+						    64,
+						    error);
+	if (chunks_sig == NULL)
+		return FALSE;
 	if (!fu_ti_tps6598x_device_write_sfws_chunks(self,
 						     chunks_sig,
 						     fu_progress_get_child(progress),
@@ -696,10 +714,16 @@ fu_ti_tps6598x_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* SFWs with pubkey */
-	fw_pubkey = fu_firmware_get_image_by_id_bytes(firmware, "pubkey", error);
-	if (fw_pubkey == NULL)
+	stream_pubkey = fu_firmware_get_image_by_id_stream(firmware, "pubkey", error);
+	if (stream_pubkey == NULL)
 		return FALSE;
-	chunks_pubkey = fu_chunk_array_new_from_bytes(fw_pubkey, 0x0, 64);
+	chunks_pubkey = fu_chunk_array_new_from_stream(stream_pubkey,
+						       FU_CHUNK_ADDR_OFFSET_NONE,
+						       FU_CHUNK_PAGESZ_NONE,
+						       64,
+						       error);
+	if (chunks_pubkey == NULL)
+		return FALSE;
 	if (!fu_ti_tps6598x_device_write_sfws_chunks(self,
 						     chunks_pubkey,
 						     fu_progress_get_child(progress),
@@ -733,9 +757,9 @@ fu_ti_tps6598x_device_init(FuTiTps6598xDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_ONLY_VERSION_UPGRADE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ONLY_WAIT_FOR_REPLUG);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_VENDOR);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ENFORCE_REQUIRES);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_VENDOR);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ENFORCE_REQUIRES);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_TI_TPS6598X_FIRMWARE);
 	fu_device_set_remove_delay(FU_DEVICE(self), 30000);
 	fu_usb_device_add_interface(FU_USB_DEVICE(self), 0x0);
@@ -753,13 +777,13 @@ fu_ti_tps6598x_device_finalize(GObject *object)
 static void
 fu_ti_tps6598x_device_class_init(FuTiTps6598xDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_ti_tps6598x_device_finalize;
-	klass_device->to_string = fu_ti_tps6598x_device_to_string;
-	klass_device->write_firmware = fu_ti_tps6598x_device_write_firmware;
-	klass_device->attach = fu_ti_tps6598x_device_attach;
-	klass_device->setup = fu_ti_tps6598x_device_setup;
-	klass_device->report_metadata_pre = fu_ti_tps6598x_device_report_metadata_pre;
-	klass_device->set_progress = fu_ti_tps6598x_device_set_progress;
+	device_class->to_string = fu_ti_tps6598x_device_to_string;
+	device_class->write_firmware = fu_ti_tps6598x_device_write_firmware;
+	device_class->attach = fu_ti_tps6598x_device_attach;
+	device_class->setup = fu_ti_tps6598x_device_setup;
+	device_class->report_metadata_pre = fu_ti_tps6598x_device_report_metadata_pre;
+	device_class->set_progress = fu_ti_tps6598x_device_set_progress;
 }

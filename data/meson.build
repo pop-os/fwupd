@@ -1,6 +1,7 @@
 subdir('bios-settings.d')
 subdir('pki')
 subdir('remotes.d')
+subdir('icons')
 
 if get_option('bash_completion')
   subdir('bash-completion')
@@ -20,7 +21,7 @@ endif
 
 if get_option('tests')
   if build_daemon
-    subdir('installed-tests')
+    subdir('tests')
   endif
 endif
 
@@ -58,12 +59,6 @@ if build_daemon
     install_dir: join_paths(datadir, 'dbus-1', 'system.d')
   )
 
-  if gudev.found()
-    install_data(['90-fwupd-devices.rules'],
-      install_dir: join_paths(udevdir, 'rules.d')
-    )
-  endif
-
   if libsystemd.found()
     con2 = configuration_data()
     con2.set('libexecdir', libexecdir)
@@ -71,7 +66,7 @@ if build_daemon
     con2.set('datadir', datadir)
     con2.set('localstatedir', localstatedir)
     rw_directories = []
-    if not get_option('plugin_uefi_capsule').disabled()
+    if allow_uefi_capsule
       rw_directories += ['-/boot/efi', '-/efi/EFI', '-/boot/EFI', '-/boot/grub']
     endif
 
@@ -81,17 +76,7 @@ if build_daemon
     endif
 
     dynamic_options = []
-    if systemd.version().version_compare('>= 232')
-      dynamic_options += 'ProtectControlGroups=yes'
-      dynamic_options += 'ProtectKernelModules=yes'
-    endif
-    if systemd.version().version_compare('>= 231')
-      dynamic_options += 'RestrictRealtime=yes'
-#     dynamic_options += 'MemoryDenyWriteExecute=yes'
-      dynamic_options += ['ReadWritePaths=' + ' '.join(rw_directories)]
-    else
-      dynamic_options += ['ReadWriteDirectories=' + ' '.join(rw_directories)]
-    endif
+    dynamic_options += ['ReadWritePaths=' + ' '.join(rw_directories)]
     #pull configuration/cache/state from /etc and /var only if prefix is /usr
     if get_option('prefix') == '/usr'
       dynamic_options += 'ConfigurationDirectory=fwupd'
@@ -103,19 +88,71 @@ if build_daemon
     else
       dynamic_options += 'RestrictAddressFamilies=AF_NETLINK AF_UNIX'
     endif
+
+    device_allows = [
+      'block-sd',
+      'char-aux',
+      'char-cpu/*',
+      'char-drm',
+      'char-gpiochip',
+      'char-hidraw',
+      'char-usb',
+      'char-usb_device',
+    ]
+    if allow_flashrom
+      device_allows += ['char-mem']
+    endif
+    if get_option('plugin_nvme').allowed()
+      device_allows += ['char-nvme']
+    endif
+    if get_option('plugin_tpm').allowed()
+      device_allows += ['char-tpm']
+    endif
+    if get_option('plugin_intel_me').allowed()
+      device_allows += ['char-mei']
+    endif
+    foreach device_allow: device_allows
+      dynamic_options += ['DeviceAllow=' + device_allow + ' rw']
+    endforeach
+
+    # allow-list, see `systemd-analyze syscall-filter` for what each group adds
+    if get_option('systemd_syscall_filter')
+      syscall_filter = [
+        '@basic-io',
+        '@file-system',
+        '@io-event',
+        '@ipc',
+        '@network-io',
+        '@process',
+        '@sync',
+        '@signal',  # for g_local_file_monitor_new
+        '@timer',   # for usbi_create_timer
+        '@chown',   # for sqlite3Step
+        'ioctl',
+        'uname',
+        'sysinfo',  # for sysconf
+        'madvise',  # for mtrim
+        'mremap',   # for g_realloc
+        'splice', 'vmsplice', 'copy_file_range', # for g_file_copy
+      ]
+      if allow_flashrom
+        syscall_filter += ['@raw-io']
+      endif
+      dynamic_options += ['SystemCallFilter=' + ' '.join(syscall_filter)]
+      if supported_build
+        dynamic_options += ['Environment="FWUPD_SYSCALL_FILTER=systemd"']
+        dynamic_options += ['SystemCallErrorNumber=EPERM']
+      else
+        # to debug what additional syscalls are required, we set SystemCallErrorNumber=SIGSYS
+        # and then can do `coredumpctl debug` and get the syscall number with `(gdb) p $rax`
+        dynamic_options += ['SystemCallErrorNumber=SIGSYS']
+      endif
+    endif
+    if not supported_build
+      dynamic_options += ['Environment="G_DEBUG=fatal-criticals"']
+    endif
     con2.set('dynamic_options', '\n'.join(dynamic_options))
     con2.set('motd_dir', motd_dir)
-
-    # replace @bindir@
-    if offline.allowed()
-      configure_file(
-        input: 'fwupd-offline-update.service.in',
-        output: 'fwupd-offline-update.service',
-        configuration: con2,
-        install: true,
-        install_dir: systemdunitdir,
-      )
-    endif
 
     # replace @dynamic_options@
     configure_file(

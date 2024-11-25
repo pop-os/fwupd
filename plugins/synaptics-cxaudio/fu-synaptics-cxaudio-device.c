@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2005 Synaptics Incorporated
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2005 Synaptics Incorporated
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -35,14 +35,17 @@ static void
 fu_synaptics_cxaudio_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuSynapticsCxaudioDevice *self = FU_SYNAPTICS_CXAUDIO_DEVICE(device);
-	fu_string_append_ku(str, idt, "ChipIdBase", self->chip_id_base);
-	fu_string_append_ku(str, idt, "ChipId", self->chip_id);
-	fu_string_append_kx(str, idt, "EepromLayoutVersion", self->eeprom_layout_version);
-	fu_string_append_kx(str, idt, "EepromStorageAddress", self->eeprom_storage_address);
-	fu_string_append_kx(str, idt, "EepromStorageSz", self->eeprom_storage_sz);
-	fu_string_append_kx(str, idt, "EepromSz", self->eeprom_sz);
-	fu_string_append_kb(str, idt, "SwResetSupported", self->sw_reset_supported);
-	fu_string_append_kb(str, idt, "SerialNumberSet", self->serial_number_set);
+	fwupd_codec_string_append_int(str, idt, "ChipIdBase", self->chip_id_base);
+	fwupd_codec_string_append_int(str, idt, "ChipId", self->chip_id);
+	fwupd_codec_string_append_hex(str, idt, "EepromLayoutVersion", self->eeprom_layout_version);
+	fwupd_codec_string_append_hex(str,
+				      idt,
+				      "EepromStorageAddress",
+				      self->eeprom_storage_address);
+	fwupd_codec_string_append_hex(str, idt, "EepromStorageSz", self->eeprom_storage_sz);
+	fwupd_codec_string_append_hex(str, idt, "EepromSz", self->eeprom_sz);
+	fwupd_codec_string_append_bool(str, idt, "SwResetSupported", self->sw_reset_supported);
+	fwupd_codec_string_append_bool(str, idt, "SerialNumberSet", self->serial_number_set);
 }
 
 static gboolean
@@ -152,17 +155,17 @@ fu_synaptics_cxaudio_device_operation(FuSynapticsCxaudioDevice *self,
 
 		/* set memory address and payload length (if relevant) */
 		if (fu_chunk_get_address(chk) >= 64 * 1024)
-			outbuf[1] |= 1 << 4;
+			FU_BIT_SET(outbuf[1], 4);
 		outbuf[2] = fu_chunk_get_data_sz(chk);
 		fu_memwrite_uint16(outbuf + 3, fu_chunk_get_address(chk), G_BIG_ENDIAN);
 
 		/* set memtype */
 		if (mem_kind == FU_SYNAPTICS_CXAUDIO_MEM_KIND_EEPROM)
-			outbuf[1] |= 1 << 5;
+			FU_BIT_SET(outbuf[1], 5);
 
 		/* fill the report payload part */
 		if (operation == FU_SYNAPTICS_CXAUDIO_OPERATION_WRITE) {
-			outbuf[1] |= 1 << 6;
+			FU_BIT_SET(outbuf[1], 6);
 			if (!fu_memcpy_safe(outbuf,
 					    sizeof(outbuf),
 					    idx_write, /* dst */
@@ -179,7 +182,7 @@ fu_synaptics_cxaudio_device_operation(FuSynapticsCxaudioDevice *self,
 		/* issue additional write directive to read */
 		if (operation == FU_SYNAPTICS_CXAUDIO_OPERATION_WRITE &&
 		    flags & FU_SYNAPTICS_CXAUDIO_OPERATION_FLAG_VERIFY) {
-			outbuf[1] &= ~(1 << 6);
+			FU_BIT_CLEAR(outbuf[1], 6);
 			if (!fu_synaptics_cxaudio_device_output_report(self,
 								       outbuf,
 								       sizeof(outbuf),
@@ -209,7 +212,7 @@ fu_synaptics_cxaudio_device_operation(FuSynapticsCxaudioDevice *self,
 				g_prefix_error(error,
 					       "failed to verify on packet %u @0x%x: ",
 					       fu_chunk_get_idx(chk),
-					       fu_chunk_get_address(chk));
+					       (guint)fu_chunk_get_address(chk));
 				return FALSE;
 			}
 		}
@@ -246,7 +249,7 @@ fu_synaptics_cxaudio_device_register_clear_bit(FuSynapticsCxaudioDevice *self,
 						   FU_SYNAPTICS_CXAUDIO_OPERATION_FLAG_NONE,
 						   error))
 		return FALSE;
-	tmp &= ~(1 << bit_position);
+	FU_BIT_CLEAR(tmp, bit_position);
 	return fu_synaptics_cxaudio_device_operation(self,
 						     FU_SYNAPTICS_CXAUDIO_OPERATION_WRITE,
 						     FU_SYNAPTICS_CXAUDIO_MEM_KIND_CPX_RAM,
@@ -273,7 +276,7 @@ fu_synaptics_cxaudio_device_register_set_bit(FuSynapticsCxaudioDevice *self,
 						   FU_SYNAPTICS_CXAUDIO_OPERATION_FLAG_NONE,
 						   error))
 		return FALSE;
-	tmp |= 1 << bit_position;
+	FU_BIT_SET(tmp, bit_position);
 	return fu_synaptics_cxaudio_device_operation(self,
 						     FU_SYNAPTICS_CXAUDIO_OPERATION_WRITE,
 						     FU_SYNAPTICS_CXAUDIO_MEM_KIND_CPX_RAM,
@@ -383,7 +386,6 @@ static gboolean
 fu_synaptics_cxaudio_device_setup(FuDevice *device, GError **error)
 {
 	FuSynapticsCxaudioDevice *self = FU_SYNAPTICS_CXAUDIO_DEVICE(device);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	guint32 addr = FU_SYNAPTICS_CXAUDIO_EEPROM_CPX_PATCH_VERSION_ADDRESS;
 	guint8 chip_id_offset = 0x0;
 	guint8 sigbuf[FU_STRUCT_SYNAPTICS_CXAUDIO_VALIDITY_SIGNATURE_SIZE] = {0x0};
@@ -587,9 +589,9 @@ fu_synaptics_cxaudio_device_setup(FuDevice *device, GError **error)
 
 	/* find out if patch supports additional capabilities (optional) */
 	cap_str =
-	    g_usb_device_get_string_descriptor(usb_device,
-					       FU_SYNAPTICS_CXAUDIO_DEVICE_CAPABILITIES_STRIDX,
-					       NULL);
+	    fu_usb_device_get_string_descriptor(FU_USB_DEVICE(device),
+						FU_SYNAPTICS_CXAUDIO_DEVICE_CAPABILITIES_STRIDX,
+						NULL);
 	if (cap_str != NULL) {
 		g_auto(GStrv) split = g_strsplit(cap_str, ";", -1);
 		for (guint i = 0; split[i] != NULL; i++) {
@@ -605,14 +607,15 @@ fu_synaptics_cxaudio_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_synaptics_cxaudio_device_prepare_firmware(FuDevice *device,
-					     GBytes *fw,
+					     GInputStream *stream,
+					     FuProgress *progress,
 					     FwupdInstallFlags flags,
 					     GError **error)
 {
 	FuSynapticsCxaudioDevice *self = FU_SYNAPTICS_CXAUDIO_DEVICE(device);
 	guint32 chip_id_base;
 	g_autoptr(FuFirmware) firmware = fu_synaptics_cxaudio_firmware_new();
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	chip_id_base =
 	    fu_synaptics_cxaudio_firmware_get_devtype(FU_SYNAPTICS_CXAUDIO_FIRMWARE(firmware));
@@ -818,9 +821,8 @@ fu_synaptics_cxaudio_device_attach(FuDevice *device, FuProgress *progress, GErro
 						   sizeof(tmp),
 						   FU_SYNAPTICS_CXAUDIO_OPERATION_FLAG_NONE,
 						   &error_local)) {
-		if (g_error_matches(error_local, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_FAILED)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND))
 			return TRUE;
-		}
 		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
 	}
@@ -837,7 +839,7 @@ fu_synaptics_cxaudio_device_set_quirk_kv(FuDevice *device,
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "CxaudioChipIdBase") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->chip_id_base = tmp;
 		return TRUE;
@@ -845,13 +847,13 @@ fu_synaptics_cxaudio_device_set_quirk_kv(FuDevice *device,
 	if (g_strcmp0(key, "CxaudioSoftwareReset") == 0)
 		return fu_strtobool(value, &self->sw_reset_supported, error);
 	if (g_strcmp0(key, "CxaudioPatch1ValidAddr") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->eeprom_patch_valid_addr = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "CxaudioPatch2ValidAddr") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->eeprom_patch2_valid_addr = tmp;
 		return TRUE;
@@ -890,12 +892,12 @@ fu_synaptics_cxaudio_device_init(FuSynapticsCxaudioDevice *self)
 static void
 fu_synaptics_cxaudio_device_class_init(FuSynapticsCxaudioDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_synaptics_cxaudio_device_to_string;
-	klass_device->set_quirk_kv = fu_synaptics_cxaudio_device_set_quirk_kv;
-	klass_device->setup = fu_synaptics_cxaudio_device_setup;
-	klass_device->write_firmware = fu_synaptics_cxaudio_device_write_firmware;
-	klass_device->attach = fu_synaptics_cxaudio_device_attach;
-	klass_device->prepare_firmware = fu_synaptics_cxaudio_device_prepare_firmware;
-	klass_device->set_progress = fu_synaptics_cxaudio_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_synaptics_cxaudio_device_to_string;
+	device_class->set_quirk_kv = fu_synaptics_cxaudio_device_set_quirk_kv;
+	device_class->setup = fu_synaptics_cxaudio_device_setup;
+	device_class->write_firmware = fu_synaptics_cxaudio_device_write_firmware;
+	device_class->attach = fu_synaptics_cxaudio_device_attach;
+	device_class->prepare_firmware = fu_synaptics_cxaudio_device_prepare_firmware;
+	device_class->set_progress = fu_synaptics_cxaudio_device_set_progress;
 }

@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-byte-array.h"
+#include "fu-common.h"
 #include "fu-ifd-image.h"
 
 /**
@@ -55,6 +56,8 @@ void
 fu_ifd_image_set_access(FuIfdImage *self, FuIfdRegion region, FuIfdAccess access)
 {
 	FuIfdImagePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FU_IS_IFD_IMAGE(self));
+	g_return_if_fail(region < FU_IFD_REGION_MAX);
 	priv->access[region] = access;
 }
 
@@ -73,6 +76,8 @@ FuIfdAccess
 fu_ifd_image_get_access(FuIfdImage *self, FuIfdRegion region)
 {
 	FuIfdImagePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_IFD_IMAGE(self), FU_IFD_ACCESS_NONE);
+	g_return_val_if_fail(region < FU_IFD_REGION_MAX, FU_IFD_ACCESS_NONE);
 	return priv->access[region];
 }
 
@@ -127,9 +132,9 @@ fu_ifd_image_init(FuIfdImage *self)
 static void
 fu_ifd_image_class_init(FuIfdImageClass *klass)
 {
-	FuFirmwareClass *klass_image = FU_FIRMWARE_CLASS(klass);
-	klass_image->export = fu_ifd_image_export;
-	klass_image->write = fu_ifd_image_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->export = fu_ifd_image_export;
+	firmware_class->write = fu_ifd_image_write;
 }
 
 /**

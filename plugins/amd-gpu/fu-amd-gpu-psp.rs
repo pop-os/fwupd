@@ -1,8 +1,9 @@
-// Copyright (C) 2023 Advanced Micro Devices Inc.
-// SPDX-License-Identifier: LGPL-2.1+ OR MIT
+// Copyright 2023 Advanced Micro Devices Inc.
+// SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
 
-#[derive(ParseBytes)]
-struct Efs {
+#[derive(ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructEfs {
     signature: u32le = 0x55aa55aa,
     reserved: [u32le; 4],
     psp_dir_loc: u32le,
@@ -14,23 +15,26 @@ struct Efs {
     _rom_strap_b_loc: u32le,
 }
 
-#[derive(ValidateBytes, Getters)]
-struct PspDir {
+#[derive(ParseStream, ValidateStream, Getters, Default)]
+#[repr(C, packed)]
+struct FuStructPspDir {
     cookie: [char; 4] == "$PSP",
     checksum: u32le,
     total_entries: u32le,
     reserved: u32le,
 }
 
-#[derive(ParseBytes)]
-struct PspDirTable {
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructPspDirTable {
     fw_id: u32le,
     size: u32le,
     loc: u64le,
 }
 
-#[derive(ParseBytes)]
-struct ImageSlotHeader {
+#[derive(ParseStream)]
+#[repr(C, packed)]
+struct FuStructImageSlotHeader {
     checksum: u32le,
     boot_priority: u32le,
     update_retries: u32le,
@@ -44,7 +48,7 @@ struct ImageSlotHeader {
 }
 
 #[repr(u8)]
-enum Fwid {
+enum FuFwid {
     AtomCsm = 0x1,
     PartitionAL2 = 0x014D,
     PartitionBL2 = 0x014E,

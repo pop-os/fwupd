@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -31,8 +31,7 @@ fu_acpi_phat_version_element_export(FuFirmware *firmware,
 
 static gboolean
 fu_acpi_phat_version_element_parse(FuFirmware *firmware,
-				   GBytes *fw,
-				   gsize offset,
+				   GInputStream *stream,
 				   FwupdInstallFlags flags,
 				   GError **error)
 {
@@ -40,7 +39,7 @@ fu_acpi_phat_version_element_parse(FuFirmware *firmware,
 	g_autoptr(GByteArray) st = NULL;
 
 	/* unpack */
-	st = fu_struct_acpi_phat_version_element_parse_bytes(fw, offset, error);
+	st = fu_struct_acpi_phat_version_element_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 	fu_firmware_set_size(firmware, st->len);
@@ -128,12 +127,12 @@ static void
 fu_acpi_phat_version_element_class_init(FuAcpiPhatVersionElementClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_acpi_phat_version_element_finalize;
-	klass_firmware->parse = fu_acpi_phat_version_element_parse;
-	klass_firmware->write = fu_acpi_phat_version_element_write;
-	klass_firmware->export = fu_acpi_phat_version_element_export;
-	klass_firmware->build = fu_acpi_phat_version_element_build;
+	firmware_class->parse = fu_acpi_phat_version_element_parse;
+	firmware_class->write = fu_acpi_phat_version_element_write;
+	firmware_class->export = fu_acpi_phat_version_element_export;
+	firmware_class->build = fu_acpi_phat_version_element_build;
 }
 
 FuFirmware *

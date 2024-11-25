@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -133,7 +133,6 @@ static gboolean
 fu_logitech_hidpp_device_ping(FuLogitechHidppDevice *self, GError **error)
 {
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
-	gdouble version;
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
 	GPtrArray *children = NULL;
@@ -148,11 +147,11 @@ fu_logitech_hidpp_device_ping(FuLogitechHidppDevice *self, GError **error)
 	msg->data[2] = 0xaa; /* user-selected value */
 	msg->hidpp_version = priv->hidpp_version;
 	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, &error_local)) {
-		if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 			priv->hidpp_version = 1;
 			return TRUE;
 		}
-		if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_HOST_UNREACHABLE)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNREACHABLE);
 			return TRUE;
 		}
@@ -177,8 +176,8 @@ fu_logitech_hidpp_device_ping(FuLogitechHidppDevice *self, GError **error)
 
 	/* format version in BCD format */
 	if (priv->hidpp_version != FU_HIDPP_VERSION_BLE) {
-		version = (gdouble)msg->data[0] + ((gdouble)msg->data[1]) / 100.f;
-		priv->hidpp_version = (guint)version;
+		/* minor version is in msg->data[1] */;
+		priv->hidpp_version = msg->data[0];
 	}
 
 	/* success */
@@ -218,7 +217,7 @@ fu_logitech_hidpp_device_poll(FuDevice *device, GError **error)
 	msg->device_id = priv->device_idx;
 	msg->hidpp_version = priv->hidpp_version;
 	if (!fu_logitech_hidpp_receive(priv->io_channel, msg, timeout, &error_local)) {
-		if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_TIMED_OUT)) {
+		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT)) {
 			g_warning("failed to get pending read: %s", error_local->message);
 			return TRUE;
 		}
@@ -254,8 +253,20 @@ fu_logitech_hidpp_device_open(FuDevice *device, GError **error)
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
 	const gchar *devpath = fu_udev_device_get_device_file(FU_UDEV_DEVICE(device));
 
+	if (devpath == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "device path is not detected for '%s'",
+			    fu_device_get_name(device));
+		return FALSE;
+	}
+
 	/* open */
-	priv->io_channel = fu_io_channel_new_file(devpath, error);
+	priv->io_channel =
+	    fu_io_channel_new_file(devpath,
+				   FU_IO_CHANNEL_OPEN_FLAG_READ | FU_IO_CHANNEL_OPEN_FLAG_WRITE,
+				   error);
 	if (priv->io_channel == NULL)
 		return FALSE;
 
@@ -263,13 +274,13 @@ fu_logitech_hidpp_device_open(FuDevice *device, GError **error)
 }
 
 static void
-fu_logitech_hidpp_map_to_string(FuLogitechHidppHidppMap *map, guint idt, GString *str)
+fu_logitech_hidpp_device_map_to_string(FuLogitechHidppHidppMap *map, guint idt, GString *str)
 {
 	g_autofree gchar *title = g_strdup_printf("Feature%02x", map->idx);
 	g_autofree gchar *tmp = g_strdup_printf("%s [0x%04x]",
 						fu_logitech_hidpp_feature_to_string(map->feature),
 						map->feature);
-	fu_string_append(str, idt, title, tmp);
+	fwupd_codec_string_append(str, idt, title, tmp);
 }
 
 static void
@@ -277,17 +288,13 @@ fu_logitech_hidpp_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuLogitechHidppDevice *self = FU_HIDPP_DEVICE(device);
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
-
-	/* FuUdevDevice->to_string */
-	FU_DEVICE_CLASS(fu_logitech_hidpp_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append_ku(str, idt, "HidppVersion", priv->hidpp_version);
-	fu_string_append_ku(str, idt, "HidppPid", priv->hidpp_pid);
-	fu_string_append_kx(str, idt, "DeviceIdx", priv->device_idx);
-	fu_string_append(str, idt, "ModelId", priv->model_id);
+	fwupd_codec_string_append_int(str, idt, "HidppVersion", priv->hidpp_version);
+	fwupd_codec_string_append_int(str, idt, "HidppPid", priv->hidpp_pid);
+	fwupd_codec_string_append_hex(str, idt, "DeviceIdx", priv->device_idx);
+	fwupd_codec_string_append(str, idt, "ModelId", priv->model_id);
 	for (guint i = 0; i < priv->feature_index->len; i++) {
 		FuLogitechHidppHidppMap *map = g_ptr_array_index(priv->feature_index, i);
-		fu_logitech_hidpp_map_to_string(map, idt, str);
+		fu_logitech_hidpp_device_map_to_string(map, idt, str);
 	}
 }
 
@@ -321,15 +328,17 @@ fu_logitech_hidpp_device_create_radio_child(FuLogitechHidppDevice *self,
 	/* sanity check */
 	if (priv->model_id == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "model ID not set");
 		return FALSE;
 	}
 
 	radio_version = g_strdup_printf("0x%.4x", build);
 	radio = fu_logitech_hidpp_radio_new(ctx, entity);
-	fu_device_set_physical_id(FU_DEVICE(radio), fu_device_get_physical_id(FU_DEVICE(self)));
+	fu_device_incorporate(FU_DEVICE(radio),
+			      FU_DEVICE(self),
+			      FU_DEVICE_INCORPORATE_FLAG_PHYSICAL_ID);
 	/*
 	 * Use the parent logical id as well as the model id for the
 	 * logical id of the radio child device. This allows the radio
@@ -560,7 +569,7 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidppDevice *self, GError
 	}
 
 	/* try HID++1.0 battery mileage */
-	if (priv->hidpp_version == 1.f) {
+	if (priv->hidpp_version == 1) {
 		g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
 		msg->report_id = FU_LOGITECH_HIDPP_REPORT_ID_SHORT;
 		msg->device_id = priv->device_idx;
@@ -604,9 +613,10 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidppDevice *self, GError
 }
 
 static gboolean
-fu_logitech_hidpp_feature_search(FuDevice *device, guint16 feature, GError **error)
+fu_logitech_hidpp_device_feature_search(FuLogitechHidppDevice *self,
+					guint16 feature,
+					GError **error)
 {
-	FuLogitechHidppDevice *self = FU_HIDPP_DEVICE(device);
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
 	FuLogitechHidppHidppMap *map;
 	g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
@@ -631,8 +641,8 @@ fu_logitech_hidpp_feature_search(FuDevice *device, guint16 feature, GError **err
 	/* zero index */
 	if (msg->data[0] == 0x00) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "feature %s [0x%04x] not found",
 			    fu_logitech_hidpp_feature_to_string(feature),
 			    feature);
@@ -657,21 +667,8 @@ fu_logitech_hidpp_device_probe(FuDevice *device, GError **error)
 	FuLogitechHidppDevice *self = FU_HIDPP_DEVICE(device);
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
 
-	/* check the kernel has CONFIG_HIDRAW */
-	if (!g_file_test("/sys/class/hidraw", G_FILE_TEST_IS_DIR)) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "no kernel support for CONFIG_HIDRAW");
-		return FALSE;
-	}
-
-	/* set the physical ID */
-	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "hid", error))
-		return FALSE;
-
 	/* nearly... */
-	fu_device_add_vendor_id(device, "USB:0x046D");
+	fu_device_build_vendor_id_u16(device, "USB", 0x046D);
 
 	/*
 	 * All devices connected to a Bolt receiver share the same
@@ -686,12 +683,8 @@ fu_logitech_hidpp_device_probe(FuDevice *device, GError **error)
 	}
 
 	/* this is a non-standard extension */
-	fu_device_add_instance_u16(FU_DEVICE(self),
-				   "VID",
-				   fu_udev_device_get_vendor(FU_UDEV_DEVICE(device)));
-	fu_device_add_instance_u16(FU_DEVICE(self),
-				   "PID",
-				   fu_udev_device_get_model(FU_UDEV_DEVICE(device)));
+	fu_device_add_instance_u16(FU_DEVICE(self), "VID", fu_device_get_vid(device));
+	fu_device_add_instance_u16(FU_DEVICE(self), "PID", fu_device_get_pid(device));
 	return fu_device_build_instance_id(FU_DEVICE(self), error, "UFY", "VID", "PID", NULL);
 }
 
@@ -714,17 +707,6 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 	if (fu_device_has_private_flag(device, FU_LOGITECH_HIDPP_DEVICE_FLAG_BLE)) {
 		priv->hidpp_version = FU_HIDPP_VERSION_BLE;
 		priv->device_idx = FU_LOGITECH_HIDPP_DEVICE_IDX_RECEIVER;
-		/*
-		 * Set the logical ID for BLE devices. Note that for BLE
-		 * devices, physical_id = HID_PHYS = MAC of the BT adapter,
-		 * logical_id = HID_UNIQ = MAC of the device. The physical id is
-		 * not enough to differentiate two BLE devices connected to the
-		 * same adapter. This is done here because private flags
-		 * are not loaded when the probe method runs, so we
-		 * can't tell the device is in BLE mode.
-		 */
-		if (!fu_udev_device_set_logical_id(FU_UDEV_DEVICE(device), "hid", error))
-			return FALSE;
 		/*
 		 * BLE devices might not be ready for ping right after
 		 * they come up -> wait a bit before pinging.
@@ -756,10 +738,10 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 	/* map some *optional* HID++2.0 features we might use */
 	for (guint i = 0; map_features[i] != FU_LOGITECH_HIDPP_FEATURE_ROOT; i++) {
 		g_autoptr(GError) error_local = NULL;
-		if (!fu_logitech_hidpp_feature_search(device, map_features[i], &error_local)) {
+		if (!fu_logitech_hidpp_device_feature_search(self, map_features[i], &error_local)) {
 			g_debug("%s", error_local->message);
-			if (g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_TIMED_OUT) ||
-			    g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_HOST_UNREACHABLE)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT) ||
+			    g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 				/* timed out, so not trying any more */
 				break;
 			}
@@ -960,7 +942,7 @@ fu_logitech_hidpp_device_detach(FuDevice *device, FuProgress *progress, GError *
 	}
 
 	/* we don't know how */
-	g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no method to detach");
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no method to detach");
 	return FALSE;
 }
 
@@ -970,8 +952,8 @@ fu_logitech_hidpp_device_check_status(guint8 status, GError **error)
 	switch (status & 0x7f) {
 	case 0x00:
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid status value 0x%02x",
 			    status);
 		break;
@@ -984,86 +966,110 @@ fu_logitech_hidpp_device_check_status(guint8 status, GError **error)
 		break;
 	case 0x03:
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_PENDING,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_BUSY,
 				    "wait for event (command in progress)");
 		break;
 	case 0x04:
 	case 0x10: /* unknown */
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "generic error");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "generic error");
 		break;
 	case 0x11:
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
 				    "bad voltage (power too low?)");
 		break;
 	case 0x12:
 	case 0x14: /* bad magic string */
 	case 0x21: /* bad firmware */
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "unsupported firmware");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "unsupported firmware");
 		break;
 	case 0x13:
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "unsupported encryption mode");
 		break;
 	case 0x15:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "erase failure");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_WRITE, "erase failure");
 		break;
 	case 0x16:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "DFU not started");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "DFU not started");
 		break;
 	case 0x17:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "bad sequence number");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "bad sequence number");
 		break;
 	case 0x18:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "unsupported command");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "unsupported command");
 		break;
 	case 0x19:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "command in progress");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_BUSY, "command in progress");
 		break;
 	case 0x1a:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "address out of range");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "address out of range");
 		break;
 	case 0x1b:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "unaligned address");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "unaligned address");
 		break;
 	case 0x1c:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "bad size");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "bad size");
 		break;
 	case 0x1d:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "missing program data");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "missing program data");
 		break;
 	case 0x1e:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "missing check data");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "missing check data");
 		break;
 	case 0x1f:
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_WRITE,
 				    "program failed to write");
 		break;
 	case 0x20:
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_WRITE,
 				    "program failed to verify");
 		break;
 	case 0x22:
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, "firmware check failure");
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "firmware check failure");
 		break;
 	case 0x23:
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_BUSY,
 				    "blocked command (restart required)");
 		break;
 	default:
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "unhandled status value 0x%02x",
 			    status);
 		break;
@@ -1120,8 +1126,8 @@ fu_logitech_hidpp_device_write_firmware_pkt(FuLogitechHidppDevice *self,
 		return TRUE;
 
 	/* fatal error */
-	if (!g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_PENDING)) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED, error_local->message);
+	if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_BUSY)) {
+		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
 	}
 
@@ -1145,8 +1151,8 @@ fu_logitech_hidpp_device_write_firmware_pkt(FuLogitechHidppDevice *self,
 
 	/* nothing in the queue */
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_TIMED_OUT,
 			    "failed to get event after timeout");
 	return FALSE;
 }
@@ -1169,7 +1175,10 @@ fu_logitech_hidpp_device_write_firmware(FuDevice *device,
 	/* if we're in bootloader mode, we should be able to get this feature */
 	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU);
 	if (idx == 0x00) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no DFU feature available");
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no DFU feature available");
 		return FALSE;
 	}
 
@@ -1234,7 +1243,10 @@ fu_logitech_hidpp_device_attach(FuLogitechHidppDevice *self,
 	/* if we're in bootloader mode, we should be able to get this feature */
 	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU);
 	if (idx == 0x00) {
-		g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no DFU feature available");
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no DFU feature available");
 		return FALSE;
 	}
 
@@ -1299,7 +1311,10 @@ fu_logitech_hidpp_device_set_quirk_kv(FuDevice *device,
 		fu_logitech_hidpp_device_set_model_id(self, value);
 		return TRUE;
 	}
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -1339,22 +1354,22 @@ fu_logitech_hidpp_device_cleanup(FuDevice *device,
 static void
 fu_logitech_hidpp_device_class_init(FuLogitechHidppDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
 	object_class->finalize = fu_logitech_hidpp_device_finalize;
-	klass_device->setup = fu_logitech_hidpp_device_setup;
-	klass_device->open = fu_logitech_hidpp_device_open;
-	klass_device->close = fu_logitech_hidpp_device_close;
-	klass_device->write_firmware = fu_logitech_hidpp_device_write_firmware;
-	klass_device->attach = fu_logitech_hidpp_device_attach_cached;
-	klass_device->detach = fu_logitech_hidpp_device_detach;
-	klass_device->poll = fu_logitech_hidpp_device_poll;
-	klass_device->to_string = fu_logitech_hidpp_device_to_string;
-	klass_device->probe = fu_logitech_hidpp_device_probe;
-	klass_device->set_quirk_kv = fu_logitech_hidpp_device_set_quirk_kv;
-	klass_device->cleanup = fu_logitech_hidpp_device_cleanup;
-	klass_device->set_progress = fu_logitech_hidpp_device_set_progress;
+	device_class->setup = fu_logitech_hidpp_device_setup;
+	device_class->open = fu_logitech_hidpp_device_open;
+	device_class->close = fu_logitech_hidpp_device_close;
+	device_class->write_firmware = fu_logitech_hidpp_device_write_firmware;
+	device_class->attach = fu_logitech_hidpp_device_attach_cached;
+	device_class->detach = fu_logitech_hidpp_device_detach;
+	device_class->poll = fu_logitech_hidpp_device_poll;
+	device_class->to_string = fu_logitech_hidpp_device_to_string;
+	device_class->probe = fu_logitech_hidpp_device_probe;
+	device_class->set_quirk_kv = fu_logitech_hidpp_device_set_quirk_kv;
+	device_class->cleanup = fu_logitech_hidpp_device_cleanup;
+	device_class->set_progress = fu_logitech_hidpp_device_set_progress;
 }
 
 static void
@@ -1370,18 +1385,13 @@ fu_logitech_hidpp_device_init(FuLogitechHidppDevice *self)
 	fu_device_set_vendor(FU_DEVICE(self), "Logitech");
 	fu_device_retry_set_delay(FU_DEVICE(self), 1000);
 	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_LOGITECH_HIDPP_DEVICE_FLAG_FORCE_RECEIVER_ID,
-					"force-receiver-id");
-	fu_device_register_private_flag(FU_DEVICE(self), FU_LOGITECH_HIDPP_DEVICE_FLAG_BLE, "ble");
+					FU_LOGITECH_HIDPP_DEVICE_FLAG_FORCE_RECEIVER_ID);
+	fu_device_register_private_flag(FU_DEVICE(self), FU_LOGITECH_HIDPP_DEVICE_FLAG_BLE);
 	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_LOGITECH_HIDPP_DEVICE_FLAG_REBIND_ATTACH,
-					"rebind-attach");
+					FU_LOGITECH_HIDPP_DEVICE_FLAG_REBIND_ATTACH);
 	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_LOGITECH_HIDPP_DEVICE_FLAG_NO_REQUEST_REQUIRED,
-					"no-request-required");
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_LOGITECH_HIDPP_DEVICE_FLAG_ADD_RADIO,
-					"add-radio");
+					FU_LOGITECH_HIDPP_DEVICE_FLAG_NO_REQUEST_REQUIRED);
+	fu_device_register_private_flag(FU_DEVICE(self), FU_LOGITECH_HIDPP_DEVICE_FLAG_ADD_RADIO);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_USER_REPLUG);
 	fu_device_set_battery_threshold(FU_DEVICE(self), 20);
 }
@@ -1392,14 +1402,12 @@ fu_logitech_hidpp_device_new(FuUdevDevice *parent)
 	FuLogitechHidppDevice *self = NULL;
 	FuLogitechHidppDevicePrivate *priv;
 	self = g_object_new(FU_TYPE_HIDPP_DEVICE,
-			    "context",
-			    fu_device_get_context(FU_DEVICE(parent)),
-			    "physical-id",
-			    fu_device_get_physical_id(FU_DEVICE(parent)),
-			    "udev-device",
-			    fu_udev_device_get_dev(parent),
+			    "proxy",
+			    parent,
+			    "device-file",
+			    fu_udev_device_get_device_file(parent),
 			    NULL);
 	priv = GET_PRIVATE(self);
-	priv->io_channel = fu_logitech_hidpp_runtime_get_io_channel(FU_HIDPP_RUNTIME(parent));
+	priv->io_channel = fu_udev_device_get_io_channel(FU_UDEV_DEVICE(parent));
 	return self;
 }

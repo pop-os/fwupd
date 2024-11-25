@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -28,14 +28,6 @@ G_BEGIN_DECLS
  * The dbus interface
  **/
 #define FWUPD_DBUS_INTERFACE "org.freedesktop.fwupd"
-/**
- * FWUPD_DBUS_P2P_SOCKET_ADDRESS:
- *
- * The D-Bus socket address when using point-to-point connections.
- *
- * NOTE: This is no longer used as the value is set at compile time.
- **/
-#define FWUPD_DBUS_P2P_SOCKET_ADDRESS "tcp:host=localhost,port=1341"
 
 /**
  * FWUPD_DEVICE_ID_ANY:
@@ -46,16 +38,34 @@ G_BEGIN_DECLS
 
 /**
  * FwupdGuidFlags:
- * @FWUPD_GUID_FLAG_NONE:			No trust
- * @FWUPD_GUID_FLAG_NAMESPACE_MICROSOFT:	Use the Microsoft-compatible namespace
- * @FWUPD_GUID_FLAG_MIXED_ENDIAN:		Use EFI mixed endian representation
  *
  * The flags to show how the data should be converted.
  **/
 typedef enum {
-	FWUPD_GUID_FLAG_NONE = 0,		      /* Since: 1.2.5 */
-	FWUPD_GUID_FLAG_NAMESPACE_MICROSOFT = 1 << 0, /* Since: 1.2.5 */
-	FWUPD_GUID_FLAG_MIXED_ENDIAN = 1 << 1,	      /* Since: 1.2.5 */
+	/**
+	 * FWUPD_GUID_FLAG_NONE:
+	 *
+	 * No endian swapping.
+	 *
+	 * Since: 1.2.5
+	 */
+	FWUPD_GUID_FLAG_NONE = 0,
+	/**
+	 * FWUPD_GUID_FLAG_NAMESPACE_MICROSOFT:
+	 *
+	 * Use the Microsoft-compatible namespace.
+	 *
+	 * Since: 1.2.5
+	 */
+	FWUPD_GUID_FLAG_NAMESPACE_MICROSOFT = 1 << 0,
+	/**
+	 * FWUPD_GUID_FLAG_MIXED_ENDIAN:
+	 *
+	 * Use EFI mixed endian representation, as used in EFI.
+	 *
+	 * Since: 1.2.5
+	 */
+	FWUPD_GUID_FLAG_MIXED_ENDIAN = 1 << 1,
 	/*< private >*/
 	FWUPD_GUID_FLAG_LAST
 } FwupdGuidFlags;
@@ -78,18 +88,6 @@ fwupd_checksum_type_to_string_display(GChecksumType checksum_type);
 gchar *
 fwupd_checksum_format_for_display(const gchar *checksum) G_GNUC_NON_NULL(1);
 
-G_DEPRECATED_FOR(fwupd_client_set_user_agent_for_package)
-gchar *
-fwupd_build_user_agent(const gchar *package_name, const gchar *package_version)
-    G_GNUC_NON_NULL(1, 2);
-gchar *
-fwupd_build_machine_id(const gchar *salt, GError **error);
-GHashTable *
-fwupd_get_os_release(GError **error);
-GHashTable *
-fwupd_get_os_release_full(const gchar *filename, GError **error);
-gchar *
-fwupd_build_history_report_json(GPtrArray *devices, GError **error) G_GNUC_NON_NULL(1);
 gboolean
 fwupd_device_id_is_valid(const gchar *device_id);
 #ifndef __GI_SCANNER__

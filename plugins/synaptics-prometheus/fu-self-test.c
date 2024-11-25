@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -23,8 +23,10 @@ fu_test_synaprom_firmware_func(void)
 	g_autoptr(GBytes) blob2 = NULL;
 	g_autoptr(GBytes) fw = NULL;
 	g_autoptr(GError) error = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuFirmware) firmware2 = NULL;
 	g_autoptr(FuFirmware) firmware = fu_synaprom_firmware_new();
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 
 	filename = g_test_build_filename(G_TEST_DIST, "tests", "test.pkg", NULL);
 	if (!g_file_test(filename, G_FILE_TEST_EXISTS) && ci == NULL) {
@@ -38,7 +40,7 @@ fu_test_synaprom_firmware_func(void)
 	g_assert_cmpint(sz, ==, 294);
 	g_assert_cmpint(buf[0], ==, 0x01);
 	g_assert_cmpint(buf[1], ==, 0x00);
-	ret = fu_firmware_parse(firmware, fw, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret = fu_firmware_parse_bytes(firmware, fw, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -62,8 +64,12 @@ fu_test_synaprom_firmware_func(void)
 
 	/* payload needs to exist */
 	fu_synaprom_device_set_version(device, 10, 1, 1234);
-	firmware2 =
-	    fu_synaprom_device_prepare_fw(FU_DEVICE(device), fw, FWUPD_INSTALL_FLAG_NONE, &error);
+	stream = g_memory_input_stream_new_from_bytes(fw);
+	firmware2 = fu_synaprom_device_prepare_firmware(FU_DEVICE(device),
+							stream,
+							progress,
+							FWUPD_INSTALL_FLAG_NONE,
+							&error);
 	g_assert_no_error(error);
 	g_assert_nonnull(firmware2);
 	blob2 = fu_firmware_get_image_by_id_bytes(firmware2, "mfw-update-payload", &error);

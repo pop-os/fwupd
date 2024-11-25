@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 1999-2023 Logitech, Inc.
+ * Copyright 1999-2023 Logitech, Inc.
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -13,4 +13,4 @@ G_DECLARE_FINAL_TYPE(FuLogitechRallysystemAudioDevice,
 		     fu_logitech_rallysystem_audio_device,
 		     FU,
 		     LOGITECH_RALLYSYSTEM_AUDIO_DEVICE,
-		     FuUdevDevice)
+		     FuHidrawDevice)

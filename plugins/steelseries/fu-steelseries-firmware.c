@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2022 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -17,24 +17,40 @@ G_DEFINE_TYPE(FuSteelseriesFirmware, fu_steelseries_firmware, FU_TYPE_FIRMWARE)
 
 static gboolean
 fu_steelseries_firmware_parse(FuFirmware *firmware,
-			      GBytes *fw,
-			      gsize offset,
+			      GInputStream *stream,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
 	FuSteelseriesFirmware *self = FU_STEELSERIES_FIRMWARE(firmware);
-	guint32 checksum_tmp;
-	guint32 checksum;
+	guint32 checksum_tmp = 0xFFFFFFFF;
+	guint32 checksum = 0;
+	gsize streamsz = 0;
+	g_autoptr(GInputStream) stream_tmp = NULL;
 
-	if (!fu_memread_uint32_safe(g_bytes_get_data(fw, NULL),
-				    g_bytes_get_size(fw),
-				    g_bytes_get_size(fw) - sizeof(checksum),
-				    &checksum,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_size(stream, &streamsz, error))
 		return FALSE;
-	checksum_tmp =
-	    fu_crc32(g_bytes_get_data(fw, NULL), g_bytes_get_size(fw) - sizeof(checksum_tmp));
+	if (streamsz < sizeof(checksum)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "image is too small");
+		return FALSE;
+	}
+	if (!fu_input_stream_read_u32(stream,
+				      streamsz - sizeof(checksum),
+				      &checksum,
+				      G_LITTLE_ENDIAN,
+				      error))
+		return FALSE;
+
+	stream_tmp = fu_partial_input_stream_new(stream, 0, streamsz - sizeof(checksum_tmp), error);
+	if (stream_tmp == NULL)
+		return FALSE;
+	if (!fu_input_stream_compute_crc32(stream_tmp,
+					   FU_CRC_KIND_B32_STANDARD,
+					   &checksum_tmp,
+					   error))
+		return FALSE;
 	if (checksum_tmp != checksum) {
 		if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
 			g_set_error(error,
@@ -73,9 +89,9 @@ fu_steelseries_firmware_init(FuSteelseriesFirmware *self)
 static void
 fu_steelseries_firmware_class_init(FuSteelseriesFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_steelseries_firmware_parse;
-	klass_firmware->export = fu_steelseries_firmware_export;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_steelseries_firmware_parse;
+	firmware_class->export = fu_steelseries_firmware_export;
 }
 
 FuFirmware *

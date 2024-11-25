@@ -1,4 +1,4 @@
-if gudev.found() and (host_cpu == 'x86' or host_cpu == 'x86_64')
+if enable_udev and (host_cpu == 'x86' or host_cpu == 'x86_64')
 cargs = ['-DG_LOG_DOMAIN="FuPluginAmdPmc"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -13,4 +13,6 @@ plugin_builtins += static_library('fu_plugin_amd_pmc',
   c_args: cargs,
   dependencies: plugin_deps,
 )
+enumeration_data += files('tests/amd-pmc-setup.json')
+device_tests += files('tests/amd-pmc.json')
 endif

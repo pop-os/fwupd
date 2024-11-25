@@ -1,15 +1,17 @@
 /*
- * Copyright (C) 2023 Goodix.inc <xulinkun@goodix.com>
+ * Copyright 2023 Goodix.inc <xulinkun@goodix.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-goodixtp-brlb-device.h"
+#include "fu-goodixtp-brlb-firmware.h"
 #include "fu-goodixtp-common.h"
 #include "fu-goodixtp-firmware.h"
 #include "fu-goodixtp-gtx8-device.h"
+#include "fu-goodixtp-gtx8-firmware.h"
 #include "fu-goodixtp-plugin.h"
 #include "fu-goodixtp-struct.h"
 
@@ -29,8 +31,12 @@ fu_goodixtp_plugin_constructed(GObject *obj)
 {
 	FuPlugin *plugin = FU_PLUGIN(obj);
 	fu_plugin_add_udev_subsystem(plugin, "hidraw");
-	fu_plugin_add_device_gtype(plugin, FU_TYPE_GOODIXTP_HID_DEVICE);
+	fu_plugin_set_device_gtype_default(plugin, FU_TYPE_GOODIXTP_HID_DEVICE);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_GOODIXTP_GTX8_DEVICE); /* coverage */
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_GOODIXTP_BRLB_DEVICE); /* coverage */
 	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_GOODIXTP_FIRMWARE);
+	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_GOODIXTP_GTX8_FIRMWARE); /* coverage */
+	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_GOODIXTP_BRLB_FIRMWARE); /* coverage */
 }
 
 static FuGoodixtpIcType
@@ -51,7 +57,6 @@ fu_goodixtp_plugin_backend_device_added(FuPlugin *plugin,
 					FuProgress *progress,
 					GError **error)
 {
-	guint16 hid_pid;
 	FuGoodixtpIcType ic_type;
 	g_autoptr(FuDeviceLocker) locker = NULL;
 
@@ -64,14 +69,13 @@ fu_goodixtp_plugin_backend_device_added(FuPlugin *plugin,
 		return FALSE;
 	}
 
-	hid_pid = fu_udev_device_get_model(FU_UDEV_DEVICE(device));
-	ic_type = fu_goodixtp_plugin_ic_type_from_pid(hid_pid);
+	ic_type = fu_goodixtp_plugin_ic_type_from_pid(fu_device_get_pid(device));
 	if (ic_type == FU_GOODIXTP_IC_TYPE_NORMANDYL) {
 		g_autoptr(FuDevice) dev = g_object_new(FU_TYPE_GOODIXTP_GTX8_DEVICE,
 						       "context",
 						       fu_plugin_get_context(plugin),
 						       NULL);
-		fu_device_incorporate(dev, device);
+		fu_device_incorporate(dev, device, FU_DEVICE_INCORPORATE_FLAG_ALL);
 		locker = fu_device_locker_new(dev, error);
 		if (locker == NULL)
 			return FALSE;
@@ -84,7 +88,7 @@ fu_goodixtp_plugin_backend_device_added(FuPlugin *plugin,
 						       "context",
 						       fu_plugin_get_context(plugin),
 						       NULL);
-		fu_device_incorporate(dev, device);
+		fu_device_incorporate(dev, device, FU_DEVICE_INCORPORATE_FLAG_ALL);
 		locker = fu_device_locker_new(dev, error);
 		if (locker == NULL)
 			return FALSE;
@@ -96,7 +100,7 @@ fu_goodixtp_plugin_backend_device_added(FuPlugin *plugin,
 		    FWUPD_ERROR,
 		    FWUPD_ERROR_NOT_SUPPORTED,
 		    "can't find valid ic_type, pid is %x",
-		    hid_pid);
+		    fu_device_get_pid(device));
 	return FALSE;
 }
 

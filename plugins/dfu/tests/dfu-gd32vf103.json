@@ -1,0 +1,17 @@
+{
+  "name": "GigaDevice GD32VF103",
+  "interactive": false,
+  "steps": [
+    {
+      "emulation-file": "@enumeration_datadir@/dfu-gd32vf103-setup.json",
+      "components": [
+        {
+          "version": "1.0",
+          "guids": [
+            "f40ef7cf-e4f6-5708-b274-13edfb04646e"
+          ]
+        }
+      ]
+    }
+  ]
+}

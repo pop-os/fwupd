@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Dylan Van Assche <me@dylanvanassche.be>
+ * Copyright 2022 Dylan Van Assche <me@dylanvanassche.be>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -25,7 +25,7 @@ fu_android_boot_plugin_constructed(GObject *obj)
 {
 	FuPlugin *plugin = FU_PLUGIN(obj);
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_ANDROID_BOOT_DEVICE);
-	fu_plugin_add_device_udev_subsystem(plugin, "block");
+	fu_plugin_add_device_udev_subsystem(plugin, "block:partition");
 }
 
 static void

@@ -19,12 +19,4 @@ FuFirmware *
 fu_legion_hid2_firmware_new(void);
 
 guint32
-fu_legion_hid2_firmware_get_sig_offset(FuFirmware *firmware);
-gssize
-fu_legion_hid2_firmware_get_sig_size(FuFirmware *firmware);
-guint32
-fu_legion_hid2_firmware_get_data_offset(FuFirmware *firmware);
-gssize
-fu_legion_hid2_firmware_get_data_size(FuFirmware *firmware);
-guint32
 fu_legion_hid2_firmware_get_version(FuFirmware *firmware);

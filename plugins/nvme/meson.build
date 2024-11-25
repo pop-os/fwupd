@@ -1,8 +1,8 @@
 nvme_header = cc.has_header('linux/nvme_ioctl.h', required: get_option('plugin_nvme'))
 
 if nvme_header and \
-   get_option('plugin_nvme').require(gudev.found(),
-    error_message: 'gudev is needed for plugin_nvme').allowed()
+   get_option('plugin_nvme').require(enable_udev,
+    error_message: 'udev is needed for plugin_nvme').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginNvme"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -22,6 +22,10 @@ plugin_builtin_nvme = static_library('fu_plugin_nvme',
   dependencies: plugin_deps,
 )
 plugin_builtins += plugin_builtin_nvme
+
+device_tests += files(
+  'tests/lenovo-pcsn720.json',
+)
 
 if get_option('tests')
   env = environment()

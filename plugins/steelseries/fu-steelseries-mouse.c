@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -10,7 +10,7 @@
 
 #include "fu-steelseries-mouse.h"
 
-#define STEELSERIES_TRANSACTION_TIMEOUT 1000 /* ms */
+#define FU_STEELSERIES_TRANSACTION_TIMEOUT 1000 /* ms */
 
 struct _FuSteelseriesMouse {
 	FuUsbDevice parent_instance;
@@ -21,8 +21,6 @@ G_DEFINE_TYPE(FuSteelseriesMouse, fu_steelseries_mouse, FU_TYPE_USB_DEVICE)
 static gboolean
 fu_steelseries_mouse_setup(FuDevice *device, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-	gboolean ret;
 	gsize actual_len = 0;
 	guint8 data[32];
 	g_autofree gchar *version = NULL;
@@ -33,47 +31,45 @@ fu_steelseries_mouse_setup(FuDevice *device, GError **error)
 
 	memset(data, 0x00, sizeof(data));
 	data[0] = 0x16;
-	ret = g_usb_device_control_transfer(usb_device,
-					    G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					    G_USB_DEVICE_REQUEST_TYPE_CLASS,
-					    G_USB_DEVICE_RECIPIENT_INTERFACE,
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(device),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_CLASS,
+					    FU_USB_RECIPIENT_INTERFACE,
 					    0x09,
 					    0x0200,
 					    0x0000,
 					    data,
 					    sizeof(data),
 					    &actual_len,
-					    STEELSERIES_TRANSACTION_TIMEOUT,
+					    FU_STEELSERIES_TRANSACTION_TIMEOUT,
 					    NULL,
-					    error);
-	if (!ret) {
+					    error)) {
 		g_prefix_error(error, "failed to do control transfer: ");
 		return FALSE;
 	}
 	if (actual_len != 32) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only wrote %" G_GSIZE_FORMAT "bytes",
 			    actual_len);
 		return FALSE;
 	}
-	ret = g_usb_device_interrupt_transfer(usb_device,
+	if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(device),
 					      0x81, /* EP1 IN */
 					      data,
 					      sizeof(data),
 					      &actual_len,
-					      STEELSERIES_TRANSACTION_TIMEOUT,
+					      FU_STEELSERIES_TRANSACTION_TIMEOUT,
 					      NULL,
-					      error);
-	if (!ret) {
+					      error)) {
 		g_prefix_error(error, "failed to do EP1 transfer: ");
 		return FALSE;
 	}
 	if (actual_len != 32) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only read %" G_GSIZE_FORMAT "bytes",
 			    actual_len);
 		return FALSE;
@@ -95,6 +91,6 @@ fu_steelseries_mouse_init(FuSteelseriesMouse *self)
 static void
 fu_steelseries_mouse_class_init(FuSteelseriesMouseClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_steelseries_mouse_setup;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->setup = fu_steelseries_mouse_setup;
 }

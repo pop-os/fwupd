@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -24,7 +24,5 @@ fu_uefi_backend_set_device_gtype(FuUefiBackend *self, GType device_gtype);
 GType
 fu_uefi_backend_get_device_gtype(FuUefiBackend *self);
 
-FuUefiDevice *
-fu_uefi_backend_device_new_from_guid(FuUefiBackend *self, const gchar *guid);
 FuUefiDevice *
 fu_uefi_backend_device_new_from_dev(FuUefiBackend *self, FuDevice *dev);

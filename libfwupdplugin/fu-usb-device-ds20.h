@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -14,8 +14,10 @@ G_DECLARE_DERIVABLE_TYPE(FuUsbDeviceDs20, fu_usb_device_ds20, FU, USB_DEVICE_DS2
 
 struct _FuUsbDeviceDs20Class {
 	FuFirmwareClass parent_class;
-	gboolean (*parse)(FuUsbDeviceDs20 *self, GBytes *blob, FuUsbDevice *device, GError **error)
-	    G_GNUC_WARN_UNUSED_RESULT;
+	gboolean (*parse)(FuUsbDeviceDs20 *self,
+			  GInputStream *stream,
+			  FuUsbDevice *device,
+			  GError **error) G_GNUC_WARN_UNUSED_RESULT;
 };
 
 void

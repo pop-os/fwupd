@@ -1,8 +1,8 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
-# Copyright (C) 2017 Dell, Inc.
+# Copyright 2017 Dell, Inc.
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 import os
 import subprocess
@@ -40,7 +40,7 @@ if not os.path.exists(f):
     print(f"Missing input file {f} for {OS}")
     sys.exit(1)
 
-with open(f, "r") as rfd:
+with open(f) as rfd:
     lines = rfd.readlines()
 
 with open("Dockerfile", "w") as wfd:

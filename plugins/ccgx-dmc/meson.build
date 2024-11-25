@@ -1,4 +1,3 @@
-if gusb.found()
 cargs = ['-DG_LOG_DOMAIN="FuPluginCcgxDmc"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -16,12 +15,13 @@ plugin_builtin_ccgx_dmc = static_library('fu_plugin_ccgx_dmc',
   include_directories: plugin_incdirs,
   link_with: plugin_libs,
   c_args: cargs,
-  dependencies: [
-    plugin_deps,
-    gudev,
-  ],
+  dependencies: plugin_deps,
 )
 plugin_builtins += plugin_builtin_ccgx_dmc
+
+device_tests += files(
+  'tests/hp-dock-g5.json',
+)
 
 if get_option('tests')
   install_data(['tests/ccgx-dmc.builder.xml'],
@@ -49,5 +49,4 @@ if get_option('tests')
     ],
   )
   test('ccgx-dmc-self-test', e, env: env)
-endif
 endif

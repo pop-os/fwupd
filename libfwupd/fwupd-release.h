@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -28,19 +28,11 @@ struct _FwupdReleaseClass {
 
 FwupdRelease *
 fwupd_release_new(void);
-gchar *
-fwupd_release_to_string(FwupdRelease *self) G_GNUC_NON_NULL(1);
 
 const gchar *
 fwupd_release_get_version(FwupdRelease *self) G_GNUC_NON_NULL(1);
 void
 fwupd_release_set_version(FwupdRelease *self, const gchar *version) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_release_get_locations)
-const gchar *
-fwupd_release_get_uri(FwupdRelease *self) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_release_add_location)
-void
-fwupd_release_set_uri(FwupdRelease *self, const gchar *uri) G_GNUC_NON_NULL(1);
 GPtrArray *
 fwupd_release_get_locations(FwupdRelease *self) G_GNUC_NON_NULL(1);
 void
@@ -159,12 +151,6 @@ const gchar *
 fwupd_release_get_license(FwupdRelease *self) G_GNUC_NON_NULL(1);
 void
 fwupd_release_set_license(FwupdRelease *self, const gchar *license) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_release_get_flags)
-FwupdTrustFlags
-fwupd_release_get_trust_flags(FwupdRelease *self) G_GNUC_NON_NULL(1);
-G_DEPRECATED_FOR(fwupd_release_set_flags)
-void
-fwupd_release_set_trust_flags(FwupdRelease *self, FwupdTrustFlags trust_flags) G_GNUC_NON_NULL(1);
 FwupdReleaseFlags
 fwupd_release_get_flags(FwupdRelease *self) G_GNUC_NON_NULL(1);
 void
@@ -205,10 +191,5 @@ fwupd_release_array_filter_flags(GPtrArray *rels,
 				 FwupdReleaseFlags include,
 				 FwupdReleaseFlags exclude,
 				 GError **error) G_GNUC_NON_NULL(1);
-
-FwupdRelease *
-fwupd_release_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
-GPtrArray *
-fwupd_release_array_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
 
 G_END_DECLS

@@ -1,8 +1,8 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
-# Copyright (C) 2017 Max Ehrlich maxehr@gmail.com
+# Copyright 2017 Max Ehrlich maxehr@gmail.com
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 
 import argparse
@@ -87,8 +87,8 @@ def create_firmware_cab(exe, folder):
             command = ["makecab.exe", "/f", directive]
         else:
             command = [
-                "gcab",
-                "--create",
+                "fwupdtool",
+                "build-cabinet",
                 "firmware.cab",
                 "firmware.bin",
                 "firmware.metainfo.xml",

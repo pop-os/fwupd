@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2016 Richard Hughes <richard@hughsie.com>
+ * Copyright 2016 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -9,17 +9,18 @@
 #include <locale.h>
 #include <string.h>
 
-#include "fwupd-bios-setting-private.h"
+#include "fwupd-bios-setting.h"
+#include "fwupd-client-private.h"
 #include "fwupd-client-sync.h"
-#include "fwupd-client.h"
+#include "fwupd-codec.h"
 #include "fwupd-common.h"
 #include "fwupd-device-private.h"
 #include "fwupd-enums.h"
 #include "fwupd-error.h"
-#include "fwupd-plugin-private.h"
-#include "fwupd-release-private.h"
+#include "fwupd-plugin.h"
+#include "fwupd-release.h"
 #include "fwupd-remote-private.h"
-#include "fwupd-report-private.h"
+#include "fwupd-report.h"
 #include "fwupd-request-private.h"
 #include "fwupd-security-attr-private.h"
 
@@ -68,11 +69,6 @@ fwupd_enums_func(void)
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_update_state_from_string(tmp), ==, i);
 	}
-	for (guint i = 0; i < FWUPD_TRUST_FLAG_LAST; i++) {
-		const gchar *tmp = fwupd_trust_flag_to_string(i);
-		g_assert_cmpstr(tmp, !=, NULL);
-		g_assert_cmpint(fwupd_trust_flag_from_string(tmp), ==, i);
-	}
 	for (guint i = 0; i < FWUPD_REQUEST_KIND_LAST; i++) {
 		const gchar *tmp = fwupd_request_kind_to_string(i);
 		g_assert_cmpstr(tmp, !=, NULL);
@@ -95,432 +91,42 @@ fwupd_enums_func(void)
 	}
 
 	/* bitfield */
-	for (guint64 i = 1; i <= FWUPD_DEVICE_FLAG_EMULATED; i *= 2) {
-		const gchar *tmp = fwupd_device_flag_to_string(i);
-		if (tmp == NULL)
-			g_warning("missing device flag 0x%x", (guint)i);
-		g_assert_cmpstr(tmp, !=, NULL);
-		g_assert_cmpint(fwupd_device_flag_from_string(tmp), ==, i);
-	}
 	for (guint64 i = 1; i <= FWUPD_DEVICE_PROBLEM_IN_USE; i *= 2) {
 		const gchar *tmp = fwupd_device_problem_to_string(i);
-		if (tmp == NULL)
-			g_warning("missing device problem 0x%x", (guint)i);
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_device_problem_from_string(tmp), ==, i);
 	}
 	for (guint64 i = 1; i <= FWUPD_PLUGIN_FLAG_MEASURE_SYSTEM_INTEGRITY; i *= 2) {
 		const gchar *tmp = fwupd_plugin_flag_to_string(i);
-		if (tmp == NULL)
-			g_warning("missing plugin flag 0x%x", (guint)i);
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_plugin_flag_from_string(tmp), ==, i);
 	}
 	for (guint64 i = 1; i <= FWUPD_FEATURE_FLAG_SHOW_PROBLEMS; i *= 2) {
 		const gchar *tmp = fwupd_feature_flag_to_string(i);
-		if (tmp == NULL)
-			g_warning("missing feature flag 0x%x", (guint)i);
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_feature_flag_from_string(tmp), ==, i);
 	}
 	for (guint64 i = 1; i <= FWUPD_FEATURE_FLAG_ALLOW_AUTHENTICATION; i *= 2) {
 		const gchar *tmp = fwupd_feature_flag_to_string(i);
-		if (tmp == NULL)
-			g_warning("missing feature flag 0x%x", (guint)i);
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_feature_flag_from_string(tmp), ==, i);
 	}
 	for (guint64 i = 1; i <= FWUPD_RELEASE_FLAG_TRUSTED_REPORT; i *= 2) {
 		const gchar *tmp = fwupd_release_flag_to_string(i);
-		if (tmp == NULL)
-			g_warning("missing release flag 0x%x", (guint)i);
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_release_flag_from_string(tmp), ==, i);
 	}
 	for (guint64 i = 1; i <= FWUPD_REQUEST_FLAG_ALLOW_GENERIC_IMAGE; i *= 2) {
 		const gchar *tmp = fwupd_request_flag_to_string(i);
-		if (tmp == NULL)
-			g_warning("missing request flag 0x%x", (guint)i);
 		g_assert_cmpstr(tmp, !=, NULL);
 		g_assert_cmpint(fwupd_request_flag_from_string(tmp), ==, i);
 	}
-	for (guint i = 1; i < FWUPD_KEYRING_KIND_LAST; i++) {
-		const gchar *tmp = fwupd_keyring_kind_to_string(i);
+	for (guint64 i = 1; i < FWUPD_REMOTE_FLAG_ALLOW_P2P_FIRMWARE; i *= 2) {
+		const gchar *tmp = fwupd_remote_flag_to_string(i);
 		if (tmp == NULL)
-			g_warning("missing keyring kind 0x%x", (guint)i);
-		g_assert_cmpstr(tmp, !=, NULL);
-		g_assert_cmpint(fwupd_keyring_kind_from_string(tmp), ==, i);
+			break;
+		g_assert_cmpint(fwupd_remote_flag_from_string(tmp), ==, i);
 	}
-}
-
-static void
-fwupd_remote_download_func(void)
-{
-	gboolean ret;
-	g_autofree gchar *fn = NULL;
-	g_autofree gchar *directory = NULL;
-	g_autofree gchar *expected_metadata = NULL;
-	g_autofree gchar *expected_signature = NULL;
-	g_autoptr(FwupdRemote) remote = NULL;
-	g_autoptr(GError) error = NULL;
-
-	remote = fwupd_remote_new();
-	directory = g_build_filename(FWUPD_LOCALSTATEDIR, "lib", "fwupd", "remotes.d", NULL);
-	expected_metadata = g_build_filename(FWUPD_LOCALSTATEDIR,
-					     "lib",
-					     "fwupd",
-					     "remotes.d",
-					     "lvfs-testing",
-					     "metadata.xml.gz",
-					     NULL);
-	expected_signature = g_strdup_printf("%s.jcat", expected_metadata);
-	fwupd_remote_set_remotes_dir(remote, directory);
-	fn = g_test_build_filename(G_TEST_DIST, "tests", "remotes.d", "lvfs-testing.conf", NULL);
-	ret = fwupd_remote_load_from_filename(remote, fn, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = fwupd_remote_setup(remote, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	g_assert_cmpint(fwupd_remote_get_kind(remote), ==, FWUPD_REMOTE_KIND_DOWNLOAD);
-	g_assert_cmpint(fwupd_remote_get_keyring_kind(remote), ==, FWUPD_KEYRING_KIND_JCAT);
-	g_assert_cmpint(fwupd_remote_get_priority(remote), ==, 0);
-	g_assert_false(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_ENABLED));
-	g_assert_nonnull(fwupd_remote_get_metadata_uri(remote));
-	g_assert_nonnull(fwupd_remote_get_metadata_uri_sig(remote));
-	g_assert_cmpstr(fwupd_remote_get_title(remote),
-			==,
-			"Linux Vendor Firmware Service (testing)");
-	g_assert_cmpstr(fwupd_remote_get_report_uri(remote),
-			==,
-			"https://fwupd.org/lvfs/firmware/report");
-	g_assert_cmpstr(fwupd_remote_get_filename_cache(remote), ==, expected_metadata);
-	g_assert_cmpstr(fwupd_remote_get_filename_cache_sig(remote), ==, expected_signature);
-}
-
-/* verify we used the FirmwareBaseURI just for firmware */
-static void
-fwupd_remote_baseuri_func(void)
-{
-	gboolean ret;
-	g_autofree gchar *firmware_uri = NULL;
-	g_autofree gchar *fn = NULL;
-	g_autoptr(FwupdRemote) remote = NULL;
-	g_autofree gchar *directory = NULL;
-	g_autoptr(GError) error = NULL;
-
-	remote = fwupd_remote_new();
-	directory = g_build_filename(FWUPD_LOCALSTATEDIR, "lib", "fwupd", "remotes.d", NULL);
-	fwupd_remote_set_remotes_dir(remote, directory);
-	fn = g_test_build_filename(G_TEST_DIST, "tests", "firmware-base-uri.conf", NULL);
-	ret = fwupd_remote_load_from_filename(remote, fn, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	g_assert_cmpint(fwupd_remote_get_kind(remote), ==, FWUPD_REMOTE_KIND_DOWNLOAD);
-	g_assert_cmpint(fwupd_remote_get_keyring_kind(remote), ==, FWUPD_KEYRING_KIND_JCAT);
-	g_assert_cmpint(fwupd_remote_get_priority(remote), ==, 0);
-	g_assert_true(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_ENABLED));
-	g_assert_cmpstr(fwupd_remote_get_firmware_base_uri(remote), ==, "https://my.fancy.cdn/");
-	g_assert_cmpstr(fwupd_remote_get_agreement(remote), ==, NULL);
-	g_assert_cmpstr(fwupd_remote_get_checksum(remote), ==, NULL);
-	g_assert_cmpstr(fwupd_remote_get_metadata_uri(remote),
-			==,
-			"https://s3.amazonaws.com/lvfsbucket/downloads/firmware.xml.gz");
-	g_assert_cmpstr(fwupd_remote_get_metadata_uri_sig(remote),
-			==,
-			"https://s3.amazonaws.com/lvfsbucket/downloads/firmware.xml.gz.jcat");
-	firmware_uri =
-	    fwupd_remote_build_firmware_uri(remote, "http://bbc.co.uk/firmware.cab", &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(firmware_uri, ==, "https://my.fancy.cdn/firmware.cab");
-}
-
-static gchar *
-fwupd_remote_to_json_string(FwupdRemote *remote, GError **error)
-{
-	g_autofree gchar *data = NULL;
-	g_autoptr(JsonGenerator) json_generator = NULL;
-	g_autoptr(JsonBuilder) builder = json_builder_new();
-	g_autoptr(JsonNode) json_root = NULL;
-	json_builder_begin_object(builder);
-	fwupd_remote_to_json(remote, builder);
-	json_builder_end_object(builder);
-	json_root = json_builder_get_root(builder);
-	json_generator = json_generator_new();
-	json_generator_set_pretty(json_generator, TRUE);
-	json_generator_set_root(json_generator, json_root);
-	data = json_generator_to_data(json_generator, NULL);
-	if (data == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "Failed to convert remote to json.");
-		return NULL;
-	}
-	return g_steal_pointer(&data);
-}
-
-static void
-fwupd_remote_auth_func(void)
-{
-	gboolean ret;
-	gchar **order;
-	g_autofree gchar *fn = NULL;
-	g_autofree gchar *remotes_dir = NULL;
-	g_autofree gchar *json = NULL;
-	g_autoptr(FwupdRemote) remote = fwupd_remote_new();
-	g_autoptr(FwupdRemote) remote2 = NULL;
-	g_autoptr(GError) error = NULL;
-	g_autoptr(GVariant) data = NULL;
-
-	remotes_dir = g_test_build_filename(G_TEST_BUILT, "tests", NULL);
-	fwupd_remote_set_remotes_dir(remote, remotes_dir);
-
-	fn = g_test_build_filename(G_TEST_DIST, "tests", "auth.conf", NULL);
-	ret = fwupd_remote_load_from_filename(remote, fn, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	g_assert_cmpstr(fwupd_remote_get_username(remote), ==, "user");
-	g_assert_cmpstr(fwupd_remote_get_password(remote), ==, "pass");
-	g_assert_cmpstr(fwupd_remote_get_security_report_uri(remote),
-			==,
-			"https://fwupd.org/lvfs/hsireports/upload");
-	g_assert_false(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_APPROVAL_REQUIRED));
-	g_assert_false(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_AUTOMATIC_REPORTS));
-	g_assert_true(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_AUTOMATIC_SECURITY_REPORTS));
-
-	g_assert_true(
-	    g_str_has_suffix(fwupd_remote_get_filename_source(remote), "tests/auth.conf"));
-	g_assert_true(g_str_has_suffix(fwupd_remote_get_remotes_dir(remote), "/libfwupd/tests"));
-	g_assert_cmpint(fwupd_remote_get_age(remote), >, 1000000);
-
-	ret = fwupd_remote_setup(remote, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-
-	order = fwupd_remote_get_order_before(remote);
-	g_assert_nonnull(order);
-	g_assert_cmpint(g_strv_length(order), ==, 1);
-	g_assert_cmpstr(order[0], ==, "before");
-	order = fwupd_remote_get_order_after(remote);
-	g_assert_nonnull(order);
-	g_assert_cmpint(g_strv_length(order), ==, 1);
-	g_assert_cmpstr(order[0], ==, "after");
-
-	/* to/from GVariant */
-	fwupd_remote_set_priority(remote, 999);
-	data = fwupd_remote_to_variant(remote);
-	remote2 = fwupd_remote_from_variant(data);
-	g_assert_cmpstr(fwupd_remote_get_username(remote2), ==, "user");
-	g_assert_cmpint(fwupd_remote_get_priority(remote2), ==, 999);
-
-	/* jcat-tool is not a hard dep, and the tests create an empty file if unfound */
-	ret = fwupd_remote_load_signature(remote,
-					  fwupd_remote_get_filename_cache_sig(remote),
-					  &error);
-	if (!ret) {
-		if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_PARTIAL_INPUT)) {
-			g_test_skip("no jcat-tool, so skipping test");
-			return;
-		}
-	}
-	g_assert_no_error(error);
-	g_assert_true(ret);
-
-	/* to JSON */
-	fwupd_remote_set_filename_source(remote2, NULL);
-	fwupd_remote_set_checksum(
-	    remote2,
-	    "dd1b4fd2a59bb0e4d9ea760c658ac3cf9336c7b6729357bab443485b5cf071b2");
-	fwupd_remote_set_filename_cache(remote2, "./libfwupd/tests/auth/metadata.xml.gz");
-	json = fwupd_remote_to_json_string(remote2, &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(json);
-	ret = fu_test_compare_lines(
-	    json,
-	    "{\n"
-	    "  \"Id\" : \"auth\",\n"
-	    "  \"Kind\" : \"download\",\n"
-	    "  \"KeyringKind\" : \"jcat\",\n"
-	    "  \"FirmwareBaseUri\" : \"https://my.fancy.cdn/\",\n"
-	    "  \"ReportUri\" : \"https://fwupd.org/lvfs/firmware/report\",\n"
-	    "  \"SecurityReportUri\" : \"https://fwupd.org/lvfs/hsireports/upload\",\n"
-	    "  \"MetadataUri\" : \"https://cdn.fwupd.org/downloads/firmware.xml.gz\",\n"
-	    "  \"MetadataUriSig\" : \"https://cdn.fwupd.org/downloads/firmware.xml.gz.jcat\",\n"
-	    "  \"Username\" : \"user\",\n"
-	    "  \"Password\" : \"pass\",\n"
-	    "  \"ChecksumSig\" : "
-	    "\"dd1b4fd2a59bb0e4d9ea760c658ac3cf9336c7b6729357bab443485b5cf071b2\",\n"
-	    "  \"FilenameCache\" : \"./libfwupd/tests/auth/metadata.xml.gz\",\n"
-	    "  \"FilenameCacheSig\" : \"./libfwupd/tests/auth/metadata.xml.gz.jcat\",\n"
-	    "  \"Flags\" : 9,\n"
-	    "  \"Enabled\" : \"true\",\n"
-	    "  \"ApprovalRequired\" : \"false\",\n"
-	    "  \"AutomaticReports\" : \"false\",\n"
-	    "  \"AutomaticSecurityReports\" : \"true\",\n"
-	    "  \"Priority\" : 999,\n"
-	    "  \"Mtime\" : 0,\n"
-	    "  \"RefreshInterval\" : 86400\n"
-	    "}",
-	    &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-}
-
-static void
-fwupd_remote_duplicate_func(void)
-{
-	gboolean ret;
-	g_autofree gchar *fn2 = NULL;
-	g_autofree gchar *fn = NULL;
-	g_autoptr(FwupdRemote) remote = fwupd_remote_new();
-	g_autoptr(GError) error = NULL;
-
-	fn = g_test_build_filename(G_TEST_DIST, "tests", "stable.conf", NULL);
-	ret = fwupd_remote_load_from_filename(remote, fn, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	fn2 = g_test_build_filename(G_TEST_DIST, "tests", "disabled.conf", NULL);
-	ret = fwupd_remote_load_from_filename(remote, fn2, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = fwupd_remote_setup(remote, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = fwupd_remote_setup(remote, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	g_assert_false(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_ENABLED));
-	g_assert_cmpint(fwupd_remote_get_keyring_kind(remote), ==, FWUPD_KEYRING_KIND_NONE);
-	g_assert_cmpstr(fwupd_remote_get_username(remote), ==, NULL);
-	g_assert_cmpstr(fwupd_remote_get_password(remote), ==, "");
-	g_assert_cmpstr(fwupd_remote_get_filename_cache(remote),
-			==,
-			"/tmp/fwupd-self-test/stable.xml");
-}
-
-/* verify we used the metadata path for firmware */
-static void
-fwupd_remote_nopath_func(void)
-{
-	gboolean ret;
-	g_autofree gchar *firmware_uri = NULL;
-	g_autofree gchar *fn = NULL;
-	g_autoptr(FwupdRemote) remote = NULL;
-	g_autoptr(GError) error = NULL;
-	g_autofree gchar *directory = NULL;
-
-	remote = fwupd_remote_new();
-	directory = g_build_filename(FWUPD_LOCALSTATEDIR, "lib", "fwupd", "remotes.d", NULL);
-	fwupd_remote_set_remotes_dir(remote, directory);
-	fn = g_test_build_filename(G_TEST_DIST, "tests", "firmware-nopath.conf", NULL);
-	ret = fwupd_remote_load_from_filename(remote, fn, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	g_assert_cmpint(fwupd_remote_get_kind(remote), ==, FWUPD_REMOTE_KIND_DOWNLOAD);
-	g_assert_cmpint(fwupd_remote_get_keyring_kind(remote), ==, FWUPD_KEYRING_KIND_JCAT);
-	g_assert_cmpint(fwupd_remote_get_priority(remote), ==, 0);
-	g_assert_true(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_ENABLED));
-	g_assert_cmpstr(fwupd_remote_get_checksum(remote), ==, NULL);
-	g_assert_cmpstr(fwupd_remote_get_metadata_uri(remote),
-			==,
-			"https://s3.amazonaws.com/lvfsbucket/downloads/firmware.xml.gz");
-	g_assert_cmpstr(fwupd_remote_get_metadata_uri_sig(remote),
-			==,
-			"https://s3.amazonaws.com/lvfsbucket/downloads/firmware.xml.gz.jcat");
-	firmware_uri = fwupd_remote_build_firmware_uri(remote, "firmware.cab", &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(firmware_uri,
-			==,
-			"https://s3.amazonaws.com/lvfsbucket/downloads/firmware.cab");
-}
-
-static void
-fwupd_remote_local_func(void)
-{
-	gboolean ret;
-	g_autofree gchar *fn = NULL;
-	g_autofree gchar *json = NULL;
-	g_autoptr(FwupdRemote) remote = NULL;
-	g_autoptr(FwupdRemote) remote2 = NULL;
-	g_autoptr(GError) error = NULL;
-	g_autoptr(GVariant) data = NULL;
-
-	remote = fwupd_remote_new();
-	fn = g_test_build_filename(G_TEST_DIST, "tests", "dell-esrt.conf", NULL);
-	ret = fwupd_remote_load_from_filename(remote, fn, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	g_assert_cmpint(fwupd_remote_get_kind(remote), ==, FWUPD_REMOTE_KIND_LOCAL);
-	g_assert_cmpint(fwupd_remote_get_keyring_kind(remote), ==, FWUPD_KEYRING_KIND_NONE);
-	g_assert_true(fwupd_remote_has_flag(remote, FWUPD_REMOTE_FLAG_ENABLED));
-	g_assert_null(fwupd_remote_get_metadata_uri(remote));
-	g_assert_null(fwupd_remote_get_metadata_uri_sig(remote));
-	g_assert_null(fwupd_remote_get_report_uri(remote));
-	g_assert_cmpstr(fwupd_remote_get_title(remote),
-			==,
-			"Enable UEFI capsule updates on Dell systems");
-	g_assert_cmpstr(fwupd_remote_get_filename_cache(remote),
-			==,
-			"@datadir@/fwupd/remotes.d/dell-esrt/metadata.xml");
-	g_assert_cmpstr(fwupd_remote_get_filename_cache_sig(remote), ==, NULL);
-	g_assert_cmpstr(fwupd_remote_get_checksum(remote), ==, NULL);
-
-	/* to/from GVariant */
-	data = fwupd_remote_to_variant(remote);
-	remote2 = fwupd_remote_from_variant(data);
-	g_assert_null(fwupd_remote_get_metadata_uri(remote));
-
-	/* to JSON */
-	fwupd_remote_set_filename_source(remote2, NULL);
-	json = fwupd_remote_to_json_string(remote2, &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(json);
-	ret = fu_test_compare_lines(
-	    json,
-	    "{\n"
-	    "  \"Id\" : \"dell-esrt\",\n"
-	    "  \"Kind\" : \"local\",\n"
-	    "  \"KeyringKind\" : \"none\",\n"
-	    "  \"Title\" : \"Enable UEFI capsule updates on Dell systems\",\n"
-	    "  \"FilenameCache\" : \"@datadir@/fwupd/remotes.d/dell-esrt/metadata.xml\",\n"
-	    "  \"Flags\" : 1,\n"
-	    "  \"Enabled\" : \"true\",\n"
-	    "  \"ApprovalRequired\" : \"false\",\n"
-	    "  \"AutomaticReports\" : \"false\",\n"
-	    "  \"AutomaticSecurityReports\" : \"false\",\n"
-	    "  \"Priority\" : 0,\n"
-	    "  \"Mtime\" : 0,\n"
-	    "  \"RefreshInterval\" : 0\n"
-	    "}",
-	    &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-}
-
-static gchar *
-fwupd_release_to_json_string(FwupdRelease *release, GError **error)
-{
-	g_autofree gchar *data = NULL;
-	g_autoptr(JsonGenerator) json_generator = NULL;
-	g_autoptr(JsonBuilder) builder = json_builder_new();
-	g_autoptr(JsonNode) json_root = NULL;
-	json_builder_begin_object(builder);
-	fwupd_release_to_json(release, builder);
-	json_builder_end_object(builder);
-	json_root = json_builder_get_root(builder);
-	json_generator = json_generator_new();
-	json_generator_set_pretty(json_generator, TRUE);
-	json_generator_set_root(json_generator, json_root);
-	data = json_generator_to_data(json_generator, NULL);
-	if (data == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "Failed to convert release to json.");
-		return NULL;
-	}
-	return g_steal_pointer(&data);
 }
 
 static void
@@ -531,8 +137,7 @@ fwupd_release_func(void)
 	g_autofree gchar *json2 = NULL;
 	g_autofree gchar *str = NULL;
 	g_autoptr(FwupdRelease) release1 = NULL;
-	g_autoptr(FwupdRelease) release2 = NULL;
-	g_autoptr(FwupdRelease) release3 = fwupd_release_new();
+	g_autoptr(FwupdRelease) release2 = fwupd_release_new();
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GVariant) data = NULL;
 
@@ -577,8 +182,10 @@ fwupd_release_func(void)
 	fwupd_release_add_flag(release1, FWUPD_RELEASE_FLAG_BLOCKED_APPROVAL);
 	fwupd_release_remove_flag(release1, FWUPD_RELEASE_FLAG_BLOCKED_APPROVAL);
 	fwupd_release_set_urgency(release1, FWUPD_RELEASE_URGENCY_MEDIUM);
-	data = fwupd_release_to_variant(release1);
-	release2 = fwupd_release_from_variant(data);
+	data = fwupd_codec_to_variant(FWUPD_CODEC(release1), FWUPD_CODEC_FLAG_NONE);
+	ret = fwupd_codec_from_variant(FWUPD_CODEC(release2), data, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	g_assert_cmpstr(fwupd_release_get_metadata_item(release2, "foo"), ==, "bar");
 	g_assert_cmpstr(fwupd_release_get_metadata_item(release2, "baz"), ==, "bam");
 	g_assert_cmpstr(fwupd_release_get_remote_id(release2), ==, "remote-id");
@@ -617,10 +224,10 @@ fwupd_release_func(void)
 	g_assert_cmpint(fwupd_release_get_install_duration(release2), ==, 2468);
 
 	/* to JSON */
-	json1 = fwupd_release_to_json_string(release1, &error);
+	json1 = fwupd_codec_to_json_string(FWUPD_CODEC(release1), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(json1);
-	json2 = fwupd_release_to_json_string(release2, &error);
+	json2 = fwupd_codec_to_json_string(FWUPD_CODEC(release2), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(json2);
 	ret = fu_test_compare_lines(json1, json2, &error);
@@ -628,8 +235,9 @@ fwupd_release_func(void)
 	g_assert_true(ret);
 
 	/* to string */
-	str = fwupd_release_to_string(release2);
+	str = fwupd_codec_to_string(FWUPD_CODEC(release2));
 	ret = fu_test_compare_lines(str,
+				    "FwupdRelease:\n"
 				    "  AppstreamId:          appstream-id\n"
 				    "  ReleaseId:            id\n"
 				    "  RemoteId:             remote-id\n"
@@ -665,38 +273,6 @@ fwupd_release_func(void)
 				    &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-
-	/* copy properties */
-	fwupd_release_incorporate(release3, release2);
-	g_assert_cmpstr(fwupd_release_get_metadata_item(release3, "foo"), ==, "bar");
-	g_assert_cmpstr(fwupd_release_get_remote_id(release3), ==, "remote-id");
-	g_assert_cmpstr(fwupd_release_get_appstream_id(release3), ==, "appstream-id");
-	g_assert_cmpstr(fwupd_release_get_id(release3), ==, "id");
-}
-
-static gchar *
-fwupd_report_to_json_string(FwupdReport *report, GError **error)
-{
-	g_autofree gchar *data = NULL;
-	g_autoptr(JsonGenerator) json_generator = NULL;
-	g_autoptr(JsonBuilder) builder = json_builder_new();
-	g_autoptr(JsonNode) json_root = NULL;
-	json_builder_begin_object(builder);
-	fwupd_report_to_json(report, builder);
-	json_builder_end_object(builder);
-	json_root = json_builder_get_root(builder);
-	json_generator = json_generator_new();
-	json_generator_set_pretty(json_generator, TRUE);
-	json_generator_set_root(json_generator, json_root);
-	data = json_generator_to_data(json_generator, NULL);
-	if (data == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "Failed to convert report to json.");
-		return NULL;
-	}
-	return g_steal_pointer(&data);
 }
 
 static void
@@ -707,7 +283,7 @@ fwupd_report_func(void)
 	g_autofree gchar *json2 = NULL;
 	g_autofree gchar *str = NULL;
 	g_autoptr(FwupdReport) report1 = NULL;
-	g_autoptr(FwupdReport) report2 = NULL;
+	g_autoptr(FwupdReport) report2 = fwupd_report_new();
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GVariant) data = NULL;
 
@@ -722,8 +298,10 @@ fwupd_report_func(void)
 	fwupd_report_set_distro_id(report1, "distro_id");
 	fwupd_report_set_distro_version(report1, "distro_version");
 	fwupd_report_set_remote_id(report1, "lvfs");
-	data = fwupd_report_to_variant(report1);
-	report2 = fwupd_report_from_variant(data);
+	data = fwupd_codec_to_variant(FWUPD_CODEC(report1), FWUPD_CODEC_FLAG_NONE);
+	ret = fwupd_codec_from_variant(FWUPD_CODEC(report2), data, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	g_assert_cmpstr(fwupd_report_get_metadata_item(report2, "foo"), ==, "bar");
 	g_assert_cmpstr(fwupd_report_get_metadata_item(report2, "baz"), ==, "bam");
 	g_assert_cmpstr(fwupd_report_get_version_old(report2), ==, "1.2.3");
@@ -735,10 +313,10 @@ fwupd_report_func(void)
 	g_assert_cmpint(fwupd_report_get_created(report2), ==, 5678);
 
 	/* to JSON */
-	json1 = fwupd_report_to_json_string(report1, &error);
+	json1 = fwupd_codec_to_json_string(FWUPD_CODEC(report1), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(json1);
-	json2 = fwupd_report_to_json_string(report2, &error);
+	json2 = fwupd_codec_to_json_string(FWUPD_CODEC(report2), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(json2);
 	ret = fu_test_compare_lines(json1, json2, &error);
@@ -746,8 +324,9 @@ fwupd_report_func(void)
 	g_assert_true(ret);
 
 	/* to string */
-	str = fwupd_report_to_string(report2);
+	str = fwupd_codec_to_string(FWUPD_CODEC(report2));
 	ret = fu_test_compare_lines(str,
+				    "FwupdReport:\n"
 				    "  DeviceName:           name\n"
 				    "  DistroId:             distro_id\n"
 				    "  DistroVersion:        distro_version\n"
@@ -768,12 +347,11 @@ fwupd_plugin_func(void)
 {
 	gboolean ret;
 	g_autofree gchar *str = NULL;
-	g_autoptr(FwupdPlugin) plugin1 = NULL;
-	g_autoptr(FwupdPlugin) plugin2 = NULL;
+	g_autoptr(FwupdPlugin) plugin1 = fwupd_plugin_new();
+	g_autoptr(FwupdPlugin) plugin2 = fwupd_plugin_new();
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GVariant) data = NULL;
 
-	plugin1 = fwupd_plugin_new();
 	fwupd_plugin_set_name(plugin1, "foo");
 	fwupd_plugin_set_flags(plugin1, FWUPD_PLUGIN_FLAG_USER_WARNING);
 	fwupd_plugin_add_flag(plugin1, FWUPD_PLUGIN_FLAG_CLEAR_UPDATABLE);
@@ -781,8 +359,10 @@ fwupd_plugin_func(void)
 	fwupd_plugin_add_flag(plugin1, FWUPD_PLUGIN_FLAG_NO_HARDWARE);
 	fwupd_plugin_remove_flag(plugin1, FWUPD_PLUGIN_FLAG_NO_HARDWARE);
 	fwupd_plugin_remove_flag(plugin1, FWUPD_PLUGIN_FLAG_NO_HARDWARE);
-	data = fwupd_plugin_to_variant(plugin1);
-	plugin2 = fwupd_plugin_from_variant(data);
+	data = fwupd_codec_to_variant(FWUPD_CODEC(plugin1), FWUPD_CODEC_FLAG_NONE);
+	ret = fwupd_codec_from_variant(FWUPD_CODEC(plugin2), data, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	g_assert_cmpstr(fwupd_plugin_get_name(plugin2), ==, "foo");
 	g_assert_cmpint(fwupd_plugin_get_flags(plugin2),
 			==,
@@ -791,8 +371,9 @@ fwupd_plugin_func(void)
 	g_assert_true(fwupd_plugin_has_flag(plugin2, FWUPD_PLUGIN_FLAG_CLEAR_UPDATABLE));
 	g_assert_false(fwupd_plugin_has_flag(plugin2, FWUPD_PLUGIN_FLAG_NO_HARDWARE));
 
-	str = fwupd_plugin_to_string(plugin2);
+	str = fwupd_codec_to_string(FWUPD_CODEC(plugin2));
 	ret = fu_test_compare_lines(str,
+				    "FwupdPlugin:\n"
 				    "  Name:                 foo\n"
 				    "  Flags:                user-warning|clear-updatable\n",
 				    &error);
@@ -803,19 +384,24 @@ fwupd_plugin_func(void)
 static void
 fwupd_request_func(void)
 {
+	gboolean ret;
 	g_autofree gchar *str = NULL;
 	g_autoptr(FwupdRequest) request = fwupd_request_new();
-	g_autoptr(FwupdRequest) request2 = NULL;
+	g_autoptr(FwupdRequest) request2 = fwupd_request_new();
+	g_autoptr(GError) error = NULL;
 	g_autoptr(GVariant) data = NULL;
 
 	/* create dummy */
 	fwupd_request_set_kind(request, FWUPD_REQUEST_KIND_IMMEDIATE);
-	fwupd_request_set_id(request, FWUPD_REQUEST_ID_REMOVE_REPLUG);
+	fwupd_request_set_id(request, FWUPD_REQUEST_ID_DO_NOT_POWER_OFF);
 	fwupd_request_add_flag(request, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
+	g_assert_cmpstr(fwupd_request_get_message(request),
+			==,
+			"Do not turn off your computer or remove the AC adaptor.");
 	fwupd_request_set_message(request, "foo");
 	fwupd_request_set_image(request, "bar");
 	fwupd_request_set_device_id(request, "950da62d4c753a26e64f7f7d687104ce38e32ca5");
-	str = fwupd_request_to_string(request);
+	str = fwupd_codec_to_string(FWUPD_CODEC(request));
 	g_debug("%s", str);
 
 	g_assert_true(fwupd_request_has_flag(request, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE));
@@ -830,11 +416,13 @@ fwupd_request_func(void)
 	g_assert_cmpint(fwupd_request_get_created(request), >, 0);
 
 	/* to serialized and back again */
-	data = fwupd_request_to_variant(request);
-	request2 = fwupd_request_from_variant(data);
+	data = fwupd_codec_to_variant(FWUPD_CODEC(request), FWUPD_CODEC_FLAG_NONE);
+	ret = fwupd_codec_from_variant(FWUPD_CODEC(request2), data, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	g_assert_cmpint(fwupd_request_get_kind(request2), ==, FWUPD_REQUEST_KIND_IMMEDIATE);
 	g_assert_cmpint(fwupd_request_get_created(request2), >, 0);
-	g_assert_cmpstr(fwupd_request_get_id(request2), ==, FWUPD_REQUEST_ID_REMOVE_REPLUG);
+	g_assert_cmpstr(fwupd_request_get_id(request2), ==, FWUPD_REQUEST_ID_DO_NOT_POWER_OFF);
 	g_assert_cmpstr(fwupd_request_get_message(request2), ==, "foo");
 	g_assert_cmpstr(fwupd_request_get_image(request2), ==, "bar");
 	g_assert_cmpstr(fwupd_request_get_device_id(request2),
@@ -883,6 +471,74 @@ fwupd_device_filter_func(void)
 }
 
 static void
+fwupd_common_history_report_func(void)
+{
+	g_autofree gchar *json = NULL;
+	g_autoptr(FwupdClient) client = fwupd_client_new();
+	g_autoptr(FwupdDevice) dev = fwupd_device_new();
+	g_autoptr(FwupdRelease) rel = fwupd_release_new();
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GHashTable) metadata = g_hash_table_new(g_str_hash, g_str_equal);
+	g_autoptr(GPtrArray) devs = g_ptr_array_new();
+
+	fwupd_device_set_id(dev, "0000000000000000000000000000000000000000");
+	fwupd_device_set_update_state(dev, FWUPD_UPDATE_STATE_FAILED);
+	fwupd_device_add_checksum(dev, "beefdead");
+	fwupd_device_add_guid(dev, "2082b5e0-7a64-478a-b1b2-e3404fab6dad");
+	fwupd_device_add_protocol(dev, "org.hughski.colorhug");
+	fwupd_device_set_plugin(dev, "colorhug");
+	fwupd_device_set_update_error(dev, "device dead");
+	fwupd_device_set_version(dev, "1.2.3");
+	fwupd_release_add_checksum(rel, "beefdead");
+	fwupd_release_set_id(rel, "123");
+	fwupd_release_set_update_message(rel, "oops");
+	fwupd_release_set_version(rel, "1.2.4");
+	fwupd_device_add_release(dev, rel);
+
+	/* metadata */
+	g_hash_table_insert(metadata, (gpointer) "DistroId", (gpointer) "generic");
+	g_hash_table_insert(metadata, (gpointer) "DistroVersion", (gpointer) "39");
+	g_hash_table_insert(metadata, (gpointer) "DistroVariant", (gpointer) "workstation");
+
+	g_ptr_array_add(devs, dev);
+	json = fwupd_client_build_report_history(client, devs, NULL, metadata, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(json);
+	g_assert_cmpstr(json,
+			==,
+			"{\n"
+			"  \"ReportType\" : \"history\",\n"
+			"  \"ReportVersion\" : 2,\n"
+			"  \"Metadata\" : {\n"
+			"    \"DistroId\" : \"generic\",\n"
+			"    \"DistroVariant\" : \"workstation\",\n"
+			"    \"DistroVersion\" : \"39\"\n"
+			"  },\n"
+			"  \"Reports\" : [\n"
+			"    {\n"
+			"      \"Checksum\" : \"beefdead\",\n"
+			"      \"ChecksumDevice\" : [\n"
+			"        \"beefdead\"\n"
+			"      ],\n"
+			"      \"ReleaseId\" : \"123\",\n"
+			"      \"UpdateState\" : 3,\n"
+			"      \"UpdateError\" : \"device dead\",\n"
+			"      \"UpdateMessage\" : \"oops\",\n"
+			"      \"Guid\" : [\n"
+			"        \"2082b5e0-7a64-478a-b1b2-e3404fab6dad\"\n"
+			"      ],\n"
+			"      \"Plugin\" : \"colorhug\",\n"
+			"      \"VersionOld\" : \"1.2.3\",\n"
+			"      \"VersionNew\" : \"1.2.4\",\n"
+			"      \"Flags\" : 0,\n"
+			"      \"Created\" : 0,\n"
+			"      \"Modified\" : 0\n"
+			"    }\n"
+			"  ]\n"
+			"}");
+}
+
+static void
 fwupd_device_func(void)
 {
 	gboolean ret;
@@ -894,19 +550,16 @@ fwupd_device_func(void)
 	g_autoptr(FwupdRelease) rel = NULL;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GString) str_ascii = NULL;
-	g_autoptr(JsonBuilder) builder = NULL;
-	g_autoptr(JsonGenerator) json_generator = NULL;
-	g_autoptr(JsonNode) json_root = NULL;
-	g_autoptr(JsonParser) parser = json_parser_new();
 
 	/* create dummy object */
 	dev = fwupd_device_new();
 	fwupd_device_add_checksum(dev, "beefdead");
 	fwupd_device_set_created(dev, 1);
 	fwupd_device_add_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE);
-	fwupd_device_set_id(dev, "USB:foo");
+	fwupd_device_set_id(dev, "0000000000000000000000000000000000000000");
 	fwupd_device_set_modified(dev, 60 * 60 * 24);
 	fwupd_device_set_name(dev, "ColorHug2");
+	fwupd_device_set_branch(dev, "community");
 	fwupd_device_add_guid(dev, "2082b5e0-7a64-478a-b1b2-e3404fab6dad");
 	fwupd_device_add_guid(dev, "00000000-0000-0000-0000-000000000000");
 	fwupd_device_add_instance_id(dev, "USB\\VID_1234&PID_0001");
@@ -931,7 +584,7 @@ fwupd_device_func(void)
 	fwupd_release_add_tag(rel, "vendor-2021q2");
 	fwupd_release_set_version(rel, "1.2.3");
 	fwupd_device_add_release(dev, rel);
-	str = fwupd_device_to_string(dev);
+	str = fwupd_codec_to_string(FWUPD_CODEC(dev));
 	g_print("\n%s", str);
 
 	/* check GUIDs */
@@ -943,104 +596,98 @@ fwupd_device_func(void)
 	 * https://gitlab.gnome.org/GNOME/glib/commit/76af5dabb4a25956a6c41a75c0c7feeee74496da */
 	str_ascii = g_string_new(str);
 	g_string_replace(str_ascii, " ", " ", 0);
-	ret = fu_test_compare_lines(str_ascii->str,
-				    "FwupdDevice:\n"
-				    "  DeviceId:             USB:foo\n"
-				    "  Name:                 ColorHug2\n"
-				    "  Guid:                 18f514d2-c12e-581f-a696-cc6d6c271699 "
-				    "← USB\\VID_1234&PID_0001 ⚠\n"
-				    "  Guid:                 2082b5e0-7a64-478a-b1b2-e3404fab6dad\n"
-				    "  Guid:                 00000000-0000-0000-0000-000000000000\n"
-				    "  Flags:                updatable|require-ac\n"
-				    "  Checksum:             SHA1(beefdead)\n"
-				    "  VendorId:             USB:0x1234\n"
-				    "  VendorId:             PCI:0x5678\n"
-				    "  Icon:                 input-gaming,input-mouse\n"
-				    "  Created:              1970-01-01\n"
-				    "  Modified:             1970-01-02\n"
-				    "  \n"
-				    "  [Release]\n"
-				    "  AppstreamId:          org.dave.ColorHug.firmware\n"
-				    "  Description:          <p>Hi there!</p>\n"
-				    "  Version:              1.2.3\n"
-				    "  Filename:             firmware.bin\n"
-				    "  Checksum:             SHA1(deadbeef)\n"
-				    "  Tags:                 vendor-2021q1\n"
-				    "  Tags:                 vendor-2021q2\n"
-				    "  Size:                 1.0 kB\n"
-				    "  Uri:                  http://foo.com\n"
-				    "  Uri:                  ftp://foo.com\n"
-				    "  Flags:                trusted-payload\n",
-				    &error);
+	ret = fu_test_compare_lines(
+	    str_ascii->str,
+	    "FwupdDevice:\n"
+	    "  DeviceId:             0000000000000000000000000000000000000000\n"
+	    "  Name:                 ColorHug2\n"
+	    "  Guid:                 18f514d2-c12e-581f-a696-cc6d6c271699 "
+	    "← USB\\VID_1234&PID_0001 ⚠\n"
+	    "  Guid:                 2082b5e0-7a64-478a-b1b2-e3404fab6dad\n"
+	    "  Guid:                 00000000-0000-0000-0000-000000000000\n"
+	    "  Branch:               community\n"
+	    "  Flags:                updatable|require-ac\n"
+	    "  Checksum:             SHA1(beefdead)\n"
+	    "  VendorId:             USB:0x1234\n"
+	    "  VendorId:             PCI:0x5678\n"
+	    "  Icon:                 input-gaming,input-mouse\n"
+	    "  Created:              1970-01-01\n"
+	    "  Modified:             1970-01-02\n"
+	    "  FwupdRelease:\n"
+	    "    AppstreamId:        org.dave.ColorHug.firmware\n"
+	    "    Description:        <p>Hi there!</p>\n"
+	    "    Version:            1.2.3\n"
+	    "    Filename:           firmware.bin\n"
+	    "    Checksum:           SHA1(deadbeef)\n"
+	    "    Tags:               vendor-2021q1\n"
+	    "    Tags:               vendor-2021q2\n"
+	    "    Size:               1.0 kB\n"
+	    "    Uri:                http://foo.com\n"
+	    "    Uri:                ftp://foo.com\n"
+	    "    Flags:              trusted-payload\n",
+	    &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* export to json */
-	builder = json_builder_new();
-	json_builder_begin_object(builder);
-	fwupd_device_to_json_full(dev, builder, FWUPD_DEVICE_FLAG_TRUSTED);
-	json_builder_end_object(builder);
-	json_root = json_builder_get_root(builder);
-	json_generator = json_generator_new();
-	json_generator_set_pretty(json_generator, TRUE);
-	json_generator_set_root(json_generator, json_root);
-	data = json_generator_to_data(json_generator, NULL);
+	data = fwupd_codec_to_json_string(FWUPD_CODEC(dev), FWUPD_CODEC_FLAG_TRUSTED, &error);
+	g_assert_no_error(error);
 	g_assert_nonnull(data);
-	ret = fu_test_compare_lines(data,
-				    "{\n"
-				    "  \"Name\" : \"ColorHug2\",\n"
-				    "  \"DeviceId\" : \"USB:foo\",\n"
-				    "  \"InstanceIds\" : [\n"
-				    "    \"USB\\\\VID_1234&PID_0001\"\n"
-				    "  ],\n"
-				    "  \"Guid\" : [\n"
-				    "    \"2082b5e0-7a64-478a-b1b2-e3404fab6dad\",\n"
-				    "    \"00000000-0000-0000-0000-000000000000\"\n"
-				    "  ],\n"
-				    "  \"Flags\" : [\n"
-				    "    \"updatable\",\n"
-				    "    \"require-ac\"\n"
-				    "  ],\n"
-				    "  \"Checksums\" : [\n"
-				    "    \"beefdead\"\n"
-				    "  ],\n"
-				    "  \"VendorId\" : \"USB:0x1234|PCI:0x5678\",\n"
-				    "  \"VendorIds\" : [\n"
-				    "    \"USB:0x1234\",\n"
-				    "    \"PCI:0x5678\"\n"
-				    "  ],\n"
-				    "  \"Icons\" : [\n"
-				    "    \"input-gaming\",\n"
-				    "    \"input-mouse\"\n"
-				    "  ],\n"
-				    "  \"Created\" : 1,\n"
-				    "  \"Modified\" : 86400,\n"
-				    "  \"Releases\" : [\n"
-				    "    {\n"
-				    "      \"AppstreamId\" : \"org.dave.ColorHug.firmware\",\n"
-				    "      \"Description\" : \"<p>Hi there!</p>\",\n"
-				    "      \"Version\" : \"1.2.3\",\n"
-				    "      \"Filename\" : \"firmware.bin\",\n"
-				    "      \"Checksum\" : [\n"
-				    "        \"deadbeef\"\n"
-				    "      ],\n"
-				    "      \"Tags\" : [\n"
-				    "        \"vendor-2021q1\",\n"
-				    "        \"vendor-2021q2\"\n"
-				    "      ],\n"
-				    "      \"Size\" : 1024,\n"
-				    "      \"Locations\" : [\n"
-				    "        \"http://foo.com\",\n"
-				    "        \"ftp://foo.com\"\n"
-				    "      ],\n"
-				    "      \"Uri\" : \"http://foo.com\",\n"
-				    "      \"Flags\" : [\n"
-				    "        \"trusted-payload\"\n"
-				    "      ]\n"
-				    "    }\n"
-				    "  ]\n"
-				    "}",
-				    &error);
+	ret =
+	    fu_test_compare_lines(data,
+				  "{\n"
+				  "  \"Name\" : \"ColorHug2\",\n"
+				  "  \"DeviceId\" : \"0000000000000000000000000000000000000000\",\n"
+				  "  \"InstanceIds\" : [\n"
+				  "    \"USB\\\\VID_1234&PID_0001\"\n"
+				  "  ],\n"
+				  "  \"Guid\" : [\n"
+				  "    \"2082b5e0-7a64-478a-b1b2-e3404fab6dad\",\n"
+				  "    \"00000000-0000-0000-0000-000000000000\"\n"
+				  "  ],\n"
+				  "  \"Branch\" : \"community\",\n"
+				  "  \"Flags\" : [\n"
+				  "    \"updatable\",\n"
+				  "    \"require-ac\"\n"
+				  "  ],\n"
+				  "  \"Checksums\" : [\n"
+				  "    \"beefdead\"\n"
+				  "  ],\n"
+				  "  \"VendorIds\" : [\n"
+				  "    \"USB:0x1234\",\n"
+				  "    \"PCI:0x5678\"\n"
+				  "  ],\n"
+				  "  \"Icons\" : [\n"
+				  "    \"input-gaming\",\n"
+				  "    \"input-mouse\"\n"
+				  "  ],\n"
+				  "  \"Created\" : 1,\n"
+				  "  \"Modified\" : 86400,\n"
+				  "  \"Releases\" : [\n"
+				  "    {\n"
+				  "      \"AppstreamId\" : \"org.dave.ColorHug.firmware\",\n"
+				  "      \"Description\" : \"<p>Hi there!</p>\",\n"
+				  "      \"Version\" : \"1.2.3\",\n"
+				  "      \"Filename\" : \"firmware.bin\",\n"
+				  "      \"Checksum\" : [\n"
+				  "        \"deadbeef\"\n"
+				  "      ],\n"
+				  "      \"Tags\" : [\n"
+				  "        \"vendor-2021q1\",\n"
+				  "        \"vendor-2021q2\"\n"
+				  "      ],\n"
+				  "      \"Size\" : 1024,\n"
+				  "      \"Locations\" : [\n"
+				  "        \"http://foo.com\",\n"
+				  "        \"ftp://foo.com\"\n"
+				  "      ],\n"
+				  "      \"Flags\" : [\n"
+				  "        \"trusted-payload\"\n"
+				  "      ]\n"
+				  "    }\n"
+				  "  ]\n"
+				  "}",
+				  &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -1051,10 +698,7 @@ fwupd_device_func(void)
 	g_assert_true(fwupd_device_has_instance_id(dev_new, "USB\\VID_1234&PID_0001"));
 
 	/* from JSON */
-	ret = json_parser_load_from_data(parser, data, -1, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = fwupd_device_from_json(dev2, json_parser_get_root(parser), &error);
+	ret = fwupd_codec_from_json_string(FWUPD_CODEC(dev2), data, &error);
 	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 		g_test_skip(error->message);
 		return;
@@ -1192,38 +836,6 @@ fwupd_has_system_bus(void)
 }
 
 static void
-fwupd_common_machine_hash_func(void)
-{
-	gsize sz = 0;
-	g_autofree gchar *buf = NULL;
-	g_autofree gchar *mhash1 = NULL;
-	g_autofree gchar *mhash2 = NULL;
-	g_autoptr(GError) error = NULL;
-
-	if (!g_file_test("/etc/machine-id", G_FILE_TEST_EXISTS)) {
-		g_test_skip("Missing /etc/machine-id");
-		return;
-	}
-	if (!g_file_get_contents("/etc/machine-id", &buf, &sz, &error)) {
-		g_test_skip("/etc/machine-id is unreadable");
-		return;
-	}
-
-	if (sz == 0) {
-		g_test_skip("Empty /etc/machine-id");
-		return;
-	}
-
-	mhash1 = fwupd_build_machine_id("salt1", &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(mhash1, !=, NULL);
-	mhash2 = fwupd_build_machine_id("salt2", &error);
-	g_assert_no_error(error);
-	g_assert_cmpstr(mhash2, !=, NULL);
-	g_assert_cmpstr(mhash2, !=, mhash1);
-}
-
-static void
 fwupd_common_device_id_func(void)
 {
 	g_assert_false(fwupd_device_id_is_valid(NULL));
@@ -1308,34 +920,6 @@ fwupd_common_guid_func(void)
 	    fwupd_guid_from_string("0112233-4455-6677-8899-aabbccddeeff", NULL, 0, NULL));
 }
 
-static gchar *
-fwupd_attr_to_json_string(GObject *attr, GError **error)
-{
-	g_autofree gchar *data = NULL;
-	g_autoptr(JsonGenerator) json_generator = NULL;
-	g_autoptr(JsonBuilder) builder = json_builder_new();
-	g_autoptr(JsonNode) json_root = NULL;
-	json_builder_begin_object(builder);
-	if (FWUPD_IS_SECURITY_ATTR(attr))
-		fwupd_security_attr_to_json(FWUPD_SECURITY_ATTR(attr), builder);
-	else if (FWUPD_IS_BIOS_SETTING(attr))
-		fwupd_bios_setting_to_json(FWUPD_BIOS_SETTING(attr), builder);
-	json_builder_end_object(builder);
-	json_root = json_builder_get_root(builder);
-	json_generator = json_generator_new();
-	json_generator_set_pretty(json_generator, TRUE);
-	json_generator_set_root(json_generator, json_root);
-	data = json_generator_to_data(json_generator, NULL);
-	if (data == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "Failed to convert security attribute to json.");
-		return NULL;
-	}
-	return g_steal_pointer(&data);
-}
-
 static void
 fwupd_security_attr_func(void)
 {
@@ -1346,10 +930,9 @@ fwupd_security_attr_func(void)
 	g_autofree gchar *json = NULL;
 	g_autoptr(FwupdSecurityAttr) attr1 = fwupd_security_attr_new("org.fwupd.hsi.bar");
 	g_autoptr(FwupdSecurityAttr) attr2 = fwupd_security_attr_new(NULL);
-	g_autoptr(FwupdSecurityAttr) attr3 = NULL;
+	g_autoptr(FwupdSecurityAttr) attr3 = fwupd_security_attr_new(NULL);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GVariant) data = NULL;
-	g_autoptr(JsonParser) parser = json_parser_new();
 
 	for (guint i = 1; i < FWUPD_SECURITY_ATTR_RESULT_LAST; i++) {
 		const gchar *tmp = fwupd_security_attr_result_to_string(i);
@@ -1397,8 +980,9 @@ fwupd_security_attr_func(void)
 	/* remove this from the output */
 	fwupd_security_attr_set_created(attr1, 0);
 
-	str1 = fwupd_security_attr_to_string(attr1);
+	str1 = fwupd_codec_to_string(FWUPD_CODEC(attr1));
 	ret = fu_test_compare_lines(str1,
+				    "FwupdSecurityAttr:\n"
 				    "  AppstreamId:          org.fwupd.hsi.baz\n"
 				    "  HsiLevel:             2\n"
 				    "  HsiResult:            enabled\n"
@@ -1413,11 +997,14 @@ fwupd_security_attr_func(void)
 	g_assert_true(ret);
 
 	/* roundtrip GVariant */
-	data = fwupd_security_attr_to_variant(attr1);
-	attr3 = fwupd_security_attr_from_variant(data);
+	data = fwupd_codec_to_variant(FWUPD_CODEC(attr1), FWUPD_CODEC_FLAG_NONE);
+	ret = fwupd_codec_from_variant(FWUPD_CODEC(attr3), data, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	fwupd_security_attr_set_created(attr3, 0);
-	str3 = fwupd_security_attr_to_string(attr3);
+	str3 = fwupd_codec_to_string(FWUPD_CODEC(attr3));
 	ret = fu_test_compare_lines(str3,
+				    "FwupdSecurityAttr:\n"
 				    "  AppstreamId:          org.fwupd.hsi.baz\n"
 				    "  HsiLevel:             2\n"
 				    "  HsiResult:            enabled\n"
@@ -1432,7 +1019,7 @@ fwupd_security_attr_func(void)
 	g_assert_true(ret);
 
 	/* to JSON */
-	json = fwupd_attr_to_json_string(G_OBJECT(attr1), &error);
+	json = fwupd_codec_to_json_string(FWUPD_CODEC(attr1), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(json);
 	ret = fu_test_compare_lines(json,
@@ -1456,10 +1043,7 @@ fwupd_security_attr_func(void)
 	g_assert_true(ret);
 
 	/* from JSON */
-	ret = json_parser_load_from_data(parser, json, -1, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = fwupd_security_attr_from_json(attr2, json_parser_get_root(parser), &error);
+	ret = fwupd_codec_from_json_string(FWUPD_CODEC(attr2), json, &error);
 	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 		g_test_skip(error->message);
 		return;
@@ -1470,7 +1054,7 @@ fwupd_security_attr_func(void)
 	/* we don't load unconditionally load metadata from the JSON */
 	fwupd_security_attr_add_metadata(attr2, "KEY", "VALUE");
 
-	str2 = fwupd_security_attr_to_string(attr2);
+	str2 = fwupd_codec_to_string(FWUPD_CODEC(attr2));
 	ret = fu_test_compare_lines(str2, str1, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -1487,12 +1071,11 @@ fwupd_bios_settings_func(void)
 	g_autofree gchar *json1 = NULL;
 	g_autofree gchar *json2 = NULL;
 	g_autoptr(FwupdBiosSetting) attr1 = fwupd_bios_setting_new("foo", "/path/to/bar");
-	g_autoptr(FwupdBiosSetting) attr2 = NULL;
-	g_autoptr(FwupdBiosSetting) attr3 = NULL;
+	g_autoptr(FwupdBiosSetting) attr2 = fwupd_bios_setting_new(NULL, NULL);
+	g_autoptr(FwupdBiosSetting) attr3 = fwupd_bios_setting_new(NULL, NULL);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GVariant) data1 = NULL;
 	g_autoptr(GVariant) data2 = NULL;
-	g_autoptr(JsonParser) parser = json_parser_new();
 
 	g_assert_cmpstr(fwupd_bios_setting_get_name(attr1), ==, "foo");
 	fwupd_bios_setting_set_name(attr1, "UEFISecureBoot");
@@ -1513,8 +1096,9 @@ fwupd_bios_settings_func(void)
 	g_assert_true(fwupd_bios_setting_has_possible_value(attr1, "Disabled"));
 	g_assert_false(fwupd_bios_setting_has_possible_value(attr1, "NOT_GOING_TO_EXIST"));
 
-	str1 = fwupd_bios_setting_to_string(attr1);
+	str1 = fwupd_codec_to_string(FWUPD_CODEC(attr1));
 	ret = fu_test_compare_lines(str1,
+				    "FwupdBiosSetting:\n"
 				    "  Name:                 UEFISecureBoot\n"
 				    "  Description:          Controls Secure boot\n"
 				    "  Filename:             /path/to/bar\n"
@@ -1528,10 +1112,13 @@ fwupd_bios_settings_func(void)
 	g_assert_true(ret);
 
 	/* roundtrip GVariant */
-	data1 = fwupd_bios_setting_to_variant(attr1, TRUE);
-	attr2 = fwupd_bios_setting_from_variant(data1);
-	str2 = fwupd_bios_setting_to_string(attr2);
+	data1 = fwupd_codec_to_variant(FWUPD_CODEC(attr1), FWUPD_CODEC_FLAG_TRUSTED);
+	ret = fwupd_codec_from_variant(FWUPD_CODEC(attr2), data1, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	str2 = fwupd_codec_to_string(FWUPD_CODEC(attr2));
 	ret = fu_test_compare_lines(str2,
+				    "FwupdBiosSetting:\n"
 				    "  Name:                 UEFISecureBoot\n"
 				    "  Description:          Controls Secure boot\n"
 				    "  Filename:             /path/to/bar\n"
@@ -1545,7 +1132,7 @@ fwupd_bios_settings_func(void)
 	g_assert_true(ret);
 
 	/* to JSON */
-	json1 = fwupd_attr_to_json_string(G_OBJECT(attr1), &error);
+	json1 = fwupd_codec_to_json_string(FWUPD_CODEC(attr1), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(json1);
 	ret = fu_test_compare_lines(json1,
@@ -1554,7 +1141,7 @@ fwupd_bios_settings_func(void)
 				    "  \"Description\" : \"Controls Secure boot\",\n"
 				    "  \"Filename\" : \"/path/to/bar\",\n"
 				    "  \"BiosSettingCurrentValue\" : \"Disabled\",\n"
-				    "  \"BiosSettingReadOnly\" : \"false\",\n"
+				    "  \"BiosSettingReadOnly\" : false,\n"
 				    "  \"BiosSettingType\" : 1,\n"
 				    "  \"BiosSettingPossibleValues\" : [\n"
 				    "    \"Disabled\",\n"
@@ -1566,10 +1153,7 @@ fwupd_bios_settings_func(void)
 	g_assert_true(ret);
 
 	/* from JSON */
-	ret = json_parser_load_from_data(parser, json1, -1, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-	ret = fwupd_bios_setting_from_json(attr2, json_parser_get_root(parser), &error);
+	ret = fwupd_codec_from_json_string(FWUPD_CODEC(attr2), json1, &error);
 	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 		g_test_skip(error->message);
 		return;
@@ -1577,16 +1161,19 @@ fwupd_bios_settings_func(void)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	str3 = fwupd_bios_setting_to_string(attr2);
+	str3 = fwupd_codec_to_string(FWUPD_CODEC(attr2));
 	ret = fu_test_compare_lines(str3, str1, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* make sure we filter CurrentValue if not trusted */
-	data2 = fwupd_bios_setting_to_variant(attr1, FALSE);
-	attr3 = fwupd_bios_setting_from_variant(data2);
-	str4 = fwupd_bios_setting_to_string(attr3);
+	data2 = fwupd_codec_to_variant(FWUPD_CODEC(attr1), FWUPD_CODEC_FLAG_NONE);
+	ret = fwupd_codec_from_variant(FWUPD_CODEC(attr3), data2, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	str4 = fwupd_codec_to_string(FWUPD_CODEC(attr3));
 	ret = fu_test_compare_lines(str4,
+				    "FwupdBiosSetting:\n"
 				    "  Name:                 UEFISecureBoot\n"
 				    "  Description:          Controls Secure boot\n"
 				    "  Filename:             /path/to/bar\n"
@@ -1599,7 +1186,7 @@ fwupd_bios_settings_func(void)
 	g_assert_true(ret);
 
 	/* convert to JSON */
-	json2 = fwupd_attr_to_json_string(G_OBJECT(attr1), &error);
+	json2 = fwupd_codec_to_json_string(FWUPD_CODEC(attr1), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(json2);
 	ret = fu_test_compare_lines(json2,
@@ -1608,7 +1195,7 @@ fwupd_bios_settings_func(void)
 				    "  \"Description\" : \"Controls Secure boot\",\n"
 				    "  \"Filename\" : \"/path/to/bar\",\n"
 				    "  \"BiosSettingCurrentValue\" : \"Disabled\",\n"
-				    "  \"BiosSettingReadOnly\" : \"false\",\n"
+				    "  \"BiosSettingReadOnly\" : false,\n"
 				    "  \"BiosSettingType\" : 1,\n"
 				    "  \"BiosSettingPossibleValues\" : [\n"
 				    "    \"Disabled\",\n"
@@ -1623,6 +1210,8 @@ fwupd_bios_settings_func(void)
 int
 main(int argc, char **argv)
 {
+	g_autofree gchar *testdatadir = NULL;
+
 	setlocale(LC_ALL, "");
 	(void)g_setenv("G_TEST_SRCDIR", SRCDIR, FALSE);
 	g_test_init(&argc, &argv, NULL);
@@ -1631,11 +1220,17 @@ main(int argc, char **argv)
 	g_log_set_fatal_mask(NULL, G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL);
 	(void)g_setenv("G_MESSAGES_DEBUG", "all", TRUE);
 
+	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
+	(void)g_setenv("FWUPD_SYSCONFDIR", testdatadir, TRUE);
+
+	g_assert_cmpint(sizeof(FwupdDeviceFlags), ==, sizeof(guint64));
+	g_assert_cmpint(sizeof(FwupdStatus), ==, sizeof(guint32));
+
 	/* tests go here */
 	g_test_add_func("/fwupd/enums", fwupd_enums_func);
-	g_test_add_func("/fwupd/common{machine-hash}", fwupd_common_machine_hash_func);
 	g_test_add_func("/fwupd/common{device-id}", fwupd_common_device_id_func);
 	g_test_add_func("/fwupd/common{guid}", fwupd_common_guid_func);
+	g_test_add_func("/fwupd/common{history-report}", fwupd_common_history_report_func);
 	g_test_add_func("/fwupd/release", fwupd_release_func);
 	g_test_add_func("/fwupd/report", fwupd_report_func);
 	g_test_add_func("/fwupd/plugin", fwupd_plugin_func);
@@ -1643,12 +1238,6 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/device", fwupd_device_func);
 	g_test_add_func("/fwupd/device{filter}", fwupd_device_filter_func);
 	g_test_add_func("/fwupd/security-attr", fwupd_security_attr_func);
-	g_test_add_func("/fwupd/remote{download}", fwupd_remote_download_func);
-	g_test_add_func("/fwupd/remote{base-uri}", fwupd_remote_baseuri_func);
-	g_test_add_func("/fwupd/remote{no-path}", fwupd_remote_nopath_func);
-	g_test_add_func("/fwupd/remote{local}", fwupd_remote_local_func);
-	g_test_add_func("/fwupd/remote{duplicate}", fwupd_remote_duplicate_func);
-	g_test_add_func("/fwupd/remote{auth}", fwupd_remote_auth_func);
 	g_test_add_func("/fwupd/bios-attrs", fwupd_bios_settings_func);
 	if (fwupd_has_system_bus()) {
 		g_test_add_func("/fwupd/client{remotes}", fwupd_client_remotes_func);

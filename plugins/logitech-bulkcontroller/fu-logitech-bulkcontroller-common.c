@@ -1,8 +1,8 @@
 /*
- * Copyright (c) 1999-2021 Logitech, Inc.
+ * Copyright 1999-2021 Logitech, Inc.
  * All Rights Reserved
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -13,11 +13,20 @@
 #include "usb_msg.pb-c.h"
 
 static void
-proto_manager_set_header(Logi__Device__Proto__Header *header_msg)
+fu_logitech_bulkcontroller_proto_manager_set_header(FuDevice *device,
+						    Logi__Device__Proto__Header *header_msg)
 {
 	gint64 timestamp_tv;
 
 	g_return_if_fail(header_msg != NULL);
+
+	/* make predictable */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATION_TAG)) {
+		header_msg->id = 0;
+		header_msg->timestamp = g_strdup("0");
+		return;
+	}
 
 	timestamp_tv = g_get_real_time();
 	header_msg->id = g_uuid_string_random();
@@ -25,7 +34,7 @@ proto_manager_set_header(Logi__Device__Proto__Header *header_msg)
 }
 
 GByteArray *
-proto_manager_generate_get_device_info_request(void)
+fu_logitech_bulkcontroller_proto_manager_generate_get_device_info_request(FuDevice *device)
 {
 	GByteArray *buf = g_byte_array_new();
 	Logi__Device__Proto__Header header_msg = LOGI__DEVICE__PROTO__HEADER__INIT;
@@ -36,7 +45,7 @@ proto_manager_generate_get_device_info_request(void)
 	request_msg.payload_case = LOGI__DEVICE__PROTO__REQUEST__PAYLOAD_GET_DEVICE_INFO_REQUEST;
 	request_msg.get_device_info_request = &get_deviceinfo_msg;
 
-	proto_manager_set_header(&header_msg);
+	fu_logitech_bulkcontroller_proto_manager_set_header(device, &header_msg);
 	usb_msg.header = &header_msg;
 	usb_msg.message_case = LOGI__DEVICE__PROTO__USB_MSG__MESSAGE_REQUEST;
 	usb_msg.request = &request_msg;
@@ -49,7 +58,8 @@ proto_manager_generate_get_device_info_request(void)
 }
 
 GByteArray *
-proto_manager_generate_transition_to_device_mode_request(void)
+fu_logitech_bulkcontroller_proto_manager_generate_transition_to_device_mode_request(
+    FuDevice *device)
 {
 	GByteArray *buf = g_byte_array_new();
 	Logi__Device__Proto__Header header_msg = LOGI__DEVICE__PROTO__HEADER__INIT;
@@ -61,7 +71,7 @@ proto_manager_generate_transition_to_device_mode_request(void)
 	    LOGI__DEVICE__PROTO__REQUEST__PAYLOAD_TRANSITION_TO_DEVICEMODE_REQUEST;
 	request_msg.transition_to_devicemode_request = &transition_to_device_mode_msg;
 
-	proto_manager_set_header(&header_msg);
+	fu_logitech_bulkcontroller_proto_manager_set_header(device, &header_msg);
 	usb_msg.header = &header_msg;
 	usb_msg.message_case = LOGI__DEVICE__PROTO__USB_MSG__MESSAGE_REQUEST;
 	usb_msg.request = &request_msg;
@@ -74,7 +84,8 @@ proto_manager_generate_transition_to_device_mode_request(void)
 }
 
 GByteArray *
-proto_manager_generate_set_device_time_request(GError **error)
+fu_logitech_bulkcontroller_proto_manager_generate_set_device_time_request(FuDevice *device,
+									  GError **error)
 {
 	g_autofree gchar *olson_location = NULL;
 	g_autoptr(GByteArray) buf = g_byte_array_new();
@@ -85,16 +96,27 @@ proto_manager_generate_set_device_time_request(GError **error)
 	Logi__Device__Proto__Request request_msg = LOGI__DEVICE__PROTO__REQUEST__INIT;
 
 	/* the device expects an olson_location, not a timezone */
-	olson_location = fu_common_get_olson_timezone_id(error);
-	if (olson_location == NULL)
-		return NULL;
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATION_TAG)) {
+		olson_location = g_strdup("Europe/London");
+	} else {
+		olson_location = fu_common_get_olson_timezone_id(error);
+		if (olson_location == NULL)
+			return NULL;
+	}
 
 	request_msg.payload_case = LOGI__DEVICE__PROTO__REQUEST__PAYLOAD_SET_DEVICE_TIME_REQUEST;
 	request_msg.set_device_time_request = &set_devicetime_msg;
 
-	set_devicetime_msg.ts = (g_get_real_time() / 1000) + SET_TIME_DELAY_MS;
+	/* make predictable */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATION_TAG)) {
+		set_devicetime_msg.ts = 0;
+	} else {
+		set_devicetime_msg.ts = (g_get_real_time() / 1000) + SET_TIME_DELAY_MS;
+	}
 	set_devicetime_msg.time_zone = olson_location;
-	proto_manager_set_header(&header_msg);
+	fu_logitech_bulkcontroller_proto_manager_set_header(device, &header_msg);
 	usb_msg.header = &header_msg;
 	usb_msg.message_case = LOGI__DEVICE__PROTO__USB_MSG__MESSAGE_REQUEST;
 	usb_msg.request = &request_msg;
@@ -107,18 +129,18 @@ proto_manager_generate_set_device_time_request(GError **error)
 }
 
 GByteArray *
-proto_manager_decode_message(const guint8 *data,
-			     guint32 len,
-			     FuLogitechBulkcontrollerProtoId *proto_id,
-			     GError **error)
+fu_logitech_bulkcontroller_proto_manager_decode_message(const guint8 *data,
+							guint32 len,
+							FuLogitechBulkcontrollerProtoId *proto_id,
+							GError **error)
 {
 	g_autoptr(GByteArray) buf_decoded = g_byte_array_new();
 	Logi__Device__Proto__UsbMsg *usb_msg =
 	    logi__device__proto__usb_msg__unpack(NULL, len, (const unsigned char *)data);
 	if (usb_msg == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "unable to unpack data");
 		return NULL;
 	}
@@ -130,8 +152,8 @@ proto_manager_decode_message(const guint8 *data,
 	case LOGI__DEVICE__PROTO__USB_MSG__MESSAGE_RESPONSE:
 		if (!usb_msg->response) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "no USB response");
 			return NULL;
 		}
@@ -153,8 +175,8 @@ proto_manager_decode_message(const guint8 *data,
 				if (!usb_msg->response->transition_to_devicemode_response
 					 ->success) {
 					g_set_error(error,
-						    G_IO_ERROR,
-						    G_IO_ERROR_FAILED,
+						    FWUPD_ERROR,
+						    FWUPD_ERROR_NOT_SUPPORTED,
 						    "transition mode request failed. error: %u",
 						    (guint)usb_msg->response
 							->transition_to_devicemode_response->error);
@@ -169,8 +191,8 @@ proto_manager_decode_message(const guint8 *data,
 	case LOGI__DEVICE__PROTO__USB_MSG__MESSAGE_EVENT:
 		if (!usb_msg->response) {
 			g_set_error_literal(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_DATA,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
 					    "no USB event");
 			return NULL;
 		}

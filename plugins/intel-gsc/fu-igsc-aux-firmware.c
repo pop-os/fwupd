@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2022 Intel
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Intel
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -77,8 +77,8 @@ fu_igsc_aux_firmware_match_device(FuIgscAuxFirmware *self,
 
 	/* not us */
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_NOT_FOUND,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_FOUND,
 		    "could not find 0x%04x:0x%04x 0x%04x:0x%04x in the image",
 		    vendor_id,
 		    device_id,
@@ -176,8 +176,8 @@ fu_igsc_aux_firmware_parse_extension(FuIgscAuxFirmware *self, FuFirmware *fw, GE
 	} else if (fu_firmware_get_idx(fw) == MFT_EXT_TYPE_FWDATA_UPDATE) {
 		if (bufsz != sizeof(struct mft_fwdata_update_ext)) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "signed data update manifest ext was 0x%x bytes",
 				    (guint)bufsz);
 			return FALSE;
@@ -191,8 +191,7 @@ fu_igsc_aux_firmware_parse_extension(FuIgscAuxFirmware *self, FuFirmware *fw, GE
 
 static gboolean
 fu_igsc_aux_firmware_parse(FuFirmware *firmware,
-			   GBytes *fw,
-			   gsize offset,
+			   GInputStream *stream,
 			   FwupdInstallFlags flags,
 			   GError **error)
 {
@@ -204,7 +203,7 @@ fu_igsc_aux_firmware_parse(FuFirmware *firmware,
 
 	/* FuIfwiFptFirmware->parse */
 	if (!FU_FIRMWARE_CLASS(fu_igsc_aux_firmware_parent_class)
-		 ->parse(firmware, fw, offset, flags, error))
+		 ->parse(firmware, stream, flags, error))
 		return FALSE;
 
 	/* parse data section */
@@ -214,7 +213,7 @@ fu_igsc_aux_firmware_parse(FuFirmware *firmware,
 		return FALSE;
 
 	/* parse as CPD */
-	if (!fu_firmware_parse(fw_cpd, blob_dataimg, flags, error))
+	if (!fu_firmware_parse_bytes(fw_cpd, blob_dataimg, 0x0, flags, error))
 		return FALSE;
 
 	/* get manifest */
@@ -232,8 +231,8 @@ fu_igsc_aux_firmware_parse(FuFirmware *firmware,
 	}
 	if (!self->has_manifest_ext || self->device_infos->len == 0) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "missing extensions");
 		return FALSE;
 	}
@@ -263,21 +262,21 @@ fu_igsc_aux_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
 	tmp = xb_node_query_text(n, "oem_version", NULL);
 	if (tmp != NULL) {
 		guint64 val = 0;
-		if (!fu_strtoull(tmp, &val, 0x0, G_MAXUINT32, error))
+		if (!fu_strtoull(tmp, &val, 0x0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->oem_version = val;
 	}
 	tmp = xb_node_query_text(n, "major_version", NULL);
 	if (tmp != NULL) {
 		guint64 val = 0;
-		if (!fu_strtoull(tmp, &val, 0x0, G_MAXUINT16, error))
+		if (!fu_strtoull(tmp, &val, 0x0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->major_version = val;
 	}
 	tmp = xb_node_query_text(n, "major_vcn", NULL);
 	if (tmp != NULL) {
 		guint64 val = 0;
-		if (!fu_strtoull(tmp, &val, 0x0, G_MAXUINT16, error))
+		if (!fu_strtoull(tmp, &val, 0x0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->major_vcn = val;
 	}
@@ -305,13 +304,13 @@ fu_igsc_aux_firmware_finalize(GObject *object)
 static void
 fu_igsc_aux_firmware_class_init(FuIgscAuxFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_igsc_aux_firmware_finalize;
-	klass_firmware->parse = fu_igsc_aux_firmware_parse;
-	klass_firmware->write = fu_igsc_aux_firmware_write;
-	klass_firmware->build = fu_igsc_aux_firmware_build;
-	klass_firmware->export = fu_igsc_aux_firmware_export;
+	firmware_class->parse = fu_igsc_aux_firmware_parse;
+	firmware_class->write = fu_igsc_aux_firmware_write;
+	firmware_class->build = fu_igsc_aux_firmware_build;
+	firmware_class->export = fu_igsc_aux_firmware_export;
 }
 
 FuFirmware *

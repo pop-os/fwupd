@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Evan Lojewski
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Evan Lojewski
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -11,38 +11,40 @@
 
 #include "fu-bcm57xx-common.h"
 
-guint32
-fu_bcm57xx_nvram_crc(const guint8 *buf, gsize bufsz)
-{
-	return fu_crc32(buf, bufsz);
-}
-
 gboolean
-fu_bcm57xx_verify_crc(GBytes *fw, GError **error)
+fu_bcm57xx_verify_crc(GInputStream *stream, GError **error)
 {
-	guint32 crc_actual;
+	guint32 crc_actual = 0xFFFFFFFF;
 	guint32 crc_file = 0;
-	gsize bufsz = 0x0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
+	gsize streamsz = 0;
+	g_autoptr(GInputStream) stream_tmp = NULL;
 
 	/* expected */
-	if (bufsz < sizeof(guint32)) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if (streamsz < sizeof(guint32)) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "buf was too small");
+				    FWUPD_ERROR_INVALID_DATA,
+				    "image is too small for CRC");
 		return FALSE;
 	}
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz,
-				    bufsz - sizeof(guint32),
-				    &crc_file,
-				    G_LITTLE_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u32(stream,
+				      streamsz - sizeof(guint32),
+				      &crc_file,
+				      G_LITTLE_ENDIAN,
+				      error))
 		return FALSE;
 
 	/* reality */
-	crc_actual = fu_bcm57xx_nvram_crc(buf, bufsz - sizeof(guint32));
+	stream_tmp = fu_partial_input_stream_new(stream, 0, streamsz - sizeof(guint32), error);
+	if (stream_tmp == NULL)
+		return FALSE;
+	if (!fu_input_stream_compute_crc32(stream_tmp,
+					   FU_CRC_KIND_B32_STANDARD,
+					   &crc_actual,
+					   error))
+		return FALSE;
 	if (crc_actual != crc_file) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -58,14 +60,12 @@ fu_bcm57xx_verify_crc(GBytes *fw, GError **error)
 }
 
 gboolean
-fu_bcm57xx_verify_magic(GBytes *fw, gsize offset, GError **error)
+fu_bcm57xx_verify_magic(GInputStream *stream, gsize offset, GError **error)
 {
 	guint32 magic = 0;
-	gsize bufsz = 0x0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
 	/* hardcoded value */
-	if (!fu_memread_uint32_safe(buf, bufsz, offset, &magic, G_BIG_ENDIAN, error))
+	if (!fu_input_stream_read_u32(stream, offset, &magic, G_BIG_ENDIAN, error))
 		return FALSE;
 	if (magic != BCM_NVRAM_MAGIC) {
 		g_set_error(error,

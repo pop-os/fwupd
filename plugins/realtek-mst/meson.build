@@ -1,10 +1,13 @@
-if get_option('plugin_realtek_mst').require(gudev.found(),
-    error_message: 'gudev is needed for plugin_realtek_mst').allowed()
+if get_option('plugin_realtek_mst').require(enable_udev,
+    error_message: 'udev is needed for plugin_realtek_mst').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginRealtekMst"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
 plugin_quirks += files('realtek-mst.quirk')
 plugin_builtins += static_library('fu_plugin_realtek_mst',
+  rustgen.process(
+    'fu-realtek-mst.rs',
+  ),
   sources: [
     'fu-realtek-mst-device.c',
     'fu-realtek-mst-plugin.c',

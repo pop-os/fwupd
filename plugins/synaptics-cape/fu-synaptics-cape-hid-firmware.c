@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Synaptics Incorporated <simon.ho@synaptics.com>
+ * Copyright 2021 Synaptics Incorporated <simon.ho@synaptics.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -21,21 +21,22 @@ G_DEFINE_TYPE(FuSynapticsCapeHidFirmware,
 
 static gboolean
 fu_synaptics_cape_hid_firmware_parse(FuFirmware *firmware,
-				     GBytes *fw,
-				     gsize offset,
+				     GInputStream *stream,
 				     FwupdInstallFlags flags,
 				     GError **error)
 {
 	FuSynapticsCapeHidFirmware *self = FU_SYNAPTICS_CAPE_HID_FIRMWARE(firmware);
-	gsize bufsz = g_bytes_get_size(fw);
+	gsize streamsz = 0;
 	g_autofree gchar *version_str = NULL;
 	g_autoptr(FuFirmware) img_hdr = fu_firmware_new();
 	g_autoptr(GByteArray) st = NULL;
-	g_autoptr(GBytes) fw_body = NULL;
-	g_autoptr(GBytes) fw_hdr = NULL;
+	g_autoptr(GInputStream) stream_hdr = NULL;
+	g_autoptr(GInputStream) stream_body = NULL;
 
 	/* sanity check */
-	if ((guint32)bufsz % 4 != 0) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	if ((guint32)streamsz % 4 != 0) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INVALID_FILE,
@@ -44,7 +45,7 @@ fu_synaptics_cape_hid_firmware_parse(FuFirmware *firmware,
 	}
 
 	/* unpack */
-	st = fu_struct_synaptics_cape_hid_hdr_parse_bytes(fw, offset, error);
+	st = fu_struct_synaptics_cape_hid_hdr_parse_stream(stream, 0x0, error);
 	if (st == NULL)
 		return FALSE;
 	fu_synaptics_cape_firmware_set_vid(FU_SYNAPTICS_CAPE_FIRMWARE(self),
@@ -59,19 +60,24 @@ fu_synaptics_cape_hid_firmware_parse(FuFirmware *firmware,
 	fu_firmware_set_version(FU_FIRMWARE(self), version_str);
 
 	/* top-most part of header */
-	fw_hdr = fu_bytes_new_offset(fw, 0, FU_STRUCT_SYNAPTICS_CAPE_HID_HDR_OFFSET_VER_W, error);
-	if (fw_hdr == NULL)
+	stream_hdr = fu_partial_input_stream_new(stream,
+						 0,
+						 FU_STRUCT_SYNAPTICS_CAPE_HID_HDR_OFFSET_VER_W,
+						 error);
+	if (stream_hdr == NULL)
+		return FALSE;
+	if (!fu_firmware_parse_stream(img_hdr, stream_hdr, 0x0, flags, error))
 		return FALSE;
 	fu_firmware_set_id(img_hdr, FU_FIRMWARE_ID_HEADER);
-	fu_firmware_set_bytes(img_hdr, fw_hdr);
 	fu_firmware_add_image(firmware, img_hdr);
 
 	/* body */
-	fw_body = fu_bytes_new_offset(fw, st->len, bufsz - st->len, error);
-	if (fw_body == NULL)
+	stream_body = fu_partial_input_stream_new(stream, st->len, streamsz - st->len, error);
+	if (stream_body == NULL)
+		return FALSE;
+	if (!fu_firmware_set_stream(firmware, stream_body, error))
 		return FALSE;
 	fu_firmware_set_id(firmware, FU_FIRMWARE_ID_PAYLOAD);
-	fu_firmware_set_bytes(firmware, fw_body);
 	return TRUE;
 }
 
@@ -114,9 +120,9 @@ fu_synaptics_cape_hid_firmware_init(FuSynapticsCapeHidFirmware *self)
 static void
 fu_synaptics_cape_hid_firmware_class_init(FuSynapticsCapeHidFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_synaptics_cape_hid_firmware_parse;
-	klass_firmware->write = fu_synaptics_cape_hid_firmware_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_synaptics_cape_hid_firmware_parse;
+	firmware_class->write = fu_synaptics_cape_hid_firmware_write;
 }
 
 FuFirmware *

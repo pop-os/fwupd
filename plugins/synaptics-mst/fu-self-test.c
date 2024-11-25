@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2017 Mario Limonciello <mario.limonciello@dell.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -12,18 +12,19 @@
 #include "fu-context-private.h"
 #include "fu-plugin-private.h"
 #include "fu-synaptics-mst-common.h"
+#include "fu-synaptics-mst-device.h"
 #include "fu-synaptics-mst-firmware.h"
 #include "fu-synaptics-mst-plugin.h"
 
 static void
-_plugin_device_added_cb(FuPlugin *plugin, FuDevice *device, gpointer user_data)
+fu_test_plugin_device_added_cb(FuPlugin *plugin, FuDevice *device, gpointer user_data)
 {
 	GPtrArray **devices = (GPtrArray **)user_data;
 	g_ptr_array_add(*devices, g_object_ref(device));
 }
 
 static void
-_test_add_fake_devices_from_dir(FuPlugin *plugin, const gchar *path)
+fu_test_add_fake_devices_from_dir(FuPlugin *plugin, const gchar *path)
 {
 	const gchar *basename;
 	gboolean ret;
@@ -43,11 +44,14 @@ _test_add_fake_devices_from_dir(FuPlugin *plugin, const gchar *path)
 
 	while ((basename = g_dir_read_name(dir)) != NULL) {
 		g_autofree gchar *fn = g_build_filename(path, basename, NULL);
+		g_autoptr(FuDeviceLocker) locker = NULL;
 		g_autoptr(FuProgress) progress_local = fu_progress_new(G_STRLOC);
-		g_autoptr(FuUdevDevice) dev = NULL;
+		g_autoptr(FuSynapticsMstDevice) dev = NULL;
+		g_autoptr(GError) error_local = NULL;
+
 		if (!g_str_has_prefix(basename, "drm_dp_aux"))
 			continue;
-		dev = g_object_new(FU_TYPE_DPAUX_DEVICE,
+		dev = g_object_new(FU_TYPE_SYNAPTICS_MST_DEVICE,
 				   "context",
 				   ctx,
 				   "physical-id",
@@ -61,13 +65,15 @@ _test_add_fake_devices_from_dir(FuPlugin *plugin, const gchar *path)
 				   "dpcd-ieee-oui",
 				   SYNAPTICS_IEEE_OUI,
 				   NULL);
+		fu_device_add_private_flag(FU_DEVICE(dev),
+					   FU_SYNAPTICS_MST_DEVICE_FLAG_IS_SOMEWHAT_EMULATED);
 		g_debug("creating drm_dp_aux_dev object backed by %s", fn);
-		ret = fu_plugin_runner_backend_device_added(plugin,
-							    FU_DEVICE(dev),
-							    progress_local,
-							    &error);
-		g_assert_no_error(error);
-		g_assert_true(ret);
+		locker = fu_device_locker_new(dev, &error_local);
+		if (locker == NULL) {
+			g_debug("%s", error_local->message);
+			continue;
+		}
+		fu_plugin_device_add(plugin, FU_DEVICE(dev));
 	}
 }
 
@@ -95,7 +101,7 @@ fu_plugin_synaptics_mst_none_func(void)
 	plugin = fu_plugin_new_from_gtype(fu_synaptics_mst_plugin_get_type(), ctx);
 	g_signal_connect(FU_PLUGIN(plugin),
 			 "device-added",
-			 G_CALLBACK(_plugin_device_added_cb),
+			 G_CALLBACK(fu_test_plugin_device_added_cb),
 			 &devices);
 	ret = fu_plugin_runner_startup(plugin, progress, &error);
 	if (!ret && g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
@@ -110,7 +116,7 @@ fu_plugin_synaptics_mst_none_func(void)
 		g_test_skip("Missing no_devices");
 		return;
 	}
-	_test_add_fake_devices_from_dir(plugin, filename);
+	fu_test_add_fake_devices_from_dir(plugin, filename);
 	g_assert_cmpint(devices->len, ==, 0);
 }
 
@@ -138,7 +144,7 @@ fu_plugin_synaptics_mst_tb16_func(void)
 	plugin = fu_plugin_new_from_gtype(fu_synaptics_mst_plugin_get_type(), ctx);
 	g_signal_connect(FU_PLUGIN(plugin),
 			 "device-added",
-			 G_CALLBACK(_plugin_device_added_cb),
+			 G_CALLBACK(fu_test_plugin_device_added_cb),
 			 &devices);
 
 	ret = fu_plugin_runner_startup(plugin, progress, &error);
@@ -154,7 +160,7 @@ fu_plugin_synaptics_mst_tb16_func(void)
 		g_test_skip("Missing tb16_dock");
 		return;
 	}
-	_test_add_fake_devices_from_dir(plugin, filename);
+	fu_test_add_fake_devices_from_dir(plugin, filename);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
 		g_autofree gchar *tmp = fu_device_to_string(device);

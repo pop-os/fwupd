@@ -1,4 +1,3 @@
-if gusb.found()
 cargs = ['-DG_LOG_DOMAIN="FuPluginSynapticsVmm9"']
 
 plugins += {meson.current_source_dir().split('/')[-1]: true}
@@ -15,4 +14,5 @@ plugin_builtins += static_library('fu_plugin_synaptics_vmm9',
   c_args: cargs,
   dependencies: plugin_deps,
 )
-endif
+
+device_tests += files('tests/synaptics-vmm9430evb.json')

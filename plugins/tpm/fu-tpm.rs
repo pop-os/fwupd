@@ -1,9 +1,9 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
 #[repr(u32le)]
-enum TpmEventlogItemKind {
+enum FuTpmEventlogItemKind {
     EV_PREBOOT_CERT = 0x00000000,
     EV_POST_CODE = 0x00000001,
     EV_NO_ACTION = 0x00000003,
@@ -35,14 +35,16 @@ enum TpmEventlogItemKind {
 }
 
 #[derive(Parse)]
-struct TpmEventLog2 {
+#[repr(C, packed)]
+struct FuStructTpmEventLog2 {
     pcr: u32le,
-    type: TpmEventlogItemKind,
+    type: FuTpmEventlogItemKind,
     digest_count: u32le,
 }
 
-#[derive(ParseBytes)]
-struct TpmEfiStartupLocalityEvent {
+#[derive(ParseBytes, Default)]
+#[repr(C, packed)]
+struct FuStructTpmEfiStartupLocalityEvent {
     signature: [char; 16] == "StartupLocality",
     locality: u8,    // from which TPM2_Startup() was issued -- which is the initial value of PCR0
 }

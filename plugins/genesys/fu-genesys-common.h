@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2023 Adam.Chen <Adam.Chen@genesyslogic.com.tw>
- * Copyright (C) 2021 Gaël PORTAY <gael.portay@collabora.com>
+ * Copyright 2023 Adam.Chen <Adam.Chen@genesyslogic.com.tw>
+ * Copyright 2021 Gaël PORTAY <gael.portay@collabora.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -38,12 +38,6 @@ typedef struct {
 	FuGenesysModel model;
 	gint32 revision;
 } FuGenesysChip;
-
-#define GENESYS_USBHUB_FW_SIG_OFFSET	      0xFC
-#define GENESYS_USBHUB_FW_SIG_LEN	      4
-#define GENESYS_USBHUB_FW_SIG_TEXT_HUB	      "XROM"
-#define GENESYS_USBHUB_FW_SIG_TEXT_DEV_BRIDGE "HOST"
-#define GENESYS_USBHUB_FW_SIG_TEXT_PD	      "PRDY"
 
 #define GENESYS_USBHUB_FW_CONFIGURATION_OFFSET	       0x100
 #define GENESYS_USBHUB_FW_CONFIGURATION_WITHOUT_SERIAL 0x55

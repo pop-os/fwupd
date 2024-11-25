@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -336,7 +336,10 @@ fu_redfish_backend_set_update_uri_path(FuRedfishBackend *self, const gchar *upda
 }
 
 static gboolean
-fu_redfish_backend_setup(FuBackend *backend, FuProgress *progress, GError **error)
+fu_redfish_backend_setup(FuBackend *backend,
+			 FuBackendSetupFlags flags,
+			 FuProgress *progress,
+			 GError **error)
 {
 	FuRedfishBackend *self = FU_REDFISH_BACKEND(backend);
 	JsonObject *json_obj;
@@ -469,17 +472,17 @@ static void
 fu_redfish_backend_to_string(FuBackend *backend, guint idt, GString *str)
 {
 	FuRedfishBackend *self = FU_REDFISH_BACKEND(backend);
-	fu_string_append(str, idt, "Hostname", self->hostname);
-	fu_string_append(str, idt, "Username", self->username);
-	fu_string_append_kb(str, idt, "Password", self->password != NULL);
-	fu_string_append_ku(str, idt, "Port", self->port);
-	fu_string_append(str, idt, "UpdateUriPath", self->update_uri_path);
-	fu_string_append(str, idt, "PushUriPath", self->push_uri_path);
-	fu_string_append_kb(str, idt, "UseHttps", self->use_https);
-	fu_string_append_kb(str, idt, "Cacheck", self->cacheck);
-	fu_string_append_kb(str, idt, "WildcardTargets", self->wildcard_targets);
-	fu_string_append_kx(str, idt, "MaxImageSize", self->max_image_size);
-	fu_string_append(str, idt, "DeviceGType", g_type_name(self->device_gtype));
+	fwupd_codec_string_append(str, idt, "Hostname", self->hostname);
+	fwupd_codec_string_append(str, idt, "Username", self->username);
+	fwupd_codec_string_append_bool(str, idt, "Password", self->password != NULL);
+	fwupd_codec_string_append_int(str, idt, "Port", self->port);
+	fwupd_codec_string_append(str, idt, "UpdateUriPath", self->update_uri_path);
+	fwupd_codec_string_append(str, idt, "PushUriPath", self->push_uri_path);
+	fwupd_codec_string_append_bool(str, idt, "UseHttps", self->use_https);
+	fwupd_codec_string_append_bool(str, idt, "Cacheck", self->cacheck);
+	fwupd_codec_string_append_bool(str, idt, "WildcardTargets", self->wildcard_targets);
+	fwupd_codec_string_append_hex(str, idt, "MaxImageSize", self->max_image_size);
+	fwupd_codec_string_append(str, idt, "DeviceGType", g_type_name(self->device_gtype));
 }
 
 static void
@@ -503,11 +506,11 @@ static void
 fu_redfish_backend_class_init(FuRedfishBackendClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuBackendClass *klass_backend = FU_BACKEND_CLASS(klass);
-	klass_backend->coldplug = fu_redfish_backend_coldplug;
-	klass_backend->setup = fu_redfish_backend_setup;
-	klass_backend->invalidate = fu_redfish_backend_invalidate;
-	klass_backend->to_string = fu_redfish_backend_to_string;
+	FuBackendClass *backend_class = FU_BACKEND_CLASS(klass);
+	backend_class->coldplug = fu_redfish_backend_coldplug;
+	backend_class->setup = fu_redfish_backend_setup;
+	backend_class->invalidate = fu_redfish_backend_invalidate;
+	backend_class->to_string = fu_redfish_backend_to_string;
 	object_class->finalize = fu_redfish_backend_finalize;
 }
 

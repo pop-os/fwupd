@@ -12,7 +12,6 @@ dependencies = [
                 "Gio-2.0",
                 "Fwupd-2.0",
                 "Xmlb-2.0",
-                "GUsb-1.0"
 ]
 devhelp = true
 search_index = true
@@ -62,6 +61,8 @@ content_images = [
   "debug_attached.png",
   "debug_breakpoint.png",
   "debug_tool_selector.png",
+  "debug_task.png",
+  "test_task.png",
 ]
 urlmap_file = "urlmap_fwupdplugin.js"
 

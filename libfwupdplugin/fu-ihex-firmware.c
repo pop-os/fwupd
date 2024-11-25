@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuFirmware"
@@ -201,8 +201,8 @@ fu_ihex_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 	/* sanity check */
 	if (token_idx > FU_IHEX_FIRMWARE_TOKENS_MAX) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "file has too many lines");
 		return FALSE;
 	}
@@ -230,22 +230,19 @@ fu_ihex_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data
 }
 
 static gboolean
-fu_ihex_firmware_tokenize(FuFirmware *firmware, GBytes *fw, FwupdInstallFlags flags, GError **error)
+fu_ihex_firmware_tokenize(FuFirmware *firmware,
+			  GInputStream *stream,
+			  FwupdInstallFlags flags,
+			  GError **error)
 {
 	FuIhexFirmware *self = FU_IHEX_FIRMWARE(firmware);
 	FuIhexFirmwareTokenHelper helper = {.self = self, .flags = flags};
-	return fu_strsplit_full(g_bytes_get_data(fw, NULL),
-				g_bytes_get_size(fw),
-				"\n",
-				fu_ihex_firmware_tokenize_cb,
-				&helper,
-				error);
+	return fu_strsplit_stream(stream, 0x0, "\n", fu_ihex_firmware_tokenize_cb, &helper, error);
 }
 
 static gboolean
 fu_ihex_firmware_parse(FuFirmware *firmware,
-		       GBytes *fw,
-		       gsize offset,
+		       GInputStream *stream,
 		       FwupdInstallFlags flags,
 		       GError **error)
 {
@@ -575,11 +572,11 @@ static void
 fu_ihex_firmware_class_init(FuIhexFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_ihex_firmware_finalize;
-	klass_firmware->parse = fu_ihex_firmware_parse;
-	klass_firmware->tokenize = fu_ihex_firmware_tokenize;
-	klass_firmware->write = fu_ihex_firmware_write;
+	firmware_class->parse = fu_ihex_firmware_parse;
+	firmware_class->tokenize = fu_ihex_firmware_tokenize;
+	firmware_class->write = fu_ihex_firmware_write;
 }
 
 /**

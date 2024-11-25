@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -23,7 +23,7 @@ fu_gpio_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 	for (guint i = 0; i < self->current_logical_ids->len; i++) {
 		const gchar *current_logical_id = g_ptr_array_index(self->current_logical_ids, i);
 		g_autofree gchar *title = g_strdup_printf("CurrentLogicalId[0x%02x]", i);
-		fu_string_append(str, idt, title, current_logical_id);
+		fwupd_codec_string_append(str, idt, title, current_logical_id);
 	}
 }
 
@@ -39,8 +39,8 @@ fu_gpio_plugin_parse_level(const gchar *str, gboolean *ret, GError **error)
 		return TRUE;
 	}
 	g_set_error(error,
-		    G_IO_ERROR,
-		    G_IO_ERROR_INVALID_DATA,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_INVALID_DATA,
 		    "cannot parse level, got %s and expected high|low",
 		    str);
 	return FALSE;
@@ -58,8 +58,8 @@ fu_gpio_plugin_process_quirk(FuPlugin *plugin, const gchar *str, GError **error)
 	/* sanity check */
 	if (g_strv_length(split) != 3) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "invalid format, CHIP_NAME,PIN_NAME,LEVEL, got '%s'",
 			    str);
 		return FALSE;
@@ -172,7 +172,7 @@ fu_gpio_plugin_constructed(GObject *obj)
 }
 
 static void
-fu_gpio_finalize(GObject *obj)
+fu_gpio_plugin_finalize(GObject *obj)
 {
 	FuGpioPlugin *self = FU_GPIO_PLUGIN(obj);
 	g_ptr_array_unref(self->current_logical_ids);
@@ -185,7 +185,7 @@ fu_gpio_plugin_class_init(FuGpioPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 
-	object_class->finalize = fu_gpio_finalize;
+	object_class->finalize = fu_gpio_plugin_finalize;
 	plugin_class->constructed = fu_gpio_plugin_constructed;
 	plugin_class->to_string = fu_gpio_plugin_to_string;
 	plugin_class->prepare = fu_gpio_plugin_prepare;

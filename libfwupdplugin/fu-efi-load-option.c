@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuEfiLoadOption"
@@ -9,51 +9,36 @@
 #include "config.h"
 
 #include "fu-byte-array.h"
-#include "fu-bytes.h"
+#include "fu-common.h"
 #include "fu-efi-device-path-list.h"
+#include "fu-efi-file-path-device-path.h"
+#include "fu-efi-hard-drive-device-path.h"
 #include "fu-efi-load-option.h"
 #include "fu-efi-struct.h"
-#include "fu-efivar.h"
+#include "fu-input-stream.h"
 #include "fu-mem.h"
 #include "fu-string.h"
 
 struct _FuEfiLoadOption {
 	FuFirmware parent_instance;
 	guint32 attrs;
-	GBytes *optional_data;
+	GBytes *optional_data; /* only used when not a hive or path */
+	GHashTable *metadata;  /* element-type: utf8:utf8 */
 };
 
-G_DEFINE_TYPE(FuEfiLoadOption, fu_efi_load_option, FU_TYPE_FIRMWARE)
+static void
+fu_efi_load_option_codec_iface_init(FwupdCodecInterface *iface);
+
+G_DEFINE_TYPE_EXTENDED(FuEfiLoadOption,
+		       fu_efi_load_option,
+		       FU_TYPE_FIRMWARE,
+		       0,
+		       G_IMPLEMENT_INTERFACE(FWUPD_TYPE_CODEC, fu_efi_load_option_codec_iface_init))
 
 #define FU_EFI_LOAD_OPTION_DESCRIPTION_SIZE_MAX 0x1000u /* bytes */
+#define FU_EFI_LOAD_OPTION_HIVE_HEADER_VERSION_MIN 1
 
-/**
- * fu_efi_load_option_get_optional_data:
- * @self: a #FuEfiLoadOption
- *
- * Gets any optional data.
- *
- * Returns: (transfer none): optional data, or %NULL
- *
- * Since: 1.9.3
- **/
-GBytes *
-fu_efi_load_option_get_optional_data(FuEfiLoadOption *self)
-{
-	g_return_val_if_fail(FU_IS_EFI_LOAD_OPTION(self), NULL);
-	return self->optional_data;
-}
-
-/**
- * fu_efi_load_option_set_optional_data:
- * @self: a #FuEfiLoadOption
- * @optional_data: (nullable): a #GBytes, or %NULL
- *
- * Sets any optional data.
- *
- * Since: 1.9.3
- **/
-void
+static void
 fu_efi_load_option_set_optional_data(FuEfiLoadOption *self, GBytes *optional_data)
 {
 	g_return_if_fail(FU_IS_EFI_LOAD_OPTION(self));
@@ -66,37 +51,186 @@ fu_efi_load_option_set_optional_data(FuEfiLoadOption *self, GBytes *optional_dat
 }
 
 /**
- * fu_efi_load_option_set_optional_path:
+ * fu_efi_load_option_get_metadata:
  * @self: a #FuEfiLoadOption
- * @optional_path: UTF-8 path
+ * @key: (not nullable): UTF-8 string
  * @error: (nullable): optional return location for an error
  *
- * Sets UTF-16 optional data from a path. If required, a leading backslash will be added.
+ * Gets an optional attribute.
  *
- * Since: 1.9.3
+ * Returns: UTF-8 string, or %NULL
+ *
+ * Since: 2.0.0
  **/
-gboolean
-fu_efi_load_option_set_optional_path(FuEfiLoadOption *self,
-				     const gchar *optional_path,
-				     GError **error)
+const gchar *
+fu_efi_load_option_get_metadata(FuEfiLoadOption *self, const gchar *key, GError **error)
 {
-	g_autoptr(GString) str = g_string_new(optional_path);
+	const gchar *value;
+
+	g_return_val_if_fail(FU_IS_EFI_LOAD_OPTION(self), NULL);
+	g_return_val_if_fail(key != NULL, NULL);
+
+	value = g_hash_table_lookup(self->metadata, key);
+	if (value == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no attribute value for %s",
+			    key);
+		return NULL;
+	}
+
+	/* success */
+	return value;
+}
+
+/**
+ * fu_efi_load_option_set_metadata:
+ * @self: a #FuEfiLoadOption
+ * @key: (not nullable): UTF-8 string
+ * @value: (nullable): UTF-8 string, or %NULL
+ *
+ * Sets an optional attribute.
+ *
+ * NOTE: When the key is `Path`, any leading backslash will be stripped automatically and added
+ * back as-required on export.
+ *
+ * Since: 2.0.0
+ **/
+void
+fu_efi_load_option_set_metadata(FuEfiLoadOption *self, const gchar *key, const gchar *value)
+{
+	g_return_if_fail(FU_IS_EFI_LOAD_OPTION(self));
+	g_return_if_fail(key != NULL);
+
+	if (g_strcmp0(key, FU_EFI_LOAD_OPTION_METADATA_PATH) == 0 && value != NULL &&
+	    g_str_has_prefix(value, "\\")) {
+		value++;
+	}
+	g_hash_table_insert(self->metadata, g_strdup(key), g_strdup(value));
+}
+
+static gboolean
+fu_efi_load_option_parse_optional_hive(FuEfiLoadOption *self,
+				       GInputStream *stream,
+				       gsize offset,
+				       GError **error)
+{
+	g_autoptr(FuStructShimHive) st = NULL;
+	guint8 items_count;
+
+	st = fu_struct_shim_hive_parse_stream(stream, offset, error);
+	if (st == NULL)
+		return FALSE;
+	if (fu_struct_shim_hive_get_header_version(st) <
+	    FU_EFI_LOAD_OPTION_HIVE_HEADER_VERSION_MIN) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "header version %u is not supported",
+			    fu_struct_shim_hive_get_header_version(st));
+		return FALSE;
+	}
+	offset += fu_struct_shim_hive_get_items_offset(st);
+
+	/* items */
+	items_count = fu_struct_shim_hive_get_items_count(st);
+	for (guint i = 0; i < items_count; i++) {
+		guint8 keysz;
+		guint32 valuesz;
+		g_autofree gchar *key = NULL;
+		g_autofree gchar *value = NULL;
+		g_autoptr(FuStructShimHiveItem) st_item = NULL;
+
+		st_item = fu_struct_shim_hive_item_parse_stream(stream, offset, error);
+		if (st_item == NULL)
+			return FALSE;
+		offset += st_item->len;
+
+		/* key */
+		keysz = fu_struct_shim_hive_item_get_key_length(st_item);
+		if (keysz == 0) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
+					    "zero key size is not supported");
+			return FALSE;
+		}
+		key = fu_input_stream_read_string(stream, offset, keysz, error);
+		if (key == NULL)
+			return FALSE;
+		offset += keysz;
+
+		/* value */
+		valuesz = fu_struct_shim_hive_item_get_value_length(st_item);
+		if (valuesz > 0) {
+			value = fu_input_stream_read_string(stream, offset, valuesz, error);
+			if (value == NULL)
+				return FALSE;
+			offset += valuesz;
+		}
+		fu_efi_load_option_set_metadata(self, key, value);
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_efi_load_option_parse_optional_path(FuEfiLoadOption *self, GBytes *opt_blob, GError **error)
+{
+	g_autofree gchar *optional_path = NULL;
+
+	/* convert to UTF-8 */
+	optional_path = fu_utf16_to_utf8_bytes(opt_blob, G_LITTLE_ENDIAN, error);
+	if (optional_path == NULL)
+		return FALSE;
+
+	/* check is ASCII */
+	if (!g_str_is_ascii(optional_path)) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "not ASCII data: %s",
+			    optional_path);
+		return FALSE;
+	}
+	fu_efi_load_option_set_metadata(self, FU_EFI_LOAD_OPTION_METADATA_PATH, optional_path);
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_efi_load_option_parse_optional(FuEfiLoadOption *self,
+				  GInputStream *stream,
+				  gsize offset,
+				  GError **error)
+{
+	gsize streamsz = 0;
 	g_autoptr(GBytes) opt_blob = NULL;
+	g_autoptr(GError) error_hive = NULL;
+	g_autoptr(GError) error_path = NULL;
 
-	g_return_val_if_fail(FU_IS_EFI_LOAD_OPTION(self), FALSE);
-	g_return_val_if_fail(optional_path != NULL, FALSE);
-	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+	/* try hive structure first */
+	if (!fu_efi_load_option_parse_optional_hive(self, stream, offset, &error_hive)) {
+		if (!g_error_matches(error_hive, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA)) {
+			g_propagate_error(error, g_steal_pointer(&error_hive));
+			return FALSE;
+		}
+		g_debug("not a shim hive, ignoring: %s", error_hive->message);
+	}
 
-	/* is required if a path */
-	if (!g_str_has_prefix(str->str, "\\"))
-		g_string_prepend(str, "\\");
-	opt_blob = fu_utf8_to_utf16_bytes(str->str,
-					  G_LITTLE_ENDIAN,
-					  FU_UTF_CONVERT_FLAG_APPEND_NUL,
-					  error);
+	/* then UCS-2 path, and on ASCII failure just treat as a raw data blob */
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	opt_blob = fu_input_stream_read_bytes(stream, offset, streamsz - offset, NULL, error);
 	if (opt_blob == NULL)
 		return FALSE;
-	fu_efi_load_option_set_optional_data(self, opt_blob);
+	if (!fu_efi_load_option_parse_optional_path(self, opt_blob, &error_path)) {
+		g_debug("not a path, saving as raw blob: %s", error_path->message);
+		fu_efi_load_option_set_optional_data(self, opt_blob);
+	}
 
 	/* success */
 	return TRUE;
@@ -104,38 +238,39 @@ fu_efi_load_option_set_optional_path(FuEfiLoadOption *self,
 
 static gboolean
 fu_efi_load_option_parse(FuFirmware *firmware,
-			 GBytes *fw,
-			 gsize offset,
+			 GInputStream *stream,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuEfiLoadOption *self = FU_EFI_LOAD_OPTION(firmware);
-	gsize bufsz = 0;
+	gsize offset = 0;
+	gsize streamsz = 0;
 	g_autofree gchar *id = NULL;
 	g_autoptr(FuEfiDevicePathList) device_path_list = fu_efi_device_path_list_new();
 	g_autoptr(GByteArray) buf_utf16 = g_byte_array_new();
 	g_autoptr(GByteArray) st = NULL;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 
 	/* parse header */
-	st = fu_struct_efi_load_option_parse_bytes(fw, offset, error);
+	st = fu_struct_efi_load_option_parse_stream(stream, offset, error);
 	if (st == NULL)
 		return FALSE;
 	self->attrs = fu_struct_efi_load_option_get_attrs(st);
 	offset += st->len;
 
 	/* parse UTF-16 description */
-	for (; offset < bufsz; offset += 2) {
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	for (; offset < streamsz; offset += 2) {
 		guint16 tmp = 0;
 		if (buf_utf16->len > FU_EFI_LOAD_OPTION_DESCRIPTION_SIZE_MAX) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "description was too long, limit is 0x%x chars",
 				    FU_EFI_LOAD_OPTION_DESCRIPTION_SIZE_MAX / 2);
 			return FALSE;
 		}
-		if (!fu_memread_uint16_safe(buf, bufsz, offset, &tmp, G_LITTLE_ENDIAN, error))
+		if (!fu_input_stream_read_u16(stream, offset, &tmp, G_LITTLE_ENDIAN, error))
 			return FALSE;
 		if (tmp == 0)
 			break;
@@ -148,18 +283,16 @@ fu_efi_load_option_parse(FuFirmware *firmware,
 	offset += 2;
 
 	/* parse dp blob */
-	if (!fu_firmware_parse_full(FU_FIRMWARE(device_path_list), fw, offset, flags, error))
+	if (!fu_firmware_parse_stream(FU_FIRMWARE(device_path_list), stream, offset, flags, error))
 		return FALSE;
-	fu_firmware_add_image(firmware, FU_FIRMWARE(device_path_list));
+	if (!fu_firmware_add_image_full(firmware, FU_FIRMWARE(device_path_list), error))
+		return FALSE;
 	offset += fu_struct_efi_load_option_get_dp_size(st);
 
 	/* optional data */
-	if (offset < bufsz) {
-		g_autoptr(GBytes) opt_blob = NULL;
-		opt_blob = fu_bytes_new_offset(fw, offset, bufsz - offset, error);
-		if (opt_blob == NULL)
+	if (offset < streamsz) {
+		if (!fu_efi_load_option_parse_optional(self, stream, offset, error))
 			return FALSE;
-		fu_efi_load_option_set_optional_data(self, opt_blob);
 	}
 
 	/* success */
@@ -167,9 +300,72 @@ fu_efi_load_option_parse(FuFirmware *firmware,
 }
 
 static GByteArray *
+fu_efi_load_option_write_hive(FuEfiLoadOption *self, GError **error)
+{
+	GHashTableIter iter;
+	guint items_count = g_hash_table_size(self->metadata);
+	const gchar *key;
+	const gchar *value;
+	g_autoptr(FuStructShimHive) st = fu_struct_shim_hive_new();
+
+	fu_struct_shim_hive_set_items_count(st, items_count);
+	fu_struct_shim_hive_set_items_offset(st, FU_STRUCT_SHIM_HIVE_SIZE);
+	g_hash_table_iter_init(&iter, self->metadata);
+	while (g_hash_table_iter_next(&iter, (gpointer *)&key, (gpointer *)&value)) {
+		guint32 keysz = strlen(key);
+		g_autoptr(FuStructShimHiveItem) st_item = fu_struct_shim_hive_item_new();
+		g_autoptr(GString) value_safe = g_string_new(value);
+
+		/* required prefix for a path */
+		if (g_strcmp0(key, FU_EFI_LOAD_OPTION_METADATA_PATH) == 0 && value_safe->len > 0 &&
+		    !g_str_has_prefix(value_safe->str, "\\")) {
+			g_string_prepend(value_safe, "\\");
+		}
+		fu_struct_shim_hive_item_set_key_length(st_item, keysz);
+		fu_struct_shim_hive_item_set_value_length(st_item, value_safe->len);
+		if (keysz > 0)
+			g_byte_array_append(st_item, (const guint8 *)key, keysz);
+		if (value_safe->len > 0) {
+			g_byte_array_append(st_item,
+					    (const guint8 *)value_safe->str,
+					    value_safe->len);
+		}
+
+		/* add to hive */
+		g_byte_array_append(st, st_item->data, st_item->len);
+	}
+
+	/* this covers all items, and so has to be done last */
+	fu_struct_shim_hive_set_crc32(st, fu_crc32(FU_CRC_KIND_B32_STANDARD, st->data, st->len));
+
+	/* success */
+	return g_steal_pointer(&st);
+}
+
+static GByteArray *
+fu_efi_load_option_write_path(FuEfiLoadOption *self, const gchar *optional_path, GError **error)
+{
+	g_autoptr(GByteArray) buf = NULL;
+	g_autoptr(GString) str = g_string_new(optional_path);
+
+	/* is required if a path */
+	if (!g_str_has_prefix(str->str, "\\"))
+		g_string_prepend(str, "\\");
+	buf = fu_utf8_to_utf16_byte_array(str->str,
+					  G_LITTLE_ENDIAN,
+					  FU_UTF_CONVERT_FLAG_APPEND_NUL,
+					  error);
+	if (buf == NULL)
+		return NULL;
+	return g_steal_pointer(&buf);
+}
+
+static GByteArray *
 fu_efi_load_option_write(FuFirmware *firmware, GError **error)
 {
 	FuEfiLoadOption *self = FU_EFI_LOAD_OPTION(firmware);
+	const gchar *path;
+	gboolean align_atomic = FALSE;
 	g_autoptr(GByteArray) buf_utf16 = NULL;
 	g_autoptr(GByteArray) st = fu_struct_efi_load_option_new();
 	g_autoptr(GBytes) dpbuf = NULL;
@@ -180,8 +376,8 @@ fu_efi_load_option_write(FuFirmware *firmware, GError **error)
 	/* label */
 	if (fu_firmware_get_id(firmware) == NULL) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "firmware ID required");
 		return NULL;
 	}
@@ -201,9 +397,30 @@ fu_efi_load_option_write(FuFirmware *firmware, GError **error)
 	fu_byte_array_append_bytes(st, dpbuf);
 
 	/* optional content */
-	if (self->optional_data != NULL)
+	path = g_hash_table_lookup(self->metadata, FU_EFI_LOAD_OPTION_METADATA_PATH);
+	if (g_hash_table_size(self->metadata) > 1 ||
+	    (g_hash_table_size(self->metadata) > 0 && path == NULL)) {
+		g_autoptr(GByteArray) buf_hive = NULL;
+		buf_hive = fu_efi_load_option_write_hive(self, error);
+		if (buf_hive == NULL)
+			return NULL;
+		align_atomic = TRUE;
+		g_byte_array_append(st, buf_hive->data, buf_hive->len);
+	} else if (path != NULL) {
+		g_autoptr(GByteArray) buf_path = NULL;
+		buf_path = fu_efi_load_option_write_path(self, path, error);
+		if (buf_path == NULL)
+			return NULL;
+		g_byte_array_append(st, buf_path->data, buf_path->len);
+	} else if (self->optional_data != NULL) {
 		fu_byte_array_append_bytes(st, self->optional_data);
+	}
 
+	/* align to 512 bytes to ensure that SetVariable writes are as atomic */
+	if (align_atomic)
+		fu_byte_array_align_up(st, FU_FIRMWARE_ALIGNMENT_512, 0x0);
+
+	/* success */
 	return g_steal_pointer(&st);
 }
 
@@ -212,6 +429,7 @@ fu_efi_load_option_build(FuFirmware *firmware, XbNode *n, GError **error)
 {
 	FuEfiLoadOption *self = FU_EFI_LOAD_OPTION(firmware);
 	guint64 tmp;
+	g_autoptr(GPtrArray) metadata = NULL;
 	g_autoptr(XbNode) optional_data = NULL;
 
 	/* simple properties */
@@ -233,6 +451,17 @@ fu_efi_load_option_build(FuFirmware *firmware, XbNode *n, GError **error)
 		}
 		fu_efi_load_option_set_optional_data(self, blob);
 	}
+	metadata = xb_node_query(n, "metadata/*", 0, NULL);
+	if (metadata != NULL) {
+		for (guint i = 0; i < metadata->len; i++) {
+			XbNode *c = g_ptr_array_index(metadata, i);
+			if (xb_node_get_element(c) == NULL)
+				continue;
+			fu_efi_load_option_set_metadata(self,
+							xb_node_get_element(c),
+							xb_node_get_text(c));
+		}
+	}
 
 	/* success */
 	return TRUE;
@@ -242,7 +471,17 @@ static void
 fu_efi_load_option_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuilderNode *bn)
 {
 	FuEfiLoadOption *self = FU_EFI_LOAD_OPTION(firmware);
+
 	fu_xmlb_builder_insert_kx(bn, "attrs", self->attrs);
+	if (g_hash_table_size(self->metadata) > 0) {
+		GHashTableIter iter;
+		const gchar *key;
+		const gchar *value;
+		g_autoptr(XbBuilderNode) bc = xb_builder_node_insert(bn, "metadata", NULL);
+		g_hash_table_iter_init(&iter, self->metadata);
+		while (g_hash_table_iter_next(&iter, (gpointer *)&key, (gpointer *)&value))
+			xb_builder_node_insert_text(bc, key, value, NULL);
+	}
 	if (self->optional_data != NULL) {
 		gsize bufsz = 0;
 		const guint8 *buf = g_bytes_get_data(self->optional_data, &bufsz);
@@ -252,11 +491,37 @@ fu_efi_load_option_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbB
 }
 
 static void
+fu_efi_load_option_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags flags)
+{
+	FuEfiLoadOption *self = FU_EFI_LOAD_OPTION(codec);
+	GHashTableIter iter;
+	const gchar *key;
+	const gchar *value;
+	g_autoptr(FuFirmware) dp_list = NULL;
+
+	fwupd_codec_json_append(builder, "Name", fu_firmware_get_id(FU_FIRMWARE(self)));
+	g_hash_table_iter_init(&iter, self->metadata);
+	while (g_hash_table_iter_next(&iter, (gpointer *)&key, (gpointer *)&value))
+		fwupd_codec_json_append(builder, key, value);
+	dp_list =
+	    fu_firmware_get_image_by_gtype(FU_FIRMWARE(self), FU_TYPE_EFI_DEVICE_PATH_LIST, NULL);
+	if (dp_list != NULL)
+		fwupd_codec_to_json(FWUPD_CODEC(dp_list), builder, flags);
+}
+
+static void
+fu_efi_load_option_codec_iface_init(FwupdCodecInterface *iface)
+{
+	iface->add_json = fu_efi_load_option_add_json;
+}
+
+static void
 fu_efi_load_option_finalize(GObject *obj)
 {
 	FuEfiLoadOption *self = FU_EFI_LOAD_OPTION(obj);
 	if (self->optional_data != NULL)
 		g_bytes_unref(self->optional_data);
+	g_hash_table_unref(self->metadata);
 	G_OBJECT_CLASS(fu_efi_load_option_parent_class)->finalize(obj);
 }
 
@@ -264,48 +529,20 @@ static void
 fu_efi_load_option_class_init(FuEfiLoadOptionClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_efi_load_option_finalize;
-	klass_firmware->parse = fu_efi_load_option_parse;
-	klass_firmware->write = fu_efi_load_option_write;
-	klass_firmware->build = fu_efi_load_option_build;
-	klass_firmware->export = fu_efi_load_option_export;
+	firmware_class->parse = fu_efi_load_option_parse;
+	firmware_class->write = fu_efi_load_option_write;
+	firmware_class->build = fu_efi_load_option_build;
+	firmware_class->export = fu_efi_load_option_export;
 }
 
 static void
 fu_efi_load_option_init(FuEfiLoadOption *self)
 {
 	self->attrs = FU_EFI_LOAD_OPTION_ATTRS_ACTIVE;
+	self->metadata = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	g_type_ensure(FU_TYPE_EFI_DEVICE_PATH_LIST);
-}
-
-/**
- * fu_efi_load_option_new_esp_for_boot_entry:
- * @boot_entry: a boot entry number
- * @error: (nullable): optional return location for an error
- *
- * Gets the platform ESP using a UNIX or UDisks path
- *
- * Returns: (transfer full): a #FuEfiLoadOption, or %NULL if invalid
- *
- * Since: 1.9.3
- **/
-FuEfiLoadOption *
-fu_efi_load_option_new_esp_for_boot_entry(guint16 boot_entry, GError **error)
-{
-	g_autofree gchar *name = g_strdup_printf("Boot%04X", boot_entry);
-	g_autoptr(FuEfiLoadOption) self = g_object_new(FU_TYPE_EFI_LOAD_OPTION, NULL);
-	g_autoptr(GBytes) fw = NULL;
-
-	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	/* get data */
-	fw = fu_efivar_get_data_bytes(FU_EFIVAR_GUID_EFI_GLOBAL, name, NULL, error);
-	if (fw == NULL)
-		return NULL;
-	if (!fu_firmware_parse(FU_FIRMWARE(self), fw, FWUPD_INSTALL_FLAG_NONE, error))
-		return NULL;
-	return g_steal_pointer(&self);
 }
 
 /**

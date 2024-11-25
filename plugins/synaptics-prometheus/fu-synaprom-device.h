@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2019 Synaptics Inc
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Synaptics Inc
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -59,10 +59,11 @@ fu_synaprom_device_set_version(FuSynapromDevice *self,
 			       guint8 vminor,
 			       guint32 buildnum);
 FuFirmware *
-fu_synaprom_device_prepare_fw(FuDevice *device,
-			      GBytes *fw,
-			      FwupdInstallFlags flags,
-			      GError **error);
+fu_synaprom_device_prepare_firmware(FuDevice *device,
+				    GInputStream *stream,
+				    FuProgress *progress,
+				    FwupdInstallFlags flags,
+				    GError **error);
 
 guint32
 fu_synaprom_device_get_product_type(FuSynapromDevice *self);

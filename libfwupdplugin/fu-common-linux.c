@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCommon"
@@ -221,8 +221,8 @@ fu_common_get_olson_timezone_id_impl(GError **error)
 			guint sections_len = g_strv_length(sections);
 			if (sections_len < 2) {
 				g_set_error(error,
-					    G_IO_ERROR,
-					    G_IO_ERROR_INVALID_FILENAME,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOT_SUPPORTED,
 					    "invalid symlink target: %s",
 					    target);
 				return NULL;
@@ -235,8 +235,8 @@ fu_common_get_olson_timezone_id_impl(GError **error)
 
 	/* failed */
 	g_set_error_literal(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "no timezone or localtime is available");
 	return NULL;
 }

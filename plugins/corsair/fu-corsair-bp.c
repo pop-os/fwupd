@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Andrii Dushko <andrii.dushko@developex.net>
+ * Copyright 2022 Andrii Dushko <andrii.dushko@developex.net>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -57,28 +57,27 @@ fu_corsair_bp_command(FuCorsairBp *self,
 {
 	gsize actual_len = 0;
 	gboolean ret;
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 
 	data[CORSAIR_OFFSET_CMD_DESTINATION] = self->destination;
 
 	fu_dump_raw("FuPluginCorsair", "command", data, self->cmd_write_size);
 
-	ret = g_usb_device_interrupt_transfer(usb_device,
-					      self->epout,
-					      data,
-					      self->cmd_write_size,
-					      &actual_len,
-					      timeout,
-					      NULL,
-					      error);
+	ret = fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+					       self->epout,
+					       data,
+					       self->cmd_write_size,
+					       &actual_len,
+					       timeout,
+					       NULL,
+					       error);
 	if (!ret) {
 		g_prefix_error(error, "failed to write command: ");
 		return FALSE;
 	}
 	if (actual_len != self->cmd_write_size) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "wrong size written: %" G_GSIZE_FORMAT,
 			    actual_len);
 		return FALSE;
@@ -89,22 +88,22 @@ fu_corsair_bp_command(FuCorsairBp *self,
 
 	memset(data, 0, FU_CORSAIR_MAX_CMD_SIZE);
 
-	ret = g_usb_device_interrupt_transfer(usb_device,
-					      self->epin,
-					      data,
-					      self->cmd_read_size,
-					      &actual_len,
-					      timeout,
-					      NULL,
-					      error);
+	ret = fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+					       self->epin,
+					       data,
+					       self->cmd_read_size,
+					       &actual_len,
+					       timeout,
+					       NULL,
+					       error);
 	if (!ret) {
 		g_prefix_error(error, "failed to get command response: ");
 		return FALSE;
 	}
 	if (actual_len != self->cmd_read_size) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "wrong size read: %" G_GSIZE_FORMAT,
 			    actual_len);
 		return FALSE;
@@ -114,8 +113,8 @@ fu_corsair_bp_command(FuCorsairBp *self,
 
 	if (data[CORSAIR_OFFSET_CMD_STATUS] != 0) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_FAILED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INTERNAL,
 			    "device replied with error: 0x%02x",
 			    data[CORSAIR_OFFSET_CMD_STATUS]);
 		return FALSE;
@@ -136,18 +135,17 @@ fu_corsair_bp_flush_input_reports(FuCorsairBp *self)
 {
 	gsize actual_len;
 	g_autofree guint8 *buf = g_malloc0(self->cmd_read_size);
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 
 	for (guint i = 0; i < CORSAIR_INPUT_FLUSH_ITERATIONS; i++) {
 		g_autoptr(GError) error_local = NULL;
-		if (!g_usb_device_interrupt_transfer(usb_device,
-						     self->epin,
-						     buf,
-						     self->cmd_read_size,
-						     &actual_len,
-						     CORSAIR_INPUT_FLUSH_TIMEOUT,
-						     NULL,
-						     &error_local))
+		if (!fu_usb_device_interrupt_transfer(FU_USB_DEVICE(self),
+						      self->epin,
+						      buf,
+						      self->cmd_read_size,
+						      &actual_len,
+						      CORSAIR_INPUT_FLUSH_TIMEOUT,
+						      NULL,
+						      &error_local))
 			g_debug("flushing status: %s", error_local->message);
 	}
 }
@@ -223,9 +221,6 @@ fu_corsair_bp_incorporate(FuDevice *self, FuDevice *donor)
 	g_return_if_fail(FU_IS_CORSAIR_BP(self));
 	g_return_if_fail(FU_IS_CORSAIR_BP(donor));
 
-	/* FuUsbDevice */
-	FU_DEVICE_CLASS(fu_corsair_bp_parent_class)->incorporate(self, donor);
-
 	bp_self->epin = bp_donor->epin;
 	bp_self->epout = bp_donor->epout;
 	bp_self->cmd_write_size = bp_donor->cmd_write_size;
@@ -293,7 +288,12 @@ fu_corsair_bp_write_firmware_chunks(FuCorsairBp *self,
 	fu_progress_step_done(progress);
 
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 		if (!fu_corsair_bp_write_chunk(self, chk, error)) {
 			g_prefix_error(error, "cannot write chunk %u: ", i);
 			return FALSE;
@@ -361,6 +361,7 @@ fu_corsair_bp_write_firmware(FuDevice *device,
 	chunks =
 	    fu_chunk_array_new_from_bytes(rest_of_firmware,
 					  first_chunk_size,
+					  FU_CHUNK_PAGESZ_NONE,
 					  self->cmd_write_size - CORSAIR_NEXT_CHUNKS_HEADER_SIZE);
 
 	if (!fu_corsair_bp_write_firmware_chunks(self,
@@ -380,9 +381,6 @@ fu_corsair_bp_write_firmware(FuDevice *device,
 gboolean
 fu_corsair_bp_activate_firmware(FuCorsairBp *self, FuFirmware *firmware, GError **error)
 {
-	guint32 crc;
-	gsize firmware_size;
-	const guint8 *firmware_raw;
 	g_autoptr(GBytes) blob = NULL;
 	guint8 cmd[FU_CORSAIR_MAX_CMD_SIZE] = {0x08, 0x16, 0x00, 0x01, 0x03, 0x00, 0x01, 0x01};
 
@@ -391,15 +389,9 @@ fu_corsair_bp_activate_firmware(FuCorsairBp *self, FuFirmware *firmware, GError 
 		g_prefix_error(error, "cannot get firmware bytes: ");
 		return FALSE;
 	}
-
-	firmware_raw = fu_bytes_get_data_safe(blob, &firmware_size, error);
-	if (firmware_raw == NULL) {
-		g_prefix_error(error, "cannot get firmware data: ");
-		return FALSE;
-	}
-
-	crc = fu_corsair_calculate_crc(firmware_raw, firmware_size);
-	fu_memwrite_uint32(&cmd[CORSAIR_OFFSET_CMD_CRC], crc, G_LITTLE_ENDIAN);
+	fu_memwrite_uint32(&cmd[CORSAIR_OFFSET_CMD_CRC],
+			   fu_crc32_bytes(FU_CRC_KIND_B32_MPEG2, blob),
+			   G_LITTLE_ENDIAN);
 
 	return fu_corsair_bp_command(self, cmd, CORSAIR_ACTIVATION_TIMEOUT, TRUE, error);
 }
@@ -426,30 +418,30 @@ static void
 fu_corsair_bp_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCorsairBp *self = FU_CORSAIR_BP(device);
-
-	FU_DEVICE_CLASS(fu_corsair_bp_parent_class)->to_string(device, idt, str);
-
-	fu_string_append_kx(str, idt, "InEndpoint", self->epin);
-	fu_string_append_kx(str, idt, "OutEndpoint", self->epout);
+	fwupd_codec_string_append_hex(str, idt, "InEndpoint", self->epin);
+	fwupd_codec_string_append_hex(str, idt, "OutEndpoint", self->epout);
 }
 
 static void
 fu_corsair_bp_class_init(FuCorsairBpClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
-	klass_device->incorporate = fu_corsair_bp_incorporate;
-	klass_device->write_firmware = fu_corsair_bp_write_firmware;
-	klass_device->attach = fu_corsair_bp_attach;
-	klass_device->detach = fu_corsair_bp_detach;
-	klass_device->to_string = fu_corsair_bp_to_string;
+	device_class->incorporate = fu_corsair_bp_incorporate;
+	device_class->write_firmware = fu_corsair_bp_write_firmware;
+	device_class->attach = fu_corsair_bp_attach;
+	device_class->detach = fu_corsair_bp_detach;
+	device_class->to_string = fu_corsair_bp_to_string;
 }
 
 FuCorsairBp *
-fu_corsair_bp_new(GUsbDevice *usb_device, gboolean is_subdevice)
+fu_corsair_bp_new(FuUsbDevice *usb_device, gboolean is_subdevice)
 {
-	FuCorsairBp *self = g_object_new(FU_TYPE_CORSAIR_BP, "usb_device", usb_device, NULL);
+	FuCorsairBp *self = g_object_new(FU_TYPE_CORSAIR_BP, NULL);
 
+	fu_device_incorporate(FU_DEVICE(self),
+			      FU_DEVICE(usb_device),
+			      FU_DEVICE_INCORPORATE_FLAG_ALL);
 	if (is_subdevice) {
 		self->destination = FU_CORSAIR_BP_DESTINATION_SUBDEVICE;
 	} else {

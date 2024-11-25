@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
-enum IfdRegion {
+enum FuIfdRegion {
     Desc = 0x00,
     Bios = 0x01,
     Me = 0x02,
@@ -16,8 +16,9 @@ enum IfdRegion {
     Max = 0x0F,
 }
 
-#[derive(ParseBytes, New, ValidateBytes)]
-struct IfdFdbar {
+#[derive(ParseStream, New, ValidateStream, Default)]
+#[repr(C, packed)]
+struct FuStructIfdFdbar {
     reserved: [u8; 16] = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF,
     signature: u32le == 0x0FF0A55A,
     descriptor_map0: u32le,
@@ -25,8 +26,9 @@ struct IfdFdbar {
     descriptor_map2: u32le,
 }
 
-#[derive(ParseBytes, New)]
-struct IfdFcba {
+#[derive(ParseStream, New)]
+#[repr(C, packed)]
+struct FuStructIfdFcba {
     flcomp: u32le,
     flill: u32le,
     flill1: u32le,

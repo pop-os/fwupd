@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Google LLC
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Google LLC
  * Written by Simon Glass <sjg@chromium.org>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -130,8 +130,16 @@ fu_vbe_plugin_init(FuVbePlugin *self)
 }
 
 static void
+fu_vbe_plugin_constructed(GObject *obj)
+{
+	FuPlugin *plugin = FU_PLUGIN(obj);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_VBE_SIMPLE_DEVICE); /* coverage */
+}
+
+static void
 fu_vbe_plugin_class_init(FuVbePluginClass *klass)
 {
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
+	plugin_class->constructed = fu_vbe_plugin_constructed;
 	plugin_class->coldplug = fu_vbe_plugin_coldplug;
 }

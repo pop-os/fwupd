@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -82,29 +82,24 @@ static void
 fu_ch341a_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuCh341aDevice *self = FU_CH341A_DEVICE(device);
-
-	/* FuUsbDevice->to_string */
-	FU_DEVICE_CLASS(fu_ch341a_device_parent_class)->to_string(device, idt, str);
-
-	fu_string_append(str, idt, "Speed", fu_ch341a_device_speed_to_string(self->speed));
+	fwupd_codec_string_append(str, idt, "Speed", fu_ch341a_device_speed_to_string(self->speed));
 }
 
 static gboolean
 fu_ch341a_device_write(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length = 0;
 
 	/* debug */
 	fu_dump_raw(G_LOG_DOMAIN, "write", buf, bufsz);
-	if (!g_usb_device_bulk_transfer(usb_device,
-					CH341A_EP_OUT,
-					buf,
-					bufsz,
-					&actual_length,
-					CH341A_USB_TIMEOUT,
-					NULL,
-					error)) {
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 CH341A_EP_OUT,
+					 buf,
+					 bufsz,
+					 &actual_length,
+					 CH341A_USB_TIMEOUT,
+					 NULL,
+					 error)) {
 		g_prefix_error(error, "failed to write 0x%x bytes: ", (guint)bufsz);
 		return FALSE;
 	}
@@ -125,17 +120,16 @@ fu_ch341a_device_write(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GError **
 static gboolean
 fu_ch341a_device_read(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(self));
 	gsize actual_length = 0;
 
-	if (!g_usb_device_bulk_transfer(usb_device,
-					CH341A_EP_IN,
-					buf,
-					bufsz,
-					&actual_length,
-					CH341A_USB_TIMEOUT,
-					NULL,
-					error)) {
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 CH341A_EP_IN,
+					 buf,
+					 bufsz,
+					 &actual_length,
+					 CH341A_USB_TIMEOUT,
+					 NULL,
+					 error)) {
 		g_prefix_error(error, "failed to read 0x%x bytes: ", (guint)bufsz);
 		return FALSE;
 	}
@@ -157,7 +151,7 @@ fu_ch341a_device_read(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GError **e
 }
 
 /**
- * fu_ch341a_reverse_uint8:
+ * fu_ch341a_device_reverse_uint8:
  * @value: integer
  *
  * Calculates the reverse bit order for a single byte.
@@ -165,7 +159,7 @@ fu_ch341a_device_read(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GError **e
  * Returns: the @value, reversed
  **/
 static guint8
-fu_ch341a_reverse_uint8(guint8 value)
+fu_ch341a_device_reverse_uint8(guint8 value)
 {
 	guint8 tmp = 0;
 	if (value & 0x01)
@@ -196,7 +190,7 @@ fu_ch341a_device_spi_transfer(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GE
 	/* requires LSB first */
 	buf2[0] = CH341A_CMD_SPI_STREAM;
 	for (gsize i = 0; i < bufsz; i++)
-		buf2[i + 1] = fu_ch341a_reverse_uint8(buf[i]);
+		buf2[i + 1] = fu_ch341a_device_reverse_uint8(buf[i]);
 
 	/* debug */
 	fu_dump_raw(G_LOG_DOMAIN, "SPIwrite", buf, bufsz);
@@ -208,7 +202,7 @@ fu_ch341a_device_spi_transfer(FuCh341aDevice *self, guint8 *buf, gsize bufsz, GE
 
 	/* requires LSB first */
 	for (gsize i = 0; i < bufsz; i++)
-		buf[i] = fu_ch341a_reverse_uint8(buf[i]);
+		buf[i] = fu_ch341a_device_reverse_uint8(buf[i]);
 
 	/* debug */
 	fu_dump_raw(G_LOG_DOMAIN, "SPIread", buf, bufsz);
@@ -245,10 +239,25 @@ fu_ch341a_device_chip_select(FuCh341aDevice *self, gboolean val, GError **error)
 }
 
 static gboolean
+fu_ch341a_device_probe(FuDevice *device, GError **error)
+{
+	g_autoptr(FuCh341aCfiDevice) cfi_device = NULL;
+	cfi_device = g_object_new(FU_TYPE_CH341A_CFI_DEVICE,
+				  "context",
+				  fu_device_get_context(device),
+				  "proxy",
+				  device,
+				  "logical-id",
+				  "SPI",
+				  NULL);
+	fu_device_add_child(device, FU_DEVICE(cfi_device));
+	return TRUE;
+}
+
+static gboolean
 fu_ch341a_device_setup(FuDevice *device, GError **error)
 {
 	FuCh341aDevice *self = FU_CH341A_DEVICE(device);
-	g_autoptr(FuCh341aCfiDevice) cfi_device = NULL;
 
 	/* FuUsbDevice->setup */
 	if (!FU_DEVICE_CLASS(fu_ch341a_device_parent_class)->setup(device, error))
@@ -257,19 +266,6 @@ fu_ch341a_device_setup(FuDevice *device, GError **error)
 	/* set speed */
 	if (!fu_ch341a_device_configure_stream(self, error))
 		return FALSE;
-
-	/* setup SPI chip */
-	cfi_device = g_object_new(FU_TYPE_CH341A_CFI_DEVICE,
-				  "context",
-				  fu_device_get_context(FU_DEVICE(self)),
-				  "proxy",
-				  FU_DEVICE(self),
-				  "logical-id",
-				  "SPI",
-				  NULL);
-	if (!fu_device_setup(FU_DEVICE(cfi_device), error))
-		return FALSE;
-	fu_device_add_child(device, FU_DEVICE(cfi_device));
 
 	/* success */
 	return TRUE;
@@ -287,7 +283,8 @@ fu_ch341a_device_init(FuCh341aDevice *self)
 static void
 fu_ch341a_device_class_init(FuCh341aDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->setup = fu_ch341a_device_setup;
-	klass_device->to_string = fu_ch341a_device_to_string;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->probe = fu_ch341a_device_probe;
+	device_class->setup = fu_ch341a_device_setup;
+	device_class->to_string = fu_ch341a_device_to_string;
 }

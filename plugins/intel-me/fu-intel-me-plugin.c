@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-intel-me-amt-device.h"
+#include "fu-intel-me-heci-device.h"
 #include "fu-intel-me-mca-device.h"
 #include "fu-intel-me-mkhi-device.h"
 #include "fu-intel-me-plugin.h"
@@ -30,6 +31,7 @@ fu_intel_me_plugin_constructed(GObject *obj)
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_INTEL_ME_AMT_DEVICE);
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_INTEL_ME_MCA_DEVICE);
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_INTEL_ME_MKHI_DEVICE);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_INTEL_ME_HECI_DEVICE); /* coverage */
 }
 
 static void

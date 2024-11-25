@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -21,8 +21,8 @@ static void
 fu_rts54hid_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuRts54HidDevice *self = FU_RTS54HID_DEVICE(device);
-	fu_string_append_kb(str, idt, "FwAuth", self->fw_auth);
-	fu_string_append_kb(str, idt, "DualBank", self->dual_bank);
+	fwupd_codec_string_append_bool(str, idt, "FwAuth", self->fw_auth);
+	fwupd_codec_string_append_bool(str, idt, "DualBank", self->dual_bank);
 }
 
 static gboolean
@@ -337,7 +337,7 @@ fu_rts54hid_device_write_firmware(FuDevice *device,
 				  GError **error)
 {
 	FuRts54HidDevice *self = FU_RTS54HID_DEVICE(device);
-	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
 	/* progress */
@@ -348,8 +348,8 @@ fu_rts54hid_device_write_firmware(FuDevice *device,
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "reset");
 
 	/* get default image */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* set MCU to high clock rate for better ISP performance */
@@ -362,9 +362,21 @@ fu_rts54hid_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* write each block */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x00, FU_RTS54HID_TRANSFER_BLOCK_SIZE);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						FU_RTS54HID_TRANSFER_BLOCK_SIZE,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		g_autoptr(FuChunk) chk = fu_chunk_array_index(chunks, i);
+		g_autoptr(FuChunk) chk = NULL;
+
+		/* prepare chunk */
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
+
 		/* write chunk */
 		if (!fu_rts54hid_device_write_flash(self,
 						    fu_chunk_get_address(chk),
@@ -416,10 +428,10 @@ fu_rts54hid_device_init(FuRts54HidDevice *self)
 static void
 fu_rts54hid_device_class_init(FuRts54HidDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_rts54hid_device_write_firmware;
-	klass_device->to_string = fu_rts54hid_device_to_string;
-	klass_device->setup = fu_rts54hid_device_setup;
-	klass_device->close = fu_rts54hid_device_close;
-	klass_device->set_progress = fu_rts54hid_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_rts54hid_device_write_firmware;
+	device_class->to_string = fu_rts54hid_device_to_string;
+	device_class->setup = fu_rts54hid_device_setup;
+	device_class->close = fu_rts54hid_device_close;
+	device_class->set_progress = fu_rts54hid_device_set_progress;
 }

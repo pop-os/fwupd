@@ -3,21 +3,49 @@
 ## Planned API/ABI changes for next release
 
 * Typedef `FwupdFeatureFlags` to `guint64` so it's the same size on all platforms
-* Remove the `soup-session` fallback property in `FwupdClient`.
-* Remove fwupd_device_set_vendor_id() and fwupd_device_get_vendor_id()
-* Remove the deprecated flags like `FWUPD_DEVICE_FLAG_MD_SET_ICON`
-* Remove `fwupd_release_get_uri()` and `fwupd_release_set_uri()`
-* Rename `fwupd_client_install_release2_async()` to `fwupd_client_install_release_async()`
-* Remove fwupd_device_set_protocol() and fwupd_device_get_protocol()
-* Remove deprecated install flag `FWUPD_INSTALL_FLAG_IGNORE_POWER`
-* Rename `fwupd_remote_set_checksum()` to `fwupd_remote_set_checksum_sig()`
-* Remove the deprecated flag `FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_IPFS`
-* Rename `fwupd_client_refresh_remote2_async()` to `fwupd_client_refresh_remote_async()`
-* Remove the deprecated method `fwupd_remote_get_enabled()`
-* Remove the deprecated method `fwupd_remote_get_approval_required()`
-* Remove the deprecated method `fwupd_remote_get_automatic_reports()`
-* Remove the deprecated method `fwupd_remote_get_automatic_security_reports()`
-* Rename CET and SMAP security attributes `FWUPD_SECURITY_ATTR_ID_INTEL_SMAP` and `FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED` and `FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE`
+
+## Migration from Version 2.0.0
+
+* Migrate from `fu_firmware_parse_full()` to `fu_firmware_parse_bytes()`
+* Migrate from `fu_firmware_parse()` to `fu_firmware_parse_bytes()` by adding an offset of 0x0
+
+## Migration from Version 1.9.x
+
+* Migrate from `fwupd_build_machine_id()` to `fwupd_client_get_host_machine_id()`
+* Migrate from `fwupd_build_history_report_json()` to `fwupd_client_build_report_history()`
+* Migrate from `fwupd_get_os_release()` to `fwupd_client_get_report_metadata()`
+* Convert `fwupd_client_emulation_load()` to take a readable file rather than taking bytes
+* Convert `fwupd_client_emulation_save()` to take a writable file rather than returning bytes
+* Drop use of FWUPD_DEVICE_FLAG_ONLY_OFFLINE
+* Drop use of `fwupd_device_get_update_message()` and `fwupd_device_get_update_image()`
+
+## Migration from Version 1.x.x
+
+* Add section to `fwupd_client_modify_config()`
+* Migrate from `fwupd_client_install_release2()` to `fwupd_client_install_release()`
+* Migrate from `fwupd_client_install_release2_async()` to `fwupd_client_install_release_async()`
+* Migrate from `fwupd_client_refresh_remote2()` to `fwupd_client_refresh_remote()`
+* Migrate from `fwupd_client_refresh_remote2_async()` to `fwupd_client_refresh_remote_async()`
+* Migrate from `fwupd_remote_get_enabled()` to `fwupd_remote_has_flag`
+* Migrate from `fwupd_remote_get_approval_required()` to `fwupd_remote_has_flag`
+* Migrate from `fwupd_remote_get_automatic_reports()` to `fwupd_remote_has_flag`
+* Migrate from `fwupd_remote_get_automatic_security_reports()` to `fwupd_remote_has_flag`
+* Migrate from `fwupd_device_get_protocol()` to `fwupd_device_get_protocols()`
+* Migrate from `fwupd_device_get_vendor_id()` to `fwupd_device_get_vendor_ids()`
+* Migrate from `fwupd_remote_set_checksum()` to `fwupd_remote_set_checksum_sig()`
+* Migrate from `fwupd_device_set_protocol()` to `fwupd_device_add_protocol()`
+* Migrate from `fwupd_device_set_vendor_id()` to `fwupd_device_add_vendor_id()`
+* Migrate from `fwupd_release_get_trust_flags()` to `fwupd_release_get_flags()`
+* Migrate from `fwupd_release_get_uri()` to `fwupd_release_get_locations()`
+* Migrate from `fwupd_release_set_trust_flags()` to `fwupd_release_set_flags()`
+* Migrate from `fwupd_release_set_uri()` to `fwupd_release_add_location()`
+* Remove use of flags like `FWUPD_DEVICE_FLAG_MD_SET_ICON`
+* Remove use of flags `FWUPD_INSTALL_FLAG_IGNORE_POWER`
+* Remove the `soup-session` property in `FwupdClient`.
+* Rename the flag `FWUPD_CLIENT_DOWNLOAD_FLAG_ONLY_IPFS` to `_ONLY_P2P`
+* Rename the SMAP attribute from `FWUPD_SECURITY_ATTR_ID_INTEL_SMAP` to `FWUPD_SECURITY_ATTR_ID_SMAP`
+* Rename the CET enabled attribute from `FWUPD_SECURITY_ATTR_ID_INTEL_CET_ENABLED` to `FWUPD_SECURITY_ATTR_ID_CET_ENABLED`
+* Rename the CET active attribute `FWUPD_SECURITY_ATTR_ID_INTEL_CET_ACTIVE` to `FWUPD_SECURITY_ATTR_ID_CET_ACTIVE`
 
 ## Migration from Version 0.9.x
 

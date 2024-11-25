@@ -2,8 +2,8 @@ tpm2tss_tpm = dependency('tss2-esys', version: '>= 2.0', required: get_option('p
 
 if hsi and \
    tpm2tss_tpm.found() and \
-   get_option('plugin_tpm').require(gudev.found(),
-    error_message: 'gudev is needed for plugin_tpm').allowed()
+   get_option('plugin_tpm').require(enable_udev,
+    error_message: 'udev is needed for plugin_tpm').allowed()
 cargs = ['-DG_LOG_DOMAIN="FuPluginTpm"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -36,7 +36,8 @@ if get_option('tests')
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
   env.set('FWUPD_LOCALSTATEDIR', '/tmp/fwupd-self-test/var')
-  env.set('LSAN_OPTIONS', 'suppressions=@0@'.format(join_paths(meson.current_source_dir(), 'lsan-suppressions.txt')))
+  env.set('G_DEBUG', 'fatal-criticals')
+  env.set('LSAN_OPTIONS', 'suppressions=@0@'.format(join_paths(meson.project_source_root(), 'contrib', 'lsan-suppressions.txt')))
   e = executable(
     'tpm-self-test',
     rustgen.process('fu-tpm.rs'),

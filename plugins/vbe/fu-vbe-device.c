@@ -1,9 +1,9 @@
 /*
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2022 Google LLC
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Google LLC
  * Written by Simon Glass <sjg@chromium.org>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -29,7 +29,7 @@ fu_vbe_device_to_string(FuDevice *device, guint idt, GString *str)
 
 	if (priv->compatible != NULL) {
 		g_autofree gchar *tmp = g_strjoinv(":", priv->compatible);
-		fu_string_append(str, idt, "Compatible", tmp);
+		fwupd_codec_string_append(str, idt, "Compatible", tmp);
 	}
 }
 
@@ -58,9 +58,9 @@ fu_vbe_device_init(FuVbeDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_protocol(FU_DEVICE(self), "org.vbe");
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_ENSURE_SEMVER);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_MD_SET_SIGNED);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_HOST_FIRMWARE);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ENSURE_SEMVER);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE);
 	fu_device_set_physical_id(FU_DEVICE(self), "vbe");
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PAIR);
 	fu_device_add_icon(FU_DEVICE(self), "computer");
@@ -75,6 +75,12 @@ fu_vbe_device_probe(FuDevice *device, GError **error)
 	g_autofree gchar *version_bootloader = NULL;
 
 	g_return_val_if_fail(FU_IS_VBE_DEVICE(device), FALSE);
+
+	/* sanity check */
+	if (priv->fdt_root == NULL) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no FDT root");
+		return FALSE;
+	}
 
 	/* get a list of compatible strings */
 	if (!fu_fdt_image_get_attr_strlist(priv->fdt_root,
@@ -149,7 +155,7 @@ fu_vbe_device_class_init(FuVbeDeviceClass *klass)
 {
 	GParamSpec *pspec;
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 
 	object_class->get_property = fu_vbe_device_get_property;
 	object_class->set_property = fu_vbe_device_set_property;
@@ -171,6 +177,6 @@ fu_vbe_device_class_init(FuVbeDeviceClass *klass)
 	g_object_class_install_property(object_class, PROP_FDT_NODE, pspec);
 
 	object_class->finalize = fu_vbe_device_finalize;
-	klass_device->to_string = fu_vbe_device_to_string;
-	klass_device->probe = fu_vbe_device_probe;
+	device_class->to_string = fu_vbe_device_to_string;
+	device_class->probe = fu_vbe_device_probe;
 }

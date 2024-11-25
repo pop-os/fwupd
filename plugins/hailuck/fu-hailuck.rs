@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ToString)]
-enum HailuckCmd {
+enum FuHailuckCmd {
     Erase             = 0x45,
     ReadBlockStart    = 0x52,
     Attach            = 0x55, // guessed

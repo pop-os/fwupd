@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -17,45 +17,38 @@ G_DEFINE_TYPE(FuBcm57xxStage1Image, fu_bcm57xx_stage1_image, FU_TYPE_FIRMWARE)
 
 static gboolean
 fu_bcm57xx_stage1_image_parse(FuFirmware *image,
-			      GBytes *fw,
-			      gsize offset,
+			      GInputStream *stream,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
-	gsize bufsz = 0x0;
+	gsize streamsz = 0;
 	guint32 fwversion = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
-	g_autoptr(GBytes) fw_nocrc = NULL;
+	g_autoptr(GInputStream) stream_nocrc = NULL;
 
 	/* verify CRC */
 	if ((flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
-		if (!fu_bcm57xx_verify_crc(fw, error))
+		if (!fu_bcm57xx_verify_crc(stream, error))
 			return FALSE;
 	}
 
 	/* get version number */
-	if (!fu_memread_uint32_safe(buf,
-				    bufsz,
-				    BCM_NVRAM_STAGE1_VERSION,
-				    &fwversion,
-				    G_BIG_ENDIAN,
-				    error))
+	if (!fu_input_stream_read_u32(stream,
+				      BCM_NVRAM_STAGE1_VERSION,
+				      &fwversion,
+				      G_BIG_ENDIAN,
+				      error))
 		return FALSE;
 	if (fwversion != 0x0) {
-		g_autofree gchar *tmp = NULL;
-		tmp = fu_version_from_uint32(fwversion, FWUPD_VERSION_FORMAT_TRIPLET);
-		fu_firmware_set_version(image, tmp);
 		fu_firmware_set_version_raw(image, fwversion);
 	} else {
 		guint32 veraddr = 0x0;
 
 		/* fall back to the optional string, e.g. '5719-v1.43' */
-		if (!fu_memread_uint32_safe(buf,
-					    bufsz,
-					    BCM_NVRAM_STAGE1_VERADDR,
-					    &veraddr,
-					    G_BIG_ENDIAN,
-					    error))
+		if (!fu_input_stream_read_u32(stream,
+					      BCM_NVRAM_STAGE1_VERADDR,
+					      &veraddr,
+					      G_BIG_ENDIAN,
+					      error))
 			return FALSE;
 		if (veraddr != 0x0) {
 			guint32 bufver[4] = {'\0'};
@@ -69,26 +62,35 @@ fu_bcm57xx_stage1_image_parse(FuFirmware *image,
 					    (guint)BCM_PHYS_ADDR_DEFAULT);
 				return FALSE;
 			}
-			if (!fu_memcpy_safe((guint8 *)bufver,
-					    sizeof(bufver),
-					    0x0, /* dst */
-					    buf,
-					    bufsz,
-					    veraddr - BCM_PHYS_ADDR_DEFAULT, /* src */
-					    sizeof(bufver),
-					    error))
+			if (!fu_input_stream_read_safe(stream,
+						       (guint8 *)bufver,
+						       sizeof(bufver),
+						       0x0,				/* dst */
+						       veraddr - BCM_PHYS_ADDR_DEFAULT, /* src */
+						       sizeof(bufver),
+						       error))
 				return FALSE;
 			veritem = fu_bcm57xx_veritem_new((guint8 *)bufver, sizeof(bufver));
-			if (veritem != NULL)
-				fu_firmware_set_version(image, veritem->version);
+			if (veritem != NULL) {
+				fu_firmware_set_version(image, /* nocheck:set-version */
+							veritem->version);
+			}
 		}
 	}
 
-	fw_nocrc = fu_bytes_new_offset(fw, 0x0, g_bytes_get_size(fw) - sizeof(guint32), error);
-	if (fw_nocrc == NULL)
+	if (!fu_input_stream_size(stream, &streamsz, error))
 		return FALSE;
-	fu_firmware_set_bytes(image, fw_nocrc);
-	return TRUE;
+	if (streamsz < sizeof(guint32)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "stage1 image is too small");
+		return FALSE;
+	}
+	stream_nocrc = fu_partial_input_stream_new(stream, 0x0, streamsz - sizeof(guint32), error);
+	if (stream_nocrc == NULL)
+		return FALSE;
+	return fu_firmware_set_stream(image, stream_nocrc, error);
 }
 
 static GByteArray *
@@ -136,23 +138,31 @@ fu_bcm57xx_stage1_image_write(FuFirmware *firmware, GError **error)
 	    0x00);
 
 	/* add CRC */
-	crc = fu_bcm57xx_nvram_crc(buf->data, buf->len);
+	crc = fu_crc32(FU_CRC_KIND_B32_STANDARD, buf->data, buf->len);
 	fu_byte_array_append_uint32(buf, crc, G_LITTLE_ENDIAN);
 	return g_steal_pointer(&buf);
+}
+
+static gchar *
+fu_bcm57xx_stage1_image_convert_version(FuFirmware *firmware, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_firmware_get_version_format(firmware));
 }
 
 static void
 fu_bcm57xx_stage1_image_init(FuBcm57xxStage1Image *self)
 {
 	fu_firmware_set_alignment(FU_FIRMWARE(self), FU_FIRMWARE_ALIGNMENT_4);
+	fu_firmware_set_version_format(FU_FIRMWARE(self), FWUPD_VERSION_FORMAT_TRIPLET);
 }
 
 static void
 fu_bcm57xx_stage1_image_class_init(FuBcm57xxStage1ImageClass *klass)
 {
-	FuFirmwareClass *klass_image = FU_FIRMWARE_CLASS(klass);
-	klass_image->parse = fu_bcm57xx_stage1_image_parse;
-	klass_image->write = fu_bcm57xx_stage1_image_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->convert_version = fu_bcm57xx_stage1_image_convert_version;
+	firmware_class->parse = fu_bcm57xx_stage1_image_parse;
+	firmware_class->write = fu_bcm57xx_stage1_image_write;
 }
 
 FuFirmware *

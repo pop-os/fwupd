@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2019 Synaptics Inc
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Synaptics Inc
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -31,12 +31,12 @@ struct _FuSynapromDevice {
 #define FU_SYNAPROM_USB_INTERRUPT_EP   0x83
 
 /* le */
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint16 status;
 } FuSynapromReplyGeneric;
 
 /* le */
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed)) { /* nocheck:blocked */
 	guint16 status;
 	guint32 buildtime;	 /* Unix-style build time */
 	guint32 buildnum;	 /* build number */
@@ -65,15 +65,13 @@ typedef struct __attribute__((packed)) {
 G_DEFINE_TYPE(FuSynapromDevice, fu_synaprom_device, FU_TYPE_USB_DEVICE)
 
 gboolean
-fu_synaprom_device_cmd_send(FuSynapromDevice *device,
+fu_synaprom_device_cmd_send(FuSynapromDevice *self,
 			    GByteArray *request,
 			    GByteArray *reply,
 			    FuProgress *progress,
 			    guint timeout_ms,
 			    GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-	gboolean ret;
 	gsize actual_len = 0;
 
 	/* progress */
@@ -88,22 +86,21 @@ fu_synaprom_device_cmd_send(FuSynapromDevice *device,
 		     request->len,
 		     16,
 		     FU_DUMP_FLAGS_SHOW_ADDRESSES);
-	ret = g_usb_device_bulk_transfer(usb_device,
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
 					 FU_SYNAPROM_USB_REQUEST_EP,
 					 request->data,
 					 request->len,
 					 &actual_len,
 					 timeout_ms,
 					 NULL,
-					 error);
-	if (!ret) {
+					 error)) {
 		g_prefix_error(error, "failed to request: ");
 		return FALSE;
 	}
 	if (actual_len < request->len) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only sent 0x%04x of 0x%04x",
 			    (guint)actual_len,
 			    request->len);
@@ -111,15 +108,14 @@ fu_synaprom_device_cmd_send(FuSynapromDevice *device,
 	}
 	fu_progress_step_done(progress);
 
-	ret = g_usb_device_bulk_transfer(usb_device,
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
 					 FU_SYNAPROM_USB_REPLY_EP,
 					 reply->data,
 					 reply->len,
 					 NULL, /* allowed to return short read */
 					 timeout_ms,
 					 NULL,
-					 error);
-	if (!ret) {
+					 error)) {
 		g_prefix_error(error, "failed to reply: ");
 		return FALSE;
 	}
@@ -202,7 +198,7 @@ fu_synaprom_device_setup(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to get version: ");
 		return FALSE;
 	}
-	memcpy(&pkt, reply->data, sizeof(pkt));
+	memcpy(&pkt, reply->data, sizeof(pkt)); /* nocheck:blocked */
 	product = GUINT32_FROM_LE(pkt.product);
 	g_info("product ID is %u, version=%u.%u, buildnum=%u prod=%i",
 	       product,
@@ -213,7 +209,7 @@ fu_synaprom_device_setup(FuDevice *device, GError **error)
 	fu_synaprom_device_set_version(self, pkt.vmajor, pkt.vminor, GUINT32_FROM_LE(pkt.buildnum));
 
 	/* get serial number */
-	memcpy(&serial_number, pkt.serial_number, sizeof(pkt.serial_number));
+	memcpy(&serial_number, pkt.serial_number, sizeof(pkt.serial_number)); /* nocheck:blocked */
 	fu_synaprom_device_set_serial_number(self, serial_number);
 
 	/* check device type */
@@ -226,8 +222,8 @@ fu_synaprom_device_setup(FuDevice *device, GError **error)
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
 	} else {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_NOT_SUPPORTED,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "device %u is not supported by this plugin",
 			    product);
 		return FALSE;
@@ -252,7 +248,11 @@ fu_synaprom_device_setup(FuDevice *device, GError **error)
 }
 
 FuFirmware *
-fu_synaprom_device_prepare_fw(FuDevice *device, GBytes *fw, FwupdInstallFlags flags, GError **error)
+fu_synaprom_device_prepare_firmware(FuDevice *device,
+				    GInputStream *stream,
+				    FuProgress *progress,
+				    FwupdInstallFlags flags,
+				    GError **error)
 {
 	guint32 product_id;
 	g_autoptr(FuFirmware) firmware = fu_synaprom_firmware_new();
@@ -265,7 +265,7 @@ fu_synaprom_device_prepare_fw(FuDevice *device, GBytes *fw, FwupdInstallFlags fl
 	}
 
 	/* check the update header product and version */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 	product_id = fu_synaprom_firmware_get_product_id(FU_SYNAPROM_FIRMWARE(firmware));
 	if (product_id != FU_SYNAPROM_PRODUCT_PROMETHEUS &&
@@ -278,8 +278,8 @@ fu_synaprom_device_prepare_fw(FuDevice *device, GBytes *fw, FwupdInstallFlags fl
 				  (guint)FU_SYNAPROM_PRODUCT_TRITON);
 		} else {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_NOT_SUPPORTED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "MFW metadata not compatible, "
 				    "got 0x%02x expected 0x%02x or 0x%02x",
 				    product_id,
@@ -403,7 +403,6 @@ fu_synaprom_device_write_firmware(FuDevice *device,
 static gboolean
 fu_synaprom_device_attach(FuDevice *device, FuProgress *progress, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
 	gboolean ret;
 	gsize actual_len = 0;
 	guint8 data[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -414,31 +413,31 @@ fu_synaprom_device_attach(FuDevice *device, FuProgress *progress, GError **error
 		return TRUE;
 	}
 
-	ret = g_usb_device_control_transfer(usb_device,
-					    G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					    G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					    G_USB_DEVICE_RECIPIENT_DEVICE,
-					    FU_SYNAPROM_USB_CTRLREQUEST_VENDOR_WRITEDFT,
-					    0x0000,
-					    0x0000,
-					    data,
-					    sizeof(data),
-					    &actual_len,
-					    2000,
-					    NULL,
-					    error);
+	ret = fu_usb_device_control_transfer(FU_USB_DEVICE(device),
+					     FU_USB_DIRECTION_HOST_TO_DEVICE,
+					     FU_USB_REQUEST_TYPE_VENDOR,
+					     FU_USB_RECIPIENT_DEVICE,
+					     FU_SYNAPROM_USB_CTRLREQUEST_VENDOR_WRITEDFT,
+					     0x0000,
+					     0x0000,
+					     data,
+					     sizeof(data),
+					     &actual_len,
+					     2000,
+					     NULL,
+					     error);
 	if (!ret)
 		return FALSE;
 	if (actual_len != sizeof(data)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only sent 0x%04x of 0x%04x",
 			    (guint)actual_len,
 			    (guint)sizeof(data));
 		return FALSE;
 	}
-	if (!g_usb_device_reset(usb_device, error)) {
+	if (!fu_usb_device_reset(FU_USB_DEVICE(device), error)) {
 		g_prefix_error(error, "failed to force-reset device: ");
 		return FALSE;
 	}
@@ -449,8 +448,6 @@ fu_synaprom_device_attach(FuDevice *device, FuProgress *progress, GError **error
 static gboolean
 fu_synaprom_device_detach(FuDevice *device, FuProgress *progress, GError **error)
 {
-	GUsbDevice *usb_device = fu_usb_device_get_dev(FU_USB_DEVICE(device));
-	gboolean ret;
 	gsize actual_len = 0;
 	guint8 data[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00};
 
@@ -460,10 +457,10 @@ fu_synaprom_device_detach(FuDevice *device, FuProgress *progress, GError **error
 		return TRUE;
 	}
 
-	ret = g_usb_device_control_transfer(usb_device,
-					    G_USB_DEVICE_DIRECTION_HOST_TO_DEVICE,
-					    G_USB_DEVICE_REQUEST_TYPE_VENDOR,
-					    G_USB_DEVICE_RECIPIENT_DEVICE,
+	if (!fu_usb_device_control_transfer(FU_USB_DEVICE(device),
+					    FU_USB_DIRECTION_HOST_TO_DEVICE,
+					    FU_USB_REQUEST_TYPE_VENDOR,
+					    FU_USB_RECIPIENT_DEVICE,
 					    FU_SYNAPROM_USB_CTRLREQUEST_VENDOR_WRITEDFT,
 					    0x0000,
 					    0x0000,
@@ -472,20 +469,19 @@ fu_synaprom_device_detach(FuDevice *device, FuProgress *progress, GError **error
 					    &actual_len,
 					    2000,
 					    NULL,
-					    error);
-	if (!ret)
+					    error))
 		return FALSE;
 	if (actual_len != sizeof(data)) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "only sent 0x%04x of 0x%04x",
 			    (guint)actual_len,
 			    (guint)sizeof(data));
 		return FALSE;
 	}
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_RESTART);
-	if (!g_usb_device_reset(usb_device, error)) {
+	if (!fu_usb_device_reset(FU_USB_DEVICE(device), error)) {
 		g_prefix_error(error, "failed to force-reset device: ");
 		return FALSE;
 	}
@@ -509,7 +505,7 @@ fu_synaprom_device_init(FuSynapromDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_internal_flag(FU_DEVICE(self), FU_DEVICE_INTERNAL_FLAG_RETRY_OPEN);
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_RETRY_OPEN);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_add_protocol(FU_DEVICE(self), "com.synaptics.prometheus");
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
@@ -523,14 +519,14 @@ fu_synaprom_device_init(FuSynapromDevice *self)
 static void
 fu_synaprom_device_class_init(FuSynapromDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_synaprom_device_write_firmware;
-	klass_device->prepare_firmware = fu_synaprom_device_prepare_fw;
-	klass_device->setup = fu_synaprom_device_setup;
-	klass_device->reload = fu_synaprom_device_setup;
-	klass_device->attach = fu_synaprom_device_attach;
-	klass_device->detach = fu_synaprom_device_detach;
-	klass_device->set_progress = fu_synaprom_device_set_progress;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_synaprom_device_write_firmware;
+	device_class->prepare_firmware = fu_synaprom_device_prepare_firmware;
+	device_class->setup = fu_synaprom_device_setup;
+	device_class->reload = fu_synaprom_device_setup;
+	device_class->attach = fu_synaprom_device_attach;
+	device_class->detach = fu_synaprom_device_detach;
+	device_class->set_progress = fu_synaprom_device_set_progress;
 }
 
 FuSynapromDevice *
@@ -538,7 +534,10 @@ fu_synaprom_device_new(FuUsbDevice *device)
 {
 	FuSynapromDevice *self;
 	self = g_object_new(FU_TYPE_SYNAPROM_DEVICE, NULL);
-	if (device != NULL)
-		fu_device_incorporate(FU_DEVICE(self), FU_DEVICE(device));
+	if (device != NULL) {
+		fu_device_incorporate(FU_DEVICE(self),
+				      FU_DEVICE(device),
+				      FU_DEVICE_INCORPORATE_FLAG_ALL);
+	}
 	return FU_SYNAPROM_DEVICE(self);
 }

@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -16,8 +16,7 @@ G_DEFINE_TYPE(FuHailuckKbdFirmware, fu_hailuck_kbd_firmware, FU_TYPE_IHEX_FIRMWA
 
 static gboolean
 fu_hailuck_kbd_firmware_parse(FuFirmware *firmware,
-			      GBytes *fw,
-			      gsize offset,
+			      GInputStream *stream,
 			      FwupdInstallFlags flags,
 			      GError **error)
 {
@@ -91,6 +90,6 @@ fu_hailuck_kbd_firmware_init(FuHailuckKbdFirmware *self)
 static void
 fu_hailuck_kbd_firmware_class_init(FuHailuckKbdFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_hailuck_kbd_firmware_parse;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_hailuck_kbd_firmware_parse;
 }

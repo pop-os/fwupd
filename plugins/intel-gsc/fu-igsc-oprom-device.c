@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2022 Intel, Inc
- * Copyright (C) 2022 Richard Hughes <richard@hughsie.com>
+ * Copyright 2022 Intel, Inc
+ * Copyright 2022 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR Apache-2.0
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR Apache-2.0
  */
 
 #include "config.h"
@@ -25,8 +25,8 @@ static void
 fu_igsc_oprom_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuIgscOpromDevice *self = FU_IGSC_OPROM_DEVICE(device);
-	fu_string_append_kx(str, idt, "PayloadType", self->payload_type);
-	fu_string_append_kx(str, idt, "PartitionVersion", self->partition_version);
+	fwupd_codec_string_append_hex(str, idt, "PayloadType", self->payload_type);
+	fwupd_codec_string_append_hex(str, idt, "PartitionVersion", self->partition_version);
 }
 
 static gboolean
@@ -103,21 +103,22 @@ fu_igsc_oprom_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_igsc_oprom_device_prepare_firmware(FuDevice *device,
-				      GBytes *fw,
+				      GInputStream *stream,
+				      FuProgress *progress,
 				      FwupdInstallFlags flags,
 				      GError **error)
 {
 	FuIgscOpromDevice *self = FU_IGSC_OPROM_DEVICE(device);
 	FuIgscDevice *igsc_parent = FU_IGSC_DEVICE(fu_device_get_parent(device));
-	guint16 vendor_id = fu_udev_device_get_vendor(FU_UDEV_DEVICE(igsc_parent));
-	guint16 device_id = fu_udev_device_get_model(FU_UDEV_DEVICE(igsc_parent));
+	guint16 vid = fu_device_get_vid(FU_DEVICE(igsc_parent));
+	guint16 pid = fu_device_get_pid(FU_DEVICE(igsc_parent));
 	guint16 subsys_vendor_id = fu_igsc_device_get_ssvid(igsc_parent);
 	guint16 subsys_device_id = fu_igsc_device_get_ssvid(igsc_parent);
 	g_autoptr(FuFirmware) firmware = NULL;
 	g_autoptr(FuFirmware) fw_linear = fu_linear_firmware_new(FU_TYPE_IGSC_OPROM_FIRMWARE);
 
 	/* parse container */
-	if (!fu_firmware_parse(fw_linear, fw, flags, error))
+	if (!fu_firmware_parse_stream(fw_linear, stream, 0x0, flags, error))
 		return NULL;
 
 	/* get correct image */
@@ -149,8 +150,8 @@ fu_igsc_oprom_device_prepare_firmware(FuDevice *device,
 	if (self->payload_type == GSC_FWU_HECI_PAYLOAD_TYPE_OPROM_CODE) {
 		if (fu_igsc_device_get_oprom_code_devid_enforcement(igsc_parent)) {
 			if (!fu_igsc_oprom_firmware_match_device(FU_IGSC_OPROM_FIRMWARE(firmware),
-								 vendor_id,
-								 device_id,
+								 vid,
+								 pid,
 								 subsys_vendor_id,
 								 subsys_device_id,
 								 error))
@@ -177,8 +178,8 @@ fu_igsc_oprom_device_prepare_firmware(FuDevice *device,
 	if (self->payload_type == GSC_FWU_HECI_PAYLOAD_TYPE_OPROM_DATA) {
 		if (fu_igsc_oprom_firmware_has_allowlist(FU_IGSC_OPROM_FIRMWARE(firmware))) {
 			if (!fu_igsc_oprom_firmware_match_device(FU_IGSC_OPROM_FIRMWARE(firmware),
-								 vendor_id,
-								 device_id,
+								 vid,
+								 pid,
 								 subsys_vendor_id,
 								 subsys_device_id,
 								 error))
@@ -208,37 +209,37 @@ fu_igsc_oprom_device_write_firmware(FuDevice *device,
 {
 	FuIgscOpromDevice *self = FU_IGSC_OPROM_DEVICE(device);
 	FuIgscDevice *igsc_parent = FU_IGSC_DEVICE(fu_device_get_parent(device));
-	g_autoptr(GBytes) fw_payload = NULL;
+	g_autoptr(GInputStream) stream_payload = NULL;
 
 	/* get image */
-	fw_payload = fu_firmware_get_bytes(firmware, error);
-	if (fw_payload == NULL)
+	stream_payload = fu_firmware_get_stream(firmware, error);
+	if (stream_payload == NULL)
 		return FALSE;
 
 	/* OPROM image doesn't require metadata */
 	return fu_igsc_device_write_blob(igsc_parent,
 					 self->payload_type,
 					 NULL,
-					 fw_payload,
+					 stream_payload,
 					 progress,
 					 error);
 }
 
 static gboolean
-fu_igsc_aux_device_prepare(FuDevice *device,
-			   FuProgress *progress,
-			   FwupdInstallFlags flags,
-			   GError **error)
+fu_igsc_oprom_device_prepare(FuDevice *device,
+			     FuProgress *progress,
+			     FwupdInstallFlags flags,
+			     GError **error)
 {
 	/* set PCI power policy */
 	return fu_device_prepare(fu_device_get_parent(device), progress, flags, error);
 }
 
 static gboolean
-fu_igsc_aux_device_cleanup(FuDevice *device,
-			   FuProgress *progress,
-			   FwupdInstallFlags flags,
-			   GError **error)
+fu_igsc_oprom_device_cleanup(FuDevice *device,
+			     FuProgress *progress,
+			     FwupdInstallFlags flags,
+			     GError **error)
 {
 	/* set PCI power policy */
 	return fu_device_cleanup(fu_device_get_parent(device), progress, flags, error);
@@ -258,14 +259,14 @@ fu_igsc_oprom_device_init(FuIgscOpromDevice *self)
 static void
 fu_igsc_oprom_device_class_init(FuIgscOpromDeviceClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->to_string = fu_igsc_oprom_device_to_string;
-	klass_device->probe = fu_igsc_oprom_device_probe;
-	klass_device->setup = fu_igsc_oprom_device_setup;
-	klass_device->prepare_firmware = fu_igsc_oprom_device_prepare_firmware;
-	klass_device->write_firmware = fu_igsc_oprom_device_write_firmware;
-	klass_device->prepare = fu_igsc_aux_device_prepare;
-	klass_device->cleanup = fu_igsc_aux_device_cleanup;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->to_string = fu_igsc_oprom_device_to_string;
+	device_class->probe = fu_igsc_oprom_device_probe;
+	device_class->setup = fu_igsc_oprom_device_setup;
+	device_class->prepare_firmware = fu_igsc_oprom_device_prepare_firmware;
+	device_class->write_firmware = fu_igsc_oprom_device_write_firmware;
+	device_class->prepare = fu_igsc_oprom_device_prepare;
+	device_class->cleanup = fu_igsc_oprom_device_cleanup;
 }
 
 FuIgscOpromDevice *

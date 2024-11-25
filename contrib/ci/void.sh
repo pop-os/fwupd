@@ -20,11 +20,8 @@ xbps-install -Suy python3
 #build
 rm -rf build
 meson build \
- -Dgusb:tests=false \
  -Dconsolekit=disabled \
  -Dsystemd=disabled \
- -Doffline=disabled \
- -Dcompat_cli=true \
  -Dplugin_vendor_example=true \
  -Delogind=enabled
 ninja -C build test -v

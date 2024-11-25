@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Dell Inc.
+ * Copyright 2018 Dell Inc.
  * All rights reserved.
  *
  * This software and associated documentation (if any) is furnished
@@ -10,7 +10,7 @@
  * redistributing this file, you may do so under either license.
  * Dell Chooses the MIT license part of Dual MIT/LGPLv2 license agreement.
  *
- * SPDX-License-Identifier: LGPL-2.1+ OR MIT
+ * SPDX-License-Identifier: LGPL-2.1-or-later OR MIT
  */
 
 #include "config.h"
@@ -33,12 +33,12 @@ fu_dell_dock_hub_add_instance(FuDevice *device, guint8 dock_type)
 
 	if (dock_type == DOCK_BASE_TYPE_ATOMIC) {
 		devid = g_strdup_printf("USB\\VID_%04X&PID_%04X&atomic_hub",
-					(guint)fu_usb_device_get_vid(FU_USB_DEVICE(device)),
-					(guint)fu_usb_device_get_pid(FU_USB_DEVICE(device)));
+					(guint)fu_device_get_vid(device),
+					(guint)fu_device_get_pid(device));
 	} else {
 		devid = g_strdup_printf("USB\\VID_%04X&PID_%04X&hub",
-					(guint)fu_usb_device_get_vid(FU_USB_DEVICE(device)),
-					(guint)fu_usb_device_get_pid(FU_USB_DEVICE(device)));
+					(guint)fu_device_get_vid(device),
+					(guint)fu_device_get_pid(device));
 	}
 	fu_device_add_instance_id(device, devid);
 }
@@ -158,26 +158,29 @@ fu_dell_dock_hub_set_quirk_kv(FuDevice *device,
 	guint64 tmp = 0;
 
 	if (g_strcmp0(key, "DellDockUnlockTarget") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT8, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->unlock_target = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DellDockBlobMajorOffset") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->blob_major_offset = tmp;
 		return TRUE;
 	}
 	if (g_strcmp0(key, "DellDockBlobMinorOffset") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, error))
+		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		self->blob_minor_offset = tmp;
 		return TRUE;
 	}
 
 	/* failed */
-	g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "quirk key not supported");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "quirk key not supported");
 	return FALSE;
 }
 
@@ -203,28 +206,26 @@ fu_dell_dock_hub_init(FuDellDockHub *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 	fu_device_retry_set_delay(FU_DEVICE(self), 1000);
-	fu_device_register_private_flag(FU_DEVICE(self),
-					FU_DELL_DOCK_HUB_FLAG_HAS_BRIDGE,
-					"has-bridge");
+	fu_device_register_private_flag(FU_DEVICE(self), FU_DELL_DOCK_HUB_FLAG_HAS_BRIDGE);
 }
 
 static void
 fu_dell_dock_hub_class_init(FuDellDockHubClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_dell_dock_hub_finalize;
-	klass_device->setup = fu_dell_dock_hub_setup;
-	klass_device->probe = fu_dell_dock_hub_probe;
-	klass_device->write_firmware = fu_dell_dock_hub_write_fw;
-	klass_device->set_quirk_kv = fu_dell_dock_hub_set_quirk_kv;
-	klass_device->set_progress = fu_dell_dock_hub_set_progress;
+	device_class->setup = fu_dell_dock_hub_setup;
+	device_class->probe = fu_dell_dock_hub_probe;
+	device_class->write_firmware = fu_dell_dock_hub_write_fw;
+	device_class->set_quirk_kv = fu_dell_dock_hub_set_quirk_kv;
+	device_class->set_progress = fu_dell_dock_hub_set_progress;
 }
 
 FuDellDockHub *
 fu_dell_dock_hub_new(FuUsbDevice *device)
 {
 	FuDellDockHub *self = g_object_new(FU_TYPE_DELL_DOCK_HUB, NULL);
-	fu_device_incorporate(FU_DEVICE(self), FU_DEVICE(device));
+	fu_device_incorporate(FU_DEVICE(self), FU_DEVICE(device), FU_DEVICE_INCORPORATE_FLAG_ALL);
 	return self;
 }

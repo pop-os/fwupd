@@ -66,10 +66,6 @@ msgstr "Vymaže výsledky z poslednej aktualizácie"
 msgid "Command not found"
 msgstr "Príkaz nenájdený"
 
-#. TRANSLATORS: DFU stands for device firmware update
-msgid "DFU Utility"
-msgstr "Nástroj pre DFU"
-
 #. TRANSLATORS: for the --verbose arg
 msgid "Debugging Options"
 msgstr "Voľby ladenia"
@@ -92,16 +88,8 @@ msgid "Device removed:"
 msgstr "Odstránené zariadenie:"
 
 #. TRANSLATORS: success
-#. success
 msgid "Done!"
 msgstr "Hotovo!"
-
-#. TRANSLATORS: the first replacement is a display name
-#. * e.g. "ColorHugALS" and the second and third are
-#. * version numbers e.g. "1.2.3"
-#, c-format
-msgid "Downgrading %s from %s to %s... "
-msgstr "Vracia sa %s z verzie %s na verziu %s... "
 
 #. TRANSLATORS: exit after we've started up, used for user profiling
 msgid "Exit after a small delay"
@@ -130,11 +118,6 @@ msgstr "Nástroj pre firmvéry"
 #. TRANSLATORS: Suffix: the HSI result
 msgid "Found"
 msgstr "Nájdené"
-
-#. TRANSLATORS: command argument: uppercase, spaces->dashes
-msgctxt "A single GUID"
-msgid "GUID"
-msgstr "GUID"
 
 #. TRANSLATORS: command argument: uppercase, spaces->dashes
 msgctxt "command-argument"
@@ -182,23 +165,8 @@ msgid "OK"
 msgstr "OK"
 
 #. TRANSLATORS: command description
-msgid "Read firmware from device into a file"
-msgstr "Prečíta firmvér zo zariadenia do súboru"
-
-#. TRANSLATORS: command description
-msgid "Read firmware from one partition into a file"
-msgstr "Prečíta firmvér z jedného oddielu do súboru"
-
-#. TRANSLATORS: command description
 msgid "Refresh metadata from remote server"
 msgstr "Obnoví metaúdaje zo vzdialeného servera"
-
-#. TRANSLATORS: the first replacement is a display name
-#. * e.g. "ColorHugALS" and the second is a version number
-#. * e.g. "1.2.3"
-#, c-format
-msgid "Reinstalling %s with %s... "
-msgstr "Preinštalováva sa %s verziou %s... "
 
 #. TRANSLATORS: for the --verbose arg
 msgid "Show debugging options"
@@ -215,21 +183,6 @@ msgstr "Odomknúť zariadenie na umožnenie prístupu"
 msgid "Unlocks the device for firmware access"
 msgstr "Odomkne zariadenie pre prístup k firmvéru"
 
-#. TRANSLATORS: the first replacement is a display name
-#. * e.g. "ColorHugALS" and the second and third are
-#. * version numbers e.g. "1.2.3"
-#, c-format
-msgid "Updating %s from %s to %s... "
-msgstr "Aktualizuje sa %s z verzie %s na verziu %s... "
-
 #. TRANSLATORS: the detected version number of the dbx
 msgid "Version"
 msgstr "Verzia"
-
-#. TRANSLATORS: command description
-msgid "Write firmware from file into device"
-msgstr "Zapíše firmvér zo súboru do zariadenia"
-
-#. TRANSLATORS: command description
-msgid "Write firmware from file into one partition"
-msgstr "Zapíše firmvér zo súboru do jedného oddielu"

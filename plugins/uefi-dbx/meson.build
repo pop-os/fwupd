@@ -3,12 +3,10 @@ plugins += {meson.current_source_dir().split('/')[-1]: true}
 
 plugin_quirks += files('uefi-dbx.quirk')
 plugin_builtin_uefi_dbx = static_library('fu_plugin_uefi_dbx',
-  rustgen.process('fu-efi-image.rs'),
   sources: [
     'fu-uefi-dbx-plugin.c',
     'fu-uefi-dbx-common.c',
     'fu-uefi-dbx-device.c',
-    'fu-efi-image.c',
   ],
   include_directories: plugin_incdirs,
   link_with: plugin_libs,
@@ -21,6 +19,7 @@ if get_option('tests')
   env = environment()
   env.set('G_TEST_SRCDIR', meson.current_source_dir())
   env.set('G_TEST_BUILDDIR', meson.current_build_dir())
+  env.set('G_DEBUG', 'fatal-criticals')
   e = executable(
     'uefi-dbx-self-test',
     sources: [

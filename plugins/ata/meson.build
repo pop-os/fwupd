@@ -1,4 +1,4 @@
-if gudev.found()
+if enable_udev
 cargs = ['-DG_LOG_DOMAIN="FuPluginAta"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -17,6 +17,9 @@ plugin_builtin_ata = static_library('fu_plugin_ata',
   dependencies: plugin_deps,
 )
 plugin_builtins += plugin_builtin_ata
+
+enumeration_data += files('tests/samsung-ssd-870-evo-setup.json')
+device_tests += files('tests/samsung-ssd-870-evo.json')
 
 if get_option('tests')
   env = environment()

@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2020 Cypress Semiconductor Corporation.
- * Copyright (C) 2020 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Cypress Semiconductor Corporation.
+ * Copyright 2020 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -87,8 +87,7 @@ fu_ccgx_dmc_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, X
 
 static gboolean
 fu_ccgx_dmc_firmware_parse_segment(FuFirmware *firmware,
-				   const guint8 *buf,
-				   gsize bufsz,
+				   GInputStream *stream,
 				   FuCcgxDmcFirmwareRecord *img_rcd,
 				   gsize *seg_off,
 				   FwupdInstallFlags flags,
@@ -106,14 +105,13 @@ fu_ccgx_dmc_firmware_parse_segment(FuFirmware *firmware,
 	    g_ptr_array_new_with_free_func((GFreeFunc)fu_ccgx_dmc_firmware_segment_record_free);
 	for (guint32 i = 0; i < img_rcd->num_img_segments; i++) {
 		guint16 row_size_bytes = 0;
-		g_autofree guint8 *row_buf = NULL;
 		g_autoptr(FuCcgxDmcFirmwareSegmentRecord) seg_rcd = NULL;
 		g_autoptr(GByteArray) st_info = NULL;
 
 		/* read segment info  */
 		seg_rcd = g_new0(FuCcgxDmcFirmwareSegmentRecord, 1);
 		st_info =
-		    fu_struct_ccgx_dmc_fwct_segmentation_info_parse(buf, bufsz, *seg_off, error);
+		    fu_struct_ccgx_dmc_fwct_segmentation_info_parse_stream(stream, *seg_off, error);
 		if (st_info == NULL)
 			return FALSE;
 		seg_rcd->start_row =
@@ -128,28 +126,23 @@ fu_ccgx_dmc_firmware_parse_segment(FuFirmware *firmware,
 		    g_ptr_array_new_with_free_func((GDestroyNotify)g_bytes_unref);
 
 		/* read row data in segment */
-		row_buf = g_malloc0(row_size_bytes);
 		for (int row = 0; row < seg_rcd->num_rows; row++) {
 			g_autoptr(GBytes) data_rcd = NULL;
 
-			/* read row data */
-			if (!fu_memcpy_safe(row_buf,
-					    row_size_bytes,
-					    0x0, /* dst */
-					    buf,
-					    bufsz,
-					    row_off, /* src */
-					    row_size_bytes,
-					    error)) {
-				g_prefix_error(error, "failed to read row data: ");
+			data_rcd = fu_input_stream_read_bytes(stream,
+							      row_off,
+							      row_size_bytes,
+							      NULL,
+							      error);
+			if (data_rcd == NULL)
 				return FALSE;
-			}
 
 			/* update hash */
-			g_checksum_update(csum, (guchar *)row_buf, row_size_bytes);
+			g_checksum_update(csum,
+					  (guchar *)g_bytes_get_data(data_rcd, NULL),
+					  g_bytes_get_size(data_rcd));
 
 			/* add row data to data record */
-			data_rcd = g_bytes_new(row_buf, row_size_bytes);
 			g_ptr_array_add(seg_rcd->data_records, g_steal_pointer(&data_rcd));
 
 			/* increment row data offset */
@@ -184,8 +177,7 @@ fu_ccgx_dmc_firmware_parse_segment(FuFirmware *firmware,
 static gboolean
 fu_ccgx_dmc_firmware_parse_image(FuFirmware *firmware,
 				 guint8 image_count,
-				 const guint8 *buf,
-				 gsize bufsz,
+				 GInputStream *stream,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
@@ -203,7 +195,7 @@ fu_ccgx_dmc_firmware_parse_image(FuFirmware *firmware,
 
 		/* read image info */
 		img_rcd = g_new0(FuCcgxDmcFirmwareRecord, 1);
-		st_img = fu_struct_ccgx_dmc_fwct_image_info_parse(buf, bufsz, img_off, error);
+		st_img = fu_struct_ccgx_dmc_fwct_image_info_parse_stream(stream, img_off, error);
 		if (st_img == NULL)
 			return FALSE;
 		img_rcd->row_size = fu_struct_ccgx_dmc_fwct_image_info_get_row_size(st_img);
@@ -240,8 +232,7 @@ fu_ccgx_dmc_firmware_parse_image(FuFirmware *firmware,
 
 		/* parse segment */
 		if (!fu_ccgx_dmc_firmware_parse_segment(firmware,
-							buf,
-							bufsz,
+							stream,
 							img_rcd,
 							&seg_off,
 							flags,
@@ -259,30 +250,30 @@ fu_ccgx_dmc_firmware_parse_image(FuFirmware *firmware,
 }
 
 static gboolean
-fu_ccgx_dmc_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_ccgx_dmc_firmware_validate(FuFirmware *firmware,
+			      GInputStream *stream,
+			      gsize offset,
+			      GError **error)
 {
-	return fu_struct_ccgx_dmc_fwct_info_validate_bytes(fw, offset, error);
+	return fu_struct_ccgx_dmc_fwct_info_validate_stream(stream, offset, error);
 }
 
 static gboolean
 fu_ccgx_dmc_firmware_parse(FuFirmware *firmware,
-			   GBytes *fw,
-			   gsize offset,
+			   GInputStream *stream,
 			   FwupdInstallFlags flags,
 			   GError **error)
 {
 	FuCcgxDmcFirmware *self = FU_CCGX_DMC_FIRMWARE(firmware);
-	gsize bufsz = 0;
+	gsize streamsz = 0;
 	guint16 hdr_size = 0;
 	guint16 mdbufsz = 0;
 	guint32 hdr_composite_version = 0;
 	guint8 hdr_image_count = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
-	g_autoptr(FuFirmware) img = fu_firmware_new_from_bytes(fw);
 	g_autoptr(GByteArray) st_hdr = NULL;
 
 	/* parse */
-	st_hdr = fu_struct_ccgx_dmc_fwct_info_parse(buf, bufsz, offset, error);
+	st_hdr = fu_struct_ccgx_dmc_fwct_info_parse_stream(stream, 0x0, error);
 	if (st_hdr == NULL)
 		return FALSE;
 
@@ -300,47 +291,38 @@ fu_ccgx_dmc_firmware_parse(FuFirmware *firmware,
 
 	/* set version */
 	hdr_composite_version = fu_struct_ccgx_dmc_fwct_info_get_composite_version(st_hdr);
-	if (hdr_composite_version != 0) {
-		g_autofree gchar *ver = NULL;
-		ver = fu_version_from_uint32(hdr_composite_version, FWUPD_VERSION_FORMAT_QUAD);
-		fu_firmware_set_version(firmware, ver);
+	if (hdr_composite_version != 0)
 		fu_firmware_set_version_raw(firmware, hdr_composite_version);
-	}
 
 	/* read fwct data */
-	self->fwct_blob = fu_bytes_new_offset(fw, offset, hdr_size, error);
+	self->fwct_blob = fu_input_stream_read_bytes(stream, 0x0, hdr_size, NULL, error);
 	if (self->fwct_blob == NULL)
 		return FALSE;
 
 	/* create custom meta binary */
-	if (!fu_memread_uint16_safe(buf,
-				    bufsz,
-				    offset + hdr_size,
-				    &mdbufsz,
-				    G_LITTLE_ENDIAN,
-				    error)) {
+	if (!fu_input_stream_read_u16(stream, hdr_size, &mdbufsz, G_LITTLE_ENDIAN, error)) {
 		g_prefix_error(error, "failed to read metadata size: ");
 		return FALSE;
 	}
 	if (mdbufsz > 0) {
 		self->custom_meta_blob =
-		    fu_bytes_new_offset(fw, offset + hdr_size + 2, mdbufsz, error);
+		    fu_input_stream_read_bytes(stream, hdr_size + 2, mdbufsz, NULL, error);
 		if (self->custom_meta_blob == NULL)
 			return FALSE;
 	}
 
 	/* set row data start offset */
 	self->row_data_offset_start = hdr_size + DMC_CUSTOM_META_LENGTH_FIELD_SIZE + mdbufsz;
-	self->fw_data_size = bufsz - self->row_data_offset_start;
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
+	self->fw_data_size = streamsz - self->row_data_offset_start;
 
 	/* parse image */
 	hdr_image_count = fu_struct_ccgx_dmc_fwct_info_get_image_count(st_hdr);
-	if (!fu_ccgx_dmc_firmware_parse_image(firmware, hdr_image_count, buf, bufsz, flags, error))
+	if (!fu_ccgx_dmc_firmware_parse_image(firmware, hdr_image_count, stream, flags, error))
 		return FALSE;
 
-	/* add something, although we'll use the records for the update */
-	fu_firmware_set_addr(img, 0x0);
-	fu_firmware_add_image(firmware, img);
+	/* success */
 	return TRUE;
 }
 
@@ -386,7 +368,10 @@ fu_ccgx_dmc_firmware_write(FuFirmware *firmware, GError **error)
 		g_autoptr(GBytes) img_bytes = fu_firmware_get_bytes(img, error);
 		if (img_bytes == NULL)
 			return NULL;
-		chunks = fu_chunk_array_new_from_bytes(img_bytes, 0x0, 64);
+		chunks = fu_chunk_array_new_from_bytes(img_bytes,
+						       FU_CHUNK_ADDR_OFFSET_NONE,
+						       FU_CHUNK_PAGESZ_NONE,
+						       64);
 		fu_struct_ccgx_dmc_fwct_segmentation_info_set_num_rows(
 		    st_info,
 		    MAX(fu_chunk_array_length(chunks), 1));
@@ -412,7 +397,10 @@ fu_ccgx_dmc_firmware_write(FuFirmware *firmware, GError **error)
 		img_bytes = fu_firmware_get_bytes(img, error);
 		if (img_bytes == NULL)
 			return NULL;
-		chunks = fu_chunk_array_new_from_bytes(img_bytes, 0x0, 64);
+		chunks = fu_chunk_array_new_from_bytes(img_bytes,
+						       FU_CHUNK_ADDR_OFFSET_NONE,
+						       FU_CHUNK_PAGESZ_NONE,
+						       64);
 		img_padded = fu_bytes_pad(img_bytes, MAX(fu_chunk_array_length(chunks), 1) * 64);
 		fu_byte_array_append_bytes(buf, img_padded);
 		g_checksum_update(csum,
@@ -436,12 +424,19 @@ fu_ccgx_dmc_firmware_write(FuFirmware *firmware, GError **error)
 	return g_steal_pointer(&buf);
 }
 
+static gchar *
+fu_ccgx_dmc_firmware_convert_version(FuFirmware *firmware, guint64 version_raw)
+{
+	return fu_version_from_uint32(version_raw, fu_firmware_get_version_format(firmware));
+}
+
 static void
 fu_ccgx_dmc_firmware_init(FuCcgxDmcFirmware *self)
 {
 	self->image_records =
 	    g_ptr_array_new_with_free_func((GFreeFunc)fu_ccgx_dmc_firmware_record_free);
 	fu_firmware_add_flag(FU_FIRMWARE(self), FU_FIRMWARE_FLAG_HAS_CHECKSUM);
+	fu_firmware_set_version_format(FU_FIRMWARE(self), FWUPD_VERSION_FORMAT_QUAD);
 }
 
 static void
@@ -463,12 +458,13 @@ static void
 fu_ccgx_dmc_firmware_class_init(FuCcgxDmcFirmwareClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->convert_version = fu_ccgx_dmc_firmware_convert_version;
 	object_class->finalize = fu_ccgx_dmc_firmware_finalize;
-	klass_firmware->check_magic = fu_ccgx_dmc_firmware_check_magic;
-	klass_firmware->parse = fu_ccgx_dmc_firmware_parse;
-	klass_firmware->write = fu_ccgx_dmc_firmware_write;
-	klass_firmware->export = fu_ccgx_dmc_firmware_export;
+	firmware_class->validate = fu_ccgx_dmc_firmware_validate;
+	firmware_class->parse = fu_ccgx_dmc_firmware_parse;
+	firmware_class->write = fu_ccgx_dmc_firmware_write;
+	firmware_class->export = fu_ccgx_dmc_firmware_export;
 }
 
 FuFirmware *

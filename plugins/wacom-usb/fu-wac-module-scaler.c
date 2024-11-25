@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Aaron Skomra <aaron.skomra@wacom.com>
+ * Copyright 2022 Aaron Skomra <aaron.skomra@wacom.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -24,7 +24,7 @@ G_DEFINE_TYPE(FuWacModuleScaler, fu_wac_module_scaler, FU_TYPE_WAC_MODULE)
 #define FU_WAC_MODULE_SCALER_START_NORMAL    0x00
 #define FU_WAC_MODULE_SCALER_START_FULLERASE 0xFE
 
-typedef struct __attribute__((__packed__)) {
+typedef struct __attribute__((__packed__)) { /* nocheck:blocked */
 	guint8 addr[3];
 	guint8 crc;
 	guint8 cdata[FU_WAC_MODULE_SCALER_PAYLOAD_SZ];
@@ -56,7 +56,7 @@ fu_wac_module_scaler_parse_blocks(const guint8 *data, gsize sz, GError **error)
 				    cdata_sz,
 				    error))
 			return NULL;
-		bd->crc = ~fu_crc8(bd->cdata, sizeof(bd->cdata));
+		bd->crc = fu_crc8(FU_CRC_KIND_B8_STANDARD, bd->cdata, sizeof(bd->cdata));
 		g_ptr_array_add(blocks, g_steal_pointer(&bd));
 	}
 	return blocks;
@@ -120,9 +120,9 @@ fu_wac_module_scaler_write_firmware(FuDevice *device,
 
 		/* build data packet */
 		memset(buf, 0xff, sizeof(buf));
-		memcpy(&buf[0], bd->addr, 3);
+		memcpy(&buf[0], bd->addr, 3); /* nocheck:blocked */
 		buf[3] = bd->crc;
-		memcpy(&buf[4], bd->cdata, sizeof(bd->cdata));
+		memcpy(&buf[4], bd->cdata, sizeof(bd->cdata)); /* nocheck:blocked */
 		blob_chunk = g_bytes_new(buf, sizeof(*bd));
 
 		if (!fu_wac_module_set_feature(self,
@@ -169,8 +169,8 @@ fu_wac_module_scaler_init(FuWacModuleScaler *self)
 static void
 fu_wac_module_scaler_class_init(FuWacModuleScalerClass *klass)
 {
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
-	klass_device->write_firmware = fu_wac_module_scaler_write_firmware;
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->write_firmware = fu_wac_module_scaler_write_firmware;
 }
 
 FuWacModule *

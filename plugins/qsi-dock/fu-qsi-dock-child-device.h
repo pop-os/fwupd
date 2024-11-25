@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2021 Richard Hughes <richard@hughsie.com>
+ * Copyright 2021 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -16,6 +16,6 @@ G_DECLARE_FINAL_TYPE(FuQsiDockChildDevice,
 		     FuDevice)
 
 FuDevice *
-fu_qsi_dock_child_new(FuContext *ctx);
+fu_qsi_dock_child_device_new(FuContext *ctx);
 void
 fu_qsi_dock_child_device_set_chip_idx(FuQsiDockChildDevice *self, guint8 chip_idx);

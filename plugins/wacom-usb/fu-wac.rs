@@ -1,13 +1,21 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+#[derive(ValidateStream, Default)]
+#[repr(C, packed)]
+struct FuStructWacFirmwareHdr {
+    magic: [char; 5] == "WACOM",
+}
 
 #[derive(Parse)]
-struct WtaBlockHeader {
+#[repr(C, packed)]
+struct FuStructWtaBlockHeader {
     block_start: u32le,
     block_size: u32le,
 }
+
 #[derive(ToString)]
-enum WacReportId {
+enum FuWacReportId {
     FwDescriptor              = 0xCB, // GET_FEATURE
     SwitchToFlashLoader       = 0xCC, // SET_FEATURE
     QuitAndReset              = 0xCD, // SET_FEATURE
@@ -27,8 +35,10 @@ enum WacReportId {
     GetCurrentFirmwareIdx     = 0xE2, // GET_FEATURE
     Module                    = 0xE4,
 }
+
 #[derive(ToString)]
-enum WacModuleFwType {
+#[repr(u8)]
+enum FuWacModuleFwType {
     Touch         = 0x00,
     Bluetooth     = 0x01,
     EmrCorrection = 0x02,
@@ -40,14 +50,16 @@ enum WacModuleFwType {
     SubCpu        = 0x0A,
     Main          = 0x3F,
 }
+
 #[derive(ToString)]
-enum WacModuleCommand {
+enum FuWacModuleCommand {
     Start = 0x01,
     Data  = 0x02,
     End   = 0x03,
 }
+
 #[derive(ToString)]
-enum WacModuleStatus {
+enum FuWacModuleStatus {
     Ok,
     Busy,
     ErrCrc,
@@ -66,7 +78,7 @@ enum WacModuleStatus {
 }
 
 #[derive(ToBitString)]
-enum WacDeviceStatus {
+enum FuWacDeviceStatus {
     Unknown = 0,
     Writing = 1 << 0,
     Erasing = 1 << 1,
@@ -75,23 +87,45 @@ enum WacDeviceStatus {
     WriteProtected = 1 << 4,
 }
 
-#[derive(New)]
-struct Id9UnknownCmd {
+#[derive(New, Default)]
+#[repr(C, packed)]
+struct FuStructId9UnknownCmd {
     unknown1: u16be == 0x7050,
     unknown2: u32be == 0,
     size: u16be,                  // Size of payload to be transferred
 }
-#[derive(New)]
-struct Id9SpiCmd {
+
+#[derive(New, Default)]
+#[repr(C, packed)]
+struct FuStructId9SpiCmd {
     command: u8 == 0x91,
     start_addr: u32be == 0,
     size: u16be,                  // sizeof(data) + size of payload
-    data: Id9UnknownCmd,
+    data: FuStructId9UnknownCmd,
 }
-#[derive(New, Validate)]
-struct Id9LoaderCmd {
+
+#[derive(New,Validate)]
+#[repr(C, packed)]
+struct FuStructId9LoaderCmd {
     command: u8,
     size: u16be,                  // sizeof(data) + size of payload
     crc: u32be,                   // CRC(concat(data, payload))
-    data: Id9SpiCmd,
+    data: FuStructId9SpiCmd,
+}
+
+#[derive(Parse)]
+#[repr(C, packed)]
+struct FuStructModuleDesc {
+    _report_id: u8,
+    bootloader_version: u16be,
+    number_modules: u8,
+    // FuStructModuleItem[number_modules]
+}
+
+#[derive(Parse)]
+#[repr(C, packed)]
+struct FuStructModuleItem {
+    kind: FuWacModuleFwType,
+    version: u16be,
+    version2: u8,
 }

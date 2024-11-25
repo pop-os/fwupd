@@ -1,8 +1,8 @@
-// Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2023 Richard Hughes <richard@hughsie.com>
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[repr(u8)]
-enum EdidDescriptorTag {
+enum FuEdidDescriptorTag {
     DisplayProductSerialNumber = 0xFF,
     AlphanumericDataString = 0xFE,
     DisplayRangeLimits = 0xFD,
@@ -15,17 +15,19 @@ enum EdidDescriptorTag {
     DummyDescriptor = 0x10,
 }
 
-#[derive(ParseBytes, New)]
-struct EdidDescriptor {
+#[derive(ParseStream, New)]
+#[repr(C, packed)]
+struct FuStructEdidDescriptor {
     kind: u16le,
     subkind: u8,
-    tag: EdidDescriptorTag,
+    tag: FuEdidDescriptorTag,
     _reserved: u8,
     data: [u8; 13],
 }
 
-#[derive(New, ParseBytes)]
-struct Edid {
+#[derive(New, ParseStream, Default)]
+#[repr(C, packed)]
+struct FuStructEdid {
     header: [u8; 8] == 0x00FFFFFFFFFFFF00,
     manufacturer_name: [u8; 2],
     product_code: u16le,
@@ -38,7 +40,7 @@ struct Edid {
     _color_characteristics: [u8; 10],
     _established_timings: [u8; 3],
     _standard_timings: [u8; 16],
-    data_blocks: [u8; 72], // should be [EdidDescriptor: 4],
+    data_blocks: [u8; 72], // should be [FuEdidDescriptor: 4],
     extension_block_count: u8,
     checksum: u8,
 }

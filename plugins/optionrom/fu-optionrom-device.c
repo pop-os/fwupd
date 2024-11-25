@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -9,32 +9,31 @@
 #include "fu-optionrom-device.h"
 
 struct _FuOptionromDevice {
-	FuUdevDevice parent_instance;
+	FuPciDevice parent_instance;
 };
 
-G_DEFINE_TYPE(FuOptionromDevice, fu_optionrom_device, FU_TYPE_UDEV_DEVICE)
+G_DEFINE_TYPE(FuOptionromDevice, fu_optionrom_device, FU_TYPE_PCI_DEVICE)
 
 static gboolean
 fu_optionrom_device_probe(FuDevice *device, GError **error)
 {
+	gboolean exists_fn = FALSE;
 	g_autofree gchar *fn = NULL;
 
 	/* does the device even have ROM? */
 	fn = g_build_filename(fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device)), "rom", NULL);
-	if (!g_file_test(fn, G_FILE_TEST_EXISTS)) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "Unable to read firmware from device");
+	if (!fu_device_query_file_exists(device, fn, &exists_fn, error))
+		return FALSE;
+	if (!exists_fn) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "unable to read firmware from device, %s does not exist",
+			    fn);
 		return FALSE;
 	}
-
-	/* FuUdevDevice->probe -- needed by FU_UDEV_DEVICE_FLAG_VENDOR_FROM_PARENT */
-	if (!FU_DEVICE_CLASS(fu_optionrom_device_parent_class)->probe(device, error))
-		return FALSE;
-
-	/* set the physical ID */
-	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "pci", error);
+	fu_udev_device_set_device_file(FU_UDEV_DEVICE(device), fn);
+	return TRUE;
 }
 
 static GBytes *
@@ -64,9 +63,7 @@ fu_optionrom_device_init(FuOptionromDevice *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_set_logical_id(FU_DEVICE(self), "rom");
-	fu_udev_device_set_flags(FU_UDEV_DEVICE(self),
-				 FU_UDEV_DEVICE_FLAG_OPEN_READ |
-				     FU_UDEV_DEVICE_FLAG_VENDOR_FROM_PARENT);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
 }
 
 static void
@@ -79,8 +76,8 @@ static void
 fu_optionrom_device_class_init(FuOptionromDeviceClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuDeviceClass *klass_device = FU_DEVICE_CLASS(klass);
+	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	object_class->finalize = fu_optionrom_device_finalize;
-	klass_device->dump_firmware = fu_optionrom_device_dump_firmware;
-	klass_device->probe = fu_optionrom_device_probe;
+	device_class->dump_firmware = fu_optionrom_device_dump_firmware;
+	device_class->probe = fu_optionrom_device_probe;
 }

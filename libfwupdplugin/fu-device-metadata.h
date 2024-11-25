@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2017 Mario Limonciello <mario.limonciello@dell.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -50,3 +50,10 @@
  * CPU mitigations required. See the CPU plugin for more details.
  */
 #define FU_DEVICE_METADATA_CPU_MITIGATIONS_REQUIRED "CpuMitigationsRequired"
+
+/**
+ * FU_DEVICE_METADATA_CPU_SINKCLOSE_MICROCODE_VER:
+ *
+ * Microcode version required to mitigate Sinkclose. See the CPU plugin for more details.
+ */
+#define FU_DEVICE_METADATA_CPU_SINKCLOSE_MICROCODE_VER "CpuSinkcloseMicrocodeVersion"

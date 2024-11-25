@@ -1,8 +1,8 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
-# Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+# Copyright 2017 Richard Hughes <richard@hughsie.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 #
 # pylint: disable=invalid-name,missing-docstring,consider-using-f-string
 
@@ -65,7 +65,6 @@ def _minimize_json(json_str: str) -> str:
 
 
 def _get_host_devices_and_attrs() -> str:
-
     # connect to the running daemon
     client = Fwupd.Client()
     builder = Json.Builder()
@@ -95,7 +94,7 @@ def _get_host_devices_and_attrs() -> str:
         builder.begin_array()
         for attr in attrs:
             builder.begin_object()
-            attr.to_json(builder)
+            attr.add_json(builder)
             builder.end_object()
         builder.end_array()
 
@@ -109,7 +108,7 @@ def _get_host_devices_and_attrs() -> str:
         builder.begin_array()
         for attr in attrs:
             builder.begin_object()
-            attr.to_json(builder)
+            attr.add_json(builder)
             builder.end_object()
         builder.end_array()
 
@@ -125,7 +124,6 @@ if len(sys.argv) < 2:
     sys.stdout.write(_minimize_json(sys.stdin.read()))
 else:
     for fn in sys.argv[1:]:
-
         try:
             with open(fn, "rb") as f_in:
                 json_in = f_in.read().decode()

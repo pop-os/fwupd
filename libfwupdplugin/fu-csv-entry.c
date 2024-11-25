@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -107,11 +107,11 @@ fu_csv_entry_get_value_by_column_id_uint64(FuCsvEntry *self,
 		return FALSE;
 	}
 
-	return fu_strtoull(str_value, value, 0, G_MAXUINT64, error);
+	return fu_strtoull(str_value, value, 0, G_MAXUINT64, FU_INTEGER_BASE_AUTO, error);
 }
 
 static void
-fu_ifd_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuilderNode *bn)
+fu_csv_entry_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuilderNode *bn)
 {
 	FuCsvEntry *self = FU_CSV_ENTRY(firmware);
 	FuCsvEntryPrivate *priv = GET_PRIVATE(self);
@@ -127,7 +127,7 @@ fu_ifd_firmware_export(FuFirmware *firmware, FuFirmwareExportFlags flags, XbBuil
 }
 
 static gboolean
-fu_archive_firmware_build(FuFirmware *firmware, XbNode *n, GError **error)
+fu_csv_entry_build(FuFirmware *firmware, XbNode *n, GError **error)
 {
 	FuCsvEntry *self = FU_CSV_ENTRY(firmware);
 	FuCsvFirmware *parent = FU_CSV_FIRMWARE(fu_firmware_get_parent(firmware));
@@ -157,8 +157,8 @@ fu_csv_entry_parse_token_cb(GString *token, guint token_idx, gpointer user_data,
 	/* sanity check */
 	if (token_idx > FU_CSV_ENTRY_COLUMNS_MAX) {
 		g_set_error(error,
-			    G_IO_ERROR,
-			    G_IO_ERROR_INVALID_DATA,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_DATA,
 			    "too many columns, limit is %u",
 			    FU_CSV_ENTRY_COLUMNS_MAX);
 		return FALSE;
@@ -171,7 +171,7 @@ fu_csv_entry_parse_token_cb(GString *token, guint token_idx, gpointer user_data,
 	}
 	if (g_strcmp0(column_id, "$idx") == 0) {
 		guint64 value = 0;
-		if (!fu_strtoull(token->str, &value, 0, G_MAXUINT64, error))
+		if (!fu_strtoull(token->str, &value, 0, G_MAXUINT64, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		g_ptr_array_add(priv->values, NULL);
 		fu_firmware_set_idx(FU_FIRMWARE(self), value);
@@ -179,12 +179,12 @@ fu_csv_entry_parse_token_cb(GString *token, guint token_idx, gpointer user_data,
 	}
 	if (g_strcmp0(column_id, "$version") == 0) {
 		g_ptr_array_add(priv->values, NULL);
-		fu_firmware_set_version(FU_FIRMWARE(self), token->str);
+		fu_firmware_set_version(FU_FIRMWARE(self), token->str); /* nocheck:set-version */
 		return TRUE;
 	}
 	if (g_strcmp0(column_id, "$version_raw") == 0) {
 		guint64 value = 0;
-		if (!fu_strtoull(token->str, &value, 0, G_MAXUINT64, error))
+		if (!fu_strtoull(token->str, &value, 0, G_MAXUINT64, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		g_ptr_array_add(priv->values, NULL);
 		fu_firmware_set_version_raw(FU_FIRMWARE(self), value);
@@ -197,18 +197,12 @@ fu_csv_entry_parse_token_cb(GString *token, guint token_idx, gpointer user_data,
 
 static gboolean
 fu_csv_entry_parse(FuFirmware *firmware,
-		   GBytes *fw,
-		   gsize offset,
+		   GInputStream *stream,
 		   FwupdInstallFlags flags,
 		   GError **error)
 {
 	FuCsvEntry *self = FU_CSV_ENTRY(firmware);
-	return fu_strsplit_full((const gchar *)g_bytes_get_data(fw, NULL),
-				g_bytes_get_size(fw),
-				",",
-				fu_csv_entry_parse_token_cb,
-				self,
-				error);
+	return fu_strsplit_stream(stream, 0x0, ",", fu_csv_entry_parse_token_cb, self, error);
 }
 
 static GByteArray *
@@ -253,13 +247,13 @@ fu_csv_entry_finalize(GObject *object)
 static void
 fu_csv_entry_class_init(FuCsvEntryClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	object_class->finalize = fu_csv_entry_finalize;
-	klass_firmware->parse = fu_csv_entry_parse;
-	klass_firmware->write = fu_csv_entry_write;
-	klass_firmware->build = fu_archive_firmware_build;
-	klass_firmware->export = fu_ifd_firmware_export;
+	firmware_class->parse = fu_csv_entry_parse;
+	firmware_class->write = fu_csv_entry_write;
+	firmware_class->build = fu_csv_entry_build;
+	firmware_class->export = fu_csv_entry_export;
 }
 
 /**

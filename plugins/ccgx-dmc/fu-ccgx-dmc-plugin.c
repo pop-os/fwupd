@@ -1,13 +1,14 @@
 /*
- * Copyright (C) 2020 Cypress Semiconductor Corporation.
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2020 Cypress Semiconductor Corporation.
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
 
 #include "fu-ccgx-dmc-device.h"
+#include "fu-ccgx-dmc-devx-device.h"
 #include "fu-ccgx-dmc-firmware.h"
 #include "fu-ccgx-dmc-plugin.h"
 
@@ -29,7 +30,8 @@ fu_ccgx_dmc_plugin_constructed(GObject *obj)
 	FuContext *ctx = fu_plugin_get_context(plugin);
 	fu_context_add_quirk_key(ctx, "CcgxDmcTriggerCode");
 	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_CCGX_DMC_FIRMWARE);
-	fu_plugin_add_device_gtype(plugin, FU_TYPE_CCGX_DMC_DEVICE);
+	fu_plugin_set_device_gtype_default(plugin, FU_TYPE_CCGX_DMC_DEVICE);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_CCGX_DMC_DEVX_DEVICE); /* coverage */
 }
 
 static void

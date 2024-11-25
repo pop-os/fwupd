@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "fu-wac-firmware.h"
+#include "fu-wac-struct.h"
 
 struct _FuWacFirmware {
 	FuFirmware parent_instance;
@@ -42,8 +43,8 @@ fu_wac_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data,
 	/* sanity check */
 	if (token_idx > FU_WAC_FIRMWARE_TOKENS_MAX) {
 		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
 				    "file has too many lines");
 		return FALSE;
 	}
@@ -232,11 +233,11 @@ fu_wac_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data,
 		/* parse SREC file and add as image */
 		blob = g_bytes_new(helper->image_buffer->str, helper->image_buffer->len);
 		fu_srec_firmware_set_addr_min(FU_SREC_FIRMWARE(firmware_srec), hdr->addr);
-		if (!fu_firmware_parse_full(firmware_srec,
-					    blob,
-					    0x0,
-					    helper->flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
-					    error))
+		if (!fu_firmware_parse_bytes(firmware_srec,
+					     blob,
+					     0x0,
+					     helper->flags | FWUPD_INSTALL_FLAG_NO_SEARCH,
+					     error))
 			return FALSE;
 		fw_srec = fu_firmware_get_bytes(firmware_srec, error);
 		if (fw_srec == NULL)
@@ -257,28 +258,17 @@ fu_wac_firmware_tokenize_cb(GString *token, guint token_idx, gpointer user_data,
 }
 
 static gboolean
-fu_wac_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, GError **error)
+fu_wac_firmware_validate(FuFirmware *firmware, GInputStream *stream, gsize offset, GError **error)
 {
-	guint8 magic[5] = "WACOM";
-	return fu_memcmp_safe(g_bytes_get_data(fw, NULL),
-			      g_bytes_get_size(fw),
-			      offset,
-			      magic,
-			      sizeof(magic),
-			      0x0,
-			      sizeof(magic),
-			      error);
+	return fu_struct_wac_firmware_hdr_validate_stream(stream, offset, error);
 }
 
 static gboolean
 fu_wac_firmware_parse(FuFirmware *firmware,
-		      GBytes *fw,
-		      gsize offset,
+		      GInputStream *stream,
 		      FwupdInstallFlags flags,
 		      GError **error)
 {
-	gsize bufsz = 0;
-	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autoptr(GPtrArray) header_infos = g_ptr_array_new_with_free_func(g_free);
 	g_autoptr(GString) image_buffer = g_string_new(NULL);
 	FuWacFirmwareTokenHelper helper = {.firmware = firmware,
@@ -288,12 +278,7 @@ fu_wac_firmware_parse(FuFirmware *firmware,
 					   .images_cnt = 0};
 
 	/* tokenize */
-	if (!fu_strsplit_full((const gchar *)buf + offset,
-			      bufsz - offset,
-			      "\n",
-			      fu_wac_firmware_tokenize_cb,
-			      &helper,
-			      error))
+	if (!fu_strsplit_stream(stream, 0x0, "\n", fu_wac_firmware_tokenize_cb, &helper, error))
 		return FALSE;
 
 	/* verify data is complete */
@@ -383,15 +368,16 @@ static void
 fu_wac_firmware_init(FuWacFirmware *self)
 {
 	fu_firmware_set_images_max(FU_FIRMWARE(self), 1024);
+	g_type_ensure(FU_TYPE_SREC_FIRMWARE);
 }
 
 static void
 fu_wac_firmware_class_init(FuWacFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->check_magic = fu_wac_firmware_check_magic;
-	klass_firmware->parse = fu_wac_firmware_parse;
-	klass_firmware->write = fu_wac_firmware_write;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->validate = fu_wac_firmware_validate;
+	firmware_class->parse = fu_wac_firmware_parse;
+	firmware_class->write = fu_wac_firmware_write;
 }
 
 FuFirmware *

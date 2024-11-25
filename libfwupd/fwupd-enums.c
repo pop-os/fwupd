@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright 2015 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -119,8 +119,6 @@ fwupd_device_flag_to_string(FwupdDeviceFlags device_flag)
 		return "internal";
 	if (device_flag == FWUPD_DEVICE_FLAG_UPDATABLE)
 		return "updatable";
-	if (device_flag == FWUPD_DEVICE_FLAG_ONLY_OFFLINE)
-		return "only-offline";
 	if (device_flag == FWUPD_DEVICE_FLAG_REQUIRE_AC)
 		return "require-ac";
 	if (device_flag == FWUPD_DEVICE_FLAG_LOCKED)
@@ -129,8 +127,6 @@ fwupd_device_flag_to_string(FwupdDeviceFlags device_flag)
 		return "supported";
 	if (device_flag == FWUPD_DEVICE_FLAG_NEEDS_BOOTLOADER)
 		return "needs-bootloader";
-	if (device_flag == FWUPD_DEVICE_FLAG_REGISTERED)
-		return "registered";
 	if (device_flag == FWUPD_DEVICE_FLAG_NEEDS_REBOOT)
 		return "needs-reboot";
 	if (device_flag == FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN)
@@ -139,30 +135,16 @@ fwupd_device_flag_to_string(FwupdDeviceFlags device_flag)
 		return "reported";
 	if (device_flag == FWUPD_DEVICE_FLAG_NOTIFIED)
 		return "notified";
-	if (device_flag == FWUPD_DEVICE_FLAG_USE_RUNTIME_VERSION)
-		return "use-runtime-version";
-	if (device_flag == FWUPD_DEVICE_FLAG_INSTALL_PARENT_FIRST)
-		return "install-parent-first";
 	if (device_flag == FWUPD_DEVICE_FLAG_IS_BOOTLOADER)
 		return "is-bootloader";
 	if (device_flag == FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG)
 		return "wait-for-replug";
-	if (device_flag == FWUPD_DEVICE_FLAG_IGNORE_VALIDATION)
-		return "ignore-validation";
-	if (device_flag == FWUPD_DEVICE_FLAG_TRUSTED)
-		return "trusted";
 	if (device_flag == FWUPD_DEVICE_FLAG_ANOTHER_WRITE_REQUIRED)
 		return "another-write-required";
-	if (device_flag == FWUPD_DEVICE_FLAG_NO_AUTO_INSTANCE_IDS)
-		return "no-auto-instance-ids";
 	if (device_flag == FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)
 		return "needs-activation";
-	if (device_flag == FWUPD_DEVICE_FLAG_ENSURE_SEMVER)
-		return "ensure-semver";
 	if (device_flag == FWUPD_DEVICE_FLAG_HISTORICAL)
 		return "historical";
-	if (device_flag == FWUPD_DEVICE_FLAG_ONLY_SUPPORTED)
-		return "only-supported";
 	if (device_flag == FWUPD_DEVICE_FLAG_WILL_DISAPPEAR)
 		return "will-disappear";
 	if (device_flag == FWUPD_DEVICE_FLAG_CAN_VERIFY)
@@ -179,22 +161,8 @@ fwupd_device_flag_to_string(FwupdDeviceFlags device_flag)
 		return "version-check-required";
 	if (device_flag == FWUPD_DEVICE_FLAG_INSTALL_ALL_RELEASES)
 		return "install-all-releases";
-	if (device_flag == FWUPD_DEVICE_FLAG_MD_SET_NAME)
-		return "md-set-name";
-	if (device_flag == FWUPD_DEVICE_FLAG_MD_SET_NAME_CATEGORY)
-		return "md-set-name-category";
-	if (device_flag == FWUPD_DEVICE_FLAG_MD_SET_VERFMT)
-		return "md-set-verfmt";
-	if (device_flag == FWUPD_DEVICE_FLAG_MD_SET_ICON)
-		return "md-set-icon";
-	if (device_flag == FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS)
-		return "add-counterpart-guids";
-	if (device_flag == FWUPD_DEVICE_FLAG_NO_GUID_MATCHING)
-		return "no-guid-matching";
 	if (device_flag == FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN)
 		return "updatable-hidden";
-	if (device_flag == FWUPD_DEVICE_FLAG_SKIPS_RESTART)
-		return "skips-restart";
 	if (device_flag == FWUPD_DEVICE_FLAG_HAS_MULTIPLE_BRANCHES)
 		return "has-multiple-branches";
 	if (device_flag == FWUPD_DEVICE_FLAG_BACKUP_BEFORE_INSTALL)
@@ -219,6 +187,10 @@ fwupd_device_flag_to_string(FwupdDeviceFlags device_flag)
 		return "emulation-tag";
 	if (device_flag == FWUPD_DEVICE_FLAG_ONLY_EXPLICIT_UPDATES)
 		return "only-explicit-updates";
+	if (device_flag == FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG)
+		return "can-emulation-tag";
+	if (device_flag == FWUPD_DEVICE_FLAG_INSTALL_SKIP_VERSION_CHECK)
+		return "install-skip-version-check";
 	if (device_flag == FWUPD_DEVICE_FLAG_UNKNOWN)
 		return "unknown";
 	return NULL;
@@ -243,9 +215,6 @@ fwupd_device_flag_from_string(const gchar *device_flag)
 		return FWUPD_DEVICE_FLAG_INTERNAL;
 	if (g_strcmp0(device_flag, "updatable") == 0 || g_strcmp0(device_flag, "allow-online") == 0)
 		return FWUPD_DEVICE_FLAG_UPDATABLE;
-	if (g_strcmp0(device_flag, "only-offline") == 0 ||
-	    g_strcmp0(device_flag, "allow-offline") == 0)
-		return FWUPD_DEVICE_FLAG_ONLY_OFFLINE;
 	if (g_strcmp0(device_flag, "require-ac") == 0)
 		return FWUPD_DEVICE_FLAG_REQUIRE_AC;
 	if (g_strcmp0(device_flag, "locked") == 0)
@@ -254,8 +223,6 @@ fwupd_device_flag_from_string(const gchar *device_flag)
 		return FWUPD_DEVICE_FLAG_SUPPORTED;
 	if (g_strcmp0(device_flag, "needs-bootloader") == 0)
 		return FWUPD_DEVICE_FLAG_NEEDS_BOOTLOADER;
-	if (g_strcmp0(device_flag, "registered") == 0)
-		return FWUPD_DEVICE_FLAG_REGISTERED;
 	if (g_strcmp0(device_flag, "needs-reboot") == 0)
 		return FWUPD_DEVICE_FLAG_NEEDS_REBOOT;
 	if (g_strcmp0(device_flag, "needs-shutdown") == 0)
@@ -264,30 +231,16 @@ fwupd_device_flag_from_string(const gchar *device_flag)
 		return FWUPD_DEVICE_FLAG_REPORTED;
 	if (g_strcmp0(device_flag, "notified") == 0)
 		return FWUPD_DEVICE_FLAG_NOTIFIED;
-	if (g_strcmp0(device_flag, "use-runtime-version") == 0)
-		return FWUPD_DEVICE_FLAG_USE_RUNTIME_VERSION;
-	if (g_strcmp0(device_flag, "install-parent-first") == 0)
-		return FWUPD_DEVICE_FLAG_INSTALL_PARENT_FIRST;
 	if (g_strcmp0(device_flag, "is-bootloader") == 0)
 		return FWUPD_DEVICE_FLAG_IS_BOOTLOADER;
 	if (g_strcmp0(device_flag, "wait-for-replug") == 0)
 		return FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG;
-	if (g_strcmp0(device_flag, "ignore-validation") == 0)
-		return FWUPD_DEVICE_FLAG_IGNORE_VALIDATION;
-	if (g_strcmp0(device_flag, "trusted") == 0)
-		return FWUPD_DEVICE_FLAG_TRUSTED;
 	if (g_strcmp0(device_flag, "another-write-required") == 0)
 		return FWUPD_DEVICE_FLAG_ANOTHER_WRITE_REQUIRED;
-	if (g_strcmp0(device_flag, "no-auto-instance-ids") == 0)
-		return FWUPD_DEVICE_FLAG_NO_AUTO_INSTANCE_IDS;
 	if (g_strcmp0(device_flag, "needs-activation") == 0)
 		return FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION;
-	if (g_strcmp0(device_flag, "ensure-semver") == 0)
-		return FWUPD_DEVICE_FLAG_ENSURE_SEMVER;
 	if (g_strcmp0(device_flag, "historical") == 0)
 		return FWUPD_DEVICE_FLAG_HISTORICAL;
-	if (g_strcmp0(device_flag, "only-supported") == 0)
-		return FWUPD_DEVICE_FLAG_ONLY_SUPPORTED;
 	if (g_strcmp0(device_flag, "will-disappear") == 0)
 		return FWUPD_DEVICE_FLAG_WILL_DISAPPEAR;
 	if (g_strcmp0(device_flag, "can-verify") == 0)
@@ -304,22 +257,8 @@ fwupd_device_flag_from_string(const gchar *device_flag)
 		return FWUPD_DEVICE_FLAG_VERSION_CHECK_REQUIRED;
 	if (g_strcmp0(device_flag, "install-all-releases") == 0)
 		return FWUPD_DEVICE_FLAG_INSTALL_ALL_RELEASES;
-	if (g_strcmp0(device_flag, "md-set-name") == 0)
-		return FWUPD_DEVICE_FLAG_MD_SET_NAME;
-	if (g_strcmp0(device_flag, "md-set-name-category") == 0)
-		return FWUPD_DEVICE_FLAG_MD_SET_NAME_CATEGORY;
-	if (g_strcmp0(device_flag, "md-set-verfmt") == 0)
-		return FWUPD_DEVICE_FLAG_MD_SET_VERFMT;
-	if (g_strcmp0(device_flag, "md-set-icon") == 0)
-		return FWUPD_DEVICE_FLAG_MD_SET_ICON;
-	if (g_strcmp0(device_flag, "add-counterpart-guids") == 0)
-		return FWUPD_DEVICE_FLAG_ADD_COUNTERPART_GUIDS;
-	if (g_strcmp0(device_flag, "no-guid-matching") == 0)
-		return FWUPD_DEVICE_FLAG_NO_GUID_MATCHING;
 	if (g_strcmp0(device_flag, "updatable-hidden") == 0)
 		return FWUPD_DEVICE_FLAG_UPDATABLE_HIDDEN;
-	if (g_strcmp0(device_flag, "skips-restart") == 0)
-		return FWUPD_DEVICE_FLAG_SKIPS_RESTART;
 	if (g_strcmp0(device_flag, "has-multiple-branches") == 0)
 		return FWUPD_DEVICE_FLAG_HAS_MULTIPLE_BRANCHES;
 	if (g_strcmp0(device_flag, "backup-before-install") == 0)
@@ -344,6 +283,10 @@ fwupd_device_flag_from_string(const gchar *device_flag)
 		return FWUPD_DEVICE_FLAG_EMULATION_TAG;
 	if (g_strcmp0(device_flag, "only-explicit-updates") == 0)
 		return FWUPD_DEVICE_FLAG_ONLY_EXPLICIT_UPDATES;
+	if (g_strcmp0(device_flag, "can-emulation-tag") == 0)
+		return FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG;
+	if (g_strcmp0(device_flag, "install-skip-version-check") == 0)
+		return FWUPD_DEVICE_FLAG_INSTALL_SKIP_VERSION_CHECK;
 	return FWUPD_DEVICE_FLAG_UNKNOWN;
 }
 
@@ -386,6 +329,8 @@ fwupd_device_problem_to_string(FwupdDeviceProblem device_problem)
 		return "in-use";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED)
 		return "display-required";
+	if (device_problem == FWUPD_DEVICE_PROBLEM_LOWER_PRIORITY)
+		return "lower-priority";
 	if (device_problem == FWUPD_DEVICE_PROBLEM_UNKNOWN)
 		return "unknown";
 	return NULL;
@@ -430,6 +375,8 @@ fwupd_device_problem_from_string(const gchar *device_problem)
 		return FWUPD_DEVICE_PROBLEM_IN_USE;
 	if (g_strcmp0(device_problem, "display-required") == 0)
 		return FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED;
+	if (g_strcmp0(device_problem, "lower-priority") == 0)
+		return FWUPD_DEVICE_PROBLEM_LOWER_PRIORITY;
 	return FWUPD_DEVICE_PROBLEM_UNKNOWN;
 }
 
@@ -446,7 +393,7 @@ fwupd_device_problem_from_string(const gchar *device_problem)
 const gchar *
 fwupd_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 {
-	if (plugin_flag == FWUPD_DEVICE_FLAG_NONE)
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_NONE)
 		return "none";
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_DISABLED)
 		return "disabled";
@@ -474,7 +421,7 @@ fwupd_plugin_flag_to_string(FwupdPluginFlags plugin_flag)
 		return "require-hwid";
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_KERNEL_TOO_OLD)
 		return "kernel-too-old";
-	if (plugin_flag == FWUPD_DEVICE_FLAG_UNKNOWN)
+	if (plugin_flag == FWUPD_PLUGIN_FLAG_UNKNOWN)
 		return "unknown";
 	if (plugin_flag == FWUPD_PLUGIN_FLAG_AUTH_REQUIRED)
 		return "auth-required";
@@ -505,7 +452,7 @@ FwupdPluginFlags
 fwupd_plugin_flag_from_string(const gchar *plugin_flag)
 {
 	if (g_strcmp0(plugin_flag, "none") == 0)
-		return FWUPD_DEVICE_FLAG_NONE;
+		return FWUPD_PLUGIN_FLAG_NONE;
 	if (g_strcmp0(plugin_flag, "disabled") == 0)
 		return FWUPD_PLUGIN_FLAG_DISABLED;
 	if (g_strcmp0(plugin_flag, "user-warning") == 0)
@@ -544,7 +491,7 @@ fwupd_plugin_flag_from_string(const gchar *plugin_flag)
 		return FWUPD_PLUGIN_FLAG_READY;
 	if (g_strcmp0(plugin_flag, "test-only") == 0)
 		return FWUPD_PLUGIN_FLAG_TEST_ONLY;
-	return FWUPD_DEVICE_FLAG_UNKNOWN;
+	return FWUPD_PLUGIN_FLAG_UNKNOWN;
 }
 
 /**
@@ -601,50 +548,6 @@ fwupd_update_state_from_string(const gchar *update_state)
 	if (g_strcmp0(update_state, "needs-reboot") == 0)
 		return FWUPD_UPDATE_STATE_NEEDS_REBOOT;
 	return FWUPD_UPDATE_STATE_UNKNOWN;
-}
-
-/**
- * fwupd_trust_flag_to_string:
- * @trust_flag: the trust flags, e.g. %FWUPD_TRUST_FLAG_PAYLOAD
- *
- * Converts an enumerated trust flag to a string.
- *
- * Returns: identifier string
- *
- * Since: 0.7.0
- **/
-const gchar *
-fwupd_trust_flag_to_string(FwupdTrustFlags trust_flag)
-{
-	if (trust_flag == FWUPD_TRUST_FLAG_NONE)
-		return "none";
-	if (trust_flag == FWUPD_TRUST_FLAG_PAYLOAD)
-		return "payload";
-	if (trust_flag == FWUPD_TRUST_FLAG_METADATA)
-		return "metadata";
-	return NULL;
-}
-
-/**
- * fwupd_trust_flag_from_string:
- * @trust_flag: (nullable): a string, e.g. `payload`
- *
- * Converts a string to an enumerated trust flag.
- *
- * Returns: enumerated value
- *
- * Since: 0.7.0
- **/
-FwupdTrustFlags
-fwupd_trust_flag_from_string(const gchar *trust_flag)
-{
-	if (g_strcmp0(trust_flag, "none") == 0)
-		return FWUPD_TRUST_FLAG_NONE;
-	if (g_strcmp0(trust_flag, "payload") == 0)
-		return FWUPD_TRUST_FLAG_PAYLOAD;
-	if (g_strcmp0(trust_flag, "metadata") == 0)
-		return FWUPD_TRUST_FLAG_METADATA;
-	return FWUPD_TRUST_FLAG_LAST;
 }
 
 /**
@@ -720,55 +623,7 @@ fwupd_feature_flag_from_string(const gchar *feature_flag)
 		return FWUPD_FEATURE_FLAG_ALLOW_AUTHENTICATION;
 	if (g_strcmp0(feature_flag, "requests-non-generic") == 0)
 		return FWUPD_FEATURE_FLAG_REQUESTS_NON_GENERIC;
-	return FWUPD_FEATURE_FLAG_LAST;
-}
-
-/**
- * fwupd_keyring_kind_from_string:
- * @keyring_kind: (nullable): a string, e.g. `gpg`
- *
- * Converts an printable string to an enumerated keyring kind.
- *
- * Returns: keyring kind, e.g. %FWUPD_KEYRING_KIND_GPG
- *
- * Since: 0.9.7
- **/
-FwupdKeyringKind
-fwupd_keyring_kind_from_string(const gchar *keyring_kind)
-{
-	if (g_strcmp0(keyring_kind, "none") == 0)
-		return FWUPD_KEYRING_KIND_NONE;
-	if (g_strcmp0(keyring_kind, "gpg") == 0)
-		return FWUPD_KEYRING_KIND_GPG;
-	if (g_strcmp0(keyring_kind, "pkcs7") == 0)
-		return FWUPD_KEYRING_KIND_PKCS7;
-	if (g_strcmp0(keyring_kind, "jcat") == 0)
-		return FWUPD_KEYRING_KIND_JCAT;
-	return FWUPD_KEYRING_KIND_UNKNOWN;
-}
-
-/**
- * fwupd_keyring_kind_to_string:
- * @keyring_kind: a #FwupdKeyringKind, e.g. %FWUPD_KEYRING_KIND_GPG
- *
- * Converts an enumerated keyring kind to a printable string.
- *
- * Returns: a string, e.g. `gpg`
- *
- * Since: 0.9.7
- **/
-const gchar *
-fwupd_keyring_kind_to_string(FwupdKeyringKind keyring_kind)
-{
-	if (keyring_kind == FWUPD_KEYRING_KIND_NONE)
-		return "none";
-	if (keyring_kind == FWUPD_KEYRING_KIND_GPG)
-		return "gpg";
-	if (keyring_kind == FWUPD_KEYRING_KIND_PKCS7)
-		return "pkcs7";
-	if (keyring_kind == FWUPD_KEYRING_KIND_JCAT)
-		return "jcat";
-	return NULL;
+	return FWUPD_FEATURE_FLAG_UNKNOWN;
 }
 
 /**
@@ -970,5 +825,41 @@ fwupd_version_format_to_string(FwupdVersionFormat kind)
 		return "hex";
 	if (kind == FWUPD_VERSION_FORMAT_DELL_BIOS_MSB)
 		return "dell-bios-msb";
+	return NULL;
+}
+
+/**
+ * fwupd_install_flags_to_string:
+ * @install_flags: a #FwupdInstallFlags, e.g. %FWUPD_INSTALL_FLAG_FORCE
+ *
+ * Converts an install flag to text.
+ *
+ * Returns: a string, e.g. `force`, or %NULL if not known
+ *
+ * Since: 2.0.0
+ **/
+const gchar *
+fwupd_install_flags_to_string(FwupdInstallFlags install_flags)
+{
+	if (install_flags == FWUPD_INSTALL_FLAG_NONE)
+		return "none";
+	if (install_flags == FWUPD_INSTALL_FLAG_ALLOW_REINSTALL)
+		return "allow-reinstall";
+	if (install_flags == FWUPD_INSTALL_FLAG_ALLOW_OLDER)
+		return "allow-older";
+	if (install_flags == FWUPD_INSTALL_FLAG_FORCE)
+		return "force";
+	if (install_flags == FWUPD_INSTALL_FLAG_NO_HISTORY)
+		return "no-history";
+	if (install_flags == FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH)
+		return "allow-branch-switch";
+	if (install_flags == FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM)
+		return "ignore-checksum";
+	if (install_flags == FWUPD_INSTALL_FLAG_IGNORE_VID_PID)
+		return "ignore-vid-pid";
+	if (install_flags == FWUPD_INSTALL_FLAG_NO_SEARCH)
+		return "no-search";
+	if (install_flags == FWUPD_INSTALL_FLAG_IGNORE_REQUIREMENTS)
+		return "ignore-requirements";
 	return NULL;
 }

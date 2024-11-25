@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuHwids"
@@ -189,7 +189,7 @@ fu_hwids_get_replace_keys(FuHwids *self, const gchar *key)
  *
  * Defines a "Computer Hardware ID" in terms of a set of SMBIOS values.
  *
- * Since: 1.9.22
+ * Since: 1.9.16
  **/
 void
 fu_hwids_add_chid(FuHwids *self, const gchar *key, const gchar *value)
@@ -216,7 +216,7 @@ fu_hwids_sort_keys_cb(gconstpointer a, gconstpointer b)
  *
  * Returns: (transfer container) (element-type utf8): IDs
  *
- * Since: 1.9.22
+ * Since: 1.9.16
  **/
 GPtrArray *
 fu_hwids_get_chid_keys(FuHwids *self)
@@ -302,8 +302,8 @@ fu_hwids_get_replace_values(FuHwids *self, const gchar *keys, GError **error)
 		const gchar *tmp = g_hash_table_lookup(self->hash_values, split[j]);
 		if (tmp == NULL) {
 			g_set_error(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_FAILED,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
 				    "not available as '%s' unknown",
 				    split[j]);
 			return NULL;

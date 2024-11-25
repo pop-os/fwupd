@@ -1,8 +1,8 @@
 /*
- * Copyright (C) 2018 Richard Hughes <richard@hughsie.com>
- * Copyright (C) 2019 Mario Limonciello <mario.limonciello@dell.com>
+ * Copyright 2018 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Mario Limonciello <mario.limonciello@dell.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -80,9 +80,6 @@ fu_volume_new_by_device(const gchar *device, GError **error) G_GNUC_WARN_UNUSED_
     G_GNUC_NON_NULL(1);
 FuVolume *
 fu_volume_new_by_devnum(guint32 devnum, GError **error) G_GNUC_WARN_UNUSED_RESULT;
-FuVolume *
-fu_volume_new_esp_for_path(const gchar *esp_path, GError **error) G_GNUC_WARN_UNUSED_RESULT
-    G_GNUC_NON_NULL(1);
 const gchar *
 fu_volume_kind_convert_to_gpt(const gchar *kind) G_GNUC_NON_NULL(1);
 gboolean

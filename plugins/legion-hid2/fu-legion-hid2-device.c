@@ -139,7 +139,8 @@ fu_legion_hid2_device_setup(FuDevice *device, GError **error)
 
 static FuFirmware *
 fu_legion_hid2_device_prepare_firmware(FuDevice *device,
-				       GBytes *fw,
+				       GInputStream *stream,
+				       FuProgress *progress,
 				       FwupdInstallFlags flags,
 				       GError **error)
 {
@@ -148,7 +149,7 @@ fu_legion_hid2_device_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) firmware = fu_legion_hid2_firmware_new();
 
 	/* sanity check */
-	if (!fu_firmware_parse(firmware, fw, flags, error))
+	if (!fu_firmware_parse_stream(firmware, stream, 0x0, flags, error))
 		return NULL;
 
 	version = fu_legion_hid2_firmware_get_version(firmware);
@@ -275,7 +276,9 @@ fu_legion_hid2_device_write_data_chunks(FuLegionHid2Device *self,
 
 		fu_struct_legion_iap_tlv_set_tag(req, tag);
 
-		chk = fu_chunk_array_index(chunks, i);
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
 
 		if (!fu_struct_legion_iap_tlv_set_value(req,
 							fu_chunk_get_data(chk),
@@ -316,7 +319,7 @@ fu_legion_hid2_device_wait_for_complete_cb(FuDevice *device, gpointer user_data,
 	if (value[1] < 100) {
 		g_set_error(error,
 			    FWUPD_ERROR,
-			    FWUPD_ERROR_WRITE,
+			    FWUPD_ERROR_BUSY,
 			    "device is %d percent done",
 			    value[1]);
 		return FALSE;
@@ -331,20 +334,20 @@ fu_legion_hid2_device_write_data(FuLegionHid2Device *self,
 				 FuProgress *progress,
 				 GError **error)
 {
-	guint32 offset;
-	gssize length;
-	g_autoptr(GBytes) fw = NULL;
-	g_autoptr(GBytes) data = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_image_by_id_stream(firmware, FU_FIRMWARE_ID_PAYLOAD, error);
+	if (stream == NULL)
 		return FALSE;
 
-	offset = fu_legion_hid2_firmware_get_data_offset(firmware);
-	length = fu_legion_hid2_firmware_get_data_size(firmware);
-	data = g_bytes_new_from_bytes(fw, offset, length);
-	chunks = fu_chunk_array_new_from_bytes(data, 0, FU_STRUCT_LEGION_IAP_TLV_SIZE_VALUE);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						FU_STRUCT_LEGION_IAP_TLV_SIZE_VALUE,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 	if (!fu_legion_hid2_device_write_data_chunks(self,
 						     chunks,
 						     progress,
@@ -361,20 +364,20 @@ fu_legion_hid2_device_write_sig(FuLegionHid2Device *self,
 				FuProgress *progress,
 				GError **error)
 {
-	guint32 offset;
-	gssize length;
-	g_autoptr(GBytes) fw = NULL;
-	g_autoptr(GBytes) data = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_image_by_id_stream(firmware, FU_FIRMWARE_ID_SIGNATURE, error);
+	if (stream == NULL)
 		return FALSE;
 
-	offset = fu_legion_hid2_firmware_get_sig_offset(firmware);
-	length = fu_legion_hid2_firmware_get_sig_size(firmware);
-	data = g_bytes_new_from_bytes(fw, offset, length);
-	chunks = fu_chunk_array_new_from_bytes(data, 0, FU_STRUCT_LEGION_IAP_TLV_SIZE_VALUE);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						FU_STRUCT_LEGION_IAP_TLV_SIZE_VALUE,
+						error);
+	if (chunks == NULL)
+		return FALSE;
 	if (!fu_legion_hid2_device_write_data_chunks(self,
 						     chunks,
 						     progress,

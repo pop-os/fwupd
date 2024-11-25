@@ -1,14 +1,14 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
 
 #include <fwupd.h>
 
-#include "fu-common.h"
+#include "fu-endian.h"
 
 gboolean
 fu_memcmp_safe(const guint8 *buf1,

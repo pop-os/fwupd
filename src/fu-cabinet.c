@@ -1,21 +1,16 @@
 /*
- * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
+ * Copyright 2017 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #define G_LOG_DOMAIN "FuCabinet"
 
 #include "config.h"
 
-#include "fwupd-common.h"
-#include "fwupd-enums.h"
-#include "fwupd-error.h"
+#include <fwupdplugin.h>
 
-#include "fu-cab-image.h"
 #include "fu-cabinet.h"
-#include "fu-common.h"
-#include "fu-string.h"
 
 /**
  * FuCabinet:
@@ -73,7 +68,7 @@ fu_cabinet_get_silo(FuCabinet *self, GError **error)
 	g_return_val_if_fail(FU_IS_CABINET(self), NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 	if (self->silo == NULL) {
-		g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_INITIALIZED, "no silo");
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "no silo");
 		return NULL;
 	}
 	return g_object_ref(self->silo);
@@ -103,51 +98,23 @@ fu_cabinet_add_file(FuCabinet *self, const gchar *basename, GBytes *data)
 	fu_firmware_add_image(FU_FIRMWARE(self), FU_FIRMWARE(img));
 }
 
-/**
- * fu_cabinet_get_file:
- * @self: a #FuCabinet
- * @basename: filename
- * @error: (nullable): optional return location for an error
- *
- * Gets a file from the archive.
- *
- * Returns: (transfer full): a #GBytes, or %NULL if the file does not exist
- *
- * Since: 1.6.0
- **/
-GBytes *
-fu_cabinet_get_file(FuCabinet *self, const gchar *basename, GError **error)
-{
-	g_autoptr(FuFirmware) img = NULL;
-	g_autoptr(GError) error_local = NULL;
-
-	g_return_val_if_fail(FU_IS_CABINET(self), NULL);
-	g_return_val_if_fail(basename != NULL, NULL);
-
-	img = fu_firmware_get_image_by_id(FU_FIRMWARE(self), basename, &error_local);
-	if (img == NULL) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    error_local->message);
-		return NULL;
-	}
-	return fu_firmware_get_bytes(img, error);
-}
-
 /* sets the firmware and signature blobs on XbNode */
 static gboolean
 fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 {
 	const gchar *csum_filename = NULL;
+	gsize streamsz = 0;
 	g_autofree gchar *basename = NULL;
-	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(FuFirmware) img_blob = NULL;
+	g_autoptr(GInputStream) stream = NULL;
+	g_autoptr(GError) error_local2 = NULL;
 	g_autoptr(XbNode) artifact = NULL;
 	g_autoptr(XbNode) csum_tmp = NULL;
 	g_autoptr(XbNode) metadata_trust = NULL;
 	g_autoptr(XbNode) nsize = NULL;
 	g_autoptr(JcatItem) item = NULL;
 	g_autoptr(GBytes) release_flags_blob = NULL;
+	g_autoptr(GBytes) filename_blob = NULL;
 	FwupdReleaseFlags release_flags = FWUPD_RELEASE_FLAG_NONE;
 
 	/* we set this with XbBuilderSource before the silo was created */
@@ -175,31 +142,46 @@ fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 
 	/* get the main firmware file */
 	basename = g_path_get_basename(csum_filename);
-	blob = fu_cabinet_get_file(self, basename, error);
-	if (blob == NULL)
+	img_blob = fu_firmware_get_image_by_id(FU_FIRMWARE(self), basename, &error_local2);
+	if (img_blob == NULL) {
+		/* we have to set this exact error code */
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_FILE,
+				    error_local2->message);
 		return FALSE;
-
-	/* set the blob */
-	xb_node_set_data(release, "fwupd::FirmwareBlob", blob);
+	}
+	filename_blob = g_bytes_new(basename, strlen(basename) + 1);
+	xb_node_set_data(release, "fwupd::FirmwareBasename", filename_blob);
 
 	/* set as metadata if unset, but error if specified and incorrect */
+	stream = fu_firmware_get_stream(img_blob, error);
+	if (stream == NULL)
+		return FALSE;
+	if (!fu_input_stream_size(stream, &streamsz, error))
+		return FALSE;
 	nsize = xb_node_query_first(release, "size[@type='installed']", NULL);
 	if (nsize != NULL) {
 		guint64 size = 0;
-		if (!fu_strtoull(xb_node_get_text(nsize), &size, 0, G_MAXSIZE, error))
+		if (!fu_strtoull(xb_node_get_text(nsize),
+				 &size,
+				 0,
+				 G_MAXSIZE,
+				 FU_INTEGER_BASE_AUTO,
+				 error))
 			return FALSE;
-		if (size != g_bytes_get_size(blob)) {
+		if (size != streamsz) {
 			g_set_error(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_INVALID_FILE,
 				    "contents size invalid, expected "
 				    "%" G_GSIZE_FORMAT ", got %" G_GUINT64_FORMAT,
-				    g_bytes_get_size(blob),
+				    streamsz,
 				    size);
 			return FALSE;
 		}
 	} else {
-		guint64 size = g_bytes_get_size(blob);
+		guint64 size = streamsz;
 		g_autoptr(GBytes) blob_sz = g_bytes_new(&size, sizeof(guint64));
 		xb_node_set_data(release, "fwupd::ReleaseSize", blob_sz);
 	}
@@ -209,7 +191,9 @@ fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 		const gchar *checksum_old = xb_node_get_text(csum_tmp);
 		GChecksumType checksum_type = fwupd_checksum_guess_kind(checksum_old);
 		g_autofree gchar *checksum = NULL;
-		checksum = g_compute_checksum_for_bytes(checksum_type, blob);
+		checksum = fu_input_stream_compute_checksum(stream, checksum_type, error);
+		if (checksum == NULL)
+			return FALSE;
 		if (g_strcmp0(checksum, checksum_old) != 0) {
 			g_set_error(error,
 				    FWUPD_ERROR,
@@ -221,11 +205,56 @@ fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 		}
 	}
 
-	/* find out if the payload is signed, falling back to detached */
+	/* the jcat file signed the *checksum of the payload*, not the payload itself */
 	item = jcat_file_get_item_by_id(self->jcat_file, basename, NULL);
-	if (item != NULL) {
+	if (item != NULL && jcat_item_has_target(item)) {
+		g_autofree gchar *checksum_sha256 = NULL;
+		g_autofree gchar *checksum_sha512 = NULL;
 		g_autoptr(GError) error_local = NULL;
 		g_autoptr(GPtrArray) results = NULL;
+		g_autoptr(JcatBlob) blob_target_sha256 = NULL;
+		g_autoptr(JcatBlob) blob_target_sha512 = NULL;
+		g_autoptr(JcatItem) item_target = jcat_item_new(basename);
+
+		/* add SHA-256 */
+		checksum_sha256 =
+		    fu_input_stream_compute_checksum(stream, G_CHECKSUM_SHA256, error);
+		if (checksum_sha256 == NULL)
+			return FALSE;
+		blob_target_sha256 = jcat_blob_new_utf8(JCAT_BLOB_KIND_SHA256, checksum_sha256);
+		jcat_item_add_blob(item_target, blob_target_sha256);
+
+		/* add SHA-512 */
+		checksum_sha512 =
+		    fu_input_stream_compute_checksum(stream, G_CHECKSUM_SHA512, error);
+		if (checksum_sha512 == NULL)
+			return FALSE;
+		blob_target_sha512 = jcat_blob_new_utf8(JCAT_BLOB_KIND_SHA512, checksum_sha512);
+		jcat_item_add_blob(item_target, blob_target_sha512);
+
+		results = jcat_context_verify_target(self->jcat_context,
+						     item_target,
+						     item,
+						     JCAT_VERIFY_FLAG_REQUIRE_CHECKSUM |
+							 JCAT_VERIFY_FLAG_REQUIRE_SIGNATURE,
+						     &error_local);
+		if (results == NULL) {
+			g_info("failed to verify indirect payload %s: %s",
+			       basename,
+			       error_local->message);
+		} else {
+			g_info("verified indirect payload %s: %u", basename, results->len);
+			release_flags |= FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD;
+		}
+	} else if (item != NULL) {
+		g_autoptr(GBytes) blob = NULL;
+		g_autoptr(GError) error_local = NULL;
+		g_autoptr(GPtrArray) results = NULL;
+
+		/* verify the binary item */
+		blob = fu_firmware_get_bytes(img_blob, error);
+		if (blob == NULL)
+			return FALSE;
 		results = jcat_context_verify_item(self->jcat_context,
 						   blob,
 						   item,
@@ -239,11 +268,11 @@ fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 			release_flags |= FWUPD_RELEASE_FLAG_TRUSTED_PAYLOAD;
 		}
 
-		/* legacy GPG detached signature */
 	} else {
 		g_autofree gchar *basename_sig = NULL;
 		g_autoptr(FuFirmware) img_sig = NULL;
 
+		/* legacy GPG detached signature */
 		basename_sig = g_strdup_printf("%s.asc", basename);
 		img_sig = fu_firmware_get_image_by_id(FU_FIRMWARE(FU_CAB_FIRMWARE(self)),
 						      basename_sig,
@@ -251,9 +280,13 @@ fu_cabinet_parse_release(FuCabinet *self, XbNode *release, GError **error)
 		if (img_sig != NULL) {
 			g_autoptr(JcatResult) jcat_result = NULL;
 			g_autoptr(JcatBlob) jcat_blob = NULL;
+			g_autoptr(GBytes) blob = NULL;
 			g_autoptr(GBytes) data_sig = NULL;
 			g_autoptr(GError) error_local = NULL;
 
+			blob = fu_firmware_get_bytes(img_blob, error);
+			if (blob == NULL)
+				return FALSE;
 			data_sig = fu_firmware_get_bytes(img_sig, error);
 			if (data_sig == NULL)
 				return FALSE;
@@ -523,18 +556,21 @@ fu_cabinet_build_jcat_folder(FuCabinet *self, FuFirmware *img, GError **error)
 		return FALSE;
 	}
 	if (g_str_has_suffix(fn, ".jcat")) {
-		g_autoptr(GBytes) data_jcat = NULL;
 		g_autoptr(GInputStream) istream = NULL;
-		data_jcat = fu_firmware_get_bytes(img, error);
-		if (data_jcat == NULL)
+		istream = fu_firmware_get_stream(img, error);
+		if (istream == NULL)
 			return FALSE;
-		istream = g_memory_input_stream_new_from_bytes(data_jcat);
+		/* TODO: move this to libjcat? */
+		if (!g_seekable_seek(G_SEEKABLE(istream), 0x0, G_SEEK_SET, NULL, error))
+			return FALSE;
 		if (!jcat_file_import_stream(self->jcat_file,
 					     istream,
 					     JCAT_IMPORT_FLAG_NONE,
 					     NULL,
-					     error))
+					     error)) {
+			g_prefix_error(error, "failed to import JCat stream: ");
 			return FALSE;
+		}
 	}
 	return TRUE;
 }
@@ -622,6 +658,18 @@ fu_cabinet_build_silo(FuCabinet *self, GError **error)
 	if (self->silo == NULL)
 		return FALSE;
 
+	/* build the index */
+	if (!xb_silo_query_build_index(self->silo,
+				       "components/component[@type='firmware']/provides/firmware",
+				       "type",
+				       error))
+		return FALSE;
+	if (!xb_silo_query_build_index(self->silo,
+				       "components/component[@type='firmware']/provides/firmware",
+				       NULL,
+				       error))
+		return FALSE;
+
 	/* success */
 	return TRUE;
 }
@@ -635,12 +683,16 @@ fu_cabinet_sign_filename(FuCabinet *self,
 			 GBytes *privkey,
 			 GError **error)
 {
+	g_autoptr(FuFirmware) img = NULL;
 	g_autoptr(GBytes) source_blob = NULL;
 	g_autoptr(JcatBlob) jcat_blob = NULL;
 	g_autoptr(JcatItem) jcat_item = NULL;
 
 	/* sign the file using the engine */
-	source_blob = fu_cabinet_get_file(self, filename, error);
+	img = fu_firmware_get_image_by_id(FU_FIRMWARE(self), filename, error);
+	if (img == NULL)
+		return FALSE;
+	source_blob = fu_firmware_get_bytes(img, error);
 	if (source_blob == NULL)
 		return FALSE;
 	jcat_item = jcat_file_get_item_by_id(jcat_file, filename, NULL);
@@ -753,20 +805,26 @@ fu_cabinet_sign(FuCabinet *self,
 		FuCabinetSignFlags flags,
 		GError **error)
 {
+	g_autoptr(FuFirmware) img = NULL;
 	g_autoptr(GBytes) new_bytes = NULL;
-	g_autoptr(GBytes) old_bytes = NULL;
 	g_autoptr(GOutputStream) ostr = NULL;
 	g_autoptr(GPtrArray) filenames = g_ptr_array_new_with_free_func(g_free);
 	g_autoptr(JcatContext) jcat_context = jcat_context_new();
 	g_autoptr(JcatEngine) jcat_engine = NULL;
 	g_autoptr(JcatFile) jcat_file = jcat_file_new();
 
+	g_return_val_if_fail(FU_IS_CABINET(self), FALSE);
+	g_return_val_if_fail(cert != NULL, FALSE);
+	g_return_val_if_fail(privkey != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
 	/* load existing .jcat file if it exists */
-	old_bytes = fu_cabinet_get_file(self, "firmware.jcat", NULL);
-	if (old_bytes != NULL) {
-		g_autoptr(GInputStream) istr = NULL;
-		istr = g_memory_input_stream_new_from_bytes(old_bytes);
-		if (!jcat_file_import_stream(jcat_file, istr, JCAT_IMPORT_FLAG_NONE, NULL, error))
+	img = fu_firmware_get_image_by_id(FU_FIRMWARE(self), "firmware.jcat", NULL);
+	if (img != NULL) {
+		g_autoptr(GInputStream) stream = fu_firmware_get_stream(img, error);
+		if (stream == NULL)
+			return FALSE;
+		if (!jcat_file_import_stream(jcat_file, stream, JCAT_IMPORT_FLAG_NONE, NULL, error))
 			return FALSE;
 	}
 
@@ -803,8 +861,7 @@ fu_cabinet_sign(FuCabinet *self,
 
 static gboolean
 fu_cabinet_parse(FuFirmware *firmware,
-		 GBytes *fw,
-		 gsize offset,
+		 GInputStream *stream,
 		 FwupdInstallFlags flags,
 		 GError **error)
 {
@@ -819,12 +876,18 @@ fu_cabinet_parse(FuFirmware *firmware,
 	g_return_val_if_fail(self->silo == NULL, FALSE);
 
 	/* decompress and calculate container hashes */
-	if (fw != NULL) {
+	if (stream != NULL) {
 		if (!FU_FIRMWARE_CLASS(fu_cabinet_parent_class)
-			 ->parse(firmware, fw, offset, flags, error))
+			 ->parse(firmware, stream, flags, error))
 			return FALSE;
-		self->container_checksum = g_compute_checksum_for_bytes(G_CHECKSUM_SHA1, fw);
-		self->container_checksum_alt = g_compute_checksum_for_bytes(G_CHECKSUM_SHA256, fw);
+		self->container_checksum =
+		    fu_firmware_get_checksum(firmware, G_CHECKSUM_SHA1, error);
+		if (self->container_checksum == NULL)
+			return FALSE;
+		self->container_checksum_alt =
+		    fu_firmware_get_checksum(firmware, G_CHECKSUM_SHA256, error);
+		if (self->container_checksum_alt == NULL)
+			return FALSE;
 	}
 
 	/* build xmlb silo */
@@ -877,6 +940,41 @@ fu_cabinet_parse(FuFirmware *firmware,
 	return TRUE;
 }
 
+GPtrArray *
+fu_cabinet_get_components(FuCabinet *self, GError **error)
+{
+	g_autoptr(GError) error_local = NULL;
+	g_autoptr(GPtrArray) components = NULL;
+
+	g_return_val_if_fail(FU_IS_CABINET(self), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	components =
+	    xb_silo_query(self->silo, "components/component[@type='firmware']", 0, &error_local);
+	if (components == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_INVALID_FILE,
+			    "no components: %s",
+			    error_local->message);
+		return NULL;
+	}
+	return g_steal_pointer(&components);
+}
+
+XbNode *
+fu_cabinet_get_component(FuCabinet *self, const gchar *id, GError **error)
+{
+	g_autofree gchar *xpath = NULL;
+
+	g_return_val_if_fail(FU_IS_CABINET(self), NULL);
+	g_return_val_if_fail(id != NULL, NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	xpath = g_strdup_printf("components/component/id[text()='%s']/..", id);
+	return xb_silo_query_first(self->silo, xpath, error);
+}
+
 static void
 fu_cabinet_init(FuCabinet *self)
 {
@@ -885,12 +983,10 @@ fu_cabinet_init(FuCabinet *self)
 	self->builder = xb_builder_new();
 	self->jcat_file = jcat_file_new();
 	self->jcat_context = jcat_context_new();
-#if LIBJCAT_CHECK_VERSION(0, 1, 13)
 	jcat_context_blob_kind_allow(self->jcat_context, JCAT_BLOB_KIND_SHA256);
 	jcat_context_blob_kind_allow(self->jcat_context, JCAT_BLOB_KIND_SHA512);
 	jcat_context_blob_kind_allow(self->jcat_context, JCAT_BLOB_KIND_PKCS7);
 	jcat_context_blob_kind_allow(self->jcat_context, JCAT_BLOB_KIND_GPG);
-#endif
 }
 
 static void
@@ -912,9 +1008,9 @@ static void
 fu_cabinet_class_init(FuCabinetClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(klass);
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
 	object_class->finalize = fu_cabinet_finalize;
-	klass_firmware->parse = fu_cabinet_parse;
+	firmware_class->parse = fu_cabinet_parse;
 }
 
 /**

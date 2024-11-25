@@ -1,7 +1,7 @@
-// Copyright (C) 2024 Algoltek, Inc.
-// SPDX-License-Identifier: LGPL-2.1+
+// Copyright 2024 Algoltek, Inc.
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
-enum AlgoltekCmd {
+enum FuAlgoltekCmd {
     Rdr = 0x06,
     Wrr,
     Rdv,
@@ -13,8 +13,9 @@ enum AlgoltekCmd {
     Rst = 0x20,
 }
 
-#[derive(Getters,ValidateBytes)]
-struct AlgoltekProductIdentity {
+#[derive(ParseStream, ValidateStream, Default)]
+#[repr(C, packed)]
+struct FuStructAlgoltekProductIdentity {
     header_len: u8,
     header: u64le == 0x4B45544C4F474C41, // 'A' 'L' 'G' 'O' 'L' 'T' 'E' 'K'
     product_name_len: u8,
@@ -24,7 +25,8 @@ struct AlgoltekProductIdentity {
 }
 
 #[derive(New)]
-struct AlgoltekCmdAddressPkt {
+#[repr(C, packed)]
+struct FuStructAlgoltekCmdAddressPkt {
     len: u8,
     cmd: u8,
     address: u16be,
@@ -34,7 +36,8 @@ struct AlgoltekCmdAddressPkt {
 }
 
 #[derive(New)]
-struct AlgoltekCmdTransferPkt {
+#[repr(C, packed)]
+struct FuStructAlgoltekCmdTransferPkt {
     len: u8,
     cmd: u8,
     address: u16be,

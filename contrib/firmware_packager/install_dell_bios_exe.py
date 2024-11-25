@@ -1,8 +1,8 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
-# Copyright (C) 2019 Mario Limonciello <mario.limonciello@dell.com>
+# Copyright 2019 Mario Limonciello <mario.limonciello@dell.com>
 #
-# SPDX-License-Identifier: LGPL-2.1+
+# SPDX-License-Identifier: LGPL-2.1-or-later
 
 import dbus
 import os.path
@@ -90,7 +90,7 @@ def set_conf_only_trusted(client, setval):
         pass
     else:
         return False
-    modify_config(client, prop, str(setval).lower())
+    modify_config(client, "fwupd", prop, str(setval).lower())
     return get_daemon_property(prop) == setval
 
 

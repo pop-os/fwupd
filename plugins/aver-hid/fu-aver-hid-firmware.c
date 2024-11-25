@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2023 Richard Hughes <richard@hughsie.com>
+ * Copyright 2023 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -32,18 +32,16 @@ fu_aver_hid_firmware_parse_archive_cb(FuArchive *self,
 
 static gboolean
 fu_aver_hid_firmware_parse(FuFirmware *firmware,
-			   GBytes *fw,
-			   gsize offset,
+			   GInputStream *stream,
 			   FwupdInstallFlags flags,
 			   GError **error)
 {
 	g_autoptr(FuArchive) archive = NULL;
-	archive = fu_archive_new(fw, FU_ARCHIVE_FLAG_NONE, error);
+	archive = fu_archive_new_stream(stream, FU_ARCHIVE_FLAG_NONE, error);
 	if (archive == NULL)
 		return FALSE;
 	if (!fu_archive_iterate(archive, fu_aver_hid_firmware_parse_archive_cb, firmware, error))
 		return FALSE;
-	fu_firmware_set_bytes(firmware, fw);
 	return TRUE;
 }
 
@@ -55,8 +53,8 @@ fu_aver_hid_firmware_init(FuAverHidFirmware *self)
 static void
 fu_aver_hid_firmware_class_init(FuAverHidFirmwareClass *klass)
 {
-	FuFirmwareClass *klass_firmware = FU_FIRMWARE_CLASS(klass);
-	klass_firmware->parse = fu_aver_hid_firmware_parse;
+	FuFirmwareClass *firmware_class = FU_FIRMWARE_CLASS(klass);
+	firmware_class->parse = fu_aver_hid_firmware_parse;
 }
 
 FuFirmware *

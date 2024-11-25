@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2022 Mario Limonciello <mario.limonciello@amd.com>
+ * Copyright 2022 Mario Limonciello <mario.limonciello@amd.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #pragma once
@@ -35,27 +35,48 @@ struct _FwupdBiosSettingClass {
 
 /**
  * FwupdBiosSettingKind:
- * @FWUPD_BIOS_SETTING_KIND_UNKNOWN:		BIOS setting type is unknown
- * @FWUPD_BIOS_SETTING_KIND_ENUMERATION:		BIOS setting that has enumerated possible
- *values
- * @FWUPD_BIOS_SETTING_KIND_INTEGER:		BIOS setting that is an integer
- * @FWUPD_BIOS_SETTING_KIND_STRING:		BIOS setting that accepts a string
  *
  * The type of BIOS setting.
  **/
 typedef enum {
-	FWUPD_BIOS_SETTING_KIND_UNKNOWN = 0,	 /* Since: 1.8.4 */
-	FWUPD_BIOS_SETTING_KIND_ENUMERATION = 1, /* Since: 1.8.4 */
-	FWUPD_BIOS_SETTING_KIND_INTEGER = 2,	 /* Since: 1.8.4 */
-	FWUPD_BIOS_SETTING_KIND_STRING = 3,	 /* Since: 1.8.4 */
+	/**
+	 * FWUPD_BIOS_SETTING_KIND_UNKNOWN:
+	 *
+	 * BIOS setting type is unknown.
+	 *
+	 * Since: 1.8.4
+	 */
+	FWUPD_BIOS_SETTING_KIND_UNKNOWN = 0,
+	/**
+	 * FWUPD_BIOS_SETTING_KIND_ENUMERATION:
+	 *
+	 * BIOS setting that has enumerated possible values.
+	 *
+	 * Since: 1.8.4
+	 */
+	FWUPD_BIOS_SETTING_KIND_ENUMERATION = 1,
+	/**
+	 * FWUPD_BIOS_SETTING_KIND_INTEGER:
+	 *
+	 * BIOS setting that is an integer.
+	 *
+	 * Since: 1.8.4
+	 */
+	FWUPD_BIOS_SETTING_KIND_INTEGER = 2,
+	/**
+	 * FWUPD_BIOS_SETTING_KIND_STRING:
+	 *
+	 * BIOS setting that accepts a string.
+	 *
+	 * Since: 1.8.4
+	 */
+	FWUPD_BIOS_SETTING_KIND_STRING = 3,
 	/*< private >*/
-	FWUPD_BIOS_SETTING_KIND_LAST = 4 /* perhaps increased in the future */
+	FWUPD_BIOS_SETTING_KIND_LAST = 4
 } FwupdBiosSettingKind;
 
 FwupdBiosSetting *
 fwupd_bios_setting_new(const gchar *name, const gchar *path);
-gchar *
-fwupd_bios_setting_to_string(FwupdBiosSetting *self) G_GNUC_NON_NULL(1);
 
 gboolean
 fwupd_bios_setting_get_read_only(FwupdBiosSetting *self) G_GNUC_NON_NULL(1);
@@ -106,11 +127,6 @@ fwupd_bios_setting_add_possible_value(FwupdBiosSetting *self, const gchar *possi
     G_GNUC_NON_NULL(1, 2);
 GPtrArray *
 fwupd_bios_setting_get_possible_values(FwupdBiosSetting *self) G_GNUC_NON_NULL(1);
-
-FwupdBiosSetting *
-fwupd_bios_setting_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
-GPtrArray *
-fwupd_bios_setting_array_from_variant(GVariant *value) G_GNUC_NON_NULL(1);
 
 const gchar *
 fwupd_bios_setting_get_current_value(FwupdBiosSetting *self) G_GNUC_NON_NULL(1);

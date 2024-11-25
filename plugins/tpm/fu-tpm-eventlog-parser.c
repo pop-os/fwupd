@@ -1,7 +1,7 @@
 /*
- * Copyright (C) 2019 Richard Hughes <richard@hughsie.com>
+ * Copyright 2019 Richard Hughes <richard@hughsie.com>
  *
- * SPDX-License-Identifier: LGPL-2.1+
+ * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 
 #include "config.h"
@@ -36,32 +36,31 @@ fu_tpm_eventlog_parser_item_free(FuTpmEventlogItem *item)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(FuTpmEventlogItem, fu_tpm_eventlog_parser_item_free);
 
 void
-fu_tpm_eventlog_item_to_string(FuTpmEventlogItem *item, guint idt, GString *str)
+fu_tpm_eventlog_item_to_string(FuTpmEventlogItem *item, guint idt, GString *str) /* nocheck:name */
 {
 	const gchar *tmp;
 	g_autofree gchar *pcrstr =
 	    g_strdup_printf("%s (%u)", fu_tpm_eventlog_pcr_to_string(item->pcr), item->pcr);
-	fu_string_append(str, idt, "PCR", pcrstr);
-	fu_string_append_kx(str, idt, "Type", item->kind);
+	fwupd_codec_string_append(str, idt, "PCR", pcrstr);
+	fwupd_codec_string_append_hex(str, idt, "Type", item->kind);
 	tmp = fu_tpm_eventlog_item_kind_to_string(item->kind);
-	if (tmp != NULL)
-		fu_string_append(str, idt, "Description", tmp);
+	fwupd_codec_string_append(str, idt, "Description", tmp);
 	if (item->checksum_sha1 != NULL) {
 		g_autofree gchar *csum = fu_tpm_eventlog_strhex(item->checksum_sha1);
-		fu_string_append(str, idt, "ChecksumSha1", csum);
+		fwupd_codec_string_append(str, idt, "ChecksumSha1", csum);
 	}
 	if (item->checksum_sha256 != NULL) {
 		g_autofree gchar *csum = fu_tpm_eventlog_strhex(item->checksum_sha256);
-		fu_string_append(str, idt, "ChecksumSha256", csum);
+		fwupd_codec_string_append(str, idt, "ChecksumSha256", csum);
 	}
 	if (item->checksum_sha384 != NULL) {
 		g_autofree gchar *csum = fu_tpm_eventlog_strhex(item->checksum_sha384);
-		fu_string_append(str, idt, "ChecksumSha384", csum);
+		fwupd_codec_string_append(str, idt, "ChecksumSha384", csum);
 	}
 	if (item->blob != NULL) {
 		g_autofree gchar *blobstr = fu_tpm_eventlog_blobstr(item->blob);
 		if (blobstr != NULL)
-			fu_string_append(str, idt, "BlobStr", blobstr);
+			fwupd_codec_string_append(str, idt, "BlobStr", blobstr);
 	}
 }
 
