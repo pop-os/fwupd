@@ -199,9 +199,9 @@ fu_usi_dock_mcu_device_enumerate_children(FuUsiDockMcuDevice *self, GError **err
 			if (fu_device_has_private_flag(FU_DEVICE(self),
 						       FU_USI_DOCK_DEVICE_FLAG_VERFMT_HP)) {
 				version = g_strdup_printf("%x.%x.%x.%x",
-							  val[0] >> 4,
+							  (guint)(val[0] >> 4),
 							  val[0] & 0xFu,
-							  val[1] >> 4,
+							  (guint)(val[1] >> 4),
 							  val[1] & 0xFu);
 				fu_device_set_version_format(FU_DEVICE(self),
 							     FWUPD_VERSION_FORMAT_QUAD);
@@ -209,7 +209,7 @@ fu_usi_dock_mcu_device_enumerate_children(FuUsiDockMcuDevice *self, GError **err
 			} else {
 				version = g_strdup_printf("%x.%x.%02x",
 							  val[0] & 0xFu,
-							  val[0] >> 4,
+							  (guint)(val[0] >> 4),
 							  val[1]);
 				g_debug("ignoring %s --> %s", components[i].name, version);
 			}
@@ -325,7 +325,7 @@ fu_usi_dock_mcu_device_enumerate_children(FuUsiDockMcuDevice *self, GError **err
 				g_debug("ignoring %s", components[i].name);
 				continue;
 			}
-			version = g_strdup_printf("%x.%x.%x", val[2] >> 4, val[3], val[4]);
+			version = g_strdup_printf("%x.%x.%x", (guint)(val[2] >> 4), val[3], val[4]);
 			fu_device_set_version_format(child, FWUPD_VERSION_FORMAT_TRIPLET);
 			fu_device_set_version(child, version);
 			fu_device_add_icon(child, "network-wired");
@@ -339,9 +339,9 @@ fu_usi_dock_mcu_device_enumerate_children(FuUsiDockMcuDevice *self, GError **err
 			if (fu_device_has_private_flag(FU_DEVICE(self),
 						       FU_USI_DOCK_DEVICE_FLAG_VERFMT_HP)) {
 				version = g_strdup_printf("%x.%x.%x.%x",
-							  val[0] >> 4,
+							  (guint)(val[0] >> 4),
 							  val[0] & 0xFu,
-							  val[1] >> 4,
+							  (guint)(val[1] >> 4),
 							  val[1] & 0xFu);
 				fu_device_set_version_format(child, FWUPD_VERSION_FORMAT_QUAD);
 			} else {
@@ -428,7 +428,10 @@ fu_usi_dock_mcu_device_write_page(FuUsiDockMcuDevice *self, FuChunk *chk_page, G
 	g_autoptr(FuChunkArray) chunks = NULL;
 	g_autoptr(GBytes) chk_blob = fu_chunk_get_bytes(chk_page);
 
-	chunks = fu_chunk_array_new_from_bytes(chk_blob, 0x0, FU_STRUCT_USI_DOCK_HID_REQ_SIZE_BUF);
+	chunks = fu_chunk_array_new_from_bytes(chk_blob,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       FU_STRUCT_USI_DOCK_HID_REQ_SIZE_BUF);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
 		g_autoptr(FuChunk) chk = NULL;
 
@@ -608,7 +611,11 @@ fu_usi_dock_mcu_device_write_firmware_with_idx(FuUsiDockMcuDevice *self,
 	stream = fu_firmware_get_stream(firmware, error);
 	if (stream == NULL)
 		return FALSE;
-	chunks = fu_chunk_array_new_from_stream(stream, 0x0, W25Q16DV_PAGE_SIZE, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						W25Q16DV_PAGE_SIZE,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	if (!fu_usi_dock_mcu_device_write_pages(self,

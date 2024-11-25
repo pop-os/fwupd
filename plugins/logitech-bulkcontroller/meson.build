@@ -20,4 +20,14 @@ plugin_builtins += static_library('fu_plugin_logitech_bulkcontroller',
   c_args: cargs,
   dependencies: plugin_deps,
 )
+
+enumeration_data += files(
+  'tests/logi-rally-bar-setup.json',
+  'tests/logi-sight-setup.json',
+)
+device_tests += files(
+  'tests/logi-rally-bar.json',
+  'tests/logi-sight.json',
+)
+
 endif

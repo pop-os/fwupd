@@ -418,7 +418,11 @@ fu_vli_usbhub_rtd21xx_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* send data */
-	chunks = fu_chunk_array_new_from_stream(stream, 0x00, ISP_DATA_BLOCKSIZE, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						ISP_DATA_BLOCKSIZE,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
@@ -507,7 +511,11 @@ fu_vli_usbhub_rtd21xx_device_probe(FuDevice *device, GError **error)
 	FuVliUsbhubDevice *parent = FU_VLI_USBHUB_DEVICE(fu_device_get_parent(device));
 
 	fu_device_set_name(device, fu_vli_device_kind_to_string(device_kind));
-	fu_device_incorporate(device, FU_DEVICE(parent), FU_DEVICE_INCORPORATE_FLAG_PHYSICAL_ID);
+	if (parent != NULL) {
+		fu_device_incorporate(device,
+				      FU_DEVICE(parent),
+				      FU_DEVICE_INCORPORATE_FLAG_PHYSICAL_ID);
+	}
 
 	/* add instance ID */
 	fu_device_add_instance_str(device, "I2C", fu_vli_device_kind_to_string(device_kind));

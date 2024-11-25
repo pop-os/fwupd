@@ -23,7 +23,8 @@ enum FuAgUsbcr {
     Erase = 0xC7,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructAgUsbcrRegCdb {
     opcode: u8 == 0xC7,
     subopcode: u8 == 0x1F,
@@ -37,7 +38,8 @@ struct FuStructAgUsbcrRegCdb {
     reserved:[u8; 2],
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructAgUsbcrResetCdb {
     opcode: u8 == 0xC7,
     subopcode: u8 == 0x1F,
@@ -50,7 +52,8 @@ struct FuStructAgUsbcrResetCdb {
     reserved:[u8; 4],
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructAgUsbcrSpiCdb {
     opcode: u8 == 0xC7,
     subopcode: u8 == 0x1F,

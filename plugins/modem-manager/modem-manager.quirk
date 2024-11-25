@@ -74,9 +74,9 @@ CounterpartGuid = PCI\VID_105B&PID_E0F5
 Summary = Foxconn T99W373 5G modem without eSIM for DW5932e
 CounterpartGuid = PCI\VID_105B&PID_E0F9
 
-# Quectel EG25-G
+# Quectel EG25-G/EC25
 [USB\VID_2C7C&PID_0125]
-Summary = Quectel EG25-G modem
+Summary = Quectel EG25-G/EC25 modem
 CounterpartGuid = USB\VID_18D1&PID_D00D
 Flags = detach-at-fastboot-has-no-response
 ModemManagerBranchAtCommand = AT+GETFWBRANCH
@@ -122,3 +122,13 @@ CounterpartGuid = USB\VID_2CB7&PID_D00D
 [USB\VID_1e2d&PID_0061]
 Summary = Cinterion PLS8 AT^SFDL update
 Plugin = modem_manager
+
+# Netprisma LCUR57 firehose prog file
+[PCI\VID_203E&PID_1000]
+Summary = Netprisma LCUR57 firehose prog file
+ModemManagerFirehoseProgFile = prog_firehose_sdx24.mbn
+
+# Netprisma FCUN69 firehose prog file
+[PCI\VID_203E&PID_1001]
+Summary = Netprisma FCUN69 firehose prog file
+ModemManagerFirehoseProgFile = prog_firehose_sdx6x.elf

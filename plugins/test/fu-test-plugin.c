@@ -28,6 +28,7 @@ fu_test_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG);
 	fu_device_add_request_flag(device, FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
 	fu_device_add_protocol(device, "com.acme.test");
 	fu_device_set_summary(device, "Fake webcam");
@@ -307,7 +308,7 @@ fu_test_plugin_write_firmware(FuPlugin *plugin,
 		/* this should not be required! */
 		if (!fu_input_stream_size(stream, &streamsz, error))
 			return FALSE;
-		blob_fw = fu_input_stream_read_bytes(stream, 0, streamsz, error);
+		blob_fw = fu_input_stream_read_bytes(stream, 0, streamsz, NULL, error);
 		if (blob_fw == NULL)
 			return FALSE;
 		ver = fu_test_plugin_get_version(blob_fw);

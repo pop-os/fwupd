@@ -24,6 +24,7 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 {
 	const gchar *argv_mkconfig[] = {"", "-o", "/boot/grub/grub.cfg", NULL};
 	const gchar *argv_reboot[] = {"", "fwupd", NULL};
+	gboolean exists_mkconfig = FALSE;
 	g_autofree gchar *grub_mkconfig = NULL;
 	g_autofree gchar *grub_reboot = NULL;
 	g_autofree gchar *grub_target = NULL;
@@ -32,9 +33,16 @@ fu_uefi_grub_device_mkconfig(FuDevice *device,
 	g_autoptr(GString) str = g_string_new(NULL);
 
 	/* find grub.conf */
-	if (!g_file_test(argv_mkconfig[2], G_FILE_TEST_EXISTS))
+	if (!fu_device_query_file_exists(FU_DEVICE(device),
+					 argv_mkconfig[2],
+					 &exists_mkconfig,
+					 error))
+		return FALSE;
+	if (!exists_mkconfig)
 		argv_mkconfig[2] = "/boot/grub2/grub.cfg";
-	if (!g_file_test(argv_mkconfig[2], G_FILE_TEST_EXISTS)) {
+	if (!fu_device_query_file_exists(device, argv_mkconfig[2], &exists_mkconfig, error))
+		return FALSE;
+	if (!exists_mkconfig) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_FOUND,
@@ -200,6 +208,21 @@ fu_uefi_grub_device_report_metadata_pre(FuDevice *device, GHashTable *metadata)
 	g_hash_table_insert(metadata, g_strdup("CapsuleApplyMethod"), g_strdup("grub"));
 }
 
+static gboolean
+fu_uefi_grub_device_prepare(FuDevice *device,
+			    FuProgress *progress,
+			    FwupdInstallFlags flags,
+			    GError **error)
+{
+	/* FuUefiDevice->prepare */
+	if (!FU_DEVICE_CLASS(fu_uefi_grub_device_parent_class)
+		 ->prepare(device, progress, flags, error))
+		return FALSE;
+
+	/* sanity checks */
+	return fu_uefi_device_check_asset(FU_UEFI_DEVICE(device), error);
+}
+
 static void
 fu_uefi_grub_device_init(FuUefiGrubDevice *self)
 {
@@ -213,4 +236,5 @@ fu_uefi_grub_device_class_init(FuUefiGrubDeviceClass *klass)
 	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
 	device_class->write_firmware = fu_uefi_grub_device_write_firmware;
 	device_class->report_metadata_pre = fu_uefi_grub_device_report_metadata_pre;
+	device_class->prepare = fu_uefi_grub_device_prepare;
 }

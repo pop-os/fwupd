@@ -32,7 +32,6 @@
 struct _FuBcm57xxDevice {
 	FuPciDevice parent_instance;
 	gchar *ethtool_iface;
-	int ethtool_fd;
 };
 
 G_DEFINE_TYPE(FuBcm57xxDevice, fu_bcm57xx_device, FU_TYPE_PCI_DEVICE)
@@ -52,6 +51,48 @@ fu_bcm57xx_device_probe(FuDevice *device, GError **error)
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "pci", error);
 }
 
+#ifdef HAVE_ETHTOOL_H
+static gboolean
+fu_bcm57xx_device_ioctl_buffer_cb(FuIoctl *self,
+				  gpointer ptr,
+				  guint8 *buf,
+				  gsize bufsz,
+				  GError **error)
+{
+	struct ifreq *ifr = (struct ifreq *)ptr;
+	ifr->ifr_data = (char *)buf;
+	return TRUE;
+}
+
+static gboolean
+fu_bcm57xx_device_submit_ifreq(FuBcm57xxDevice *self, guint8 *buf, gsize bufsz, GError **error)
+{
+	struct ifreq ifr = {0};
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
+
+	g_return_val_if_fail(buf != NULL, FALSE);
+
+	/* include these when generating the emulation event */
+	strncpy(ifr.ifr_name, self->ethtool_iface, IFNAMSIZ - 1);
+	fu_ioctl_add_key_as_u16(ioctl, "Request", SIOCETHTOOL);
+	fu_ioctl_add_mutable_buffer(ioctl, NULL, buf, bufsz, fu_bcm57xx_device_ioctl_buffer_cb);
+	if (!fu_ioctl_execute(ioctl,
+			      SIOCETHTOOL,
+			      (guint8 *)&ifr,
+			      sizeof(ifr),
+			      NULL,
+			      500, /* ms */
+			      FU_IOCTL_FLAG_NONE,
+			      error)) {
+		g_prefix_error(error, "failed to SIOCETHTOOL: ");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+}
+#endif
+
 static gboolean
 fu_bcm57xx_device_nvram_write(FuBcm57xxDevice *self,
 			      guint32 address,
@@ -61,7 +102,6 @@ fu_bcm57xx_device_nvram_write(FuBcm57xxDevice *self,
 {
 #ifdef HAVE_ETHTOOL_H
 	gsize eepromsz;
-	struct ifreq ifr = {0};
 	g_autofree struct ethtool_eeprom *eeprom = NULL;
 
 	/* failed to load tg3 */
@@ -91,16 +131,10 @@ fu_bcm57xx_device_nvram_write(FuBcm57xxDevice *self,
 	eeprom->len = bufsz;
 	eeprom->offset = address;
 	memcpy(eeprom->data, buf, eeprom->len); /* nocheck:blocked */
-	strncpy(ifr.ifr_name, self->ethtool_iface, IFNAMSIZ - 1);
-	ifr.ifr_data = (char *)eeprom;
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  SIOCETHTOOL,
-				  (guint8 *)&ifr,
-				  sizeof(ifr),
-				  NULL,
-				  500, /* ms */
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error)) {
+	if (!fu_bcm57xx_device_submit_ifreq(FU_BCM57XX_DEVICE(self),
+					    (guint8 *)eeprom,
+					    eepromsz,
+					    error)) {
 		g_prefix_error(error, "cannot write eeprom: ");
 		return FALSE;
 	}
@@ -125,7 +159,6 @@ fu_bcm57xx_device_nvram_read(FuBcm57xxDevice *self,
 {
 #ifdef HAVE_ETHTOOL_H
 	gsize eepromsz;
-	struct ifreq ifr = {0};
 	g_autofree struct ethtool_eeprom *eeprom = NULL;
 
 	/* failed to load tg3 */
@@ -153,16 +186,10 @@ fu_bcm57xx_device_nvram_read(FuBcm57xxDevice *self,
 	eeprom->cmd = ETHTOOL_GEEPROM;
 	eeprom->len = bufsz;
 	eeprom->offset = address;
-	strncpy(ifr.ifr_name, self->ethtool_iface, IFNAMSIZ - 1);
-	ifr.ifr_data = (char *)eeprom;
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  SIOCETHTOOL,
-				  (guint8 *)&ifr,
-				  sizeof(ifr),
-				  NULL,
-				  500, /* ms */
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error)) {
+	if (!fu_bcm57xx_device_submit_ifreq(FU_BCM57XX_DEVICE(self),
+					    (guint8 *)eeprom,
+					    eepromsz,
+					    error)) {
 		g_prefix_error(error, "cannot read eeprom: ");
 		return FALSE;
 	}
@@ -193,8 +220,7 @@ static gboolean
 fu_bcm57xx_device_nvram_check(FuBcm57xxDevice *self, GError **error)
 {
 #ifdef HAVE_ETHTOOL_H
-	struct ethtool_drvinfo drvinfo = {0};
-	struct ifreq ifr = {0};
+	struct ethtool_drvinfo drvinfo = {.cmd = ETHTOOL_GDRVINFO};
 
 	/* failed to load tg3 */
 	if (self->ethtool_iface == NULL) {
@@ -206,17 +232,10 @@ fu_bcm57xx_device_nvram_check(FuBcm57xxDevice *self, GError **error)
 	}
 
 	/* get driver info */
-	drvinfo.cmd = ETHTOOL_GDRVINFO;
-	strncpy(ifr.ifr_name, self->ethtool_iface, IFNAMSIZ - 1);
-	ifr.ifr_data = (char *)&drvinfo;
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  SIOCETHTOOL,
-				  (guint8 *)&ifr,
-				  sizeof(ifr),
-				  NULL,
-				  500, /* ms */
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error)) {
+	if (!fu_bcm57xx_device_submit_ifreq(FU_BCM57XX_DEVICE(self),
+					    (guint8 *)&drvinfo,
+					    sizeof(drvinfo),
+					    error)) {
 		g_prefix_error(error, "cannot get driver information: ");
 		return FALSE;
 	}
@@ -435,7 +454,10 @@ fu_bcm57xx_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* hit hardware */
-	chunks = fu_chunk_array_new_from_bytes(blob, 0x0, FU_BCM57XX_BLOCK_SZ);
+	chunks = fu_chunk_array_new_from_bytes(blob,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       FU_BCM57XX_BLOCK_SZ);
 	if (!fu_bcm57xx_device_write_chunks(self, chunks, fu_progress_get_child(progress), error))
 		return FALSE;
 	fu_progress_step_done(progress);
@@ -535,8 +557,11 @@ fu_bcm57xx_device_open(FuDevice *device, GError **error)
 {
 #ifdef HAVE_SOCKET_H
 	FuBcm57xxDevice *self = FU_BCM57XX_DEVICE(device);
-	self->ethtool_fd = socket(AF_INET, SOCK_DGRAM, 0);
-	if (self->ethtool_fd < 0) {
+	gint fd;
+	g_autoptr(FuIOChannel) io_channel = NULL;
+
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (fd < 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
@@ -548,6 +573,8 @@ fu_bcm57xx_device_open(FuDevice *device, GError **error)
 #endif
 		return FALSE;
 	}
+	io_channel = fu_io_channel_unix_new(fd);
+	fu_udev_device_set_io_channel(FU_UDEV_DEVICE(self), io_channel);
 	return TRUE;
 #else
 	g_set_error_literal(error,
@@ -556,13 +583,6 @@ fu_bcm57xx_device_open(FuDevice *device, GError **error)
 			    "socket() not supported as sys/socket.h not available");
 	return FALSE;
 #endif
-}
-
-static gboolean
-fu_bcm57xx_device_close(FuDevice *device, GError **error)
-{
-	FuBcm57xxDevice *self = FU_BCM57XX_DEVICE(device);
-	return g_close(self->ethtool_fd, error);
 }
 
 static void
@@ -649,7 +669,6 @@ fu_bcm57xx_device_class_init(FuBcm57xxDeviceClass *klass)
 	device_class->setup = fu_bcm57xx_device_setup;
 	device_class->reload = fu_bcm57xx_device_setup;
 	device_class->open = fu_bcm57xx_device_open;
-	device_class->close = fu_bcm57xx_device_close;
 	device_class->write_firmware = fu_bcm57xx_device_write_firmware;
 	device_class->attach = fu_bcm57xx_device_attach;
 	device_class->read_firmware = fu_bcm57xx_device_read_firmware;

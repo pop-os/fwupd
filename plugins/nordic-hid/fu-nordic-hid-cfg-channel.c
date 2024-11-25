@@ -163,7 +163,7 @@ fu_nordic_hid_cfg_channel_send(FuNordicHidCfgChannel *self,
 	return fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(udev_device),
 					    buf,
 					    bufsz,
-					    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					    FU_IOCTL_FLAG_NONE,
 					    error);
 #else
 	g_set_error_literal(error,
@@ -191,7 +191,7 @@ fu_nordic_hid_cfg_channel_receive(FuNordicHidCfgChannel *self,
 		if (!fu_hidraw_device_get_feature(FU_HIDRAW_DEVICE(udev_device),
 						  (guint8 *)recv_msg,
 						  sizeof(*recv_msg),
-						  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+						  FU_IOCTL_FLAG_NONE,
 						  error))
 			return FALSE;
 		/* if the device is busy it return 06 00 00 00 00 response */
@@ -1523,7 +1523,11 @@ fu_nordic_hid_cfg_channel_write_firmware_blob(FuNordicHidCfgChannel *self,
 	if (!fu_nordic_hid_cfg_channel_dfu_sync(self, dfu_info, DFU_STATE_ACTIVE, error))
 		return FALSE;
 
-	chunks = fu_chunk_array_new_from_stream(stream, 0, dfu_info->sync_buffer_size, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						dfu_info->sync_buffer_size,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(New, ParseStream)]
+#[repr(C, packed)]
 struct FuStructRedfishProtocolOverIp {
     service_uuid: Guid,
     host_ip_assignment_type: u8,
@@ -55,7 +56,8 @@ enum FuRedfishSmbiosInterfaceType {
     Oem = 0xF0,
 }
 
-#[derive(ParseStream)]
+#[derive(ParseStream, Default)]
+#[repr(C, packed)]
 struct FuStructRedfishSmbiosType42 {
     type: u8 == 42,
     length: u8,

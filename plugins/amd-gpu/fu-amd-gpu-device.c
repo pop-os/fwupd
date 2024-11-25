@@ -46,47 +46,91 @@ fu_amd_gpu_device_to_string(FuDevice *device, guint idt, GString *str)
 }
 
 static gboolean
-fu_amd_gpu_device_set_device_file(FuDevice *device, const gchar *base, GError **error)
+fu_amd_gpu_device_set_device_file(FuAmdGpuDevice *self, const gchar *base, GError **error)
 {
+	FuDeviceEvent *event = NULL;
 	const gchar *f;
 	g_autofree gchar *ddir = NULL;
+	g_autofree gchar *device_file = NULL;
+	g_autofree gchar *event_id = NULL;
 	g_autoptr(GDir) dir = NULL;
 
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
+				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
+		event_id = g_strdup_printf("DrmAmdgpuSetDeviceFile:Base=%s", base);
+	}
+
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED)) {
+		event = fu_device_load_event(FU_DEVICE(self), event_id, error);
+		if (event == NULL)
+			return FALSE;
+		f = fu_device_event_get_str(event, "Filename", error);
+		if (f == NULL)
+			return FALSE;
+		fu_udev_device_set_device_file(FU_UDEV_DEVICE(self), f);
+		return TRUE;
+	}
+
+	/* save */
+	if (fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
+				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
+		event = fu_device_save_event(FU_DEVICE(self), event_id);
+	}
+
+	/* find card path */
 	ddir = g_build_filename(base, "drm", NULL);
 	dir = g_dir_open(ddir, 0, error);
 	if (dir == NULL)
 		return FALSE;
 	while ((f = g_dir_read_name(dir))) {
 		if (g_str_has_prefix(f, "card")) {
-			g_autofree gchar *devbase = NULL;
-			g_autofree gchar *device_file = NULL;
-
-			devbase = fu_path_from_kind(FU_PATH_KIND_DEVFS);
+			g_autofree gchar *devbase = fu_path_from_kind(FU_PATH_KIND_DEVFS);
 			device_file = g_build_filename(devbase, "dri", f, NULL);
-			fu_udev_device_set_device_file(FU_UDEV_DEVICE(device), device_file);
-			return TRUE;
+			break;
 		}
 	}
 
-	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no DRM device file found");
-	return FALSE;
+	/* nothing found */
+	if (device_file == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no DRM device file found");
+		return FALSE;
+	}
+
+	if (event != NULL)
+		fu_device_event_set_str(event, "Filename", device_file);
+
+	/* success */
+	fu_udev_device_set_device_file(FU_UDEV_DEVICE(self), device_file);
+	return TRUE;
 }
 
 static gboolean
 fu_amd_gpu_device_probe(FuDevice *device, GError **error)
 {
+	FuAmdGpuDevice *self = FU_AMDGPU_DEVICE(device);
 	const gchar *base;
+	gboolean exists_rom = FALSE;
+	gboolean exists_vbflash = FALSE;
+	gboolean exists_vbflash_status = FALSE;
 	g_autofree gchar *rom = NULL;
 	g_autofree gchar *psp_vbflash = NULL;
 	g_autofree gchar *psp_vbflash_status = NULL;
 
 	base = fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device));
-	if (!fu_amd_gpu_device_set_device_file(device, base, error))
+	if (!fu_amd_gpu_device_set_device_file(self, base, error))
 		return FALSE;
 
 	/* APUs don't have 'rom' sysfs file */
 	rom = g_build_filename(base, "rom", NULL);
-	if (!g_file_test(rom, G_FILE_TEST_EXISTS)) {
+	if (!fu_device_query_file_exists(FU_DEVICE(device), rom, &exists_rom, error))
+		return FALSE;
+	if (!exists_rom) {
 		fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_HOST_CPU_CHILD);
 		fu_udev_device_add_open_flag(FU_UDEV_DEVICE(device), FU_IO_CHANNEL_OPEN_FLAG_READ);
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_INTERNAL);
@@ -98,9 +142,12 @@ fu_amd_gpu_device_probe(FuDevice *device, GError **error)
 
 	/* firmware upgrade support */
 	psp_vbflash = g_build_filename(base, "psp_vbflash", NULL);
+	if (!fu_device_query_file_exists(device, psp_vbflash, &exists_vbflash, error))
+		return FALSE;
 	psp_vbflash_status = g_build_filename(base, "psp_vbflash_status", NULL);
-	if (g_file_test(psp_vbflash, G_FILE_TEST_EXISTS) &&
-	    g_file_test(psp_vbflash_status, G_FILE_TEST_EXISTS)) {
+	if (!fu_device_query_file_exists(device, psp_vbflash_status, &exists_vbflash_status, error))
+		return FALSE;
+	if (exists_vbflash && exists_vbflash_status) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
@@ -115,12 +162,15 @@ fu_amd_gpu_device_probe(FuDevice *device, GError **error)
 }
 
 static void
-fu_amd_gpu_device_set_marketing_name(FuDevice *device)
+fu_amd_gpu_device_set_marketing_name(FuAmdGpuDevice *self)
 {
-	FuIOChannel *io_channel = fu_udev_device_get_io_channel(FU_UDEV_DEVICE(device));
-	FuAmdGpuDevice *self = FU_AMDGPU_DEVICE(device);
+	FuIOChannel *io_channel = fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self));
 	amdgpu_device_handle device_handle = {0};
 	gint r;
+
+	/* ignore */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED))
+		return;
 
 	r = amdgpu_device_initialize(fu_io_channel_unix_get_fd(io_channel),
 				     &self->drm_major,
@@ -129,36 +179,68 @@ fu_amd_gpu_device_set_marketing_name(FuDevice *device)
 	if (r == 0) {
 		const gchar *marketing_name = amdgpu_get_marketing_name(device_handle);
 		if (marketing_name != NULL)
-			fu_device_set_name(device, marketing_name);
+			fu_device_set_name(FU_DEVICE(self), marketing_name);
 	} else
 		g_warning("unable to set marketing name: %s", g_strerror(r));
+}
+
+static gboolean
+fu_amd_gpu_device_ioctl_buffer_cb(FuIoctl *self,
+				  gpointer ptr,
+				  guint8 *buf,
+				  gsize bufsz,
+				  GError **error)
+{
+	struct drm_amdgpu_info *request = (struct drm_amdgpu_info *)ptr;
+	request->return_pointer = GPOINTER_TO_SIZE(buf);
+	request->return_size = bufsz;
+	return TRUE;
+}
+
+static gboolean
+fu_amd_gpu_device_ioctl_drm_info(FuAmdGpuDevice *self, guint8 *buf, gsize bufsz, GError **error)
+{
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
+	struct drm_amdgpu_info request = {
+	    .query = AMDGPU_INFO_VBIOS,
+	    .vbios_info.type = AMDGPU_INFO_VBIOS_INFO,
+	};
+
+	/* include these when generating the emulation event */
+	fu_ioctl_add_key_as_u16(ioctl, "Request", DRM_IOCTL_AMDGPU_INFO);
+	fu_ioctl_add_key_as_u8(ioctl, "Query", request.query);
+	fu_ioctl_add_mutable_buffer(ioctl, NULL, buf, bufsz, fu_amd_gpu_device_ioctl_buffer_cb);
+	if (!fu_ioctl_execute(ioctl,
+			      DRM_IOCTL_AMDGPU_INFO,
+			      &request,
+			      sizeof(request),
+			      NULL,
+			      1000, /* ms */
+			      FU_IOCTL_FLAG_NONE,
+			      error)) {
+		g_prefix_error(error, "failed to DRM_IOCTL_AMDGPU_INFO: ");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
 }
 
 static gboolean
 fu_amd_gpu_device_setup(FuDevice *device, GError **error)
 {
 	FuAmdGpuDevice *self = FU_AMDGPU_DEVICE(device);
-	struct drm_amdgpu_info_vbios vbios_info;
-	struct drm_amdgpu_info request = {
-	    .query = AMDGPU_INFO_VBIOS,
-	    .return_pointer = GPOINTER_TO_SIZE(&vbios_info),
-	    .return_size = sizeof(struct drm_amdgpu_info_vbios),
-	    .vbios_info.type = AMDGPU_INFO_VBIOS_INFO,
-	};
+	struct drm_amdgpu_info_vbios vbios_info = {0};
 	g_autofree gchar *part = NULL;
 	g_autofree gchar *ver = NULL;
 	g_autofree gchar *model = NULL;
 
-	fu_amd_gpu_device_set_marketing_name(device);
+	fu_amd_gpu_device_set_marketing_name(self);
 
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(device),
-				  DRM_IOCTL_AMDGPU_INFO,
-				  (void *)&request,
-				  sizeof(request),
-				  NULL,
-				  1000,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error))
+	if (!fu_amd_gpu_device_ioctl_drm_info(self,
+					      (guint8 *)&vbios_info,
+					      sizeof(vbios_info),
+					      error))
 		return FALSE;
 	self->vbios_pn = fu_strsafe((const gchar *)vbios_info.vbios_pn, PART_NUM_STR_SIZE);
 	part = g_strdup_printf("AMD\\%s", self->vbios_pn);
@@ -258,6 +340,10 @@ fu_amd_gpu_device_write_firmware(FuDevice *device,
 	g_autoptr(GBytes) fw = NULL;
 	g_autoptr(GError) error_read = NULL;
 	const gchar *base;
+
+	/* emulation doesn't currently cover IO channel use */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED))
+		return TRUE;
 
 	base = fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device));
 	psp_vbflash = g_build_filename(base, "psp_vbflash", NULL);

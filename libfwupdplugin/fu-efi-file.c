@@ -124,7 +124,7 @@ fu_efi_file_parse(FuFirmware *firmware,
 		guint8 hdr_checksum_verify;
 		g_autoptr(GBytes) hdr_blob = NULL;
 
-		hdr_blob = fu_input_stream_read_bytes(stream, 0x0, st->len, error);
+		hdr_blob = fu_input_stream_read_bytes(stream, 0x0, st->len, NULL, error);
 		if (hdr_blob == NULL)
 			return FALSE;
 		hdr_checksum_verify = fu_efi_file_hdr_checksum8(hdr_blob);
@@ -241,11 +241,13 @@ fu_efi_file_write(FuFirmware *firmware, GError **error)
 	blob = fu_efi_file_write_sections(firmware, error);
 	if (blob == NULL)
 		return NULL;
-	if (!fwupd_guid_from_string(fu_firmware_get_id(firmware),
-				    &guid,
-				    FWUPD_GUID_FLAG_MIXED_ENDIAN,
-				    error))
-		return NULL;
+	if (fu_firmware_get_id(firmware) != NULL) {
+		if (!fwupd_guid_from_string(fu_firmware_get_id(firmware),
+					    &guid,
+					    FWUPD_GUID_FLAG_MIXED_ENDIAN,
+					    error))
+			return NULL;
+	}
 	fu_struct_efi_file_set_name(st, &guid);
 	fu_struct_efi_file_set_hdr_checksum(st, 0x0);
 	fu_struct_efi_file_set_data_checksum(st, 0x100 - fu_sum8_bytes(blob));

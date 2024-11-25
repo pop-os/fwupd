@@ -134,7 +134,10 @@ fu_qsi_dock_mcu_device_enumerate_children(FuQsiDockMcuDevice *self, GError **err
 				continue;
 			}
 
-			version = g_strdup_printf("%x.%x.%02x", val[0] & 0xFu, val[0] >> 4, val[1]);
+			version = g_strdup_printf("%x.%x.%02x",
+						  val[0] & 0xFu,
+						  (guint)(val[0] >> 4),
+						  val[1]);
 			g_debug("ignoring %s --> %s", components[i].name, version);
 
 			continue;
@@ -269,7 +272,10 @@ fu_qsi_dock_mcu_device_write_chunk(FuQsiDockMcuDevice *self,
 	g_autoptr(FuChunkArray) chunks = NULL;
 	g_autoptr(GBytes) chk_bytes = fu_chunk_get_bytes(chk_page);
 
-	chunks = fu_chunk_array_new_from_bytes(chk_bytes, 0x0, FU_QSI_DOCK_TX_ISP_LENGTH_MCU);
+	chunks = fu_chunk_array_new_from_bytes(chk_bytes,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       FU_QSI_DOCK_TX_ISP_LENGTH_MCU);
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
@@ -507,7 +513,10 @@ fu_qsi_dock_mcu_device_write_firmware_with_idx(FuQsiDockMcuDevice *self,
 		return FALSE;
 
 	/* write external flash */
-	chunks = fu_chunk_array_new_from_bytes(fw_align, 0, FU_QSI_DOCK_EXTERN_FLASH_PAGE_SIZE);
+	chunks = fu_chunk_array_new_from_bytes(fw_align,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       FU_QSI_DOCK_EXTERN_FLASH_PAGE_SIZE);
 	if (!fu_qsi_dock_mcu_device_write_chunks(self,
 						 chunks,
 						 &checksum_val,

@@ -13,7 +13,8 @@ enum FuAlgoltekCmd {
     Rst = 0x20,
 }
 
-#[derive(ParseStream, ValidateStream)]
+#[derive(ParseStream, ValidateStream, Default)]
+#[repr(C, packed)]
 struct FuStructAlgoltekProductIdentity {
     header_len: u8,
     header: u64le == 0x4B45544C4F474C41, // 'A' 'L' 'G' 'O' 'L' 'T' 'E' 'K'
@@ -24,6 +25,7 @@ struct FuStructAlgoltekProductIdentity {
 }
 
 #[derive(New)]
+#[repr(C, packed)]
 struct FuStructAlgoltekCmdAddressPkt {
     len: u8,
     cmd: u8,
@@ -34,6 +36,7 @@ struct FuStructAlgoltekCmdAddressPkt {
 }
 
 #[derive(New)]
+#[repr(C, packed)]
 struct FuStructAlgoltekCmdTransferPkt {
     len: u8,
     cmd: u8,

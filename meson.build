@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '2.0.1',
+  version: '2.0.2',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=1.3.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -262,7 +262,11 @@ if libarchive.found()
 endif
 endif
 libjcat = dependency('jcat', version: '>= 0.2.0', fallback: ['libjcat', 'libjcat_dep'])
-libjsonglib = dependency('json-glib-1.0', version: '>= 1.6.0')
+libjsonglib = dependency('json-glib-1.0', version: '>= 1.6.0', fallback: ['libjsonglib', 'libjsonglib_dep'])
+libblkid = dependency('blkid', required: false)
+if libblkid.found()
+  conf.set('HAVE_BLKID', '1')
+endif
 valgrind = dependency('valgrind', required: false)
 libcurl = dependency('libcurl', version: '>= 7.62.0', required: get_option('curl'))
 if libcurl.found()
@@ -665,7 +669,6 @@ if build_standalone
   md_targets = []
   plugin_quirks = []
   subdir('libfwupdplugin')
-  subdir('data')
   subdir('po')
   subdir('contrib')
 
@@ -683,6 +686,7 @@ if build_standalone
   subdir('plugins')
   subdir('src')
   subdir('docs')
+  subdir('data')
 
   # append all the quirks into one big file and gzip it
   custom_target('builtin-quirk-gz',
@@ -722,6 +726,7 @@ summary({
   'elogind': elogind,
   'gnutls': gnutls,
   'introspection': introspection.allowed(),
+  'libblkid': libblkid,
   'libcurl': libcurl,
   'libdrm': libdrm,
   'lzma': lzma,

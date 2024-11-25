@@ -19,3 +19,13 @@ enum FuScsiSenseKey {
     VolumeOverflow = 0x0D,
     Miscompare = 0x0E,
 }
+
+// see https://tldp.org/HOWTO/archived/SCSI-Programming-HOWTO/SCSI-Programming-HOWTO-9.html
+#[derive(Parse)]
+#[repr(C, packed)]
+struct FuStructScsiInquiry {
+    reserved: [u8; 8],
+    vendor_id: [char; 8],
+    product_id: [char; 16],
+    product_rev: [char; 4],
+}

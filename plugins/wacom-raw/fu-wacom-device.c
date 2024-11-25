@@ -12,7 +12,6 @@
 typedef struct {
 	guint flash_block_size;
 	guint32 flash_base_addr;
-	guint32 flash_size;
 	guint8 echo_next;
 } FuWacomDevicePrivate;
 
@@ -27,7 +26,6 @@ fu_wacom_device_to_string(FuDevice *device, guint idt, GString *str)
 	FuWacomDevicePrivate *priv = GET_PRIVATE(self);
 	fwupd_codec_string_append_hex(str, idt, "FlashBlockSize", priv->flash_block_size);
 	fwupd_codec_string_append_hex(str, idt, "FlashBaseAddr", priv->flash_base_addr);
-	fwupd_codec_string_append_hex(str, idt, "FlashSize", priv->flash_size);
 	fwupd_codec_string_append_hex(str, idt, "EchoNext", priv->echo_next);
 }
 
@@ -208,14 +206,6 @@ fu_wacom_device_write_firmware(FuDevice *device,
 	fw = fu_firmware_get_bytes(firmware, error);
 	if (fw == NULL)
 		return FALSE;
-	if (g_bytes_get_size(fw) > priv->flash_size) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_DATA,
-			    "size is invalid: 0x%05x",
-			    (guint)g_bytes_get_size(fw));
-		return FALSE;
-	}
 
 	/* we're in bootloader mode now */
 	if (!fu_wacom_device_check_mode(self, error))
@@ -224,7 +214,10 @@ fu_wacom_device_write_firmware(FuDevice *device,
 		return FALSE;
 
 	/* flash chunks */
-	chunks = fu_chunk_array_new_from_bytes(fw, priv->flash_base_addr, priv->flash_block_size);
+	chunks = fu_chunk_array_new_from_bytes(fw,
+					       priv->flash_base_addr,
+					       FU_CHUNK_PAGESZ_NONE,
+					       priv->flash_block_size);
 	return klass->write_firmware(device, chunks, progress, error);
 }
 
@@ -234,7 +227,7 @@ fu_wacom_device_get_feature(FuWacomDevice *self, guint8 *data, guint datasz, GEr
 	return fu_hidraw_device_get_feature(FU_HIDRAW_DEVICE(self),
 					    data,
 					    datasz,
-					    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					    FU_IOCTL_FLAG_NONE,
 					    error);
 }
 
@@ -244,7 +237,7 @@ fu_wacom_device_set_feature(FuWacomDevice *self, const guint8 *data, guint datas
 	return fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(self),
 					    data,
 					    datasz,
-					    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					    FU_IOCTL_FLAG_NONE,
 					    error);
 }
 
@@ -342,12 +335,6 @@ fu_wacom_device_set_quirk_kv(FuDevice *device, const gchar *key, const gchar *va
 		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;
 		priv->flash_base_addr = tmp;
-		return TRUE;
-	}
-	if (g_strcmp0(key, "WacomI2cFlashSize") == 0) {
-		if (!fu_strtoull(value, &tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_AUTO, error))
-			return FALSE;
-		priv->flash_size = tmp;
 		return TRUE;
 	}
 	g_set_error_literal(error,

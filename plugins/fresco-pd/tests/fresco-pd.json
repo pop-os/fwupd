@@ -1,0 +1,17 @@
+{
+  "name": "Fresco PD",
+  "interactive": false,
+  "steps": [
+    {
+      "emulation-file": "@enumeration_datadir@/fresco-pd-setup.json",
+      "components": [
+        {
+          "version": "7.99.18.0",
+          "guids": [
+            "790a1b00-9cf9-5220-af78-ef690d303fa8"
+          ]
+        }
+      ]
+    }
+  ]
+}

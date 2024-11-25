@@ -15,6 +15,7 @@
 #include <libfwupdplugin/fu-backend.h>
 #include <libfwupdplugin/fu-bios-settings.h>
 #include <libfwupdplugin/fu-block-device.h>
+#include <libfwupdplugin/fu-block-partition.h>
 #include <libfwupdplugin/fu-bluez-device.h>
 #include <libfwupdplugin/fu-byte-array.h>
 #include <libfwupdplugin/fu-bytes.h>
@@ -81,6 +82,7 @@
 #include <libfwupdplugin/fu-intel-thunderbolt-firmware.h>
 #include <libfwupdplugin/fu-intel-thunderbolt-nvm.h>
 #include <libfwupdplugin/fu-io-channel.h>
+#include <libfwupdplugin/fu-ioctl.h>
 #include <libfwupdplugin/fu-kernel.h>
 #include <libfwupdplugin/fu-linear-firmware.h>
 #include <libfwupdplugin/fu-mei-device.h>

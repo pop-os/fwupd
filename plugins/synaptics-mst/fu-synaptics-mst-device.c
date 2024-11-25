@@ -700,7 +700,10 @@ fu_synaptics_mst_device_update_esm(FuSynapticsMstDevice *self,
 	g_debug("ESM checksum %x doesn't match expected %x", flash_checksum, helper->checksum);
 
 	helper->progress = g_object_ref(progress);
-	helper->chunks = fu_chunk_array_new_from_bytes(helper->fw, EEPROM_ESM_OFFSET, BLOCK_UNIT);
+	helper->chunks = fu_chunk_array_new_from_bytes(helper->fw,
+						       EEPROM_ESM_OFFSET,
+						       FU_CHUNK_PAGESZ_NONE,
+						       BLOCK_UNIT);
 	return fu_device_retry(FU_DEVICE(self),
 			       fu_synaptics_mst_device_update_esm_cb,
 			       MAX_RETRY_COUNTS,
@@ -789,7 +792,10 @@ fu_synaptics_mst_device_update_tesla_leaf_firmware(FuSynapticsMstDevice *self,
 	helper->fw = g_bytes_ref(fw);
 	helper->checksum = fu_sum32_bytes(fw);
 	helper->progress = g_object_ref(progress);
-	helper->chunks = fu_chunk_array_new_from_bytes(fw, 0x0, BLOCK_UNIT);
+	helper->chunks = fu_chunk_array_new_from_bytes(fw,
+						       FU_CHUNK_ADDR_OFFSET_NONE,
+						       FU_CHUNK_PAGESZ_NONE,
+						       BLOCK_UNIT);
 	return fu_device_retry(FU_DEVICE(self),
 			       fu_synaptics_mst_device_update_tesla_leaf_firmware_cb,
 			       MAX_RETRY_COUNTS,
@@ -800,7 +806,7 @@ fu_synaptics_mst_device_update_tesla_leaf_firmware(FuSynapticsMstDevice *self,
 static gboolean
 fu_synaptics_mst_device_get_active_bank_panamera(FuSynapticsMstDevice *self, GError **error)
 {
-	guint32 buf[16];
+	guint32 buf[16] = {0};
 
 	/* get used bank */
 	if (!fu_synaptics_mst_device_rc_get_command(self,
@@ -1074,6 +1080,7 @@ fu_synaptics_mst_device_update_panamera_firmware(FuSynapticsMstDevice *self,
 	helper->progress = g_object_ref(progress);
 	helper->chunks = fu_chunk_array_new_from_bytes(helper->fw,
 						       EEPROM_BANK_OFFSET * helper->bank_to_update,
+						       FU_CHUNK_PAGESZ_NONE,
 						       BLOCK_UNIT);
 	if (!fu_device_retry_full(FU_DEVICE(self),
 				  fu_synaptics_mst_device_update_panamera_firmware_cb,
@@ -1298,7 +1305,10 @@ fu_synaptics_mst_device_update_firmware(FuSynapticsMstDevice *self,
 							    g_bytes_get_data(helper->fw, NULL),
 							    g_bytes_get_size(helper->fw));
 	helper->progress = g_object_ref(progress);
-	helper->chunks = fu_chunk_array_new_from_bytes(helper->fw, 0x0, BLOCK_UNIT);
+	helper->chunks = fu_chunk_array_new_from_bytes(helper->fw,
+						       FU_CHUNK_ADDR_OFFSET_NONE,
+						       FU_CHUNK_PAGESZ_NONE,
+						       BLOCK_UNIT);
 	if (!fu_device_retry(FU_DEVICE(self),
 			     fu_synaptics_mst_device_update_firmware_cb,
 			     MAX_RETRY_COUNTS,
@@ -1510,12 +1520,15 @@ fu_synaptics_mst_device_ensure_board_id(FuSynapticsMstDevice *self, GError **err
 				       FU_SYNAPTICS_MST_DEVICE_FLAG_IS_SOMEWHAT_EMULATED)) {
 		g_autofree gchar *filename = NULL;
 		g_autofree gchar *dirname = NULL;
+		gboolean exists_eeprom = FALSE;
 		gint fd;
 		dirname = g_path_get_dirname(fu_udev_device_get_device_file(FU_UDEV_DEVICE(self)));
 		filename = g_strdup_printf("%s/remote/%s_eeprom",
 					   dirname,
 					   fu_device_get_logical_id(FU_DEVICE(self)));
-		if (!g_file_test(filename, G_FILE_TEST_EXISTS)) {
+		if (!fu_device_query_file_exists(FU_DEVICE(self), filename, &exists_eeprom, error))
+			return FALSE;
+		if (!exists_eeprom) {
 			g_set_error(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_FOUND,

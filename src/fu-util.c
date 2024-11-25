@@ -551,6 +551,12 @@ fu_util_get_devices_as_json(FuUtilPrivate *priv, GPtrArray *devs, GError **error
 		g_autoptr(GPtrArray) rels = NULL;
 		g_autoptr(GError) error_local = NULL;
 
+		/* filter */
+		if (!fwupd_device_match_flags(dev,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
+			continue;
+
 		/* add all releases that could be applied */
 		rels = fwupd_client_get_releases(priv->client,
 						 fwupd_device_get_id(dev),
@@ -708,7 +714,6 @@ static gboolean
 fu_util_device_test_component(FuUtilPrivate *priv,
 			      FuUtilDeviceTestHelper *helper,
 			      JsonObject *json_obj,
-			      GBytes *fw,
 			      GError **error)
 {
 	JsonArray *json_array;
@@ -793,12 +798,45 @@ fu_util_device_test_component(FuUtilPrivate *priv,
 		}
 	}
 
+	/* verify the bootloader version matches what we expected */
+	if (json_object_has_member(json_obj, "version-bootloader")) {
+		const gchar *version =
+		    json_object_get_string_member(json_obj, "version-bootloader");
+		if (g_strcmp0(version, fwupd_device_get_version_bootloader(device)) != 0) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "bootloader version did not match: got %s, expected %s",
+				    fwupd_device_get_version_bootloader(device),
+				    version);
+			return FALSE;
+		}
+	}
+
+	/* verify the branch matches what we expected */
+	if (json_object_has_member(json_obj, "branch")) {
+		const gchar *version = json_object_get_string_member(json_obj, "branch");
+		if (g_strcmp0(version, fwupd_device_get_branch(device)) != 0) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "branch did not match: got %s, expected %s",
+				    fwupd_device_get_branch(device),
+				    version);
+			return FALSE;
+		}
+	}
+
 	/* success */
 	if (!priv->as_json) {
 		g_autofree gchar *msg = NULL;
 		/* TRANSLATORS: this is for the device tests */
 		msg = fu_console_color_format(_("OK!"), FU_CONSOLE_COLOR_GREEN);
-		fu_console_print(priv->console, "%s: %s", helper->name, msg);
+		if (g_strcmp0(name, "component") != 0) {
+			fu_console_print(priv->console, "%s [%s]: %s", helper->name, name, msg);
+		} else {
+			fu_console_print(priv->console, "%s: %s", helper->name, msg);
+		}
 	}
 	helper->nr_success++;
 	return TRUE;
@@ -845,79 +883,81 @@ fu_util_device_test_step(FuUtilPrivate *priv,
 			 GError **error)
 {
 	JsonArray *json_array;
-	const gchar *url;
 	const gchar *emulation_url = NULL;
-	g_autofree gchar *filename = NULL;
-	g_autoptr(GBytes) fw = NULL;
-	g_autoptr(GError) error_local = NULL;
 
 	/* send this data to the daemon */
 	if (helper->use_emulation) {
 		g_autofree gchar *emulation_filename = NULL;
 
 		/* just ignore anything without emulation data */
-		if (!json_object_has_member(json_obj, "emulation-url"))
+		if (json_object_has_member(json_obj, "emulation-url")) {
+			emulation_url = json_object_get_string_member(json_obj, "emulation-url");
+			emulation_filename =
+			    fu_util_download_if_required(priv, emulation_url, error);
+			if (emulation_filename == NULL) {
+				g_prefix_error(error, "failed to download %s: ", emulation_url);
+				return FALSE;
+			}
+		} else if (json_object_has_member(json_obj, "emulation-file"))
+			emulation_filename =
+			    g_strdup(json_object_get_string_member(json_obj, "emulation-file"));
+		else
 			return TRUE;
 
-		emulation_url = json_object_get_string_member(json_obj, "emulation-url");
-		emulation_filename = fu_util_download_if_required(priv, emulation_url, error);
-		if (emulation_filename == NULL) {
-			g_prefix_error(error, "failed to download %s: ", emulation_url);
-			return FALSE;
-		}
 		if (!fwupd_client_emulation_load(priv->client,
 						 emulation_filename,
 						 priv->cancellable,
-						 error))
+						 error)) {
+			g_prefix_error(error, "failed to load %s: ", emulation_filename);
 			return FALSE;
+		}
 	}
 
 	/* download file if required */
-	if (!json_object_has_member(json_obj, "url")) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "JSON invalid as has no 'url'");
-		return FALSE;
-	}
+	if (json_object_has_member(json_obj, "url")) {
+		const gchar *url = json_object_get_string_member(json_obj, "url");
+		g_autofree gchar *filename = NULL;
+		g_autoptr(GError) error_local = NULL;
 
-	/* build URL */
-	url = json_object_get_string_member(json_obj, "url");
-	filename = fu_util_download_if_required(priv, url, error);
-	if (filename == NULL) {
-		g_prefix_error(error, "failed to download %s: ", url);
-		return FALSE;
-	}
-
-	/* log */
-	json_builder_set_member_name(helper->builder, "url");
-	json_builder_add_string_value(helper->builder, url);
-
-	/* install file */
-	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
-	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
-	if (!fwupd_client_install(priv->client,
-				  FWUPD_DEVICE_ID_ANY,
-				  filename,
-				  priv->flags,
-				  priv->cancellable,
-				  &error_local)) {
-		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
-			if (priv->as_json) {
-				json_builder_set_member_name(helper->builder, "info");
-				json_builder_add_string_value(helper->builder,
-							      error_local->message);
-			} else {
-				g_autofree gchar *msg = NULL;
-				msg = fu_console_color_format(error_local->message,
-							      FU_CONSOLE_COLOR_YELLOW);
-				fu_console_print(priv->console, "%s: %s", helper->name, msg);
-			}
-			helper->nr_missing++;
-			return TRUE;
+		filename = fu_util_download_if_required(priv, url, error);
+		if (filename == NULL) {
+			g_prefix_error(error, "failed to download %s: ", url);
+			return FALSE;
 		}
-		g_propagate_error(error, g_steal_pointer(&error_local));
-		return FALSE;
+
+		/* log */
+		json_builder_set_member_name(helper->builder, "url");
+		json_builder_add_string_value(helper->builder, url);
+
+		/* install file */
+		priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
+		priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
+		if (!fwupd_client_install(priv->client,
+					  FWUPD_DEVICE_ID_ANY,
+					  filename,
+					  priv->flags,
+					  priv->cancellable,
+					  &error_local)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
+				if (priv->as_json) {
+					json_builder_set_member_name(helper->builder, "info");
+					json_builder_add_string_value(helper->builder,
+								      error_local->message);
+				} else {
+					g_autofree gchar *msg = NULL;
+					msg = fu_console_color_format(error_local->message,
+								      FU_CONSOLE_COLOR_YELLOW);
+					fu_console_print(priv->console,
+							 "%s: %s",
+							 helper->name,
+							 msg);
+				}
+				helper->nr_missing++;
+				return TRUE;
+			}
+			g_propagate_error(error, g_steal_pointer(&error_local));
+			return FALSE;
+		}
 	}
 
 	/* process each step */
@@ -932,7 +972,7 @@ fu_util_device_test_step(FuUtilPrivate *priv,
 	for (guint i = 0; i < json_array_get_length(json_array); i++) {
 		JsonNode *json_node = json_array_get_element(json_array, i);
 		JsonObject *json_obj_tmp = json_node_get_object(json_node);
-		if (!fu_util_device_test_component(priv, helper, json_obj_tmp, fw, error))
+		if (!fu_util_device_test_component(priv, helper, json_obj_tmp, error))
 			return FALSE;
 	}
 
@@ -4373,7 +4413,7 @@ fu_util_show_plugin_warnings(FuUtilPrivate *priv)
 	/* print */
 	for (guint i = 0; i < 64; i++) {
 		FwupdPluginFlags flag = (guint64)1 << i;
-		const gchar *tmp;
+		g_autofree gchar *tmp = NULL;
 		g_autofree gchar *url = NULL;
 		g_autoptr(GString) str = g_string_new(NULL);
 		if ((flags & flag) == 0)
@@ -4958,11 +4998,6 @@ main(int argc, char *argv[])
 	bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8");
 	textdomain(GETTEXT_PACKAGE);
 	g_set_prgname(fu_util_get_prgname(argv[0]));
-
-#ifndef SUPPORTED_BUILD
-	/* make critical warnings fatal */
-	(void)g_setenv("G_DEBUG", "fatal-criticals", FALSE);
-#endif
 
 	/* ensure D-Bus errors are registered */
 	(void)fwupd_error_quark();

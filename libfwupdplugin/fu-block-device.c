@@ -40,12 +40,8 @@ fu_block_device_probe(FuDevice *device, GError **error)
 		/* copy the VID and PID, and reconstruct compatible IDs */
 		if (!fu_device_probe(usb_device, error))
 			return FALSE;
-		fu_device_add_instance_str(device,
-					   "VEN",
-					   fu_device_get_instance_str(usb_device, "VID"));
-		fu_device_add_instance_str(device,
-					   "DEV",
-					   fu_device_get_instance_str(usb_device, "PID"));
+		fu_device_add_instance_u16(device, "VEN", fu_device_get_vid(usb_device));
+		fu_device_add_instance_u16(device, "DEV", fu_device_get_pid(usb_device));
 		if (!fu_device_build_instance_id_full(device,
 						      FU_DEVICE_INSTANCE_FLAG_QUIRKS,
 						      error,
@@ -72,6 +68,39 @@ fu_block_device_probe(FuDevice *device, GError **error)
 	return TRUE;
 }
 
+#ifdef HAVE_SCSI_SG_H
+static gboolean
+fu_block_device_ioctl_buf_cb(FuIoctl *self, gpointer ptr, guint8 *buf, gsize bufsz, GError **error)
+{
+	struct sg_io_hdr *io_hdr = (struct sg_io_hdr *)ptr;
+	io_hdr->dxferp = buf;
+	io_hdr->dxfer_len = bufsz;
+	return TRUE;
+}
+
+static gboolean
+fu_block_device_ioctl_cdb_cb(FuIoctl *self, gpointer ptr, guint8 *buf, gsize bufsz, GError **error)
+{
+	struct sg_io_hdr *io_hdr = (struct sg_io_hdr *)ptr;
+	io_hdr->cmdp = buf;
+	io_hdr->cmd_len = bufsz;
+	return TRUE;
+}
+
+static gboolean
+fu_block_device_ioctl_sense_cb(FuIoctl *self,
+			       gpointer ptr,
+			       guint8 *buf,
+			       gsize bufsz,
+			       GError **error)
+{
+	struct sg_io_hdr *io_hdr = (struct sg_io_hdr *)ptr;
+	io_hdr->sbp = buf;
+	io_hdr->mx_sb_len = bufsz;
+	return TRUE;
+}
+#endif
+
 /**
  * fu_block_device_sg_io_cmd_none:
  * @self: a #FuBlockDevice
@@ -92,25 +121,32 @@ fu_block_device_sg_io_cmd_none(FuBlockDevice *self, const guint8 *cdb, guint8 cd
 	guint8 sense_buffer[FU_BLOCK_DEVICE_SG_IO_SENSE_BUFFER_LEN] = {0};
 	struct sg_io_hdr io_hdr = {
 	    .interface_id = 'S',
-	    .cmd_len = cdbsz,
-	    .mx_sb_len = sizeof(sense_buffer),
 	    .dxfer_direction = SG_DXFER_NONE,
-	    .cmdp = (guint8 *)cdb,
-	    .sbp = sense_buffer,
 	    .timeout = FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
 	    .flags = SG_FLAG_DIRECT_IO,
 	};
 	gint rc = 0;
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 
 	fu_dump_raw(G_LOG_DOMAIN, "cmd", cdb, cdbsz);
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  SG_IO,
-				  (guint8 *)&io_hdr,
-				  sizeof(io_hdr),
-				  &rc,
-				  5 * FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_RETRY,
-				  error))
+
+	/* include these when generating the emulation event */
+	fu_ioctl_add_key_as_u16(ioctl, "Request", SG_IO);
+	fu_ioctl_add_key_as_u8(ioctl, "DxferDirection", io_hdr.dxfer_direction);
+	fu_ioctl_add_const_buffer(ioctl, "Cdb", cdb, cdbsz, fu_block_device_ioctl_cdb_cb);
+	fu_ioctl_add_mutable_buffer(ioctl,
+				    "Sense",
+				    sense_buffer,
+				    sizeof(sense_buffer),
+				    fu_block_device_ioctl_sense_cb);
+	if (!fu_ioctl_execute(ioctl,
+			      SG_IO,
+			      (guint8 *)&io_hdr,
+			      sizeof(io_hdr),
+			      &rc,
+			      5 * FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
+			      FU_IOCTL_FLAG_RETRY,
+			      error))
 		return FALSE;
 	if (io_hdr.status) {
 		g_set_error(error,
@@ -162,27 +198,33 @@ fu_block_device_sg_io_cmd_read(FuBlockDevice *self,
 	guint8 sense_buffer[FU_BLOCK_DEVICE_SG_IO_SENSE_BUFFER_LEN] = {0};
 	struct sg_io_hdr io_hdr = {
 	    .interface_id = 'S',
-	    .cmd_len = cdbsz,
-	    .mx_sb_len = sizeof(sense_buffer),
 	    .dxfer_direction = SG_DXFER_FROM_DEV,
-	    .dxfer_len = bufsz,
-	    .dxferp = buf,
-	    .cmdp = (guint8 *)cdb,
-	    .sbp = sense_buffer,
 	    .timeout = FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
 	    .flags = SG_FLAG_DIRECT_IO,
 	};
 	gint rc = 0;
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 
 	fu_dump_raw(G_LOG_DOMAIN, "cmd", cdb, cdbsz);
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  SG_IO,
-				  (guint8 *)&io_hdr,
-				  sizeof(io_hdr),
-				  &rc,
-				  5 * FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_RETRY,
-				  error))
+
+	/* include these when generating the emulation event */
+	fu_ioctl_add_key_as_u16(ioctl, "Request", SG_IO);
+	fu_ioctl_add_key_as_u8(ioctl, "DxferDirection", io_hdr.dxfer_direction);
+	fu_ioctl_add_mutable_buffer(ioctl, NULL, buf, bufsz, fu_block_device_ioctl_buf_cb);
+	fu_ioctl_add_const_buffer(ioctl, "Cdb", cdb, cdbsz, fu_block_device_ioctl_cdb_cb);
+	fu_ioctl_add_mutable_buffer(ioctl,
+				    "Sense",
+				    sense_buffer,
+				    sizeof(sense_buffer),
+				    fu_block_device_ioctl_sense_cb);
+	if (!fu_ioctl_execute(ioctl,
+			      SG_IO,
+			      (guint8 *)&io_hdr,
+			      sizeof(io_hdr),
+			      &rc,
+			      5 * FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
+			      FU_IOCTL_FLAG_RETRY,
+			      error))
 		return FALSE;
 	if (io_hdr.status) {
 		g_set_error(error,
@@ -237,27 +279,33 @@ fu_block_device_sg_io_cmd_write(FuBlockDevice *self,
 	guint8 sense_buffer[FU_BLOCK_DEVICE_SG_IO_SENSE_BUFFER_LEN] = {0};
 	struct sg_io_hdr io_hdr = {
 	    .interface_id = 'S',
-	    .cmd_len = cdbsz,
-	    .mx_sb_len = sizeof(sense_buffer),
 	    .dxfer_direction = SG_DXFER_TO_DEV,
-	    .dxfer_len = bufsz,
-	    .dxferp = (guint8 *)buf,
-	    .cmdp = (guint8 *)cdb,
-	    .sbp = sense_buffer,
 	    .timeout = FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
 	    .flags = SG_FLAG_DIRECT_IO,
 	};
 	gint rc = 0;
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 
 	fu_dump_raw(G_LOG_DOMAIN, "cmd", cdb, cdbsz);
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  SG_IO,
-				  (guint8 *)&io_hdr,
-				  sizeof(io_hdr),
-				  &rc,
-				  5 * FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_RETRY,
-				  error))
+
+	/* include these when generating the emulation event */
+	fu_ioctl_add_key_as_u16(ioctl, "Request", SG_IO);
+	fu_ioctl_add_key_as_u8(ioctl, "DxferDirection", io_hdr.dxfer_direction);
+	fu_ioctl_add_const_buffer(ioctl, NULL, buf, bufsz, fu_block_device_ioctl_buf_cb);
+	fu_ioctl_add_const_buffer(ioctl, "Cdb", cdb, cdbsz, fu_block_device_ioctl_cdb_cb);
+	fu_ioctl_add_mutable_buffer(ioctl,
+				    "Sense",
+				    sense_buffer,
+				    sizeof(sense_buffer),
+				    fu_block_device_ioctl_sense_cb);
+	if (!fu_ioctl_execute(ioctl,
+			      SG_IO,
+			      (guint8 *)&io_hdr,
+			      sizeof(io_hdr),
+			      &rc,
+			      5 * FU_BLOCK_DEVICE_SG_IO_TIMEOUT,
+			      FU_IOCTL_FLAG_RETRY,
+			      error))
 		return FALSE;
 	if (io_hdr.status) {
 		g_set_error(error,

@@ -428,20 +428,9 @@ fu_algoltek_usbcr_device_ensure_version(FuAlgoltekUsbcrDevice *self, GError **er
 static gboolean
 fu_algoltek_usbcr_device_probe(FuDevice *device, GError **error)
 {
-	FuAlgoltekUsbcrDevice *self = FU_ALGOLTEK_USBCR_DEVICE(device);
-
 	/* FuUdevDevice->probe */
 	if (!FU_DEVICE_CLASS(fu_algoltek_usbcr_device_parent_class)->probe(device, error))
 		return FALSE;
-
-	if (g_strcmp0(fu_udev_device_get_devtype(FU_UDEV_DEVICE(self)), "disk") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "is not correct devtype=%s, expected disk",
-			    fu_udev_device_get_devtype(FU_UDEV_DEVICE(self)));
-		return FALSE;
-	}
 
 	/* set the physical ID */
 	return fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "usb", error);
@@ -613,7 +602,11 @@ fu_algoltek_usbcr_device_write_firmware(FuDevice *device,
 	stream = fu_firmware_get_stream(firmware, error);
 	if (stream == NULL)
 		return FALSE;
-	chunks = fu_chunk_array_new_from_stream(stream, 0, 32, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						32,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 

@@ -162,7 +162,10 @@ fu_ch347_device_send_command(FuCh347Device *self,
 	if (wbufsz > 0) {
 		g_autoptr(GBytes) wblob = g_bytes_new_static(wbuf, wbufsz);
 		g_autoptr(FuChunkArray) chunks =
-		    fu_chunk_array_new_from_bytes(wblob, 0x0, FU_CH347_PAYLOAD_SIZE);
+		    fu_chunk_array_new_from_bytes(wblob,
+						  FU_CHUNK_ADDR_OFFSET_NONE,
+						  FU_CHUNK_PAGESZ_NONE,
+						  FU_CH347_PAYLOAD_SIZE);
 		for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
 			guint8 buf[1] = {0x0};
 			g_autoptr(FuChunk) chk = NULL;
@@ -254,20 +257,9 @@ fu_ch347_device_chip_select(FuCh347Device *self, gboolean val, GError **error)
 }
 
 static gboolean
-fu_ch347_device_setup(FuDevice *device, GError **error)
+fu_ch347_device_probe(FuDevice *device, GError **error)
 {
-	FuCh347Device *self = FU_CH347_DEVICE(device);
 	g_autoptr(FuCh347CfiDevice) cfi_device = NULL;
-
-	/* FuUsbDevice->setup */
-	if (!FU_DEVICE_CLASS(fu_ch347_device_parent_class)->setup(device, error))
-		return FALSE;
-
-	/* set divisor */
-	if (!fu_ch347_device_configure_stream(self, error))
-		return FALSE;
-
-	/* setup SPI chip */
 	cfi_device = g_object_new(FU_TYPE_CH347_CFI_DEVICE,
 				  "context",
 				  fu_device_get_context(device),
@@ -278,9 +270,23 @@ fu_ch347_device_setup(FuDevice *device, GError **error)
 				  "logical-id",
 				  "SPI",
 				  NULL);
-	if (!fu_device_setup(FU_DEVICE(cfi_device), error))
-		return FALSE;
 	fu_device_add_child(device, FU_DEVICE(cfi_device));
+	return TRUE;
+}
+
+static gboolean
+fu_ch347_device_setup(FuDevice *device, GError **error)
+{
+	FuCh347Device *self = FU_CH347_DEVICE(device);
+	g_autoptr(GError) error_local = NULL;
+
+	/* FuUsbDevice->setup */
+	if (!FU_DEVICE_CLASS(fu_ch347_device_parent_class)->setup(device, error))
+		return FALSE;
+
+	/* set divisor */
+	if (!fu_ch347_device_configure_stream(self, error))
+		return FALSE;
 
 	/* success */
 	return TRUE;
@@ -299,6 +305,7 @@ static void
 fu_ch347_device_class_init(FuCh347DeviceClass *klass)
 {
 	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
+	device_class->probe = fu_ch347_device_probe;
 	device_class->setup = fu_ch347_device_setup;
 	device_class->to_string = fu_ch347_device_to_string;
 }

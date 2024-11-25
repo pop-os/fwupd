@@ -430,7 +430,8 @@ fu_parade_lspcon_device_flash_write(FuParadeLspconDevice *self,
 			return FALSE;
 	}
 
-	chunks = fu_chunk_array_new_from_stream(stream, base_address, 256, error);
+	chunks =
+	    fu_chunk_array_new_from_stream(stream, base_address, FU_CHUNK_PAGESZ_NONE, 256, error);
 	if (chunks == NULL)
 		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
@@ -628,7 +629,7 @@ fu_parade_lspcon_device_write_firmware(FuDevice *device,
 						fu_progress_get_child(progress),
 						error))
 		return FALSE;
-	buf = fu_input_stream_read_byte_array(stream, target_address, blocksz, error);
+	buf = fu_input_stream_read_byte_array(stream, target_address, blocksz, NULL, error);
 	if (buf == NULL)
 		return FALSE;
 	if (!fu_memcmp_safe(buf->data, buf->len, 0x0, readback_buf, blocksz, 0x0, blocksz, error)) {

@@ -133,7 +133,7 @@ fu_util_show_plugin_warnings(FuUtilPrivate *priv)
 	/* print */
 	for (guint i = 0; i < 64; i++) {
 		FwupdPluginFlags flag = (guint64)1 << i;
-		const gchar *tmp;
+		g_autofree gchar *tmp = NULL;
 		g_autofree gchar *url = NULL;
 		if ((flags & flag) == 0)
 			continue;
@@ -442,6 +442,46 @@ fu_util_watch(FuUtilPrivate *priv, gchar **values, GError **error)
 				  error))
 		return FALSE;
 	g_main_loop_run(priv->loop);
+	return TRUE;
+}
+
+static gint
+fu_util_verfmt_sort_cb(gconstpointer a, gconstpointer b)
+{
+	return g_strcmp0(*(const gchar **)a, *(const gchar **)b);
+}
+
+static gboolean
+fu_util_get_verfmts(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	g_autoptr(GPtrArray) verfmts = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
+
+	for (guint i = FWUPD_VERSION_FORMAT_PLAIN; i < FWUPD_VERSION_FORMAT_LAST; i++) {
+		g_autofree gchar *format = g_strdup(fwupd_version_format_to_string(i));
+		if (format == NULL)
+			continue;
+		g_ptr_array_add(verfmts, g_steal_pointer(&format));
+	}
+	g_ptr_array_sort(verfmts, (GCompareFunc)fu_util_verfmt_sort_cb);
+
+	/* print */
+	if (priv->as_json) {
+		g_autoptr(JsonBuilder) builder = json_builder_new();
+		json_builder_begin_array(builder);
+		for (guint i = 0; i < verfmts->len; i++) {
+			const gchar *verfmt = g_ptr_array_index(verfmts, i);
+			json_builder_add_string_value(builder, verfmt);
+		}
+		json_builder_end_array(builder);
+		return fu_util_print_builder(priv->console, builder, error);
+	}
+
+	/* print */
+	for (guint i = 0; i < verfmts->len; i++) {
+		const gchar *verfmt = g_ptr_array_index(verfmts, i);
+		fu_console_print_literal(priv->console, verfmt);
+	}
+
 	return TRUE;
 }
 
@@ -2044,7 +2084,10 @@ fu_util_remote_modify(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 	}
 
-	if (!fu_util_start_engine(priv, FU_ENGINE_LOAD_FLAG_REMOTES, priv->progress, error))
+	if (!fu_util_start_engine(priv,
+				  FU_ENGINE_LOAD_FLAG_REMOTES | FU_ENGINE_LOAD_FLAG_HWINFO,
+				  priv->progress,
+				  error))
 		return FALSE;
 
 	remote = fu_engine_get_remote_by_id(priv->engine, values[0], error);
@@ -2090,6 +2133,46 @@ fu_util_remote_disable(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	fu_console_print_literal(priv->console, _("Successfully disabled remote"));
+	return TRUE;
+}
+
+static gboolean
+fu_util_vercmp(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	FwupdVersionFormat verfmt = FWUPD_VERSION_FORMAT_UNKNOWN;
+	gint rc;
+
+	/* sanity check */
+	if (g_strv_length(values) < 2) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_ARGS,
+				    "Invalid arguments, expected VER1 VER2");
+		return FALSE;
+	}
+
+	/* optional version format */
+	if (g_strv_length(values) > 2) {
+		verfmt = fwupd_version_format_from_string(values[2]);
+		if (verfmt == FWUPD_VERSION_FORMAT_UNKNOWN) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_ARGS,
+				    "Version format %s not supported",
+				    values[2]);
+			return FALSE;
+		}
+	}
+
+	/* compare */
+	rc = fu_version_compare(values[0], values[1], verfmt);
+	if (rc > 0) {
+		fu_console_print(priv->console, "%s > %s", values[0], values[1]);
+	} else if (rc < 0) {
+		fu_console_print(priv->console, "%s < %s", values[0], values[1]);
+	} else {
+		fu_console_print(priv->console, "%s == %s", values[0], values[1]);
+	}
 	return TRUE;
 }
 
@@ -3648,7 +3731,10 @@ fu_util_esp_list(FuUtilPrivate *priv, gchar **values, GError **error)
 	g_autoptr(FuVolume) volume = NULL;
 	g_autoptr(GPtrArray) files = NULL;
 
-	if (!fu_util_start_engine(priv, FU_ENGINE_LOAD_FLAG_READONLY, priv->progress, error))
+	if (!fu_util_start_engine(priv,
+				  FU_ENGINE_LOAD_FLAG_READONLY | FU_ENGINE_LOAD_FLAG_HWINFO,
+				  priv->progress,
+				  error))
 		return FALSE;
 	if (priv->as_json)
 		return fu_util_esp_list_as_json(priv, error);
@@ -3675,6 +3761,45 @@ fu_util_esp_list(FuUtilPrivate *priv, gchar **values, GError **error)
 		fu_console_print_literal(priv->console, fn);
 	}
 	return TRUE;
+}
+
+static gboolean
+fu_util_modify_tag(FuUtilPrivate *priv, gchar **values, gboolean enable, GError **error)
+{
+	g_autoptr(FuDevice) dev = NULL;
+	const gchar *tag = enable ? "emulation-tag" : "~emulation-tag";
+
+	if (!fu_util_start_engine(priv,
+				  FU_ENGINE_LOAD_FLAG_COLDPLUG | FU_ENGINE_LOAD_FLAG_HWINFO,
+				  priv->progress,
+				  error))
+		return FALSE;
+
+	/* set the flag */
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG;
+	if (g_strv_length(values) >= 1) {
+		dev = fu_util_get_device(priv, values[0], error);
+		if (dev == NULL)
+			return FALSE;
+	} else {
+		dev = fu_util_prompt_for_device(priv, NULL, error);
+		if (dev == NULL)
+			return FALSE;
+	}
+
+	return fu_engine_modify_device(priv->engine, fu_device_get_id(dev), "Flags", tag, error);
+}
+
+static gboolean
+fu_util_emulation_tag(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	return fu_util_modify_tag(priv, values, TRUE, error);
+}
+
+static gboolean
+fu_util_emulation_untag(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	return fu_util_modify_tag(priv, values, FALSE, error);
 }
 
 static gboolean
@@ -4513,11 +4638,6 @@ main(int argc, char *argv[])
 	textdomain(GETTEXT_PACKAGE);
 	g_set_prgname(fu_util_get_prgname(argv[0]));
 
-#ifndef SUPPORTED_BUILD
-	/* make critical warnings fatal */
-	(void)g_setenv("G_DEBUG", "fatal-criticals", FALSE);
-#endif
-
 	/* create helper object */
 	priv->lock_fd = -1;
 	priv->main_ctx = g_main_context_new();
@@ -4804,6 +4924,20 @@ main(int argc, char *argv[])
 			      _("Gets the host security attributes"),
 			      fu_util_security);
 	fu_util_cmd_array_add(cmd_array,
+			      "emulation-tag",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("[DEVICE-ID|GUID]"),
+			      /* TRANSLATORS: command description */
+			      _("Adds devices to watch for future emulation"),
+			      fu_util_emulation_tag);
+	fu_util_cmd_array_add(cmd_array,
+			      "emulation-untag",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("[DEVICE-ID|GUID]"),
+			      /* TRANSLATORS: command description */
+			      _("Removes devices to watch for future emulation"),
+			      fu_util_emulation_untag);
+	fu_util_cmd_array_add(cmd_array,
 			      "esp-mount",
 			      NULL,
 			      /* TRANSLATORS: command description */
@@ -4945,6 +5079,19 @@ main(int argc, char *argv[])
 			      /* TRANSLATORS: command description */
 			      _("Disables virtual testing devices"),
 			      fu_util_disable_test_devices);
+	fu_util_cmd_array_add(cmd_array,
+			      "get-version-formats",
+			      NULL,
+			      /* TRANSLATORS: command description */
+			      _("Get all known version formats"),
+			      fu_util_get_verfmts);
+	fu_util_cmd_array_add(cmd_array,
+			      "vercmp",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("VERSION1 VERSION2 [FORMAT]"),
+			      /* TRANSLATORS: command description */
+			      _("Compares two versions for equality"),
+			      fu_util_vercmp);
 
 	/* do stuff on ctrl+c */
 	priv->cancellable = g_cancellable_new();

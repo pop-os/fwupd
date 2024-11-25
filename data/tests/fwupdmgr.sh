@@ -11,6 +11,25 @@ error()
 }
 
 # ---
+echo "Verify test device is present"
+fwupdtool get-devices --json | jq -e '.Devices | any(.Plugin == "test")'
+rc=$?; if [ $rc != 0 ]; then
+    echo "Enable test device"
+    fwupdtool enable-test-devices
+    rc=$?; if [ $rc != 0 ]; then error $rc; fi
+fi
+
+# ---
+echo "Show help output"
+fwupdmgr --help
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Show version output"
+fwupdmgr --version
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
 echo "Getting the list of remotes..."
 fwupdmgr get-remotes
 rc=$?; if [ $rc != 0 ]; then error $rc; fi
@@ -41,6 +60,28 @@ fwupdmgr update $device -y
 rc=$?; if [ $rc != 0 ]; then error $rc; fi
 
 # ---
+echo "Check if anything was tagged for emulation"
+fwupdmgr get-devices --json --filter emulation-tag | jq -e '(.Devices | length) > 0'
+rc=$?; if [ $rc = 0 ]; then
+    echo "Save device emulation"
+    fwupdmgr emulation-save /dev/null
+    rc=$?; if [ $rc != 0 ]; then error $rc; fi
+    echo "Save device emulation (bad args)"
+    fwupdmgr emulation-save
+    rc=$?; if [ $rc != 1 ]; then error $rc; fi
+fi
+
+# ---
+echo "Verifying results (str)..."
+fwupdmgr get-results $device -y
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Verifying results (json)..."
+fwupdmgr get-results $device -y --json
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
 echo "Getting updates (should be none)..."
 fwupdmgr --no-unreported-check --no-metadata-check get-updates
 rc=$?; if [ $rc != 2 ]; then error $rc; fi
@@ -49,6 +90,11 @@ rc=$?; if [ $rc != 2 ]; then error $rc; fi
 echo "Testing the verification of firmware (again)..."
 fwupdmgr verify $device
 rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Getting history (should be none)..."
+fwupdmgr get-history
+rc=$?; if [ $rc != 2 ]; then exit $rc; fi
 
 if [ -z "$CI_NETWORK" ]; then
         echo "Skipping remaining tests due to CI_NETWORK not being set"

@@ -1,4 +1,5 @@
 fwupdplugin_structs = [
+  'fu-progress.rs', # fuzzing
   'fu-common.rs', # fuzzing
   'fu-acpi-table.rs', # fuzzing
   'fu-archive.rs', # fuzzing
@@ -20,7 +21,6 @@ fwupdplugin_structs = [
   'fu-msgpack.rs', # fuzzing
   'fu-oprom.rs', # fuzzing
   'fu-pefile.rs', # fuzzing
-  'fu-progress.rs', # fuzzing
   'fu-sbatlevel-section.rs', # fuzzing
   'fu-smbios.rs', # fuzzing
   'fu-usb-device-ds20.rs', # fuzzing
@@ -54,6 +54,7 @@ fwupdplugin_src = [
   'fu-bios-setting.c', # fuzzing
   'fu-bios-settings.c', # fuzzing
   'fu-block-device.c',
+  'fu-block-partition.c',
   'fu-bluez-device.c',
   'fu-byte-array.c', # fuzzing
   'fu-bytes.c', # fuzzing
@@ -130,6 +131,7 @@ fwupdplugin_src = [
   'fu-intel-thunderbolt-firmware.c', # fuzzing
   'fu-intel-thunderbolt-nvm.c', # fuzzing
   'fu-io-channel.c', # fuzzing
+  'fu-ioctl.c', # fuzzing
   'fu-kenv.c', # fuzzing
   'fu-kernel.c', # fuzzing
   'fu-linear-firmware.c',
@@ -154,7 +156,7 @@ fwupdplugin_src = [
   'fu-srec-firmware.c', # fuzzing
   'fu-string.c', # fuzzing
   'fu-sum.c', # fuzzing
-  'fu-udev-device.c',
+  'fu-udev-device.c', # fuzzing
   'fu-usb-bos-descriptor.c',
   'fu-usb-config-descriptor.c',
   'fu-usb-descriptor.c',
@@ -163,6 +165,7 @@ fwupdplugin_src = [
   'fu-usb-device-fw-ds20.c',
   'fu-usb-device-ms-ds20.c',
   'fu-usb-endpoint.c',
+  'fu-usb-hid-descriptor.c',
   'fu-usb-interface.c',
   'fu-uswid-firmware.c', # fuzzing
   'fu-version-common.c', # fuzzing
@@ -192,6 +195,7 @@ fwupdplugin_headers = [
   'fu-bios-settings.h',
   'fu-bios-settings-private.h',
   'fu-block-device.h',
+  'fu-block-partition.h',
   'fu-bluez-device.h',
   'fu-byte-array.h',
   'fu-bytes.h',
@@ -263,6 +267,7 @@ fwupdplugin_headers = [
   'fu-intel-thunderbolt-firmware.h',
   'fu-intel-thunderbolt-nvm.h',
   'fu-io-channel.h',
+  'fu-ioctl.h',
   'fu-kenv.h',
   'fu-kernel.h',
   'fu-linear-firmware.h',
@@ -305,6 +310,8 @@ fwupdplugin_headers = [
   'fu-usb-interface-private.h',
   'fu-usb-device-ms-ds20.h',
   'fu-usb-device-private.h',
+  'fu-usb-hid-descriptor.h',
+  'fu-usb-hid-descriptor-private.h',
   'fu-uswid-firmware.h',
   'fu-v4l-device.h',
   'fu-version-common.h',
@@ -338,6 +345,7 @@ library_deps = [
   libusb,
   cbor,
   sqlite,
+  libblkid,
   libdrm,
   platform_deps,
 ]

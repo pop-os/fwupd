@@ -24,6 +24,7 @@
 #include "fu-device-event-private.h"
 #include "fu-device-private.h"
 #include "fu-i2c-device.h"
+#include "fu-ioctl-private.h"
 #include "fu-path.h"
 #include "fu-string.h"
 #include "fu-udev-device-private.h"
@@ -104,6 +105,7 @@ fu_udev_device_to_string(FuDevice *device, guint idt, GString *str)
 
 	fwupd_codec_string_append_hex(str, idt, "Number", priv->number);
 	fwupd_codec_string_append(str, idt, "Subsystem", priv->subsystem);
+	fwupd_codec_string_append(str, idt, "Devtype", priv->devtype);
 	fwupd_codec_string_append(str, idt, "Driver", priv->driver);
 	fwupd_codec_string_append(str, idt, "BindId", priv->bind_id);
 	fwupd_codec_string_append(str, idt, "DeviceFile", priv->device_file);
@@ -274,7 +276,8 @@ fu_udev_device_set_number(FuUdevDevice *self, guint64 number)
 	priv->number = number;
 }
 
-static void
+/* private */
+void
 fu_udev_device_set_devtype(FuUdevDevice *self, const gchar *devtype)
 {
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
@@ -318,6 +321,30 @@ fu_udev_device_parse_number(FuUdevDevice *self, GError **error)
 }
 
 static gboolean
+fu_udev_device_ensure_devtype_from_modalias(FuUdevDevice *self, GError **error)
+{
+	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
+	const gchar *devtype_modalias[] = {"mmc", "platform", NULL};
+	g_autofree gchar *prop_modalias = NULL;
+	g_auto(GStrv) split_modalias = NULL;
+
+	/* only some subsystems forget to set the DEVTYPE property */
+	if (!g_strv_contains(devtype_modalias, priv->subsystem))
+		return TRUE;
+
+	/* parse out subsystem:devtype */
+	prop_modalias = fu_udev_device_read_property(self, "MODALIAS", error);
+	if (prop_modalias == NULL)
+		return FALSE;
+	split_modalias = g_strsplit(prop_modalias, ":", 2);
+	if (g_strv_length(split_modalias) >= 2)
+		priv->devtype = g_strdup(split_modalias[1]);
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
 fu_udev_device_probe(FuDevice *device, GError **error)
 {
 	FuUdevDevice *self = FU_UDEV_DEVICE(device);
@@ -338,8 +365,13 @@ fu_udev_device_probe(FuDevice *device, GError **error)
 	}
 	if (priv->driver == NULL)
 		priv->driver = fu_udev_device_get_symlink_target(self, "driver", NULL);
-	if (priv->devtype == NULL)
+	if (priv->devtype == NULL) {
 		priv->devtype = fu_udev_device_read_property(self, "DEVTYPE", NULL);
+		if (priv->devtype == NULL) {
+			if (!fu_udev_device_ensure_devtype_from_modalias(self, error))
+				return FALSE;
+		}
+	}
 	if (priv->device_file == NULL) {
 		g_autofree gchar *prop_devname =
 		    fu_udev_device_read_property(self, "DEVNAME", NULL);
@@ -603,6 +635,15 @@ fu_udev_device_get_open_flags(FuUdevDevice *self)
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), 0);
 	return priv->open_flags;
+}
+
+static void
+fu_udev_device_invalidate(FuDevice *device)
+{
+	FuUdevDevice *self = FU_UDEV_DEVICE(device);
+	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
+	priv->properties_valid = FALSE;
+	g_hash_table_remove_all(priv->properties);
 }
 
 static void
@@ -1107,25 +1148,23 @@ fu_udev_device_close(FuDevice *device, GError **error)
 }
 
 /**
- * fu_udev_device_ioctl:
+ * fu_udev_device_ioctl_new:
  * @self: a #FuUdevDevice
- * @request: request number
- * @buf: a buffer to use, which *must* be large enough for the request
- * @bufsz: the size of @buf
- * @rc: (out) (nullable): the raw return value from the ioctl
- * @timeout: timeout in ms for the retry action, see %FU_UDEV_DEVICE_IOCTL_FLAG_RETRY
- * @flags: some #FuUdevDeviceIoctlFlags, e.g. %FU_UDEV_DEVICE_IOCTL_FLAG_RETRY
- * @error: (nullable): optional return location for an error
  *
- * Control a device using a low-level request.
+ * Build a helper to control a device using a low-level request.
  *
- * NOTE: In version 2.0.0 the @bufsz parameter was added -- which isn't required to perform the
- * ioctl, but *is* required to accurately track and emulate the device buffer.
+ * Returns: (transfer full): a #FuIoctl, or %NULL on error
  *
- * Returns: %TRUE for success
- *
- * Since: 2.0.0
+ * Since: 2.0.2
  **/
+FuIoctl *
+fu_udev_device_ioctl_new(FuUdevDevice *self)
+{
+	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), NULL);
+	return fu_ioctl_new(self);
+}
+
+/* private */
 gboolean
 fu_udev_device_ioctl(FuUdevDevice *self,
 		     gulong request,
@@ -1133,49 +1172,18 @@ fu_udev_device_ioctl(FuUdevDevice *self,
 		     gsize bufsz,
 		     gint *rc,
 		     guint timeout,
-		     FuUdevDeviceIoctlFlags flags,
+		     FuIoctlFlags flags,
 		     GError **error)
 {
 #ifdef HAVE_IOCTL_H
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
 	gint rc_tmp;
 	g_autoptr(GTimer) timer = g_timer_new();
-	FuDeviceEvent *event = NULL;
-	g_autofree gchar *event_id = NULL;
 
 	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), FALSE);
 	g_return_val_if_fail(request != 0x0, FALSE);
 	g_return_val_if_fail(buf != NULL, FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
-
-	/* emulated */
-	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED) ||
-	    fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
-				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
-		g_autofree gchar *buf_base64 = g_base64_encode(buf, bufsz);
-		event_id = g_strdup_printf("Ioctl:"
-					   "Request=0x%04x,"
-					   "Data=%s,"
-					   "Length=0x%x",
-					   (guint)request,
-					   buf_base64,
-					   (guint)bufsz);
-	}
-
-	/* emulated */
-	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED)) {
-		event = fu_device_load_event(FU_DEVICE(self), event_id, error);
-		if (event == NULL)
-			return FALSE;
-		return fu_device_event_copy_data(event, "DataOut", buf, bufsz, NULL, error);
-	}
-
-	/* save */
-	if (fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
-				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
-		event = fu_device_save_event(FU_DEVICE(self), event_id);
-		fu_device_event_set_data(event, "Data", buf, bufsz);
-	}
 
 	/* not open! */
 	if (priv->io_channel == NULL) {
@@ -1195,7 +1203,7 @@ fu_udev_device_ioctl(FuUdevDevice *self,
 			       buf);
 		if (rc_tmp >= 0)
 			break;
-	} while ((flags & FU_UDEV_DEVICE_IOCTL_FLAG_RETRY) && (errno == EINTR || errno == EAGAIN) &&
+	} while ((flags & FU_IOCTL_FLAG_RETRY) && (errno == EINTR || errno == EAGAIN) &&
 		 g_timer_elapsed(timer, NULL) < timeout * 1000.f);
 	if (rc != NULL)
 		*rc = rc_tmp;
@@ -1226,10 +1234,6 @@ fu_udev_device_ioctl(FuUdevDevice *self,
 #endif
 		return FALSE;
 	}
-
-	/* save response */
-	if (event != NULL)
-		fu_device_event_set_data(event, "DataOut", buf, bufsz);
 
 	/* success */
 	return TRUE;
@@ -1820,6 +1824,26 @@ fu_udev_device_get_devtype(FuUdevDevice *self)
 	return priv->devtype;
 }
 
+/**
+ * fu_udev_device_get_subsystem_devtype:
+ * @self: a #FuUdevDevice
+ *
+ * Returns the Udev subsystem and device type, as a string.
+ *
+ * Returns: (transfer full): `subsystem:devtype`, or just `subsystem` if the latter is unset
+ *
+ * Since: 2.0.2
+ **/
+gchar *
+fu_udev_device_get_subsystem_devtype(FuUdevDevice *self)
+{
+	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), NULL);
+	if (priv->devtype != NULL)
+		return g_strdup_printf("%s:%s", priv->subsystem, priv->devtype);
+	return g_strdup(priv->subsystem);
+}
+
 static GBytes *
 fu_udev_device_dump_firmware(FuDevice *device, FuProgress *progress, GError **error)
 {
@@ -1903,6 +1927,13 @@ fu_udev_device_add_property(FuUdevDevice *self, const gchar *key, const gchar *v
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_if_fail(FU_IS_UDEV_DEVICE(self));
 	g_return_if_fail(key != NULL);
+
+	/* this are explicit properties too */
+	if (g_strcmp0(key, "DEVNAME") == 0)
+		fu_udev_device_set_device_file(self, value);
+	if (g_strcmp0(key, "DEVTYPE") == 0)
+		fu_udev_device_set_devtype(self, value);
+
 	g_hash_table_insert(priv->properties, g_strdup(key), g_strdup(value));
 }
 
@@ -2002,6 +2033,8 @@ fu_udev_device_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags
 		fwupd_codec_json_append(builder, "DeviceFile", priv->device_file);
 	if (priv->subsystem != NULL)
 		fwupd_codec_json_append(builder, "Subsystem", priv->subsystem);
+	if (priv->devtype != NULL)
+		fwupd_codec_json_append(builder, "Devtype", priv->devtype);
 	if (priv->driver != NULL)
 		fwupd_codec_json_append(builder, "Driver", priv->driver);
 	if (priv->bind_id != NULL)
@@ -2050,6 +2083,9 @@ fu_udev_device_from_json(FwupdCodec *codec, JsonNode *json_node, GError **error)
 	tmp = json_object_get_string_member_with_default(json_object, "Subsystem", NULL);
 	if (tmp != NULL)
 		fu_udev_device_set_subsystem(self, tmp);
+	tmp = json_object_get_string_member_with_default(json_object, "Devtype", NULL);
+	if (tmp != NULL)
+		fu_udev_device_set_devtype(self, tmp);
 	tmp = json_object_get_string_member_with_default(json_object, "Driver", NULL);
 	if (tmp != NULL)
 		fu_udev_device_set_driver(self, tmp);
@@ -2204,6 +2240,7 @@ fu_udev_device_class_init(FuUdevDeviceClass *klass)
 	device_class->probe = fu_udev_device_probe;
 	device_class->rescan = fu_udev_device_rescan;
 	device_class->incorporate = fu_udev_device_incorporate;
+	device_class->invalidate = fu_udev_device_invalidate;
 	device_class->open = fu_udev_device_open;
 	device_class->close = fu_udev_device_close;
 	device_class->to_string = fu_udev_device_to_string;

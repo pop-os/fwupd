@@ -10,12 +10,14 @@
 #include "fu-uf2-firmware.h"
 
 struct _FuUf2Device {
-	FuUdevDevice parent_instance;
+	FuBlockPartition parent_instance;
 	guint64 family_id;
 	FuVolume *volume; /* non-null when fwupd has mounted it privately */
 };
 
-G_DEFINE_TYPE(FuUf2Device, fu_uf2_device, FU_TYPE_UDEV_DEVICE)
+G_DEFINE_TYPE(FuUf2Device, fu_uf2_device, FU_TYPE_BLOCK_PARTITION)
+
+#define FU_UF2_DEVICE_FLAG_HAS_RUNTIME "has-runtime"
 
 static FuFirmware *
 fu_uf2_device_prepare_firmware(FuDevice *device,
@@ -81,6 +83,7 @@ fu_uf2_device_probe_current_fw(FuDevice *device, GBytes *fw, GError **error)
 		return FALSE;
 	csum_sha256 = g_compute_checksum_for_bytes(G_CHECKSUM_SHA256, fw_raw);
 	fu_device_add_checksum(device, csum_sha256);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 
 	/* success */
 	return TRUE;
@@ -89,26 +92,10 @@ fu_uf2_device_probe_current_fw(FuDevice *device, GBytes *fw, GError **error)
 static gchar *
 fu_uf2_device_get_full_path(FuUf2Device *self, const gchar *filename, GError **error)
 {
-	const gchar *devfile = fu_udev_device_get_device_file(FU_UDEV_DEVICE(self));
-	g_autoptr(FuVolume) volume = NULL;
 	g_autofree gchar *mount_point = NULL;
-
-	/* sanity check */
-	if (devfile == NULL) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_FOUND,
-				    "invalid path: no devfile");
+	mount_point = fu_block_partition_get_mount_point(FU_BLOCK_PARTITION(self), error);
+	if (mount_point == NULL)
 		return NULL;
-	}
-
-	/* find volume */
-	volume = fu_volume_new_by_device(devfile, error);
-	if (volume == NULL)
-		return NULL;
-
-	/* success */
-	mount_point = fu_volume_get_mount_point(volume);
 	return g_build_filename(mount_point, filename, NULL);
 }
 
@@ -120,41 +107,27 @@ fu_uf2_device_write_firmware(FuDevice *device,
 			     GError **error)
 {
 	FuUf2Device *self = FU_UF2_DEVICE(device);
-	gssize wrote;
 	g_autofree gchar *fn = NULL;
-	g_autoptr(GBytes) fw = NULL;
-	g_autoptr(GFile) file = NULL;
-	g_autoptr(GOutputStream) ostr = NULL;
+	g_autoptr(GInputStream) stream = NULL;
 
 	/* get blob */
-	fw = fu_firmware_get_bytes(firmware, error);
-	if (fw == NULL)
+	stream = fu_firmware_get_stream(firmware, error);
+	if (stream == NULL)
 		return FALSE;
 
 	/* open file for writing; no cleverness */
 	fn = fu_uf2_device_get_full_path(self, "FIRMWARE.UF2", error);
 	if (fn == NULL)
 		return FALSE;
-	file = g_file_new_for_path(fn);
-	ostr = G_OUTPUT_STREAM(g_file_replace(file, NULL, FALSE, G_FILE_CREATE_NONE, NULL, error));
-	if (ostr == NULL)
+
+	/* success */
+	if (!fu_device_set_contents(device, fn, stream, progress, error))
 		return FALSE;
 
-	/* write in one chunk and let the kernel do the right thing :) */
-	wrote = g_output_stream_write(ostr,
-				      g_bytes_get_data(fw, NULL),
-				      g_bytes_get_size(fw),
-				      NULL,
-				      error);
-	if (wrote < 0)
-		return FALSE;
-	if ((gsize)wrote != g_bytes_get_size(fw)) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_FILE,
-			    "only wrote 0x%x bytes",
-			    (guint)wrote);
-		return FALSE;
+	/* we saw the device *come* from a runtime VID/PID, lets assume it's going back there */
+	if (fu_device_has_private_flag(device, FU_UF2_DEVICE_FLAG_HAS_RUNTIME)) {
+		g_debug("expecting runtime");
+		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 	}
 
 	/* success */
@@ -166,18 +139,12 @@ fu_uf2_device_dump_firmware(FuDevice *device, FuProgress *progress, GError **err
 {
 	FuUf2Device *self = FU_UF2_DEVICE(device);
 	g_autofree gchar *fn = NULL;
-	g_autoptr(GInputStream) istr = NULL;
 
 	/* open for reading */
 	fn = fu_uf2_device_get_full_path(self, "CURRENT.UF2", error);
 	if (fn == NULL)
 		return NULL;
-	istr = fu_input_stream_from_path(fn, error);
-	if (istr == NULL)
-		return NULL;
-
-	/* read all in one big chunk */
-	return fu_input_stream_read_bytes(istr, 0, G_MAXSIZE, error);
+	return fu_device_get_contents_bytes(device, fn, progress, error);
 }
 
 static FuFirmware *
@@ -208,10 +175,18 @@ fu_uf2_device_volume_mount(FuUf2Device *self, GError **error)
 }
 
 static gboolean
-fu_uf2_device_check_volume_mounted_cb(FuDevice *self, gpointer user_data, GError **error)
+fu_uf2_device_check_volume_mounted_cb(FuDevice *device, gpointer user_data, GError **error)
 {
-	const gchar *devfile = fu_udev_device_get_device_file(FU_UDEV_DEVICE(user_data));
+	const gchar *devfile = fu_udev_device_get_device_file(FU_UDEV_DEVICE(device));
 	g_autoptr(FuVolume) volume = NULL;
+
+	if (devfile == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "invalid path: no devfile");
+		return FALSE;
+	}
 
 	/* mount volume if required */
 	volume = fu_volume_new_by_device(devfile, error);
@@ -235,13 +210,21 @@ fu_uf2_device_open(FuDevice *device, GError **error)
 	FuUf2Device *self = FU_UF2_DEVICE(device);
 	g_autoptr(GError) error_local = NULL;
 
+	/* FuUdevDevice->open() */
+	if (!FU_DEVICE_CLASS(fu_uf2_device_parent_class)->open(device, error))
+		return FALSE;
+
+	/* skip */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED))
+		return TRUE;
+
 	/* wait for the user session to auto-mount the volume -- ideally we want to avoid using
 	 * fu_volume_mount() which would make the volume only accessible by the fwupd user */
 	if (!fu_device_retry_full(device,
 				  fu_uf2_device_check_volume_mounted_cb,
 				  20, /* count */
 				  50, /* ms */
-				  device,
+				  NULL,
 				  &error_local)) {
 		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 			/* maybe no session running? */
@@ -262,6 +245,10 @@ fu_uf2_device_close(FuDevice *device, GError **error)
 {
 	FuUf2Device *self = FU_UF2_DEVICE(device);
 
+	/* FuUdevDevice->close() */
+	if (!FU_DEVICE_CLASS(fu_uf2_device_parent_class)->close(device, error))
+		return FALSE;
+
 	/* we only do this when mounting for the fwupd user */
 	if (self->volume != NULL) {
 		if (!fu_volume_unmount(self->volume, error))
@@ -277,20 +264,42 @@ static gboolean
 fu_uf2_device_setup(FuDevice *device, GError **error)
 {
 	FuUf2Device *self = FU_UF2_DEVICE(device);
-	gsize bufsz = 0;
-	g_autofree gchar *buf = NULL;
 	g_autofree gchar *fn1 = NULL;
 	g_autofree gchar *fn2 = NULL;
 	g_auto(GStrv) lines = NULL;
+	g_autoptr(GBytes) blob_txt = NULL;
 	g_autoptr(GBytes) fw = NULL;
+
+	/* FuUdevDevice->setup() */
+	if (!FU_DEVICE_CLASS(fu_uf2_device_parent_class)->setup(device, error))
+		return FALSE;
+
+	/* sanity check filesystem type */
+	if (g_strcmp0(fu_block_partition_get_fs_type(FU_BLOCK_PARTITION(self)), "vfat") != 0) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "filesystem type of %s unsupported, expected vfat",
+			    fu_block_partition_get_fs_type(FU_BLOCK_PARTITION(self)));
+		return FALSE;
+	}
+
+	/* only add UUID if it is set */
+	if (fu_block_partition_get_fs_uuid(FU_BLOCK_PARTITION(self)) != NULL) {
+		fu_device_add_instance_str(
+		    device,
+		    "UUID",
+		    fu_block_partition_get_fs_uuid(FU_BLOCK_PARTITION(self)));
+		if (!fu_device_build_instance_id(device, error, "USB", "VID", "PID", "UUID", NULL))
+			return FALSE;
+	}
 
 	/* this has to exist */
 	fn1 = fu_uf2_device_get_full_path(self, "INFO_UF2.TXT", error);
 	if (fn1 == NULL)
 		return FALSE;
-	if (!g_file_get_contents(fn1, &buf, &bufsz, error))
-		return FALSE;
-	lines = fu_strsplit(buf, bufsz, "\n", -1);
+	blob_txt = fu_device_get_contents_bytes(device, fn1, NULL, error);
+	lines = fu_strsplit(g_bytes_get_data(blob_txt, NULL), g_bytes_get_size(blob_txt), "\n", -1);
 	for (guint i = 0; lines[i] != NULL; i++) {
 		if (g_str_has_prefix(lines[i], "Model: ")) {
 			fu_device_set_name(device, lines[i] + 7);
@@ -304,7 +313,7 @@ fu_uf2_device_setup(FuDevice *device, GError **error)
 	fn2 = fu_uf2_device_get_full_path(self, "CURRENT.UF2", error);
 	if (fn2 == NULL)
 		return FALSE;
-	fw = fu_bytes_get_contents(fn2, NULL);
+	fw = fu_device_get_contents_bytes(device, fn2, NULL, NULL);
 	if (fw != NULL) {
 		if (!fu_uf2_device_probe_current_fw(device, fw, error))
 			return FALSE;
@@ -317,76 +326,41 @@ fu_uf2_device_setup(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_uf2_device_probe(FuDevice *device, GError **error)
+fu_uf2_device_usb_probe(FuUf2Device *self, FuDevice *usb_device, GError **error)
 {
-	FuUf2Device *self = FU_UF2_DEVICE(device);
-	guint64 vid = 0;
-	guint64 pid = 0;
-	g_autofree gchar *prop_bus = NULL;
-	g_autofree gchar *prop_fs_type = NULL;
-	g_autofree gchar *prop_fs_uuid = NULL;
-	g_autofree gchar *prop_model_id = NULL;
-	g_autofree gchar *prop_vendor_id = NULL;
-
-	/* check is valid */
-	prop_bus = fu_udev_device_read_property(FU_UDEV_DEVICE(self), "ID_BUS", NULL);
-	if (g_strcmp0(prop_bus, "usb") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "is not correct ID_BUS=%s, expected usb",
-			    prop_bus);
+	/* copy the VID and PID */
+	if (!fu_device_probe(usb_device, error))
 		return FALSE;
-	}
-	prop_fs_type = fu_udev_device_read_property(FU_UDEV_DEVICE(self), "ID_FS_TYPE", NULL);
-	if (g_strcmp0(prop_fs_type, "vfat") != 0) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "is not correct ID_FS_TYPE=%s, expected vfat",
-			    prop_fs_type);
-		return FALSE;
-	}
-
-	/* set the physical ID */
-	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "block", error))
-		return FALSE;
-
-	/* more instance IDs */
-	prop_vendor_id = fu_udev_device_read_property(FU_UDEV_DEVICE(self), "ID_VENDOR_ID", NULL);
-	if (prop_vendor_id != NULL) {
-		if (!fu_strtoull(prop_vendor_id, &vid, 0, G_MAXUINT16, FU_INTEGER_BASE_16, error))
-			return FALSE;
-	}
-	if (vid != 0x0)
-		fu_device_add_instance_u16(device, "VID", vid);
-	prop_model_id = fu_udev_device_read_property(FU_UDEV_DEVICE(self), "ID_MODEL_ID", NULL);
-	if (prop_model_id != NULL) {
-		if (!fu_strtoull(prop_model_id, &pid, 0, G_MAXUINT16, FU_INTEGER_BASE_16, error))
-			return FALSE;
-	}
-	if (pid != 0x0)
-		fu_device_add_instance_u16(device, "PID", pid);
-	if (!fu_device_build_instance_id_full(device,
+	fu_device_incorporate(FU_DEVICE(self),
+			      usb_device,
+			      FU_DEVICE_INCORPORATE_FLAG_VENDOR_IDS |
+				  FU_DEVICE_INCORPORATE_FLAG_VID | FU_DEVICE_INCORPORATE_FLAG_PID);
+	if (!fu_device_build_instance_id_full(FU_DEVICE(self),
 					      FU_DEVICE_INSTANCE_FLAG_QUIRKS,
 					      error,
 					      "USB",
 					      "VID",
 					      NULL))
 		return FALSE;
-	if (!fu_device_build_instance_id(device, error, "USB", "VID", "PID", NULL))
+	if (!fu_device_build_instance_id(FU_DEVICE(self), error, "USB", "VID", "PID", NULL))
 		return FALSE;
 
-	/* only add UUID if it is set */
-	prop_fs_uuid = fu_udev_device_read_property(FU_UDEV_DEVICE(self), "ID_FS_UUID", NULL);
-	if (prop_fs_uuid != NULL) {
-		fu_device_add_instance_str(device, "UUID", prop_fs_uuid);
-		if (!fu_device_build_instance_id(device, error, "USB", "VID", "PID", "UUID", NULL))
-			return FALSE;
-	}
+	/* success */
+	return TRUE;
+}
 
-	/* vendor-id */
-	fu_device_build_vendor_id_u16(device, "USB", vid);
+static gboolean
+fu_uf2_device_probe(FuDevice *device, GError **error)
+{
+	FuUf2Device *self = FU_UF2_DEVICE(device);
+	g_autoptr(FuDevice) usb_device = NULL;
+
+	/* get USB properties */
+	usb_device = fu_device_get_backend_parent_with_subsystem(device, "usb:usb_device", error);
+	if (usb_device == NULL)
+		return FALSE;
+	if (!fu_uf2_device_usb_probe(self, usb_device, error))
+		return FALSE;
 
 	/* check the quirk matched to avoid mounting *all* vfat devices */
 	if (!fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE)) {
@@ -399,6 +373,15 @@ fu_uf2_device_probe(FuDevice *device, GError **error)
 
 	/* success */
 	return TRUE;
+}
+
+static void
+fu_uf2_device_replace(FuDevice *device, FuDevice *donor)
+{
+	/* we saw the same device come from a different VID/PID */
+	if (fu_device_get_vid(device) != fu_device_get_vid(donor) ||
+	    fu_device_get_pid(device) != fu_device_get_pid(donor))
+		fu_device_add_private_flag(device, FU_UF2_DEVICE_FLAG_HAS_RUNTIME);
 }
 
 static void
@@ -420,13 +403,33 @@ fu_uf2_device_to_string(FuDevice *device, guint idt, GString *str)
 }
 
 static void
+fu_uf2_device_vid_notify_cb(FuDevice *device, GParamSpec *pspec, gpointer user_data)
+{
+	fu_device_add_instance_u16(device, "VID", fu_device_get_vid(device));
+}
+
+static void
+fu_uf2_device_pid_notify_cb(FuDevice *device, GParamSpec *pspec, gpointer user_data)
+{
+	fu_device_add_instance_u16(device, "PID", fu_device_get_pid(device));
+}
+
+static void
 fu_uf2_device_init(FuUf2Device *self)
 {
 	fu_device_add_protocol(FU_DEVICE(self), "com.microsoft.uf2");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
+	fu_device_register_private_flag(FU_DEVICE(self), FU_UF2_DEVICE_FLAG_HAS_RUNTIME);
+	g_signal_connect(FU_DEVICE(self),
+			 "notify::vid",
+			 G_CALLBACK(fu_uf2_device_vid_notify_cb),
+			 NULL);
+	g_signal_connect(FU_DEVICE(self),
+			 "notify::pid",
+			 G_CALLBACK(fu_uf2_device_pid_notify_cb),
+			 NULL);
 }
 
 static void
@@ -456,5 +459,6 @@ fu_uf2_device_class_init(FuUf2DeviceClass *klass)
 	device_class->set_progress = fu_uf2_device_set_progress;
 	device_class->read_firmware = fu_uf2_device_read_firmware;
 	device_class->write_firmware = fu_uf2_device_write_firmware;
+	device_class->replace = fu_uf2_device_replace;
 	device_class->dump_firmware = fu_uf2_device_dump_firmware;
 }

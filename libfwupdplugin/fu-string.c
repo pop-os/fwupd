@@ -478,7 +478,11 @@ fu_strsplit_stream(GInputStream *stream,
 	} else {
 		stream_partial = g_object_ref(stream);
 	}
-	chunks = fu_chunk_array_new_from_stream(stream_partial, 0x0, 0x8000, error);
+	chunks = fu_chunk_array_new_from_stream(stream_partial,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						0x8000,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	for (gsize i = 0; i < fu_chunk_array_length(chunks); i++) {
@@ -597,6 +601,25 @@ fu_strsafe(const gchar *str, gsize maxsz)
 	if (tmp->len == 0 || !valid)
 		return NULL;
 	return g_string_free(g_steal_pointer(&tmp), FALSE);
+}
+
+/**
+ * fu_strsafe_bytes:
+ * @blob: (not nullable): a #GBytes
+ * @maxsz: maximum size of returned string
+ *
+ * Converts a #GBytes into something that can be safely printed.
+ *
+ * Returns: (transfer full): safe string, or %NULL if there was nothing valid
+ *
+ * Since: 2.0.2
+ **/
+gchar *
+fu_strsafe_bytes(GBytes *blob, gsize maxsz)
+{
+	g_return_val_if_fail(blob != NULL, NULL);
+	return fu_strsafe((const gchar *)g_bytes_get_data(blob, NULL),
+			  MIN(g_bytes_get_size(blob), maxsz));
 }
 
 /**

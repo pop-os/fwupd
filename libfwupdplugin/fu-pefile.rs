@@ -1,7 +1,8 @@
 // Copyright 2023 Richard Hughes <richard@hughsie.com>
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(ParseStream, ValidateStream, New)]
+#[derive(ParseStream, ValidateStream, New, Default)]
+#[repr(C, packed)]
 struct FuStructPeDosHeader {
     magic: u16le == 0x5A4D,
     cblp: u16le = 0x90,
@@ -65,6 +66,7 @@ enum FuPeCoffMagic {
 }
 
 #[repr(u16le)]
+#[derive(ToString)]
 enum FuCoffSubsystem {
     Unknown,
     Native = 1,
@@ -82,7 +84,8 @@ enum FuCoffSubsystem {
     WindowsBootApplication = 16,
 }
 
-#[derive(ParseStream, New)]
+#[derive(ParseStream, New, Default)]
+#[repr(C, packed)]
 struct FuStructPeCoffFileHeader {
     signature: u32le == 0x4550, // "PE\0\0"
     machine: FuPeCoffMachine = Amd64,
@@ -94,7 +97,8 @@ struct FuStructPeCoffFileHeader {
     characteristics: u16le = 0x2022,
 }
 
-#[derive(ParseStream, New)]
+#[derive(ParseStream, New, Default)]
+#[repr(C, packed)]
 struct FuStructPeCoffOptionalHeader64 {
     magic: FuPeCoffMagic = Pe32Plus,
     major_linker_version: u8 = 0x0e,
@@ -143,6 +147,7 @@ struct FuStructPeCoffOptionalHeader64 {
     _reserved: u32le,
 }
 
+#[repr(C, packed)]
 struct FuStructPeCoffSymbol {
     name: [char; 8],
     value: u32le,
@@ -153,6 +158,7 @@ struct FuStructPeCoffSymbol {
 }
 
 #[derive(ParseStream, New)]
+#[repr(C, packed)]
 struct FuStructPeCoffSection {
     name: [char; 8],
     virtual_size: u32le,

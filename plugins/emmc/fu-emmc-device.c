@@ -81,33 +81,6 @@ fu_emmc_device_to_string(FuDevice *device, guint idt, GString *str)
 	fwupd_codec_string_append_int(str, idt, "SectorSize", self->sect_size);
 }
 
-static const gchar *
-fu_emmc_device_get_manufacturer(guint64 mmc_id)
-{
-	switch (mmc_id) {
-	case 0x00:
-	case 0x44:
-		return "SanDisk";
-	case 0x02:
-		return "Kingston/Sandisk";
-	case 0x03:
-	case 0x11:
-		return "Toshiba";
-	case 0x13:
-		return "Micron";
-	case 0x15:
-		return "Samsung/Sandisk/LG";
-	case 0x37:
-		return "Kingmax";
-	case 0x70:
-	case 0x2c:
-		return "Kingston";
-	default:
-		return NULL;
-	}
-	return NULL;
-}
-
 static gboolean
 fu_emmc_device_get_sysattr_guint64(FuUdevDevice *device,
 				   const gchar *name,
@@ -134,32 +107,35 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	g_autofree gchar *attr_fwrev = NULL;
 	g_autofree gchar *attr_manfid = NULL;
 	g_autofree gchar *attr_name = NULL;
+	g_autofree gchar *dev_basename = NULL;
 	g_autofree gchar *man_oem_name = NULL;
 	g_autoptr(FuUdevDevice) udev_parent = NULL;
-	g_autoptr(GRegex) dev_regex = NULL;
 
 	udev_parent =
-	    FU_UDEV_DEVICE(fu_device_get_backend_parent_with_subsystem(device, "mmc:disk", NULL));
+	    FU_UDEV_DEVICE(fu_device_get_backend_parent_with_subsystem(device, "mmc:block", NULL));
 	if (udev_parent == NULL) {
 		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no MMC parent");
 		return FALSE;
 	}
 
 	/* ignore *rpmb and *boot* mmc block devices */
-	dev_regex = g_regex_new("mmcblk\\d$", 0, 0, NULL);
-	if (fu_device_get_name(device) == NULL) {
+	if (fu_udev_device_get_device_file(FU_UDEV_DEVICE(device)) == NULL) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "device has no name");
+				    "device has no device-file");
 		return FALSE;
 	}
-	if (!g_regex_match(dev_regex, fu_device_get_name(device), 0, NULL)) {
+	dev_basename = g_path_get_basename(fu_udev_device_get_device_file(FU_UDEV_DEVICE(device)));
+	if (!g_regex_match_simple("mmcblk\\d$",
+				  dev_basename,
+				  0,	/* G_REGEX_DEFAULT */
+				  0)) { /* G_REGEX_MATCH_DEFAULT */
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_SUPPORTED,
 			    "is not raw mmc block device, devname=%s",
-			    fu_device_get_name(device));
+			    dev_basename);
 		return FALSE;
 	}
 
@@ -211,6 +187,12 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	if (!fu_emmc_device_get_sysattr_guint64(udev_parent, "oemid", &oemid, error))
 		return FALSE;
 	fu_device_add_instance_u16(device, "MAN", manfid);
+	fu_device_build_instance_id_full(device,
+					 FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 "EMMC",
+					 "MAN",
+					 NULL);
 	fu_device_add_instance_u16(device, "OEM", oemid);
 	fu_device_build_instance_id_full(device,
 					 FU_DEVICE_INSTANCE_FLAG_QUIRKS,
@@ -238,11 +220,9 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 	if (attr_manfid == NULL)
 		return FALSE;
 	fu_device_build_vendor_id(device, "EMMC", attr_manfid);
-	fu_device_set_vendor(device, fu_emmc_device_get_manufacturer(manfid));
 
-	/* set the physical ID */
-	if (!fu_udev_device_set_physical_id(FU_UDEV_DEVICE(device), "mmc", error))
-		return FALSE;
+	/* set the physical ID from the mmc parent */
+	fu_device_set_physical_id(device, fu_device_get_backend_id(FU_DEVICE(udev_parent)));
 
 	/* internal */
 	if (!fu_emmc_device_get_sysattr_guint64(FU_UDEV_DEVICE(device), "removable", &flag, error))
@@ -254,8 +234,21 @@ fu_emmc_device_probe(FuDevice *device, GError **error)
 }
 
 static gboolean
-fu_emmc_device_read_extcsd(FuEmmcDevice *self, guint8 *ext_csd, gsize ext_csd_sz, GError **error)
+fu_emmc_device_ioctl_buffer_cb(FuIoctl *self,
+			       gpointer ptr,
+			       guint8 *buf,
+			       gsize bufsz,
+			       GError **error)
 {
+	struct mmc_ioc_cmd *idata = (struct mmc_ioc_cmd *)ptr;
+	idata->data_ptr = (guint64)((gulong)buf);
+	return TRUE;
+}
+
+static gboolean
+fu_emmc_device_read_extcsd(FuEmmcDevice *self, guint8 *buf, gsize bufsz, GError **error)
+{
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 	struct mmc_ioc_cmd idata = {
 	    .write_flag = 0,
 	    .opcode = MMC_SEND_EXT_CSD,
@@ -264,15 +257,25 @@ fu_emmc_device_read_extcsd(FuEmmcDevice *self, guint8 *ext_csd, gsize ext_csd_sz
 	    .blksz = 512,
 	    .blocks = 1,
 	};
-	mmc_ioc_cmd_set_data(idata, ext_csd);
-	return fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				    MMC_IOC_CMD,
-				    (guint8 *)&idata,
-				    sizeof(idata),
-				    NULL,
-				    FU_EMMC_DEVICE_IOCTL_TIMEOUT,
-				    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				    error);
+
+	/* include these when generating the emulation event */
+	fu_ioctl_add_key_as_u16(ioctl, "Request", MMC_IOC_CMD);
+	fu_ioctl_add_key_as_u8(ioctl, "Opcode", idata.opcode);
+	fu_ioctl_add_mutable_buffer(ioctl, NULL, buf, bufsz, fu_emmc_device_ioctl_buffer_cb);
+	if (!fu_ioctl_execute(ioctl,
+			      MMC_IOC_CMD,
+			      (guint8 *)&idata,
+			      sizeof(idata),
+			      NULL,
+			      FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+			      FU_IOCTL_FLAG_NONE,
+			      error)) {
+		g_prefix_error(error, "failed to MMC_IOC_CMD: ");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
 }
 
 static gboolean
@@ -368,6 +371,7 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	g_autofree struct mmc_ioc_multi_cmd *multi_cmd = NULL;
 	g_autoptr(GInputStream) stream = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -426,7 +430,11 @@ fu_emmc_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* build packets */
-	chunks = fu_chunk_array_new_from_stream(stream, 0x00, sector_size, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						sector_size,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	while (failure_cnt < 3) {
@@ -440,25 +448,25 @@ fu_emmc_device_write_firmware(FuDevice *device,
 
 			mmc_ioc_cmd_set_data(multi_cmd->cmds[2], fu_chunk_get_data(chk));
 
-			if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-						  MMC_IOC_MULTI_CMD,
-						  (guint8 *)multi_cmd,
-						  multi_cmdsz,
-						  NULL,
-						  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
-						  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-						  error)) {
+			if (!fu_ioctl_execute(ioctl,
+					      MMC_IOC_MULTI_CMD,
+					      (guint8 *)multi_cmd,
+					      multi_cmdsz,
+					      NULL,
+					      FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+					      FU_IOCTL_FLAG_NONE,
+					      error)) {
 				g_autoptr(GError) error_local = NULL;
 				g_prefix_error(error, "multi-cmd failed: ");
 				/* multi-cmd ioctl failed before exiting from ffu mode */
-				if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-							  MMC_IOC_CMD,
-							  (guint8 *)&multi_cmd->cmds[3],
-							  sizeof(struct mmc_ioc_cmd),
-							  NULL,
-							  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
-							  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-							  &error_local)) {
+				if (!fu_ioctl_execute(ioctl,
+						      MMC_IOC_CMD,
+						      (guint8 *)&multi_cmd->cmds[3],
+						      sizeof(struct mmc_ioc_cmd),
+						      NULL,
+						      FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+						      FU_IOCTL_FLAG_NONE,
+						      &error_local)) {
 					g_prefix_error(error, "%s: ", error_local->message);
 				}
 				return FALSE;
@@ -529,25 +537,25 @@ fu_emmc_device_write_firmware(FuDevice *device,
 		multi_cmd->cmds[1].write_flag = 1;
 
 		/* send ioctl with multi-cmd */
-		if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-					  MMC_IOC_MULTI_CMD,
-					  (guint8 *)multi_cmd,
-					  multi_cmdsz,
-					  NULL,
-					  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
-					  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-					  error)) {
+		if (!fu_ioctl_execute(ioctl,
+				      MMC_IOC_MULTI_CMD,
+				      (guint8 *)multi_cmd,
+				      multi_cmdsz,
+				      NULL,
+				      FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+				      FU_IOCTL_FLAG_NONE,
+				      error)) {
 			g_autoptr(GError) error_local = NULL;
 			/* In case multi-cmd ioctl failed before exiting from ffu mode */
 			g_prefix_error(error, "multi-cmd failed setting install mode: ");
-			if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-						  MMC_IOC_CMD,
-						  (guint8 *)&multi_cmd->cmds[2],
-						  sizeof(struct mmc_ioc_cmd),
-						  NULL,
-						  FU_EMMC_DEVICE_IOCTL_TIMEOUT,
-						  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-						  &error_local)) {
+			if (!fu_ioctl_execute(ioctl,
+					      MMC_IOC_CMD,
+					      (guint8 *)&multi_cmd->cmds[2],
+					      sizeof(struct mmc_ioc_cmd),
+					      NULL,
+					      FU_EMMC_DEVICE_IOCTL_TIMEOUT,
+					      FU_IOCTL_FLAG_NONE,
+					      &error_local)) {
 				g_prefix_error(error, "%s: ", error_local->message);
 			}
 			return FALSE;

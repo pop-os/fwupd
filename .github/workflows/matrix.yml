@@ -11,9 +11,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [fedora, debian-x86_64, arch, debian-i386]
+        os: [fedora, debian-x86_64, arch, debian-i386, ubuntu-x86_64]
     steps:
-      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Docker login
         run: docker login docker.pkg.github.com -u $GITHUB_ACTOR -p $GITHUB_TOKEN
         env:
@@ -43,27 +43,21 @@ jobs:
           CI: true
         run: |
           docker run --privileged -e CI=true -t -v $GITHUB_WORKSPACE:/github/workspace docker.pkg.github.com/fwupd/fwupd/fwupd-${{matrix.os}}:latest contrib/ci/${{matrix.os}}-test.sh
-      - name: Coveralls
-        if: matrix.os == 'debian-x86_64' || matrix.os == 'debian-i386'
-        uses: coverallsapp/github-action@1134c89e4bf10443bf8f0ec69640b667cfd91041 # v2.3.1
+      - name: Save any coverage data
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          flag-name: run-${{ join(matrix.*, '-') }}
-          parallel: true
-
-  finish:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Close parallel build
-        uses: coverallsapp/github-action@1134c89e4bf10443bf8f0ec69640b667cfd91041 # v2.3.1
-        with:
-          parallel-finished: true
-          carryforward: "run-debian-i386,run-debian-x86_64"
+          name: coverage-${{ join(matrix.*, '-') }}
+          path: ${{ github.workspace }}/coverage.xml
+      - name: Upload to codecov
+        if: matrix.os == 'debian-x86_64' || matrix.os == 'debian-i386' || matrix.os == 'arch'
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   openbmc:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Refresh dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
@@ -81,7 +75,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Refresh dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
@@ -110,14 +104,31 @@ jobs:
           path: ${{ github.workspace }}/build/meson-dist/*xz
 
   macos:
-    runs-on: macos-12
+    runs-on: macos-latest
     steps:
     - name: install dependencies
       run: |
-        brew install meson libusb usb.ids gobject-introspection sqlite libarchive json-glib curl gnutls protobuf-c vala gi-docgen
-        python3 -m pip install --user jinja2
-    - uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+        brew uninstall --ignore-dependencies --force pkg-config@0.29.2
+        brew install meson usb.ids gobject-introspection libarchive json-glib protobuf-c vala gi-docgen
+        python3 -m pip install --user jinja2 --break-system-packages
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: configure
       run: ./contrib/ci/build_macos.sh
     - name: build
       run: ninja -C build-macos
+
+  build-windows:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: configure
+      run: ./contrib/ci/build_windows.sh
+    - name: upload-artifact
+      uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+      with:
+        name: windows
+        path: |
+          ${{ github.workspace }}/dist/setup/*.msi
+          ${{ github.workspace }}/dist/news.txt

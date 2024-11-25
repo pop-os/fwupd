@@ -28,6 +28,16 @@ plugin_builtin_wac = static_library('fu_plugin_wac',
 )
 plugin_builtins += plugin_builtin_wac
 
+enumeration_data += files(
+  'tests/wacom-movink-13-setup.json',
+)
+
+device_tests += files(
+  'tests/wacom-intuos-bt-m.json',
+  'tests/wacom-intuos-bt-s.json',
+  'tests/wacom-movink-13.json',
+)
+
 if get_option('tests')
   install_data(['tests/wacom-usb.builder.xml'],
     install_dir: join_paths(installed_test_datadir, 'tests'))

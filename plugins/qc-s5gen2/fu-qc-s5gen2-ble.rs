@@ -48,12 +48,14 @@ enum FuQcGaiaCmdStatus {
     InProgerss = 0x07,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3ApiReq {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetApiReq,
 }
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3Api {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetApiResp,
@@ -67,11 +69,13 @@ enum FuQcMore {
     Last = 0,
 }
 #[derive(New)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3SupportedFeaturesReq {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd,
 }
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3SupportedFeatures {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd,
@@ -79,37 +83,43 @@ struct FuStructQcGaiaV3SupportedFeatures {
     // variable length
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3SerialReq {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetSerialReq,
 }
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3Serial {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetSerialResp,
     // variable string
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3VariantReq {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetVariantReq,
 }
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3Variant {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetVariantResp,
     // variable string
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3GetTransportInfoReq {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetTransportInfoReq,
     key: u8,
 }
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3GetTransportInfo {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == GetTransportInfoResp,
@@ -117,14 +127,16 @@ struct FuStructQcGaiaV3GetTransportInfo {
     value: u32be,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3SetTransportInfoReq {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == SetTransportInfoReq,
     key: u8,
     value: u32be,
 }
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3SetTransportInfo {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == SetTransportInfoResp,
@@ -132,48 +144,56 @@ struct FuStructQcGaiaV3SetTransportInfo {
     value: u32be,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3UpgradeConnectCmd {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == UpgradeConnectCmd,
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3UpgradeConnectAck {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == UpgradeConnectAck,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3UpgradeDisconnectCmd {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == UpgradeDisconnectCmd,
 }
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3UpgradeDisconnectAck {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == UpgradeDisconnectAck,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3RegisterNotificationCmd {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == RegisterNotificationCmd,
     feature: u8 == 0x06,
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3RegisterNotificationAck {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == RegisterNotificationAck,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3UpgradeControlCmd {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == UpgradeControlCmd,
 }
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcGaiaV3UpgradeControlAck {
     vendorId: u16be,
     command: FuQcGaiaV3Cmd == UpgradeControlAck,

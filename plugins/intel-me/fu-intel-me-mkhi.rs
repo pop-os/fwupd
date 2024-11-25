@@ -46,7 +46,8 @@ enum FuMkhiCommand {
     ReadFileExResponse = 0x8A,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuMkhiReadFileRequest {
     group_id: FuMkhiGroupId == Mca,
     command: FuMkhiCommand == ReadFile,
@@ -58,7 +59,8 @@ struct FuMkhiReadFileRequest {
     flags: u8,
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuMkhiReadFileResponse {
     group_id: FuMkhiGroupId == Mca,
     command: FuMkhiCommand == ReadFileResponse,
@@ -68,7 +70,8 @@ struct FuMkhiReadFileResponse {
     // payload here
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuMkhiReadFileExRequest {
     group_id: FuMkhiGroupId == Mca,
     command: FuMkhiCommand == ReadFileEx,
@@ -80,7 +83,8 @@ struct FuMkhiReadFileExRequest {
     flags: u8,
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuMkhiReadFileExResponse {
     group_id: FuMkhiGroupId == Mca,
     command: FuMkhiCommand == ReadFileExResponse,

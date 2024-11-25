@@ -312,17 +312,13 @@ fu_device_list_item_sort_by_priority_cb(gconstpointer a, gconstpointer b)
 	return 0;
 }
 
-static FuDeviceItem *
-fu_device_list_find_by_id(FuDeviceList *self, const gchar *device_id, gboolean *multiple_matches)
+static GPtrArray *
+fu_device_list_filter_by_id(FuDeviceList *self, const gchar *device_id, GError **error)
 {
 	gsize device_id_len;
 	g_autoptr(GPtrArray) items = g_ptr_array_new();
 
-	/* sanity check */
-	if (device_id == NULL) {
-		g_critical("device ID was NULL");
-		return NULL;
-	}
+	g_return_val_if_fail(device_id != NULL, NULL);
 
 	/* support abbreviated hashes */
 	device_id_len = strlen(device_id);
@@ -334,16 +330,15 @@ fu_device_list_find_by_id(FuDeviceList *self, const gchar *device_id, gboolean *
 				      NULL};
 		for (guint j = 0; ids[j] != NULL; j++) {
 			if (strncmp(ids[j], device_id, device_id_len) == 0) {
-				if (j == 0 && items->len > 0 && multiple_matches != NULL)
-					*multiple_matches = TRUE;
 				g_ptr_array_add(items, item_tmp);
+				break;
 			}
 		}
 	}
 	g_rw_lock_reader_unlock(&self->devices_mutex);
 	if (items->len > 0) {
 		g_ptr_array_sort(items, fu_device_list_item_sort_by_priority_cb);
-		return g_ptr_array_index(items, 0);
+		return g_steal_pointer(&items);
 	}
 
 	/* only search old devices if we didn't find the active device */
@@ -357,20 +352,51 @@ fu_device_list_find_by_id(FuDeviceList *self, const gchar *device_id, gboolean *
 		ids[1] = fu_device_get_equivalent_id(item_tmp->device_old);
 		for (guint j = 0; ids[j] != NULL; j++) {
 			if (strncmp(ids[j], device_id, device_id_len) == 0) {
-				if (j == 0 && items->len > 0 && multiple_matches != NULL)
-					*multiple_matches = TRUE;
 				g_ptr_array_add(items, item_tmp);
+				break;
 			}
 		}
 	}
 	g_rw_lock_reader_unlock(&self->devices_mutex);
 	if (items->len > 0) {
 		g_ptr_array_sort(items, fu_device_list_item_sort_by_priority_cb);
-		return g_ptr_array_index(items, 0);
+		return g_steal_pointer(&items);
 	}
 
 	/* failed */
+	g_set_error(error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOT_FOUND,
+		    "device ID %s was not found",
+		    device_id);
 	return NULL;
+}
+
+static FuDeviceItem *
+fu_device_list_find_by_id(FuDeviceList *self, const gchar *device_id, GError **error)
+{
+	FuDeviceItem *item0;
+	g_autoptr(GPtrArray) items = NULL;
+
+	items = fu_device_list_filter_by_id(self, device_id, error);
+	if (items == NULL)
+		return NULL;
+
+	/* check there are not more devices that have the same priority */
+	item0 = g_ptr_array_index(items, 0);
+	for (guint i = 1; i < items->len; i++) {
+		FuDeviceItem *item_tmp = g_ptr_array_index(items, i);
+		if (fu_device_get_priority(item_tmp->device) ==
+		    fu_device_get_priority(item0->device)) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "device ID %s was not unique",
+				    device_id);
+			return NULL;
+		}
+	}
+	return item0;
 }
 
 /**
@@ -828,6 +854,7 @@ fu_device_list_add(FuDeviceList *self, FuDevice *device)
 			       fu_device_get_id(device),
 			       fu_device_get_plugin(device),
 			       fu_device_get_plugin(item->device));
+			fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_EMULATION_TAG);
 			return;
 		}
 
@@ -1033,32 +1060,15 @@ FuDevice *
 fu_device_list_get_by_id(FuDeviceList *self, const gchar *device_id, GError **error)
 {
 	FuDeviceItem *item;
-	gboolean multiple_matches = FALSE;
 
 	g_return_val_if_fail(FU_IS_DEVICE_LIST(self), NULL);
 	g_return_val_if_fail(device_id != NULL, NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
 	/* multiple things matched */
-	item = fu_device_list_find_by_id(self, device_id, &multiple_matches);
-	if (multiple_matches) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "device ID %s was not unique",
-			    device_id);
+	item = fu_device_list_find_by_id(self, device_id, error);
+	if (item == NULL)
 		return NULL;
-	}
-
-	/* nothing at all matched */
-	if (item == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_FOUND,
-			    "device ID %s was not found",
-			    device_id);
-		return NULL;
-	}
 
 	/* something found */
 	return g_object_ref(item->device);

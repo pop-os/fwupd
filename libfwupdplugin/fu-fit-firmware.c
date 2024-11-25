@@ -100,9 +100,7 @@ fu_fit_firmware_verify_crc32(FuFirmware *firmware,
 				       &value,
 				       error))
 		return FALSE;
-	value_calc = fu_crc32(FU_CRC_KIND_B32_STANDARD,
-			      g_bytes_get_data(blob, NULL),
-			      g_bytes_get_size(blob));
+	value_calc = fu_crc32_bytes(FU_CRC_KIND_B32_STANDARD, blob);
 	if (value_calc != value) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -240,7 +238,7 @@ fu_fit_firmware_verify_image(FuFirmware *firmware,
 					       &data_size,
 					       error))
 			return FALSE;
-		blob = fu_input_stream_read_bytes(stream, data_offset, data_size, error);
+		blob = fu_input_stream_read_bytes(stream, data_offset, data_size, NULL, error);
 		if (blob == NULL)
 			return FALSE;
 	}

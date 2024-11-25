@@ -27,10 +27,51 @@ struct _FuContextClass {
 };
 
 /**
+ * FuContextQuirkSource:
+ *
+ * The source of the quirk data, ordered by how good the data is.
+ **/
+typedef enum {
+	/**
+	 * FU_CONTEXT_QUIRK_SOURCE_DEVICE:
+	 *
+	 * From the device itself, perhaps a USB descriptor.
+	 *
+	 * Since: 2.0.2
+	 **/
+	FU_CONTEXT_QUIRK_SOURCE_DEVICE,
+	/**
+	 * FU_CONTEXT_QUIRK_SOURCE_FILE:
+	 *
+	 * From an internal `.quirk` file.
+	 *
+	 * Since: 2.0.2
+	 **/
+	FU_CONTEXT_QUIRK_SOURCE_FILE,
+	/**
+	 * FU_CONTEXT_QUIRK_SOURCE_DB:
+	 *
+	 * From the database, populated from `usb.ids` and `pci.ids`.
+	 *
+	 * Since: 2.0.2
+	 **/
+	FU_CONTEXT_QUIRK_SOURCE_DB,
+	/**
+	 * FU_CONTEXT_QUIRK_SOURCE_FALLBACK:
+	 *
+	 * A good fallback, perhaps from the PCI class information.
+	 *
+	 * Since: 2.0.2
+	 **/
+	FU_CONTEXT_QUIRK_SOURCE_FALLBACK,
+} FuContextQuirkSource;
+
+/**
  * FuContextLookupIter:
  * @self: a #FuContext
  * @key: a key
  * @value: a value
+ * @source: a #FuContextQuirkSource, e.g. %FU_CONTEXT_QUIRK_SOURCE_DB
  * @user_data: user data
  *
  * The context lookup iteration callback.
@@ -38,6 +79,7 @@ struct _FuContextClass {
 typedef void (*FuContextLookupIter)(FuContext *self,
 				    const gchar *key,
 				    const gchar *value,
+				    FuContextQuirkSource source,
 				    gpointer user_data);
 
 /**
@@ -78,6 +120,14 @@ typedef enum {
 	 * Since: 1.9.10
 	 **/
 	FU_CONTEXT_FLAG_LOADED_HWINFO = 1u << 2,
+	/**
+	 * FU_CONTEXT_FLAG_INHIBIT_VOLUME_MOUNT:
+	 *
+	 * Do not allow mounting volumes, usually set in self tests.
+	 *
+	 * Since: 2.0.2
+	 **/
+	FU_CONTEXT_FLAG_INHIBIT_VOLUME_MOUNT = 1u << 3,
 	/**
 	 * FU_CONTEXT_FLAG_LOADED_UNKNOWN:
 	 *
@@ -170,7 +220,7 @@ GPtrArray *
 fu_context_get_esp_volumes(FuContext *self, GError **error) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1);
 FuVolume *
-fu_context_get_default_esp(FuContext *ctx, GError **error) G_GNUC_WARN_UNUSED_RESULT
+fu_context_get_default_esp(FuContext *self, GError **error) G_GNUC_WARN_UNUSED_RESULT
     G_GNUC_NON_NULL(1);
 FuVolume *
 fu_context_get_esp_volume_by_hard_drive_device_path(FuContext *self,

@@ -85,7 +85,7 @@ fu_elantp_hid_device_send_cmd(FuElantpHidDevice *self,
 	if (!fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(self),
 					  tx,
 					  txsz,
-					  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					  FU_IOCTL_FLAG_NONE,
 					  error))
 		return FALSE;
 	if (rxsz == 0)
@@ -97,7 +97,7 @@ fu_elantp_hid_device_send_cmd(FuElantpHidDevice *self,
 	if (!fu_hidraw_device_get_feature(FU_HIDRAW_DEVICE(self),
 					  buf,
 					  bufsz,
-					  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					  FU_IOCTL_FLAG_NONE,
 					  error))
 		return FALSE;
 
@@ -942,6 +942,7 @@ fu_elantp_hid_device_init(FuElantpHidDevice *self)
 {
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_INTERNAL);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_set_summary(FU_DEVICE(self), "Touchpad");
 	fu_device_add_icon(FU_DEVICE(self), "input-touchpad");
 	fu_device_add_protocol(FU_DEVICE(self), "tw.com.emc.elantp");

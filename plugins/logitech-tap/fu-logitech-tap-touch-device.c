@@ -11,7 +11,6 @@
 #include <linux/uvcvideo.h>
 #ifdef HAVE_IOCTL_H
 #include <linux/hidraw.h>
-#include <sys/ioctl.h>
 #endif
 
 #include <string.h>
@@ -103,7 +102,7 @@ fu_logitech_tap_touch_device_hid_transfer(FuLogitechTapTouchDevice *self,
 	if (!fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(self),
 					  st_req->data,
 					  st_req->len,
-					  FU_UDEV_DEVICE_IOCTL_FLAG_RETRY,
+					  FU_IOCTL_FLAG_RETRY,
 					  error)) {
 		g_prefix_error(error, "failed to send packet to touch panel: ");
 		return FALSE;
@@ -450,17 +449,18 @@ fu_logitech_tap_touch_device_setup(FuDevice *device, GError **error)
 	FuLogitechTapTouchDevice *self = FU_LOGITECH_TAP_TOUCH_DEVICE(device);
 	struct hidraw_devinfo hid_raw_info = {0x0};
 	g_autoptr(FuDeviceLocker) locker = NULL;
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 
 	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_IS_BOOTLOADER))
 		g_debug("entering in BL MODE");
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCGRAWINFO,
-				  (guint8 *)&hid_raw_info,
-				  sizeof(hid_raw_info),
-				  NULL,
-				  FU_LOGITECH_TAP_TOUCH_IOCTL_TIMEOUT,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error))
+	if (!fu_ioctl_execute(ioctl,
+			      HIDIOCGRAWINFO,
+			      (guint8 *)&hid_raw_info,
+			      sizeof(hid_raw_info),
+			      NULL,
+			      FU_LOGITECH_TAP_TOUCH_IOCTL_TIMEOUT,
+			      FU_IOCTL_FLAG_NONE,
+			      error))
 		return FALSE;
 	if (hid_raw_info.bustype != FU_LOGITECH_TAP_TOUCH_DEVICE_INFO_BUS_TYPE) {
 		g_set_error(error,
@@ -601,7 +601,8 @@ fu_logitech_tap_touch_device_write_blocks(FuLogitechTapTouchDevice *self,
 	if (stream == NULL)
 		return FALSE;
 	chunks = fu_chunk_array_new_from_stream(stream,
-						0x0,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
 						FU_LOGITECH_TAP_TOUCH_TRANSFER_BLOCK_SIZE,
 						error);
 	if (chunks == NULL)

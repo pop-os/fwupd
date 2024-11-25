@@ -400,7 +400,11 @@ fu_fpc_device_write_ff2_blocks(FuFpcDevice *self, GInputStream *stream, GError *
 {
 	g_autoptr(FuChunkArray) chunks = NULL;
 
-	chunks = fu_chunk_array_new_from_stream(stream, 0x0, FPC_FLASH_BLOCK_SIZE_4096, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						FPC_FLASH_BLOCK_SIZE_4096,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
@@ -475,6 +479,7 @@ fu_fpc_device_write_ff2_firmware(FuFpcDevice *self,
 			buf_sec = fu_input_stream_read_byte_array(stream,
 								  offset,
 								  FPC_FF2_BLK_SEC_LINK_LEN,
+								  fu_progress_get_child(progress),
 								  error);
 			if (buf_sec == NULL)
 				return FALSE;
@@ -569,7 +574,11 @@ fu_fpc_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* build packets */
-	chunks = fu_chunk_array_new_from_stream(stream, 0x00, self->max_block_size, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						self->max_block_size,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 

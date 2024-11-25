@@ -17,6 +17,7 @@
 struct _FuParadeUsbhubDevice {
 	FuUsbDevice parent_instance;
 	FuCfiDevice *cfi_device;
+	FuParadeUsbhubChip chip;
 	guint32 spi_address;
 };
 
@@ -46,6 +47,7 @@ static void
 fu_parade_usbhub_device_to_string(FuDevice *device, guint idt, GString *str)
 {
 	FuParadeUsbhubDevice *self = FU_PARADE_USBHUB_DEVICE(device);
+	fwupd_codec_string_append(str, idt, "Chip", fu_parade_usbhub_chip_to_string(self->chip));
 	fwupd_codec_string_append_hex(str, idt, "SpiAddress", self->spi_address);
 }
 
@@ -544,6 +546,13 @@ fu_parade_usbhub_device_spi_wait_status(FuParadeUsbhubDevice *self, GError **err
 static gboolean
 fu_parade_usbhub_device_acquire_spi_master(FuParadeUsbhubDevice *self, GError **error)
 {
+	if (self->chip == FU_PARADE_USBHUB_CHIP_PS188) {
+		return fu_parade_usbhub_device_mmio_set_bit(
+		    self,
+		    FU_PARADE_USBHUB_DEVICE_ADDR_SPI_MASTER_ACQUIRE2,
+		    1,
+		    error);
+	}
 	return fu_parade_usbhub_device_mmio_set_bit(self,
 						    FU_PARADE_USBHUB_DEVICE_ADDR_SPI_MASTER_ACQUIRE,
 						    7,
@@ -1097,11 +1106,14 @@ fu_parade_usbhub_device_prepare(FuDevice *device,
 {
 	FuParadeUsbhubDevice *self = FU_PARADE_USBHUB_DEVICE(device);
 
-	/* prevent staying in high-power charging mode if UFP is disconnected */
-	if (!fu_parade_usbhub_device_set_ufp_disconnect_flag(self, error)) {
-		g_prefix_error(error, "failed to set UFP disconnect flag: ");
-		return FALSE;
+	if (self->chip == FU_PARADE_USBHUB_CHIP_PS188) {
+		/* prevent staying in high-power charging mode if UFP is disconnected */
+		if (!fu_parade_usbhub_device_set_ufp_disconnect_flag(self, error)) {
+			g_prefix_error(error, "failed to set UFP disconnect flag: ");
+			return FALSE;
+		}
 	}
+
 	return TRUE;
 }
 
@@ -1163,6 +1175,7 @@ fu_parade_usbhub_device_write_firmware(FuDevice *device,
 	blob = fu_input_stream_read_byte_array(stream,
 					       self->spi_address,
 					       FU_PARADE_USBHUB_SPI_ROM_BANK_SIZE,
+					       NULL,
 					       error);
 	if (blob == NULL)
 		return FALSE;
@@ -1218,6 +1231,28 @@ fu_parade_usbhub_device_convert_version(FuDevice *device, guint64 version_raw)
 	return fu_version_from_uint32(version_raw, fu_device_get_version_format(device));
 }
 
+static gboolean
+fu_parade_usbhub_device_set_quirk_kv(FuDevice *device,
+				     const gchar *key,
+				     const gchar *value,
+				     GError **error)
+{
+	FuParadeUsbhubDevice *self = FU_PARADE_USBHUB_DEVICE(device);
+
+	if (g_strcmp0(key, "ParadeUsbhubChip") == 0) {
+		self->chip = fu_parade_usbhub_chip_from_string(value);
+		if (self->chip != FU_PARADE_USBHUB_CHIP_UNKNOWN)
+			return TRUE;
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "invalid ParadeUsbhubChip");
+		return FALSE;
+	}
+	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no supported");
+	return FALSE;
+}
+
 static void
 fu_parade_usbhub_device_init(FuParadeUsbhubDevice *self)
 {
@@ -1240,6 +1275,7 @@ static void
 fu_parade_usbhub_device_constructed(GObject *object)
 {
 	FuParadeUsbhubDevice *self = FU_PARADE_USBHUB_DEVICE(object);
+	self->chip = FU_PARADE_USBHUB_CHIP_PS5512;
 	self->cfi_device = fu_cfi_device_new(fu_device_get_context(FU_DEVICE(self)), NULL);
 }
 
@@ -1267,6 +1303,7 @@ fu_parade_usbhub_device_class_init(FuParadeUsbhubDeviceClass *klass)
 	device_class->cleanup = fu_parade_usbhub_device_cleanup;
 	device_class->attach = fu_parade_usbhub_device_attach;
 	device_class->detach = fu_parade_usbhub_device_detach;
+	device_class->set_quirk_kv = fu_parade_usbhub_device_set_quirk_kv;
 	device_class->prepare_firmware = fu_parade_usbhub_device_prepare_firmware;
 	device_class->write_firmware = fu_parade_usbhub_device_write_firmware;
 	device_class->set_progress = fu_parade_usbhub_device_set_progress;

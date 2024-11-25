@@ -132,7 +132,7 @@ Remember: Plugins should be upstream!
 * `fu_udev_device_set_flags()`: Use `fu_udev_device_add_flag()` instead
 * `fu_udev_device_get_slot_depth()`: Use `fu_udev_device_get_subsystem_depth()` instead
 * `fu_usb_device_is_open()`: Use `fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_IS_OPEN)` instead
-* `fu_udev_device_ioctl`: Add some `FuUdevDeviceIoctlFlags`, e.g. `FU_UDEV_DEVICE_IOCTL_FLAG_RETRY`
+* `fu_udev_device_ioctl`: Add some `FuIoctlFlags`, e.g. `FU_IOCTL_FLAG_RETRY`
 * `fu_udev_device_write_sysfs()`: Add a timeout in milliseconds
 * `fu_udev_device_get_sysfs_attr_uint64()`: Use `fu_udev_device_read_sysfs()` instead
 * `fu_udev_device_get_sysfs_attr`: Use `fu_udev_device_read_sysfs()` instead
@@ -154,3 +154,10 @@ Remember: Plugins should be upstream!
 * `fu_udev_device_get_subsystem_model`: Use `fu_pci_device_get_subsystem_pid()` instead
 * `fu_udev_device_get_revision`: Use `fu_pci_device_get_revision()` instead
 * `fu_udev_device_set_revision`: Use `fu_pci_device_set_revision()` instead
+
+## 2.0.2
+
+* `fu_chunk_array_new_from_bytes()`: Add a page size, typically `FU_CHUNK_PAGESZ_NONE`
+* `fu_chunk_array_new_from_stream()`: Add a page size, typically `FU_CHUNK_PAGESZ_NONE`
+* `fu_udev_device_ioctl()`: Use `fu_udev_device_ioctl_new()` instead
+* `FuUdevDeviceIoctlFlags`: Use `FuIoctlFlags` instead

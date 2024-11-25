@@ -16,6 +16,7 @@ enum FuEdidDescriptorTag {
 }
 
 #[derive(ParseStream, New)]
+#[repr(C, packed)]
 struct FuStructEdidDescriptor {
     kind: u16le,
     subkind: u8,
@@ -24,7 +25,8 @@ struct FuStructEdidDescriptor {
     data: [u8; 13],
 }
 
-#[derive(New, ParseStream)]
+#[derive(New, ParseStream, Default)]
+#[repr(C, packed)]
 struct FuStructEdid {
     header: [u8; 8] == 0x00FFFFFFFFFFFF00,
     manufacturer_name: [u8; 2],

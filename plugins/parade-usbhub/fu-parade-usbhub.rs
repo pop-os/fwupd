@@ -1,7 +1,8 @@
 // Copyright 2024 Richard Hughes <richard@hughsie.com>
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(ValidateStream)]
+#[derive(ValidateStream, Default)]
+#[repr(C, packed)]
 struct FuStructParadeUsbhubHdr {
     signature: u16be == 0x55AA,
 }
@@ -27,6 +28,7 @@ enum FuParadeUsbhubDeviceAddr {
     VersionB    = 0x5C0F,
     VersionC    = 0x5C11,
     VersionD    = 0x5C12,
+    SpiMasterAcquire2 = 0xE2B3, // for PS188
 }
 
 enum FuParadeUsbhubDeviceStatusFlag {
@@ -35,4 +37,11 @@ enum FuParadeUsbhubDeviceStatusFlag {
     TriggerDbi  = 0b00000100,
     Checksum    = 0b00001000,
     SpiDone     = 0b10000000,
+}
+
+#[derive(FromString, ToString)]
+enum FuParadeUsbhubChip {
+    Unknown,
+    Ps5512,
+    Ps188,
 }

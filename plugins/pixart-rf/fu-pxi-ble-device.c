@@ -58,14 +58,15 @@ G_DEFINE_TYPE(FuPxiBleDevice, fu_pxi_ble_device, FU_TYPE_HIDRAW_DEVICE)
 static gboolean
 fu_pxi_ble_device_get_raw_info(FuPxiBleDevice *self, struct hidraw_devinfo *info, GError **error)
 {
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCGRAWINFO,
-				  (guint8 *)info,
-				  sizeof(*info),
-				  NULL,
-				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error)) {
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
+	if (!fu_ioctl_execute(ioctl,
+			      HIDIOCGRAWINFO,
+			      (guint8 *)info,
+			      sizeof(*info),
+			      NULL,
+			      FU_PXI_DEVICE_IOCTL_TIMEOUT,
+			      FU_IOCTL_FLAG_NONE,
+			      error)) {
 		return FALSE;
 	}
 	return TRUE;
@@ -151,9 +152,9 @@ fu_pxi_ble_device_set_feature_cb(FuDevice *device, gpointer user_data, GError **
 {
 	GByteArray *req = (GByteArray *)user_data;
 	return fu_hidraw_device_set_feature(FU_HIDRAW_DEVICE(device),
-					    (guint8 *)req->data,
-					    sizeof(req->len),
-					    FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					    req->data,
+					    req->len,
+					    FU_IOCTL_FLAG_NONE,
 					    error);
 }
 #endif
@@ -174,7 +175,7 @@ fu_pxi_ble_device_get_feature(FuPxiBleDevice *self, guint8 *buf, guint bufsz, GE
 	if (!fu_hidraw_device_get_feature(FU_HIDRAW_DEVICE(self),
 					  buf,
 					  bufsz,
-					  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
+					  FU_IOCTL_FLAG_NONE,
 					  error)) {
 		return FALSE;
 	}
@@ -261,6 +262,7 @@ fu_pxi_ble_device_check_support_report_id(FuPxiBleDevice *self, GError **error)
 #ifdef HAVE_HIDRAW_H
 	gint desc_size = 0;
 	g_autoptr(FuFirmware) descriptor = fu_hid_descriptor_new();
+	g_autoptr(FuIoctl) ioctl = fu_udev_device_ioctl_new(FU_UDEV_DEVICE(self));
 	g_autoptr(GBytes) fw = NULL;
 	g_autoptr(GError) error_local1 = NULL;
 	g_autoptr(GError) error_local2 = NULL;
@@ -270,25 +272,25 @@ fu_pxi_ble_device_check_support_report_id(FuPxiBleDevice *self, GError **error)
 	struct hidraw_report_descriptor rpt_desc = {0x0};
 
 	/* Get Report Descriptor Size */
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCGRDESCSIZE,
-				  (guint8 *)&desc_size,
-				  sizeof(desc_size),
-				  NULL,
-				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error))
+	if (!fu_ioctl_execute(ioctl,
+			      HIDIOCGRDESCSIZE,
+			      (guint8 *)&desc_size,
+			      sizeof(desc_size),
+			      NULL,
+			      FU_PXI_DEVICE_IOCTL_TIMEOUT,
+			      FU_IOCTL_FLAG_NONE,
+			      error))
 		return FALSE;
 
 	rpt_desc.size = desc_size;
-	if (!fu_udev_device_ioctl(FU_UDEV_DEVICE(self),
-				  HIDIOCGRDESC,
-				  (guint8 *)&rpt_desc,
-				  sizeof(rpt_desc),
-				  NULL,
-				  FU_PXI_DEVICE_IOCTL_TIMEOUT,
-				  FU_UDEV_DEVICE_IOCTL_FLAG_NONE,
-				  error))
+	if (!fu_ioctl_execute(ioctl,
+			      HIDIOCGRDESC,
+			      (guint8 *)&rpt_desc,
+			      sizeof(rpt_desc),
+			      NULL,
+			      FU_PXI_DEVICE_IOCTL_TIMEOUT,
+			      FU_IOCTL_FLAG_NONE,
+			      error))
 		return FALSE;
 	fu_dump_raw(G_LOG_DOMAIN, "HID descriptor", rpt_desc.value, rpt_desc.size);
 
@@ -319,7 +321,7 @@ fu_pxi_ble_device_check_support_report_id(FuPxiBleDevice *self, GError **error)
 	}
 	g_debug("usage-page: 0x%x feature_report_id: %d",
 		PXI_HID_DEV_OTA_RETRANSMIT_USAGE_PAGE,
-		self->retransmit_id);
+		self->feature_report_id);
 
 	/* check ota notify input report usage page exist or not */
 	if (!fu_pxi_ble_device_search_hid_input_report_id(descriptor,
@@ -370,7 +372,10 @@ fu_pxi_ble_device_check_support_resume(FuPxiBleDevice *self,
 		return FALSE;
 
 	/* check offset is invalid or not */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, FU_PXI_DEVICE_OBJECT_SIZE_MAX);
+	chunks = fu_chunk_array_new_from_bytes(fw,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       FU_PXI_DEVICE_OBJECT_SIZE_MAX);
 	if (self->fwstate.offset > fu_chunk_array_length(chunks)) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -532,6 +537,7 @@ fu_pxi_ble_device_write_chunk(FuPxiBleDevice *self, FuChunk *chk, GError **error
 	/* write payload */
 	chunks = fu_chunk_array_new_from_bytes(chk_bytes,
 					       fu_chunk_get_address(chk),
+					       FU_CHUNK_PAGESZ_NONE,
 					       self->fwstate.mtu_size);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
 		g_autoptr(FuChunk) chk2 = NULL;
@@ -753,7 +759,10 @@ fu_pxi_ble_device_write_firmware(FuDevice *device,
 	fu_progress_step_done(progress);
 
 	/* prepare write fw into device */
-	chunks = fu_chunk_array_new_from_bytes(fw, 0x0, FU_PXI_DEVICE_OBJECT_SIZE_MAX);
+	chunks = fu_chunk_array_new_from_bytes(fw,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       FU_PXI_DEVICE_OBJECT_SIZE_MAX);
 	if (!fu_pxi_ble_device_check_support_resume(self,
 						    firmware,
 						    fu_progress_get_child(progress),

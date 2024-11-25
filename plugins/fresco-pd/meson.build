@@ -14,3 +14,9 @@ plugin_builtins += static_library('fu_plugin_fresco_pd',
   c_args: cargs,
   dependencies: plugin_deps,
 )
+
+enumeration_data += files('tests/fresco-pd-setup.json')
+device_tests += files(
+  'tests/fresco-pd.json',
+  'tests/ugreen-cm260.json',
+)

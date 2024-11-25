@@ -302,6 +302,8 @@ fu_engine_ensure_device_problem_priority(FuEngine *self, FuDevice *device)
 	g_autoptr(GPtrArray) devices = fu_device_list_get_active(self->device_list);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device_tmp = g_ptr_array_index(devices, i);
+		if (g_strcmp0(fu_device_get_id(device_tmp), fu_device_get_id(device)) == 0)
+			continue;
 		fu_engine_ensure_device_problem_priority_full(self, device, device_tmp);
 	}
 }
@@ -396,6 +398,7 @@ fu_engine_ensure_device_power_inhibit(FuEngine *self, FuDevice *device)
 
 	if (fu_device_is_updatable(device) &&
 	    fu_device_has_flag(device, FWUPD_DEVICE_FLAG_REQUIRE_AC) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) &&
 	    !fu_power_state_is_ac(fu_context_get_power_state(self->ctx))) {
 		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_REQUIRE_AC_POWER);
 	} else {
@@ -403,6 +406,7 @@ fu_engine_ensure_device_power_inhibit(FuEngine *self, FuDevice *device)
 	}
 	if (fu_device_is_updatable(device) &&
 	    !fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_IGNORE_SYSTEM_POWER) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) &&
 	    fu_context_get_battery_level(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
 	    fu_context_get_battery_threshold(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
 	    fu_context_get_battery_level(self->ctx) < fu_context_get_battery_threshold(self->ctx)) {
@@ -417,6 +421,7 @@ fu_engine_ensure_device_lid_inhibit(FuEngine *self, FuDevice *device)
 {
 	if (fu_device_is_updatable(device) &&
 	    fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_NO_LID_CLOSED) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) &&
 	    fu_context_get_lid_state(self->ctx) == FU_LID_STATE_CLOSED) {
 		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_LID_IS_CLOSED);
 		return;
@@ -429,6 +434,7 @@ fu_engine_ensure_device_display_required_inhibit(FuEngine *self, FuDevice *devic
 {
 	if (fu_device_is_updatable(device) &&
 	    fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_DISPLAY_REQUIRED) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) &&
 	    fu_context_get_display_state(self->ctx) == FU_DISPLAY_STATE_DISCONNECTED) {
 		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_DISPLAY_REQUIRED);
 		return;
@@ -439,7 +445,8 @@ fu_engine_ensure_device_display_required_inhibit(FuEngine *self, FuDevice *devic
 static void
 fu_engine_ensure_device_system_inhibit(FuEngine *self, FuDevice *device)
 {
-	if (fu_context_has_flag(self->ctx, FU_CONTEXT_FLAG_SYSTEM_INHIBIT)) {
+	if (fu_context_has_flag(self->ctx, FU_CONTEXT_FLAG_SYSTEM_INHIBIT) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED)) {
 		fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_SYSTEM_INHIBIT);
 		return;
 	}
@@ -911,6 +918,7 @@ fu_engine_modify_remote(FuEngine *self,
 	    "AutomaticReports",
 	    "AutomaticSecurityReports",
 	    "Enabled",
+	    "FirmwareBaseURI",
 	    "MetadataURI",
 	    "ReportURI",
 	    "Username",
@@ -1020,7 +1028,6 @@ fu_engine_remove_device_flag(FuEngine *self,
 			     FwupdDeviceFlags flag,
 			     GError **error)
 {
-	FuDevice *proxy;
 	g_autoptr(FuDevice) device = NULL;
 
 	if (flag == FWUPD_DEVICE_FLAG_NOTIFIED) {
@@ -1063,16 +1070,6 @@ fu_engine_remove_device_flag(FuEngine *self,
 				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "device %s is not tagged for emulation",
 				    fu_device_get_id(device));
-			return FALSE;
-		}
-		proxy = fu_device_get_proxy(device);
-		if (proxy != NULL) {
-			g_set_error(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "device %s uses a proxy, remove the flag on %s instead",
-				    fu_device_get_id(device),
-				    fu_device_get_id(proxy));
 			return FALSE;
 		}
 		fu_device_remove_flag(device, flag);
@@ -1123,7 +1120,6 @@ fu_engine_add_device_flag(FuEngine *self,
 			  FwupdDeviceFlags flag,
 			  GError **error)
 {
-	FuDevice *proxy;
 	g_autoptr(FuDevice) device = NULL;
 
 	if (flag == FWUPD_DEVICE_FLAG_REPORTED || flag == FWUPD_DEVICE_FLAG_NOTIFIED) {
@@ -1151,16 +1147,6 @@ fu_engine_add_device_flag(FuEngine *self,
 				    FWUPD_ERROR_NOT_SUPPORTED,
 				    "device %s is already tagged for emulation",
 				    fu_device_get_id(device));
-			return FALSE;
-		}
-		proxy = fu_device_get_proxy(device);
-		if (proxy != NULL) {
-			g_set_error(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "device %s uses a proxy, set the flag on %s instead",
-				    fu_device_get_id(device),
-				    fu_device_get_id(proxy));
 			return FALSE;
 		}
 		fu_device_add_flag(device, flag);
@@ -2140,6 +2126,7 @@ fu_engine_install_release_version_check(FuEngine *self,
 	const gchar *version_old = fu_release_get_device_version_old(release);
 	if (version_rel != NULL && fu_version_compare(version_old, version_rel, fmt) != 0 &&
 	    fu_version_compare(version_old, fu_device_get_version(device), fmt) == 0 &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_INSTALL_SKIP_VERSION_CHECK) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
@@ -2505,7 +2492,7 @@ fu_engine_install_release(FuEngine *self,
 	/* save to persistent storage so that the device can recover without a network */
 	if (fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_SAVE_INTO_BACKUP_REMOTE)) {
 		g_autoptr(GBytes) blob_cab =
-		    fu_input_stream_read_bytes(stream, 0, G_MAXSIZE, error);
+		    fu_input_stream_read_bytes(stream, 0, G_MAXSIZE, NULL, error);
 		if (blob_cab == NULL)
 			return FALSE;
 		if (!fu_engine_save_into_backup_remote(self, blob_cab, error))
@@ -2678,12 +2665,15 @@ fu_engine_emulation_load_phase(FuEngine *self, GError **error)
 }
 
 gboolean
-fu_engine_emulation_load(FuEngine *self, GInputStream *stream, GError **error)
+fu_engine_emulation_load(FuEngine *self,
+			 GInputStream *stream,
+			 GError **error)
 {
 	gboolean got_json = FALSE;
 	const gchar *json_empty = "{\"UsbDevices\":[]}";
 	g_autoptr(FuArchive) archive = NULL;
 	g_autoptr(GBytes) json_blob = g_bytes_new_static(json_empty, strlen(json_empty));
+	g_autoptr(GError) error_archive = NULL;
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
 	g_return_val_if_fail(G_IS_INPUT_STREAM(stream), FALSE);
@@ -2692,14 +2682,20 @@ fu_engine_emulation_load(FuEngine *self, GInputStream *stream, GError **error)
 	/* unload any existing devices */
 	if (!fu_engine_emulation_load_json_blob(self, json_blob, error))
 		return FALSE;
+	g_hash_table_remove_all(self->emulation_phases);
 
 	/* load archive */
-	archive = fu_archive_new_stream(stream, FU_ARCHIVE_FLAG_NONE, error);
-	if (archive == NULL)
-		return FALSE;
+	archive = fu_archive_new_stream(stream, FU_ARCHIVE_FLAG_NONE, &error_archive);
+	if (archive == NULL) {
+		g_autoptr(GBytes) blob = NULL;
+		g_debug("no archive found, using JSON as phase setup: %s", error_archive->message);
+		blob = fu_input_stream_read_bytes(stream, 0, G_MAXSIZE, NULL, error);
+		if (blob == NULL)
+			return FALSE;
+		return fu_engine_emulation_load_json_blob(self, blob, error);
+	}
 
 	/* load JSON files from archive */
-	g_hash_table_remove_all(self->emulation_phases);
 	for (guint phase = FU_ENGINE_INSTALL_PHASE_SETUP; phase < FU_ENGINE_INSTALL_PHASE_LAST;
 	     phase++) {
 		g_autofree gchar *fn =
@@ -2708,10 +2704,10 @@ fu_engine_emulation_load(FuEngine *self, GInputStream *stream, GError **error)
 
 		/* not found */
 		blob = fu_archive_lookup_by_fn(archive, fn, NULL);
-		if (blob == NULL)
+		if (blob == NULL || g_bytes_get_size(blob) == 0)
 			continue;
 		got_json = TRUE;
-		g_info("got emulation for phase %s", fu_engine_install_phase_to_string(phase));
+		g_info("emulation for phase %s", fu_engine_install_phase_to_string(phase));
 		if (phase == FU_ENGINE_INSTALL_PHASE_SETUP) {
 			if (!fu_engine_emulation_load_json_blob(self, blob, error))
 				return FALSE;
@@ -2746,17 +2742,12 @@ fu_engine_emulation_save(FuEngine *self, GOutputStream *stream, GError **error)
 	/* sanity check */
 	for (guint phase = FU_ENGINE_INSTALL_PHASE_SETUP; phase < FU_ENGINE_INSTALL_PHASE_LAST;
 	     phase++) {
-		const gchar *json =
-		    g_hash_table_lookup(self->emulation_phases, GINT_TO_POINTER(phase));
+		GBytes *blob = g_hash_table_lookup(self->emulation_phases, GINT_TO_POINTER(phase));
 		g_autofree gchar *fn =
 		    g_strdup_printf("%s.json", fu_engine_install_phase_to_string(phase));
-		g_autoptr(GBytes) blob = NULL;
-
-		/* nothing set */
-		if (json == NULL)
+		if (blob == NULL)
 			continue;
 		got_json = TRUE;
-		blob = g_bytes_new_static(json, strlen(json));
 		fu_archive_add_entry(archive, fn, blob);
 	}
 	if (!got_json) {
@@ -2819,9 +2810,10 @@ fu_engine_backends_to_json(FuEngine *self, JsonBuilder *json_builder)
 static gboolean
 fu_engine_backends_save_phase(FuEngine *self, GError **error)
 {
-	const gchar *data_old;
-	g_autofree gchar *data_new = NULL;
-	g_autofree gchar *data_new_safe = NULL;
+	GBytes *blob_old;
+	g_autofree gchar *blob_new_safe = NULL;
+	g_autoptr(GBytes) blob_new = NULL;
+	g_autoptr(GOutputStream) ostream = g_memory_output_stream_new_resizable();
 	g_autoptr(JsonBuilder) json_builder = json_builder_new();
 	g_autoptr(JsonGenerator) json_generator = NULL;
 	g_autoptr(JsonNode) json_root = NULL;
@@ -2834,27 +2826,32 @@ fu_engine_backends_save_phase(FuEngine *self, GError **error)
 	json_generator_set_pretty(json_generator, TRUE);
 	json_generator_set_root(json_generator, json_root);
 
-	data_old =
+	blob_old =
 	    g_hash_table_lookup(self->emulation_phases, GINT_TO_POINTER(self->install_phase));
-	data_new = json_generator_to_data(json_generator, NULL);
-	if (g_strcmp0(data_new, "") == 0) {
+	if (!json_generator_to_stream(json_generator, ostream, NULL, error))
+		return FALSE;
+	if (!g_output_stream_close(ostream, NULL, error))
+		return FALSE;
+	blob_new = g_memory_output_stream_steal_as_bytes(G_MEMORY_OUTPUT_STREAM(ostream));
+
+	if (g_bytes_get_size(blob_new) == 0) {
 		g_info("no data for phase %s",
 		       fu_engine_install_phase_to_string(self->install_phase));
 		return TRUE;
 	}
-	if (g_strcmp0(data_old, data_new) == 0) {
+	if (blob_old != NULL && g_bytes_compare(blob_old, blob_new) == 0) {
 		g_info("JSON unchanged for phase %s",
 		       fu_engine_install_phase_to_string(self->install_phase));
 		return TRUE;
 	}
-	data_new_safe = g_strndup(data_new, 8000);
+	blob_new_safe = fu_strsafe_bytes(blob_new, 8000);
 	g_info("JSON %s for phase %s: %s...",
-	       data_old == NULL ? "added" : "changed",
+	       blob_old == NULL ? "added" : "changed",
 	       fu_engine_install_phase_to_string(self->install_phase),
-	       data_new_safe);
+	       blob_new_safe);
 	g_hash_table_insert(self->emulation_phases,
 			    GINT_TO_POINTER(self->install_phase),
-			    g_steal_pointer(&data_new));
+			    g_steal_pointer(&blob_new));
 
 	/* success */
 	return TRUE;
@@ -4476,12 +4473,14 @@ fu_engine_update_metadata(FuEngine *self,
 	stream_sig = fu_unix_seekable_input_stream_new(fd_sig, TRUE);
 
 	/* read the entire file into memory */
-	bytes_raw = fu_input_stream_read_bytes(stream_fd, 0, FU_ENGINE_MAX_METADATA_SIZE, error);
+	bytes_raw =
+	    fu_input_stream_read_bytes(stream_fd, 0, FU_ENGINE_MAX_METADATA_SIZE, NULL, error);
 	if (bytes_raw == NULL)
 		return FALSE;
 
 	/* read signature */
-	bytes_sig = fu_input_stream_read_bytes(stream_sig, 0, FU_ENGINE_MAX_SIGNATURE_SIZE, error);
+	bytes_sig =
+	    fu_input_stream_read_bytes(stream_sig, 0, FU_ENGINE_MAX_SIGNATURE_SIZE, NULL, error);
 	if (bytes_sig == NULL)
 		return FALSE;
 
@@ -6289,10 +6288,10 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD) &&
 	    !fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED)) {
-		g_warning("%s [%s] does not declare signed/unsigned payload -- perhaps add "
-			  "fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);",
-			  fu_device_get_plugin(device),
-			  fu_device_get_id(device));
+		g_critical("%s [%s] does not declare signed/unsigned payload -- perhaps add "
+			   "fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);",
+			   fu_device_get_plugin(device),
+			   fu_device_get_id(device));
 	}
 #endif
 

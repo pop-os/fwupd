@@ -23,12 +23,21 @@ These devices use the standard USB DeviceInstanceId values, e.g.
 * `USB\VID_25A4&PID_9312`
 * `USB\VID_25A4&PID_9313`
 * `USB\VID_25A4&PID_9411`
-* `USB\VID_25A4&PID_9412`
 * `USB\VID_25A4&PID_9421`
 
 ## Update Behavior
 
 The firmware is deployed when the device is in normal runtime mode, and the device will reset when the new firmware has been programmed.
+
+## Quirk Use
+
+This plugin uses the following plugin-specific quirks:
+
+### `Flags=ers-skip-first-sector`
+
+Skip erasing the first sector, needed for AG9411 and AG9421 products.
+
+Since: 2.0.2
 
 ## Vendor ID Security
 

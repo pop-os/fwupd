@@ -1,7 +1,8 @@
 // Copyright 2023 Richard Hughes <richard@hughsie.com>
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(New, Getters)]
+#[derive(New, Getters, Default)]
+#[repr(C, packed)]
 struct FuStructEfiUxCapsuleHeader {
     version: u8 == 0x01,
     checksum: u8,
@@ -12,7 +13,8 @@ struct FuStructEfiUxCapsuleHeader {
     y_offset: u32le,
 }
 
-#[derive(New, Getters)]
+#[derive(New, Getters, Default)]
+#[repr(C, packed)]
 struct FuStructEfiCapsuleHeader {
     guid: Guid,
     header_size: u32le = $struct_size,
@@ -28,7 +30,8 @@ enum FuUefiUpdateInfoStatus {
     Attempted,
 }
 
-#[derive(New, Parse, ParseStream)]
+#[derive(New, Parse, ParseStream, Default)]
+#[repr(C, packed)]
 struct FuStructEfiUpdateInfo {
     version: u32le = 0x7,
     guid: Guid,
@@ -40,6 +43,7 @@ struct FuStructEfiUpdateInfo {
 }
 
 #[derive(ParseStream)]
+#[repr(C, packed)]
 struct FuStructAcpiInsydeQuirk {
     signature: [char; 6],
     size: u32le,
@@ -68,7 +72,8 @@ enum FuUefiDeviceStatus {
     ErrorPwrEvtBatt,
 }
 
-#[derive(ParseStream)]
+#[derive(ParseStream, Default)]
+#[repr(C, packed)]
 struct FuStructBitmapFileHeader {
     signature: [char; 2] == "BM",
     size: u32le,
@@ -78,6 +83,7 @@ struct FuStructBitmapFileHeader {
 }
 
 #[derive(ParseStream)]
+#[repr(C, packed)]
 struct FuStructBitmapInfoHeader {
     _header_size: u32le,
     width: u32le,

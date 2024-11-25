@@ -1,7 +1,8 @@
 // Copyright 2023 Richard Hughes <richard@hughsie.com>
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
-#[derive(New, ParseStream)]
+#[derive(New, ParseStream, Default)]
+#[repr(C, packed)]
 struct FuStructSynapticsCapeHidHdr {
     vid: u32le,
     pid: u32le,
@@ -15,7 +16,8 @@ struct FuStructSynapticsCapeHidHdr {
     reserved: u32le,
 }
 
-#[derive(New, ParseStream)]
+#[derive(New, ParseStream, Default)]
+#[repr(C, packed)]
 struct FuStructSynapticsCapeSnglHdr {
     magic: u32le == 0x4C474E53, // "SNGL"
     file_crc: u32le,
@@ -33,6 +35,7 @@ struct FuStructSynapticsCapeSnglHdr {
     time_stamp: [char; 16],
 }
 
+#[repr(C, packed)]
 struct FuStructSynapticsCapeSnglFile {
     Id: u32le,
     Crc: u32le,

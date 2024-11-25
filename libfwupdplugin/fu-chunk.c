@@ -195,6 +195,14 @@ fu_chunk_get_data_sz(FuChunk *self)
 	return self->data_sz;
 }
 
+/* private */
+void
+fu_chunk_set_data_sz(FuChunk *self, gsize data_sz)
+{
+	g_return_if_fail(FU_IS_CHUNK(self));
+	self->data_sz = data_sz;
+}
+
 /**
  * fu_chunk_set_bytes:
  * @self: a #FuChunk
@@ -361,7 +369,7 @@ fu_chunk_array_to_string(GPtrArray *chunks)
  * fu_chunk_array_mutable_new:
  * @data: a mutable blob of memory
  * @data_sz: size of @data_sz
- * @addr_start: the hardware address offset, or 0
+ * @addr_offset: the hardware address offset, or 0
  * @page_sz: the hardware page size, or 0
  * @packet_sz: the transfer size, or 0
  *
@@ -375,7 +383,7 @@ fu_chunk_array_to_string(GPtrArray *chunks)
 GPtrArray *
 fu_chunk_array_mutable_new(guint8 *data,
 			   gsize data_sz,
-			   gsize addr_start,
+			   gsize addr_offset,
 			   gsize page_sz,
 			   gsize packet_sz)
 {
@@ -384,7 +392,7 @@ fu_chunk_array_mutable_new(guint8 *data,
 	g_return_val_if_fail(data != NULL, NULL);
 	g_return_val_if_fail(data_sz > 0, NULL);
 
-	chunks = fu_chunk_array_new(data, data_sz, addr_start, page_sz, packet_sz);
+	chunks = fu_chunk_array_new(data, data_sz, addr_offset, page_sz, packet_sz);
 	if (chunks == NULL)
 		return NULL;
 	for (guint i = 0; i < chunks->len; i++) {
@@ -398,7 +406,7 @@ fu_chunk_array_mutable_new(guint8 *data,
  * fu_chunk_array_new:
  * @data: (nullable): an optional linear blob of memory
  * @data_sz: size of @data_sz
- * @addr_start: the hardware address offset, or 0
+ * @addr_offset: the hardware address offset, or 0
  * @page_sz: the hardware page size, or 0
  * @packet_sz: the transfer size, or 0
  *
@@ -412,68 +420,33 @@ fu_chunk_array_mutable_new(guint8 *data,
 GPtrArray *
 fu_chunk_array_new(const guint8 *data,
 		   gsize data_sz,
-		   gsize addr_start,
+		   gsize addr_offset,
 		   gsize page_sz,
 		   gsize packet_sz)
 {
-	GPtrArray *chunks = NULL;
-	guint page_old = G_MAXUINT;
-	guint idx;
-	gsize last_flush = 0;
+	GPtrArray *chunks = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	gsize offset = 0;
 
-	chunks = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
-	if (data_sz == 0)
-		return chunks;
-	for (idx = 1; idx < data_sz; idx++) {
+	g_return_val_if_fail(page_sz == 0 || page_sz >= packet_sz, NULL);
+
+	while (offset < data_sz) {
+		gsize chunksz = MIN(packet_sz, data_sz - offset);
 		gsize page = 0;
-		if (page_sz > 0)
-			page = (addr_start + idx) / page_sz;
-		if (page_old == G_MAXUINT) {
-			page_old = page;
-		} else if (page != page_old) {
-			const guint8 *data_offset = data != NULL ? data + last_flush : 0x0;
-			gsize address_offset = addr_start + last_flush;
-			if (page_sz > 0)
-				address_offset %= page_sz;
-			g_ptr_array_add(chunks,
-					fu_chunk_new(chunks->len,
-						     page_old,
-						     address_offset,
-						     data_offset,
-						     idx - last_flush));
-			last_flush = idx;
-			page_old = page;
-			continue;
-		}
-		if (packet_sz > 0 && idx - last_flush >= packet_sz) {
-			const guint8 *data_offset = data != NULL ? data + last_flush : 0x0;
-			gsize address_offset = addr_start + last_flush;
-			if (page_sz > 0)
-				address_offset %= page_sz;
-			g_ptr_array_add(chunks,
-					fu_chunk_new(chunks->len,
-						     page,
-						     address_offset,
-						     data_offset,
-						     idx - last_flush));
-			last_flush = idx;
-			continue;
-		}
-	}
-	if (last_flush != idx) {
-		const guint8 *data_offset = data != NULL ? data + last_flush : 0x0;
-		gsize address_offset = addr_start + last_flush;
-		guint page = 0;
+		gsize address_offset = addr_offset + offset;
+
+		/* if page_sz is not specified then all the pages are 0 */
 		if (page_sz > 0) {
 			address_offset %= page_sz;
-			page = (addr_start + (idx - 1)) / page_sz;
+			page = (offset + addr_offset) / page_sz;
 		}
-		g_ptr_array_add(chunks,
-				fu_chunk_new(chunks->len,
-					     page,
-					     address_offset,
-					     data_offset,
-					     data_sz - last_flush));
+
+		/* cut the packet so it does not straddle multiple blocks */
+		if (page_sz != packet_sz && page_sz > 0)
+			chunksz = MIN(chunksz, (offset + packet_sz) % page_sz);
+		g_ptr_array_add(
+		    chunks,
+		    fu_chunk_new(chunks->len, page, address_offset, data + offset, chunksz));
+		offset += chunksz;
 	}
 
 #ifndef SUPPORTED_BUILD

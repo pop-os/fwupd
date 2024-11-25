@@ -27,6 +27,7 @@ plugins = {
   'amd-gpu': false,
   'analogix': false,
   'android-boot': false,
+  'asus-hid': false,
   'ata': false,
   'aver-hid': false,
   'bcm57xx': false,
@@ -42,9 +43,8 @@ plugins = {
   'cros-ec': false,
   'dell': false,
   'dell-dock': false,
-  'dell-k2': false,
+  'dell-kestrel': false,
   'dfu': false,
-  'dfu-csr': false,
   'ebitdo': false,
   'elantp': false,
   'elanfp': false,
@@ -88,7 +88,6 @@ plugins = {
   'modem-manager': false,
   'msr': false,
   'mtd': false,
-  'nitrokey': false,
   'nordic-hid': false,
   'nvme': false,
   'optionrom': false,
@@ -103,6 +102,7 @@ plugins = {
   'qsi-dock': false,
   'realtek-mst': false,
   'redfish': false,
+  'rp-pico': false,
   'rts54hid': false,
   'rts54hub': false,
   'steelseries': false,
@@ -141,6 +141,8 @@ endif
 
 umockdev_tests = []
 umockdev_ioctls = []
+device_tests = []
+enumeration_data = []
 foreach plugin, enabled: plugins
   subdir(plugin)
 endforeach

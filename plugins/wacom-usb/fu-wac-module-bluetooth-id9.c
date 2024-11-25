@@ -119,7 +119,11 @@ fu_wac_module_bluetooth_id9_write_blocks(FuWacModule *self,
 {
 	g_autoptr(FuChunkArray) chunks = NULL;
 
-	chunks = fu_chunk_array_new_from_stream(stream, 0, block_len, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						block_len,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 
@@ -159,7 +163,7 @@ fu_wac_module_bluetooth_id9_prepare_firmware(FuDevice *device,
 	g_autoptr(FuFirmware) payload_fw = NULL;
 
 	/* convert to blob */
-	fw = fu_input_stream_read_bytes(stream, 0, G_MAXSIZE, error);
+	fw = fu_input_stream_read_bytes(stream, 0, G_MAXSIZE, NULL, error);
 	if (fw == NULL)
 		return NULL;
 

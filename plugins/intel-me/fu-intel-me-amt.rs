@@ -27,7 +27,8 @@ enum FuAmtHostIfCommand {
     CodeVersionsResponse = 0x0480001A,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuAmtHostIfMsgCodeVersionRequest {
     version_major: u8 == 0x1,
     version_minor: u8 == 0x1,
@@ -36,7 +37,8 @@ struct FuAmtHostIfMsgCodeVersionRequest {
     length: u32le == 0x0,
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuAmtHostIfMsgCodeVersionResponse {
     version_major: u8 == 0x1,
     version_minor: u8 == 0x1,
@@ -50,6 +52,7 @@ struct FuAmtHostIfMsgCodeVersionResponse {
 }
 
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuAmtUnicodeString {
     description_length: u16le,
     description_string: [char; 20],
@@ -57,7 +60,8 @@ struct FuAmtUnicodeString {
     version_string: [char; 20],
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuAmtHostIfMsgProvisioningStateRequest {
     version_major: u8 == 0x1,
     version_minor: u8 == 0x1,
@@ -66,7 +70,8 @@ struct FuAmtHostIfMsgProvisioningStateRequest {
     length: u32le == 0x0,
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuAmtHostIfMsgProvisioningStateResponse {
     version_major: u8 == 0x1,
     version_minor: u8 == 0x1,

@@ -15,7 +15,9 @@
 #include "fwupd-device-private.h"
 #include "fwupd-enums-private.h"
 
+#include "fu-byte-array.h"
 #include "fu-bytes.h"
+#include "fu-chunk-array.h"
 #include "fu-common.h"
 #include "fu-device-event-private.h"
 #include "fu-device-private.h"
@@ -746,6 +748,277 @@ fu_device_sleep_full(FuDevice *self, guint delay_ms, FuProgress *progress)
 		fu_progress_sleep(progress, delay_ms);
 }
 
+/**
+ * fu_device_set_contents:
+ * @self: a #FuDevice
+ * @filename: full path to a file
+ * @stream: data to write
+ * @progress: a #FuProgress
+ * @error: (nullable): optional return location for an error
+ *
+ * Writes @stream to @filename, emulating if required.
+ *
+ * Returns: %TRUE on success
+ *
+ * Since: 2.0.2
+ **/
+gboolean
+fu_device_set_contents(FuDevice *self,
+		       const gchar *filename,
+		       GInputStream *stream,
+		       FuProgress *progress,
+		       GError **error)
+{
+	FuDeviceEvent *event = NULL;
+	g_autofree gchar *event_id = NULL;
+	g_autoptr(FuChunkArray) chunks = NULL;
+	g_autoptr(GByteArray) buf_tagged = g_byte_array_new();
+	g_autoptr(GFile) file = NULL;
+	g_autoptr(GOutputStream) ostr = NULL;
+
+	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
+	g_return_val_if_fail(filename != NULL, FALSE);
+	g_return_val_if_fail(G_IS_INPUT_STREAM(stream), FALSE);
+	g_return_val_if_fail(FU_IS_PROGRESS(progress), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* need event ID */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
+				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
+		event_id = g_strdup_printf("SetContents:Filename=%s", filename);
+	}
+
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED)) {
+		g_autoptr(GBytes) blob1 = NULL;
+		g_autoptr(GBytes) blob2 = NULL;
+
+		event = fu_device_load_event(FU_DEVICE(self), event_id, error);
+		if (event == NULL)
+			return FALSE;
+		blob1 = fu_device_event_get_bytes(event, "Data", error);
+		if (blob1 == NULL)
+			return FALSE;
+		blob2 = fu_input_stream_read_bytes(stream, 0x0, G_MAXSIZE, progress, error);
+		if (blob2 == NULL)
+			return FALSE;
+		return fu_bytes_compare(blob1, blob2, error);
+	}
+
+	/* save */
+	if (event_id != NULL)
+		event = fu_device_save_event(FU_DEVICE(self), event_id);
+
+	/* open file */
+	file = g_file_new_for_path(filename);
+	ostr = G_OUTPUT_STREAM(g_file_replace(file, NULL, FALSE, G_FILE_CREATE_NONE, NULL, error));
+	if (ostr == NULL)
+		return FALSE;
+
+	/* write in 32k chunks */
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						0x8000,
+						error);
+	if (chunks == NULL)
+		return FALSE;
+	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
+	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
+		gssize wrote;
+		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(GBytes) blob = NULL;
+
+		chk = fu_chunk_array_index(chunks, i, error);
+		if (chk == NULL)
+			return FALSE;
+		blob = fu_chunk_get_bytes(chk);
+
+		wrote = g_output_stream_write_bytes(ostr, blob, NULL, error);
+		if (wrote < 0)
+			return FALSE;
+		if ((gsize)wrote != g_bytes_get_size(blob)) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_FILE,
+				    "only wrote 0x%x bytes of 0x%x",
+				    (guint)wrote,
+				    (guint)g_bytes_get_size(blob));
+			return FALSE;
+		}
+
+		/* save */
+		if (event != NULL)
+			fu_byte_array_append_bytes(buf_tagged, blob);
+
+		/* progress */
+		fu_progress_step_done(progress);
+	}
+
+	/* save response */
+	if (event != NULL)
+		fu_device_event_set_data(event, "Data", buf_tagged->data, buf_tagged->len);
+
+	/* success */
+	return TRUE;
+}
+
+/**
+ * fu_device_set_contents_bytes:
+ * @self: a #FuDevice
+ * @filename: full path to a file
+ * @blob: data to write
+ * @progress: (nullable): optional #FuProgress
+ * @error: (nullable): optional return location for an error
+ *
+ * Writes @blob to @filename, emulating if required.
+ *
+ * Returns: %TRUE on success
+ *
+ * Since: 2.0.2
+ **/
+gboolean
+fu_device_set_contents_bytes(FuDevice *self,
+			     const gchar *filename,
+			     GBytes *blob,
+			     FuProgress *progress,
+			     GError **error)
+{
+	g_autoptr(GInputStream) stream = NULL;
+
+	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
+	g_return_val_if_fail(filename != NULL, FALSE);
+	g_return_val_if_fail(blob != NULL, FALSE);
+	g_return_val_if_fail(progress == NULL || FU_IS_PROGRESS(progress), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	stream = g_memory_input_stream_new_from_bytes(blob);
+	return fu_device_set_contents(self, filename, stream, progress, error);
+}
+
+/**
+ * fu_device_get_contents_bytes:
+ * @self: a #FuDevice
+ * @filename: full path to a file
+ * @progress: (nullable): optional #FuProgress
+ * @error: (nullable): optional return location for an error
+ *
+ * Writes @blob to @filename, emulating if required.
+ *
+ * Returns: (transfer full): a #GBytes, or %NULL on error
+ *
+ * Since: 2.0.2
+ **/
+GBytes *
+fu_device_get_contents_bytes(FuDevice *self,
+			     const gchar *filename,
+			     FuProgress *progress,
+			     GError **error)
+{
+	FuDeviceEvent *event = NULL;
+	g_autofree gchar *event_id = NULL;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GInputStream) istr = NULL;
+
+	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
+	g_return_val_if_fail(filename != NULL, NULL);
+	g_return_val_if_fail(progress == NULL || FU_IS_PROGRESS(progress), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	/* need event ID */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
+				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
+		event_id = g_strdup_printf("GetContents:Filename=%s", filename);
+	}
+
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED)) {
+		event = fu_device_load_event(FU_DEVICE(self), event_id, error);
+		if (event == NULL)
+			return NULL;
+		return fu_device_event_get_bytes(event, "Data", error);
+	}
+
+	/* save */
+	if (event_id != NULL)
+		event = fu_device_save_event(FU_DEVICE(self), event_id);
+
+	/* open for reading */
+	istr = fu_input_stream_from_path(filename, error);
+	if (istr == NULL)
+		return NULL;
+	blob = fu_input_stream_read_bytes(istr, 0, G_MAXSIZE, progress, error);
+	if (blob == NULL)
+		return NULL;
+
+	/* save response */
+	if (event != NULL)
+		fu_device_event_set_bytes(event, "Data", blob);
+
+	/* success */
+	return g_steal_pointer(&blob);
+}
+
+/**
+ * fu_device_query_file_exists:
+ * @self: a #FuDevice
+ * @filename: filename
+ * @exists: (out): if @filename exists
+ * @error: (nullable): optional return location for an error
+ *
+ * Checks if a file exists.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 2.0.2
+ **/
+gboolean
+fu_device_query_file_exists(FuDevice *self, const gchar *filename, gboolean *exists, GError **error)
+{
+	FuDeviceEvent *event = NULL;
+	gint64 value;
+	g_autofree gchar *event_id = NULL;
+
+	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
+	g_return_val_if_fail(filename != NULL, FALSE);
+	g_return_val_if_fail(exists != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
+				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
+		event_id = g_strdup_printf("FileExists:Filename=%s", filename);
+	}
+
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED)) {
+		event = fu_device_load_event(FU_DEVICE(self), event_id, error);
+		if (event == NULL)
+			return FALSE;
+		value = fu_device_event_get_i64(event, "Exists", error);
+		if (value == G_MAXINT64)
+			return FALSE;
+		*exists = value == 1;
+		return TRUE;
+	}
+
+	/* save */
+	if (event_id != NULL)
+		event = fu_device_save_event(FU_DEVICE(self), event_id);
+
+	/* check, and save result */
+	*exists = g_file_test(filename, G_FILE_TEST_EXISTS);
+	if (event != NULL)
+		fu_device_event_set_i64(event, "Exists", *exists ? 1 : 0);
+
+	/* success */
+	return TRUE;
+}
+
 static gboolean
 fu_device_poll_locker_open_cb(GObject *device, GError **error)
 {
@@ -982,6 +1255,10 @@ fu_device_set_equivalent_id(FuDevice *self, const gchar *equivalent_id)
 	/* sanity check */
 	if (!fwupd_device_id_is_valid(equivalent_id)) {
 		g_critical("%s is not a valid device ID", equivalent_id);
+		return;
+	}
+	if (g_strcmp0(equivalent_id, fu_device_get_id(self)) == 0) {
+		g_critical("%s is the same as this device ID", equivalent_id);
 		return;
 	}
 
@@ -1715,16 +1992,21 @@ fu_device_set_quirk_inhibit_section(FuDevice *self, const gchar *value, GError *
  * @self: a #FuDevice
  * @key: a string key
  * @value: a string value
+ * @source: a #FuContextQuirkSource, e.g. %FU_CONTEXT_QUIRK_SOURCE_DB
  * @error: (nullable): optional return location for an error
  *
  * Sets a specific quirk on the device.
  *
  * Returns: %TRUE on success
  *
- * Since: 1.8.5
+ * Since: 2.0.2
  **/
 gboolean
-fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GError **error)
+fu_device_set_quirk_kv(FuDevice *self,
+		       const gchar *key,
+		       const gchar *value,
+		       FuContextQuirkSource source,
+		       GError **error)
 {
 	FuDevicePrivate *priv = GET_PRIVATE(self);
 	FuDeviceClass *device_class = FU_DEVICE_GET_CLASS(self);
@@ -1746,6 +2028,8 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_NAME) == 0) {
+		if (fu_device_get_name(self) != NULL && source >= FU_CONTEXT_QUIRK_SOURCE_DB)
+			return TRUE;
 		fu_device_set_name(self, value);
 		return TRUE;
 	}
@@ -1758,6 +2042,8 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 		return TRUE;
 	}
 	if (g_strcmp0(key, FU_QUIRKS_VENDOR) == 0) {
+		if (fu_device_get_vendor(self) != NULL && source >= FU_CONTEXT_QUIRK_SOURCE_DB)
+			return TRUE;
 		fu_device_set_vendor(self, value);
 		return TRUE;
 	}
@@ -1793,6 +2079,9 @@ fu_device_set_quirk_kv(FuDevice *self, const gchar *key, const gchar *value, GEr
 	}
 	if (g_strcmp0(key, FU_QUIRKS_ICON) == 0) {
 		g_auto(GStrv) sections = g_strsplit(value, ",", -1);
+		if (fu_device_get_icons(self)->len > 0 &&
+		    source >= FU_CONTEXT_QUIRK_SOURCE_FALLBACK)
+			return TRUE;
 		for (guint i = 0; sections[i] != NULL; i++)
 			fu_device_add_icon(self, sections[i]);
 		return TRUE;
@@ -2065,11 +2354,15 @@ fu_device_set_firmware_gtype(FuDevice *self, GType firmware_gtype)
 }
 
 static void
-fu_device_quirks_iter_cb(FuContext *ctx, const gchar *key, const gchar *value, gpointer user_data)
+fu_device_quirks_iter_cb(FuContext *ctx,
+			 const gchar *key,
+			 const gchar *value,
+			 FuContextQuirkSource source,
+			 gpointer user_data)
 {
 	FuDevice *self = FU_DEVICE(user_data);
 	g_autoptr(GError) error = NULL;
-	if (!fu_device_set_quirk_kv(self, key, value, &error)) {
+	if (!fu_device_set_quirk_kv(self, key, value, source, &error)) {
 		if (!g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED))
 			g_warning("failed to set quirk key %s=%s: %s", key, value, error->message);
 	}
@@ -3536,11 +3829,14 @@ FuDevice *
 fu_device_get_backend_parent_with_subsystem(FuDevice *self, const gchar *subsystem, GError **error)
 {
 	FuDevicePrivate *priv = GET_PRIVATE(self);
+	FuDeviceEvent *event = NULL;
+	g_autofree gchar *event_id = NULL;
 	g_autoptr(FuDevice) parent = NULL;
 
 	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
+	/* sanity check */
 	if (priv->backend == NULL) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -3548,9 +3844,88 @@ fu_device_get_backend_parent_with_subsystem(FuDevice *self, const gchar *subsyst
 				    "no backend set for device");
 		return NULL;
 	}
+
+	/* need event ID */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
+				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
+		event_id = g_strdup_printf("GetBackendParent:Subsystem=%s", subsystem);
+	}
+
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED)) {
+		GType gtype;
+		const gchar *gtype_str;
+		const gchar *id;
+
+		/* we have to propagate this to preserve compat with older emulation files */
+		event = fu_device_load_event(FU_DEVICE(self), event_id, NULL);
+		if (event == NULL) {
+			g_debug("falling back to simulated device for old emulation");
+			parent =
+			    fu_backend_get_device_parent(priv->backend, self, subsystem, error);
+			if (parent != self)
+				fu_device_set_target(parent, self);
+			return g_steal_pointer(&parent);
+		}
+
+		/* missing GType is 'no parent found' */
+		gtype_str = fu_device_event_get_str(event, "GType", NULL);
+		if (gtype_str == NULL) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "no parent with subsystem %s",
+				    subsystem);
+			return NULL;
+		}
+		gtype = g_type_from_name(gtype_str);
+		if (gtype == G_TYPE_INVALID) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "no GType %s",
+				    gtype_str);
+			return NULL;
+		}
+		parent = g_object_new(gtype, NULL);
+		fu_device_add_flag(parent, FWUPD_DEVICE_FLAG_EMULATED);
+		id = fu_device_event_get_str(event, "DeviceId", NULL);
+		if (id != NULL)
+			fu_device_set_id(parent, id);
+		id = fu_device_event_get_str(event, "BackendId", NULL);
+		if (id != NULL)
+			fu_device_set_backend_id(parent, id);
+		id = fu_device_event_get_str(event, "PhysicalId", NULL);
+		if (id != NULL)
+			fu_device_set_physical_id(parent, id);
+		if (parent != self)
+			fu_device_set_target(parent, self);
+		return g_steal_pointer(&parent);
+	}
+
+	/* save */
+	if (event_id != NULL)
+		event = fu_device_save_event(FU_DEVICE(self), event_id);
+
+	/* call into the backend */
 	parent = fu_backend_get_device_parent(priv->backend, self, subsystem, error);
 	if (parent == NULL)
 		return NULL;
+	if (!fu_device_probe(parent, error))
+		return NULL;
+
+	/* save response */
+	if (event != NULL) {
+		fu_device_event_set_str(event, "GType", G_OBJECT_TYPE_NAME(parent));
+		if (fu_device_get_id(self) != NULL)
+			fu_device_event_set_str(event, "DeviceId", fu_device_get_id(self));
+		if (priv->backend_id != NULL)
+			fu_device_event_set_str(event, "BackendId", priv->backend_id);
+		if (priv->physical_id != NULL)
+			fu_device_event_set_str(event, "PhysicalId", priv->physical_id);
+	}
+
 	if (parent != self)
 		fu_device_set_target(parent, self);
 	return g_steal_pointer(&parent);
@@ -6253,6 +6628,10 @@ fu_device_category_to_name(const gchar *cat)
 		return "Graphics Tablet";
 	if (g_strcmp0(cat, "X-InputController") == 0)
 		return "Input Controller";
+	if (g_strcmp0(cat, "X-Headphones") == 0)
+		return "Headphones";
+	if (g_strcmp0(cat, "X-Headset") == 0)
+		return "Headset";
 	return NULL;
 }
 
@@ -7013,7 +7392,6 @@ fu_device_load_event(FuDevice *self, const gchar *id, GError **error)
 	for (guint i = priv->event_idx; i < priv->events->len; i++) {
 		FuDeviceEvent *event = g_ptr_array_index(priv->events, i);
 		if (g_strcmp0(fu_device_event_get_id(event), id) == 0) {
-			g_debug("found in-order %s at position %u", id, i);
 			priv->event_idx = i + 1;
 			return event;
 		}
@@ -7030,7 +7408,7 @@ fu_device_load_event(FuDevice *self, const gchar *id, GError **error)
 	}
 
 	/* nothing found */
-	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "no event with ID %s", id);
+	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no event with ID %s", id);
 	return NULL;
 }
 

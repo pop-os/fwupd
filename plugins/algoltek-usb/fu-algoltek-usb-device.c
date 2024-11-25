@@ -17,6 +17,8 @@ struct _FuAlgoltekUsbDevice {
 
 G_DEFINE_TYPE(FuAlgoltekUsbDevice, fu_algoltek_usb_device, FU_TYPE_USB_DEVICE)
 
+#define FU_ALGOLTEK_USB_DEVICE_FLAG_ERS_SKIP_FIRST_SECTOR "ers-skip-first-sector"
+
 static gboolean
 fu_algoltek_usb_device_ctrl_transfer(FuAlgoltekUsbDevice *self,
 				     FuUsbDirection direction,
@@ -220,7 +222,11 @@ fu_algoltek_usb_device_isp(FuAlgoltekUsbDevice *self,
 	guint8 basic_data_size = 5;
 	g_autoptr(FuChunkArray) chunks = NULL;
 
-	chunks = fu_chunk_array_new_from_stream(stream, address, 64 - basic_data_size, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						address,
+						FU_CHUNK_PAGESZ_NONE,
+						64 - basic_data_size,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
@@ -339,7 +345,7 @@ static gboolean
 fu_algoltek_usb_device_status_check_cb(FuDevice *self, gpointer user_data, GError **error)
 {
 	guint8 update_status;
-	g_autoptr(GByteArray) update_status_array = g_byte_array_new();
+	g_autoptr(GByteArray) update_status_array = NULL;
 
 	update_status_array =
 	    fu_algoltek_usb_device_rdr(FU_ALGOLTEK_USB_DEVICE(self), AG_UPDATE_STATUS, error);
@@ -371,7 +377,11 @@ fu_algoltek_usb_device_wrf(FuAlgoltekUsbDevice *self,
 	g_autoptr(FuChunkArray) chunks = NULL;
 	g_autoptr(GByteArray) buf_parameter = g_byte_array_new();
 
-	chunks = fu_chunk_array_new_from_stream(stream, 0x0, 64, error);
+	chunks = fu_chunk_array_new_from_stream(stream,
+						FU_CHUNK_ADDR_OFFSET_NONE,
+						FU_CHUNK_PAGESZ_NONE,
+						64,
+						error);
 	if (chunks == NULL)
 		return FALSE;
 	fu_progress_set_id(progress, G_STRLOC);
@@ -518,11 +528,24 @@ fu_algoltek_usb_device_write_firmware(FuDevice *device,
 
 	if (!fu_algoltek_usb_device_ers(self, 0x20, AG_IDENTIFICATION_128K_ADDR, error))
 		return FALSE;
-	if (!fu_algoltek_usb_device_ers(self, 0x20, AG_IDENTIFICATION_256K_ADDR, error))
-		return FALSE;
-	/* 1 sector = 4 kb, 256kb = 64 sector */
-	for (int i = 0; i < 64; i++) {
-		if (!fu_algoltek_usb_device_ers(self, 0x20, i, error))
+
+	/* preserves compatibility with existing emulation data */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED)) {
+		if (!fu_algoltek_usb_device_ers(self, 0x20, 63, error))
+			return FALSE;
+		for (guint i = 0; i < 64; i++) {
+			if (!fu_algoltek_usb_device_ers(self, 0x20, i, error))
+				return FALSE;
+		}
+	} else if (fu_device_has_private_flag(device,
+					      FU_ALGOLTEK_USB_DEVICE_FLAG_ERS_SKIP_FIRST_SECTOR)) {
+		/* 1 sector = 4 kb, 128kb = 32 sector */
+		for (int i = 1; i < 31; i++) {
+			if (!fu_algoltek_usb_device_ers(self, 0x20, i, error))
+				return FALSE;
+		}
+	} else {
+		if (!fu_algoltek_usb_device_ers(self, 0x60, 0, error))
 			return FALSE;
 	}
 	fu_progress_step_done(progress);
@@ -567,6 +590,8 @@ fu_algoltek_usb_device_init(FuAlgoltekUsbDevice *self)
 {
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_add_protocol(FU_DEVICE(self), "tw.com.algoltek.usb");
+	fu_device_register_private_flag(FU_DEVICE(self),
+					FU_ALGOLTEK_USB_DEVICE_FLAG_ERS_SKIP_FIRST_SECTOR);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_DUAL_IMAGE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);

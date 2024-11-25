@@ -44,8 +44,8 @@
       <package variant="i386" />
     </distro>
     <distro id="fedora">
-      <package variant="x86_64" />
-      <package variant="aarch64" />
+      <package variant="x86_64">bash-completion-devel</package>
+      <package variant="aarch64">bash-completion-devel</package>
     </distro>
     <distro id="ubuntu">
       <package variant="x86_64" />
@@ -123,6 +123,11 @@
     </distro>
     <distro id="fedora">
       <package variant="mingw64">mingw64-gcc</package>
+    </distro>
+  </dependency>
+  <dependency id="gdb">
+    <distro id="fedora">
+      <package variant="x86_64" />
     </distro>
   </dependency>
   <dependency id="gcovr">
@@ -768,6 +773,29 @@
       <package variant="x86_64">libjcat-devel</package>
     </distro>
   </dependency>
+  <dependency id="libblkid-dev">
+    <distro id="arch">
+      <package variant="x86_64">util-linux-libs</package>
+    </distro>
+    <distro id="fedora">
+      <package variant="x86_64">libblkid-devel</package>
+      <package variant="aarch64">libblkid-devel</package>
+    </distro>
+    <distro id="debian">
+      <control />
+      <package variant="x86_64" />
+      <package variant="s390x" />
+      <package variant="i386" />
+    </distro>
+    <distro id="ubuntu">
+      <control />
+      <package variant="x86_64" />
+      <package variant="aarch64" />
+    </distro>
+    <distro id="void">
+      <package variant="x86_64">libblkid-devel</package>
+    </distro>
+  </dependency>
   <dependency id="liblzma-dev">
     <distro id="fedora">
       <package variant="x86_64">xz-devel</package>
@@ -1245,6 +1273,7 @@
   <dependency id="python3-dbusmock">
     <distro id="debian">
       <package variant="x86_64" />
+      <package variant="i386" />
     </distro>
     <distro id="arch">
       <package variant="x86_64">python-dbusmock</package>
@@ -1264,6 +1293,7 @@
     <distro id="fedora">
       <package variant="x86_64" />
       <package variant="aarch64" />
+      <package variant="mingw64" />
     </distro>
     <distro id="void">
       <package variant="x86_64" />

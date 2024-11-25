@@ -26,7 +26,8 @@ enum FuCcgxPureHidCommand {
     Mode = 0x06,
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructCcgxPureHidFwInfo {
     report_id: FuCcgxPureHidReportId == Info,
     _reserved_1: u8,
@@ -48,7 +49,8 @@ struct FuStructCcgxPureHidFwInfo {
     _reserved_3: [u8; 10],
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructCcgxPureHidCommand {
     report_id: FuCcgxPureHidReportId == Command,
     cmd: u8,
@@ -57,7 +59,8 @@ struct FuStructCcgxPureHidCommand {
     pad2: u32le = 0xCCCCCCCC,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructCcgxPureHidWriteHdr {
     report_id: FuCcgxPureHidReportId == Write,
     pd_resp: u8,

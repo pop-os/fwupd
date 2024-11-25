@@ -629,7 +629,7 @@ fu_context_udev_plugin_names_sort_cb(gconstpointer a, gconstpointer b)
 /**
  * fu_context_add_udev_subsystem:
  * @self: a #FuContext
- * @subsystem: a subsystem name, e.g. `pciport`
+ * @subsystem: a subsystem name, e.g. `pciport`, or `block:partition`
  * @plugin_name: (nullable): a plugin name, e.g. `iommu`
  *
  * Registers the udev subsystem to be watched by the daemon.
@@ -643,9 +643,15 @@ fu_context_add_udev_subsystem(FuContext *self, const gchar *subsystem, const gch
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	GPtrArray *plugin_names;
+	g_auto(GStrv) subsystem_devtype = NULL;
 
 	g_return_if_fail(FU_IS_CONTEXT(self));
 	g_return_if_fail(subsystem != NULL);
+
+	/* add the base subsystem watch if passed a subsystem:devtype */
+	subsystem_devtype = g_strsplit(subsystem, ":", 2);
+	if (g_strv_length(subsystem_devtype) > 1)
+		fu_context_add_udev_subsystem(self, subsystem_devtype[0], NULL);
 
 	/* already exists */
 	plugin_names = g_hash_table_lookup(priv->udev_subsystems, subsystem);
@@ -678,7 +684,7 @@ fu_context_add_udev_subsystem(FuContext *self, const gchar *subsystem, const gch
 /**
  * fu_context_get_plugin_names_for_udev_subsystem:
  * @self: a #FuContext
- * @subsystem: a subsystem name, e.g. `pciport`
+ * @subsystem: a subsystem name, e.g. `pciport`, or `block:partition`
  * @error: (nullable): optional return location for an error
  *
  * Gets the plugins which registered for a specific subsystem.
@@ -693,13 +699,31 @@ fu_context_get_plugin_names_for_udev_subsystem(FuContext *self,
 					       GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
-	GPtrArray *plugin_names;
+	GPtrArray *plugin_names_tmp;
+	g_auto(GStrv) subsystem_devtype = NULL;
+	g_autoptr(GPtrArray) plugin_names = g_ptr_array_new_with_free_func(g_free);
 
 	g_return_val_if_fail(FU_IS_CONTEXT(self), NULL);
 	g_return_val_if_fail(subsystem != NULL, NULL);
 
-	plugin_names = g_hash_table_lookup(priv->udev_subsystems, subsystem);
-	if (plugin_names == NULL) {
+	/* add the base subsystem first */
+	subsystem_devtype = g_strsplit(subsystem, ":", 2);
+	if (g_strv_length(subsystem_devtype) > 1) {
+		plugin_names_tmp = g_hash_table_lookup(priv->udev_subsystems, subsystem_devtype[0]);
+		if (plugin_names_tmp != NULL)
+			g_ptr_array_extend(plugin_names,
+					   plugin_names_tmp,
+					   (GCopyFunc)g_strdup,
+					   NULL);
+	}
+
+	/* add the exact match */
+	plugin_names_tmp = g_hash_table_lookup(priv->udev_subsystems, subsystem);
+	if (plugin_names_tmp != NULL)
+		g_ptr_array_extend(plugin_names, plugin_names_tmp, (GCopyFunc)g_strdup, NULL);
+
+	/* no matches */
+	if (plugin_names->len == 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
 			    FWUPD_ERROR_NOT_FOUND,
@@ -707,7 +731,9 @@ fu_context_get_plugin_names_for_udev_subsystem(FuContext *self,
 			    subsystem);
 		return NULL;
 	}
-	return g_ptr_array_ref(plugin_names);
+
+	/* success */
+	return g_steal_pointer(&plugin_names);
 }
 
 /**
@@ -821,7 +847,7 @@ fu_context_get_firmware_gtype_ids(FuContext *self)
  *
  * Returns all the firmware #GType's.
  *
- * Returns: (transfer none) (element-type GType): Firmware types
+ * Returns: (transfer container) (element-type GType): Firmware types
  *
  * Since: 1.9.1
  **/
@@ -899,10 +925,11 @@ static void
 fu_context_lookup_quirk_by_id_iter_cb(FuQuirks *self,
 				      const gchar *key,
 				      const gchar *value,
+				      FuContextQuirkSource source,
 				      gpointer user_data)
 {
 	FuContextQuirkLookupHelper *helper = (FuContextQuirkLookupHelper *)user_data;
-	helper->iter_cb(helper->self, key, value, helper->user_data);
+	helper->iter_cb(helper->self, key, value, source, helper->user_data);
 }
 
 /**
@@ -975,7 +1002,11 @@ fu_context_housekeeping(FuContext *self)
 typedef gboolean (*FuContextHwidsSetupFunc)(FuContext *self, FuHwids *hwids, GError **error);
 
 static void
-fu_context_hwid_quirk_cb(FuContext *self, const gchar *key, const gchar *value, gpointer user_data)
+fu_context_hwid_quirk_cb(FuContext *self,
+			 const gchar *key,
+			 const gchar *value,
+			 FuContextQuirkSource source,
+			 gpointer user_data)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	if (value != NULL) {
@@ -1589,7 +1620,7 @@ fu_context_sort_esp_score_cb(gconstpointer a, gconstpointer b, gpointer user_dat
 
 /**
  * fu_context_get_default_esp:
- * @ctx: a #FuContext
+ * @self: a #FuContext
  * @error: (nullable): optional return location for an error
  *
  * Finds the volume that represents the ESP that plugins should nominally
@@ -1600,15 +1631,25 @@ fu_context_sort_esp_score_cb(gconstpointer a, gconstpointer b, gpointer user_dat
  * Since: 2.0.0
  **/
 FuVolume *
-fu_context_get_default_esp(FuContext *ctx, GError **error)
+fu_context_get_default_esp(FuContext *self, GError **error)
 {
+	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_autoptr(GPtrArray) esp_volumes = NULL;
-	const gchar *user_esp_location = fu_context_get_esp_location(ctx);
+	const gchar *user_esp_location = fu_context_get_esp_location(self);
 
 	/* show which volumes we're choosing from */
-	esp_volumes = fu_context_get_esp_volumes(ctx, error);
+	esp_volumes = fu_context_get_esp_volumes(self, error);
 	if (esp_volumes == NULL)
 		return NULL;
+
+	/* no mounting */
+	if (priv->flags & FU_CONTEXT_FLAG_INHIBIT_VOLUME_MOUNT) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "cannot mount volume by policy");
+		return NULL;
+	}
 
 	/* we found more than one: lets look for the best one */
 	if (esp_volumes->len > 1) {
@@ -1791,6 +1832,7 @@ fu_context_get_esp_files_for_entry(FuContext *self,
 				   FuContextEspFileFlags flags,
 				   GError **error)
 {
+	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_autofree gchar *dp_filename = NULL;
 	g_autofree gchar *filename = NULL;
 	g_autofree gchar *mount_point = NULL;
@@ -1827,6 +1869,13 @@ fu_context_get_esp_files_for_entry(FuContext *self,
 	volume = fu_context_get_esp_volume_by_hard_drive_device_path(self, dp_hdd, error);
 	if (volume == NULL)
 		return FALSE;
+	if (priv->flags & FU_CONTEXT_FLAG_INHIBIT_VOLUME_MOUNT) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "cannot mount volume by policy");
+		return FALSE;
+	}
 	volume_locker = fu_volume_locker(volume, error);
 	if (volume_locker == NULL)
 		return FALSE;

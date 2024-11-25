@@ -8,21 +8,24 @@ enum FuQcReportId {
     Response = 6,
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcHidCommand {
     report_id: FuQcReportId == Command,
     payload_len: u8,
     payload: [u8; 61],
 }
 
-#[derive(Parse)]
+#[derive(Parse, Default)]
+#[repr(C, packed)]
 struct FuStructQcHidResponse {
     report_id: FuQcReportId == Response,
     payload_len: u8,
     payload: [u8; 11],
 }
 
-#[derive(New)]
+#[derive(New, Default)]
+#[repr(C, packed)]
 struct FuStructQcHidDataTransfer {
     report_id: FuQcReportId == DataTransfer,
     payload_len: u8,

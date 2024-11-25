@@ -1,0 +1,17 @@
+{
+  "name": "Microsoft USB-C Travel Hub",
+  "interactive": false,
+  "steps": [
+    {
+      "emulation-file": "@enumeration_datadir@/microsoft-usbc-travel-hub-setup.json",
+      "components": [
+        {
+          "version": "2.2319.3",
+          "guids": [
+            "0ea2a144-c192-5d42-8b4d-8036392acfac"
+          ]
+        }
+      ]
+    }
+  ]
+}

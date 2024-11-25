@@ -12,7 +12,7 @@
 
 #include "fu-byte-array.h"
 #include "fu-bytes.h"
-#include "fu-cab-firmware.h"
+#include "fu-cab-firmware-private.h"
 #include "fu-cab-image.h"
 #include "fu-cab-struct.h"
 #include "fu-chunk-array.h"
@@ -134,23 +134,29 @@ fu_cab_firmware_parse_helper_free(FuCabFirmwareParseHelper *helper)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(FuCabFirmwareParseHelper, fu_cab_firmware_parse_helper_free)
 
 /* compute the MS cabinet checksum */
-static gboolean
+gboolean
 fu_cab_firmware_compute_checksum(const guint8 *buf, gsize bufsz, guint32 *checksum, GError **error)
 {
+	guint32 tmp = *checksum;
 	for (gsize i = 0; i < bufsz; i += 4) {
-		guint32 ul = 0;
-		guint chunksz = MIN(bufsz - i, 4);
-		if (chunksz == 4) {
-			ul = fu_memread_uint32(buf + i, G_LITTLE_ENDIAN);
+		gsize chunksz = bufsz - i;
+		if (G_LIKELY(chunksz >= 4)) {
+			/* 3,2,1,0 */
+			tmp ^= ((guint32)buf[i + 3] << 24) | ((guint32)buf[i + 2] << 16) |
+			       ((guint32)buf[i + 1] << 8) | (guint32)buf[i + 0];
 		} else if (chunksz == 3) {
-			ul = fu_memread_uint24(buf + i, G_BIG_ENDIAN); /* err.. */
+			/* 0,1,2 -- yes, weird */
+			tmp ^= ((guint32)buf[i + 0] << 16) | ((guint32)buf[i + 1] << 8) |
+			       (guint32)buf[i + 2];
 		} else if (chunksz == 2) {
-			ul = fu_memread_uint16(buf + i, G_BIG_ENDIAN); /* err.. */
-		} else if (chunksz == 1) {
-			ul = buf[i];
+			/* 0,1 -- yes, weird */
+			tmp ^= ((guint32)buf[i + 0] << 8) | (guint32)buf[i + 1];
+		} else {
+			/* 0 */
+			tmp ^= (guint32)buf[i + 0];
 		}
-		*checksum ^= ul;
 	}
+	*checksum = tmp;
 	return TRUE;
 }
 
@@ -275,8 +281,11 @@ fu_cab_firmware_parse_data(FuCabFirmware *self,
 		g_autoptr(GBytes) bytes_uncomp = NULL;
 
 		/* check compressed header */
-		bytes_comp =
-		    fu_input_stream_read_bytes(helper->stream, *offset + hdr_sz, blob_comp, error);
+		bytes_comp = fu_input_stream_read_bytes(helper->stream,
+							*offset + hdr_sz,
+							blob_comp,
+							NULL,
+							error);
 		if (bytes_comp == NULL)
 			return FALSE;
 		kind = fu_memstrsafe(g_bytes_get_data(bytes_comp, NULL),
@@ -691,7 +700,10 @@ fu_cab_firmware_write(FuFirmware *firmware, GError **error)
 	}
 	cfdata_linear_blob =
 	    g_byte_array_free_to_bytes(g_steal_pointer(&cfdata_linear)); /* nocheck:blocked */
-	chunks = fu_chunk_array_new_from_bytes(cfdata_linear_blob, 0x0, 0x8000);
+	chunks = fu_chunk_array_new_from_bytes(cfdata_linear_blob,
+					       FU_CHUNK_ADDR_OFFSET_NONE,
+					       FU_CHUNK_PAGESZ_NONE,
+					       0x8000);
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
 		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GByteArray) chunk_zlib = g_byte_array_new();

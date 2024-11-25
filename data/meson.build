@@ -89,38 +89,68 @@ if build_daemon
       dynamic_options += 'RestrictAddressFamilies=AF_NETLINK AF_UNIX'
     endif
 
-    # allow-list, see `systemd-analyze syscall-filter` for what each group adds
-    syscall_filter = [
-      '@basic-io',
-      '@file-system',
-      '@io-event',
-      '@ipc',
-      '@network-io',
-      '@process',
-      '@sync',
-      '@signal',  # for g_local_file_monitor_new
-      '@timer',   # for usbi_create_timer
-      '@chown',   # for sqlite3Step
-      'ioctl',
-      'uname',
-      'sysinfo',  # for sysconf
-      'madvise',  # for mtrim
-      'mremap',   # for g_realloc
-      'splice', 'vmsplice', 'copy_file_range', # for g_file_copy
+    device_allows = [
+      'block-sd',
+      'char-aux',
+      'char-cpu/*',
+      'char-drm',
+      'char-gpiochip',
+      'char-hidraw',
+      'char-usb',
+      'char-usb_device',
     ]
     if allow_flashrom
-      syscall_filter += ['@raw-io']
+      device_allows += ['char-mem']
     endif
-    if supported_build
-      dynamic_options += ['Environment="FWUPD_SYSCALL_FILTER=systemd"']
-      dynamic_options += ['SystemCallErrorNumber=EPERM']
-    else
-      # to debug what additional syscalls are required, we set SystemCallErrorNumber=SIGSYS
-      # and then can do `coredumpctl debug` and get the syscall number with `(gdb) p $rax`
-      dynamic_options += ['SystemCallErrorNumber=SIGSYS']
+    if get_option('plugin_nvme').allowed()
+      device_allows += ['char-nvme']
     endif
-    dynamic_options += ['SystemCallFilter=' + ' '.join(syscall_filter)]
+    if get_option('plugin_tpm').allowed()
+      device_allows += ['char-tpm']
+    endif
+    if get_option('plugin_intel_me').allowed()
+      device_allows += ['char-mei']
+    endif
+    foreach device_allow: device_allows
+      dynamic_options += ['DeviceAllow=' + device_allow + ' rw']
+    endforeach
 
+    # allow-list, see `systemd-analyze syscall-filter` for what each group adds
+    if get_option('systemd_syscall_filter')
+      syscall_filter = [
+        '@basic-io',
+        '@file-system',
+        '@io-event',
+        '@ipc',
+        '@network-io',
+        '@process',
+        '@sync',
+        '@signal',  # for g_local_file_monitor_new
+        '@timer',   # for usbi_create_timer
+        '@chown',   # for sqlite3Step
+        'ioctl',
+        'uname',
+        'sysinfo',  # for sysconf
+        'madvise',  # for mtrim
+        'mremap',   # for g_realloc
+        'splice', 'vmsplice', 'copy_file_range', # for g_file_copy
+      ]
+      if allow_flashrom
+        syscall_filter += ['@raw-io']
+      endif
+      dynamic_options += ['SystemCallFilter=' + ' '.join(syscall_filter)]
+      if supported_build
+        dynamic_options += ['Environment="FWUPD_SYSCALL_FILTER=systemd"']
+        dynamic_options += ['SystemCallErrorNumber=EPERM']
+      else
+        # to debug what additional syscalls are required, we set SystemCallErrorNumber=SIGSYS
+        # and then can do `coredumpctl debug` and get the syscall number with `(gdb) p $rax`
+        dynamic_options += ['SystemCallErrorNumber=SIGSYS']
+      endif
+    endif
+    if not supported_build
+      dynamic_options += ['Environment="G_DEBUG=fatal-criticals"']
+    endif
     con2.set('dynamic_options', '\n'.join(dynamic_options))
     con2.set('motd_dir', motd_dir)
 

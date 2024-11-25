@@ -35,13 +35,15 @@ enum FuTpmEventlogItemKind {
 }
 
 #[derive(Parse)]
+#[repr(C, packed)]
 struct FuStructTpmEventLog2 {
     pcr: u32le,
     type: FuTpmEventlogItemKind,
     digest_count: u32le,
 }
 
-#[derive(ParseBytes)]
+#[derive(ParseBytes, Default)]
+#[repr(C, packed)]
 struct FuStructTpmEfiStartupLocalityEvent {
     signature: [char; 16] == "StartupLocality",
     locality: u8,    // from which TPM2_Startup() was issued -- which is the initial value of PCR0
