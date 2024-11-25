@@ -75,6 +75,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  LIBFWUPD_1.9.8@LIBFWUPD_1.9.8 1.9.8
  LIBFWUPD_2.0.0@LIBFWUPD_2.0.0 2.0.0
  LIBFWUPD_2.0.1@LIBFWUPD_2.0.1 2.0.1
+ LIBFWUPD_2.0.2@LIBFWUPD_2.0.2 2.0.2
  fwupd_bios_setting_add_possible_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_get_current_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_get_description@LIBFWUPD_1.8.4 1.8.4
@@ -535,6 +536,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_remote_get_filename_cache@LIBFWUPD_0.9.6 1.0.0
  fwupd_remote_get_filename_cache_sig@LIBFWUPD_0.9.7 1.0.0
  fwupd_remote_get_filename_source@LIBFWUPD_0.9.8 1.0.0
+ fwupd_remote_get_firmware_base_uri@LIBFWUPD_2.0.2 2.0.2
  fwupd_remote_get_flags@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_get_id@LIBFWUPD_0.9.3 1.0.0
  fwupd_remote_get_kind@LIBFWUPD_0.9.6 1.0.0
@@ -563,6 +565,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_remote_set_checksum_sig@LIBFWUPD_2.0.0 2.0.0
  fwupd_remote_set_filename_cache@LIBFWUPD_1.8.2 1.8.2
  fwupd_remote_set_filename_source@LIBFWUPD_1.6.1 1.6.1
+ fwupd_remote_set_firmware_base_uri@LIBFWUPD_2.0.2 2.0.2
  fwupd_remote_set_flags@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_set_id@LIBFWUPD_1.9.3 1.9.3
  fwupd_remote_set_kind@LIBFWUPD_2.0.0 2.0.0
