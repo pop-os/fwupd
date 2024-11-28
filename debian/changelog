@@ -1,3 +1,9 @@
+fwupd (2.0.2-2) UNRELEASED; urgency=medium
+
+  * Backport a patch to fix a crash on newer AMD CPUs.
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 27 Nov 2024 20:03:40 -0600
+
 fwupd (2.0.2-1) unstable; urgency=medium
 
   * New upstream version (2.0.2)
