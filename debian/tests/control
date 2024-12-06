@@ -1,6 +1,9 @@
 Tests: ci
 Restrictions: needs-root
 
+Tests: ci-flaky
+Restrictions: needs-root, flaky
+
 Tests: libfwupd-dev
 Depends: build-essential, libfwupd-dev, pkg-config
 Restrictions: allow-stderr, superficial
