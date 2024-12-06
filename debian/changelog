@@ -1,8 +1,16 @@
-fwupd (2.0.3-1) UNRELEASED; urgency=medium
+fwupd (2.0.3-1) unstable; urgency=medium
 
+  [ Mario Limonciello ]
   * New upstream version (2.0.3)
+  * Mark fwupdmgr-p2p tests as flaky (Closes: #1070790)
 
- -- Mario Limonciello <superm1@gmail.com>  Fri, 06 Dec 2024 07:26:38 -0600
+  [ Simon McVittie ]
+  * Add trivial compile/link/run test for libfwupdplugin-dev
+  * d/control, d/control.in: tests depend on a system bus, not dbus-x11
+    (Closes: #1079481)
+  * d/control, d/control.in: Recommend a non-specific D-Bus system bus
+
+ -- Mario Limonciello <superm1@gmail.com>  Fri, 06 Dec 2024 09:58:30 -0600
 
 fwupd (2.0.2-2) unstable; urgency=medium
 
