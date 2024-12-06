@@ -377,8 +377,9 @@ fu_logitech_hidpp_device_fetch_firmware_info(FuLogitechHidppDevice *self, GError
 	guint8 idx;
 	guint8 entity_count;
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
-	g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
+	g_autoptr(FuLogitechHidppHidppMsg) msg_count = fu_logitech_hidpp_msg_new();
 	gboolean radio_ok = FALSE;
+	gboolean app_ok = FALSE;
 
 	/* get the feature index */
 	idx = fu_logitech_hidpp_device_feature_get_idx(self,
@@ -387,16 +388,16 @@ fu_logitech_hidpp_device_fetch_firmware_info(FuLogitechHidppDevice *self, GError
 		return TRUE;
 
 	/* get the entity count */
-	msg->report_id = FU_LOGITECH_HIDPP_REPORT_ID_SHORT;
-	msg->device_id = priv->device_idx;
-	msg->sub_id = idx;
-	msg->function_id = 0x00 << 4; /* getCount */
-	msg->hidpp_version = priv->hidpp_version;
-	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+	msg_count->report_id = FU_LOGITECH_HIDPP_REPORT_ID_SHORT;
+	msg_count->device_id = priv->device_idx;
+	msg_count->sub_id = idx;
+	msg_count->function_id = 0x00 << 4; /* getCount */
+	msg_count->hidpp_version = priv->hidpp_version;
+	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg_count, error)) {
 		g_prefix_error(error, "failed to get firmware count: ");
 		return FALSE;
 	}
-	entity_count = msg->data[0];
+	entity_count = msg_count->data[0];
 	g_debug("firmware entity count is %u", entity_count);
 
 	/* get firmware, bootloader, hardware versions */
@@ -404,15 +405,23 @@ fu_logitech_hidpp_device_fetch_firmware_info(FuLogitechHidppDevice *self, GError
 		guint16 build;
 		g_autofree gchar *version = NULL;
 		g_autofree gchar *name = NULL;
+		g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
 
 		msg->report_id = FU_LOGITECH_HIDPP_REPORT_ID_SHORT;
 		msg->device_id = priv->device_idx;
 		msg->sub_id = idx;
 		msg->function_id = 0x01 << 4; /* getInfo */
+		msg->hidpp_version = priv->hidpp_version;
 		msg->data[0] = i;
 		if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
 			g_prefix_error(error, "failed to get firmware info: ");
 			return FALSE;
+		}
+		/* use the single available slot, otherwise -- the slot which is not active */
+		if (msg->data[0] == 0) {
+			if (!app_ok || FU_BIT_IS_CLEAR(msg->data[8], 0))
+				priv->cached_fw_entity = i;
+			app_ok = TRUE;
 		}
 		if (msg->data[1] == 0x00 && msg->data[2] == 0x00 && msg->data[3] == 0x00 &&
 		    msg->data[4] == 0x00 && msg->data[5] == 0x00 && msg->data[6] == 0x00 &&
@@ -425,8 +434,9 @@ fu_logitech_hidpp_device_fetch_firmware_info(FuLogitechHidppDevice *self, GError
 		version = fu_logitech_hidpp_format_version(name, msg->data[4], msg->data[5], build);
 		g_debug("firmware entity 0x%02x version is %s", i, version);
 		if (msg->data[0] == 0) {
-			fu_device_set_version(FU_DEVICE(self), version);
-			priv->cached_fw_entity = i;
+			/* set version from the active entity */
+			if (FU_BIT_IS_SET(msg->data[8], 0))
+				fu_device_set_version(FU_DEVICE(self), version);
 		} else if (msg->data[0] == 1) {
 			fu_device_set_version_bootloader(FU_DEVICE(self), version);
 		} else if (msg->data[0] == 2) {
@@ -780,6 +790,7 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU_CONTROL);
 	if (idx != 0x00) {
 		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_UPDATABLE);
 		fu_device_remove_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
 		fu_device_add_protocol(FU_DEVICE(self), "com.logitech.unifying");
 	}
@@ -808,10 +819,12 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 		}
 		fu_device_add_protocol(FU_DEVICE(device), "com.logitech.unifyingsigned");
 		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
+		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_UPDATABLE);
 	}
 	idx = fu_logitech_hidpp_device_feature_get_idx(self, FU_LOGITECH_HIDPP_FEATURE_DFU);
 	if (idx != 0x00) {
 		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_IS_BOOTLOADER);
+		fu_device_add_flag(FU_DEVICE(device), FWUPD_DEVICE_FLAG_UPDATABLE);
 		if (fu_device_get_version(device) == NULL) {
 			g_info("repairing device in bootloader mode");
 			fu_device_set_version(FU_DEVICE(device), "MPK00.00_B0000");
@@ -1378,7 +1391,6 @@ fu_logitech_hidpp_device_init(FuLogitechHidppDevice *self)
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
 	priv->device_idx = FU_LOGITECH_HIDPP_DEVICE_IDX_WIRED;
 	priv->feature_index = g_ptr_array_new_with_free_func(g_free);
-	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_request_flag(FU_DEVICE(self), FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);

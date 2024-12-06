@@ -6528,7 +6528,6 @@ fu_config_migrate_1_9_func(void)
 	const gchar *fake_localconf_fn = "/tmp/fwupd-self-test/var/etc/fwupd/fwupd.conf";
 	const gchar *fake_sysconf_fn = "/tmp/fwupd-self-test/fwupd/fwupd.conf";
 	gboolean ret;
-	g_autofree gchar *localconf_data = NULL;
 	g_autoptr(FuConfig) config = FU_CONFIG(fu_engine_config_new());
 	g_autoptr(GError) error = NULL;
 
@@ -6699,6 +6698,12 @@ fu_test_engine_fake_hidraw(gconstpointer user_data)
 	g_autoptr(FuUdevDevice) udev_device3 = NULL;
 	g_autoptr(GError) error = NULL;
 
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
+
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "pixart_rf");
 	ret = fu_engine_load(engine,
@@ -6757,6 +6762,12 @@ fu_test_engine_fake_usb(gconstpointer user_data)
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
+
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "colorhug");
 	ret = fu_engine_load(engine,
@@ -6790,6 +6801,12 @@ fu_test_engine_fake_pci(gconstpointer user_data)
 	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
+
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
 
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "optionrom");
@@ -6826,6 +6843,12 @@ fu_test_engine_fake_v4l(gconstpointer user_data)
 	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
+
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
 
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "logitech_tap");
@@ -6867,6 +6890,12 @@ fu_test_engine_fake_nvme(gconstpointer user_data)
 	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
+
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
 
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "nvme");
@@ -6911,6 +6940,12 @@ fu_test_engine_fake_serio(gconstpointer user_data)
 	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
+
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
 
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "synaptics_rmi");
@@ -6957,6 +6992,12 @@ fu_test_engine_fake_tpm(gconstpointer user_data)
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
+
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "tpm");
 	ret = fu_engine_load(engine,
@@ -6998,6 +7039,12 @@ fu_test_engine_fake_mei(gconstpointer user_data)
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
 
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
+
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "intel_me");
 	ret = fu_engine_load(engine,
@@ -7038,6 +7085,12 @@ fu_test_engine_fake_block(gconstpointer user_data)
 	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
+
+	/* non-linux */
+	if (!fu_context_has_backend(self->ctx, "udev")) {
+		g_test_skip("no Udev backend");
+		return;
+	}
 
 	/* load engine and check the device was found */
 	fu_engine_add_plugin_filter(engine, "scsi");

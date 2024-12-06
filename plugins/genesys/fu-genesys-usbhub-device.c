@@ -655,9 +655,10 @@ fu_genesys_usbhub_device_authenticate(FuGenesysUsbhubDevice *self, GError **erro
 	high_byte = (release & 0xff00) >> 8;
 	temp_byte = low_byte ^ high_byte;
 
-	offset_start = g_random_int_range(GENESYS_USBHUB_ENCRYPT_REGION_START,
+	offset_start = g_random_int_range(GENESYS_USBHUB_ENCRYPT_REGION_START, /* nocheck:blocked */
 					  GENESYS_USBHUB_ENCRYPT_REGION_END - 1);
-	offset_end = g_random_int_range(offset_start + 1, GENESYS_USBHUB_ENCRYPT_REGION_END);
+	offset_end = g_random_int_range(offset_start + 1, /* nocheck:blocked */
+					GENESYS_USBHUB_ENCRYPT_REGION_END);
 	for (guint8 i = offset_start; i <= offset_end; i++) {
 		temp_byte ^= self->st_fwinfo_ts->data[i];
 	}
@@ -3084,7 +3085,7 @@ fu_genesys_usbhub_device_finalize(GObject *object)
 {
 	FuGenesysUsbhubDevice *self = FU_GENESYS_USBHUB_DEVICE(object);
 	if (self->st_static_ts != NULL)
-		g_byte_array_unref(self->st_static_ts);
+		fu_struct_genesys_ts_static_unref(self->st_static_ts);
 	if (self->st_dynamic_ts != NULL)
 		g_byte_array_unref(self->st_dynamic_ts);
 	if (self->st_fwinfo_ts != NULL)

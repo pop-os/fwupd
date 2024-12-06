@@ -6,10 +6,7 @@
 
 #include "config.h"
 
-#include <string.h>
-
 #include "fu-dell-kestrel-common.h"
-#include "fu-dell-kestrel-ec-hid.h"
 #include "fu-dell-kestrel-ec-struct.h"
 #include "fu-dell-kestrel-package.h"
 
@@ -31,8 +28,8 @@ static gboolean
 fu_dell_kestrel_package_setup(FuDevice *device, GError **error)
 {
 	FuDevice *proxy = fu_device_get_proxy(device);
-	FuDellKestrelDockSku dock_sku = fu_dell_kestrel_ec_get_dock_sku(proxy);
-	FuDellDockBaseType dock_type = fu_dell_kestrel_ec_get_dock_type(proxy);
+	FuDellKestrelDockSku dock_sku = fu_dell_kestrel_ec_get_dock_sku(FU_DELL_KESTREL_EC(proxy));
+	FuDellDockBaseType dock_type = fu_dell_kestrel_ec_get_dock_type(FU_DELL_KESTREL_EC(proxy));
 	guint32 pkg_version_raw;
 
 	/* instance ID */
@@ -42,7 +39,7 @@ fu_dell_kestrel_package_setup(FuDevice *device, GError **error)
 	fu_device_build_instance_id(device, error, "EC", "DOCKTYPE", "DOCKSKU", "DEVTYPE", NULL);
 
 	/* setup version */
-	pkg_version_raw = fu_dell_kestrel_ec_get_package_version(proxy);
+	pkg_version_raw = fu_dell_kestrel_ec_get_package_version(FU_DELL_KESTREL_EC(proxy));
 	fu_device_set_version_raw(device, pkg_version_raw);
 
 	return TRUE;
@@ -89,7 +86,7 @@ fu_dell_kestrel_package_write(FuDevice *device,
 		fu_device_get_version(device),
 		dynamic_version);
 
-	if (!fu_dell_kestrel_ec_commit_package(proxy, fw, error))
+	if (!fu_dell_kestrel_ec_commit_package(FU_DELL_KESTREL_EC(proxy), fw, error))
 		return FALSE;
 
 	/* dock will reboot to re-read; this is to appease the daemon */
@@ -113,12 +110,6 @@ fu_dell_kestrel_package_attach(FuDevice *device, FuProgress *progress, GError **
 		return fu_device_emit_request(device, request, progress, error);
 	}
 	return TRUE;
-}
-
-static void
-fu_dell_kestrel_package_finalize(GObject *object)
-{
-	G_OBJECT_CLASS(fu_dell_kestrel_package_parent_class)->finalize(object);
 }
 
 static void
@@ -149,9 +140,7 @@ fu_dell_kestrel_package_init(FuDellKestrelPackage *self)
 static void
 fu_dell_kestrel_package_class_init(FuDellKestrelPackageClass *klass)
 {
-	GObjectClass *object_class = G_OBJECT_CLASS(klass);
 	FuDeviceClass *device_class = FU_DEVICE_CLASS(klass);
-	object_class->finalize = fu_dell_kestrel_package_finalize;
 	device_class->write_firmware = fu_dell_kestrel_package_write;
 	device_class->setup = fu_dell_kestrel_package_setup;
 	device_class->set_progress = fu_dell_kestrel_package_set_progress;

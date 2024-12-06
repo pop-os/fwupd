@@ -1638,7 +1638,6 @@ fu_dbus_daemon_method_emulation_load(FuDbusDaemon *self,
 				     GDBusMethodInvocation *invocation)
 {
 	gint32 fd_handle = 0;
-	g_autoptr(GError) error = NULL;
 	g_autoptr(FuMainAuthHelper) helper = NULL;
 
 	g_variant_get(parameters, "(h)", &fd_handle);
@@ -1695,7 +1694,6 @@ fu_dbus_daemon_method_emulation_save(FuDbusDaemon *self,
 				     GDBusMethodInvocation *invocation)
 {
 	gint32 fd_handle = 0;
-	g_autoptr(GError) error = NULL;
 	g_autoptr(FuMainAuthHelper) helper = NULL;
 
 	g_variant_get(parameters, "(h)", &fd_handle);
@@ -2146,7 +2144,8 @@ fu_dbus_daemon_method_inhibit(FuDbusDaemon *self,
 	/* watch */
 	inhibit = g_new0(FuDbusDaemonSystemInhibit, 1);
 	inhibit->sender = g_strdup(fu_engine_request_get_sender(request));
-	inhibit->id = g_strdup_printf("dbus-%i", g_random_int_range(1, G_MAXINT - 1));
+	inhibit->id =
+	    g_strdup_printf("dbus-%i", g_random_int_range(1, G_MAXINT - 1)); /* nocheck:blocked */
 	inhibit->watcher_id =
 	    g_bus_watch_name_on_connection(self->connection,
 					   fu_engine_request_get_sender(request),

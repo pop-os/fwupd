@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '2.0.2',
+  version: '2.0.3',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=1.3.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -263,11 +263,11 @@ endif
 endif
 libjcat = dependency('jcat', version: '>= 0.2.0', fallback: ['libjcat', 'libjcat_dep'])
 libjsonglib = dependency('json-glib-1.0', version: '>= 1.6.0', fallback: ['libjsonglib', 'libjsonglib_dep'])
-libblkid = dependency('blkid', required: false)
+libblkid = dependency('blkid', required: get_option('blkid'))
 if libblkid.found()
   conf.set('HAVE_BLKID', '1')
 endif
-valgrind = dependency('valgrind', required: false)
+valgrind = dependency('valgrind', required: get_option('valgrind'))
 libcurl = dependency('libcurl', version: '>= 7.62.0', required: get_option('curl'))
 if libcurl.found()
   conf.set('HAVE_LIBCURL', '1')
@@ -729,6 +729,7 @@ summary({
   'libblkid': libblkid,
   'libcurl': libcurl,
   'libdrm': libdrm,
+  'valgrind': valgrind,
   'lzma': lzma,
   'polkit': polkit,
   'python3': python3,

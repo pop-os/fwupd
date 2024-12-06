@@ -6,8 +6,6 @@
 
 #include "config.h"
 
-#include <string.h>
-
 #include "fu-dell-kestrel-common.h"
 
 struct _FuDellKestrelWtpd {
@@ -26,8 +24,8 @@ static gboolean
 fu_dell_kestrel_wtpd_setup(FuDevice *device, GError **error)
 {
 	FuDevice *proxy = fu_device_get_proxy(device);
-	FuDellDockBaseType dock_type = fu_dell_kestrel_ec_get_dock_type(proxy);
-	FuDellKestrelDockSku dock_sku = fu_dell_kestrel_ec_get_dock_sku(proxy);
+	FuDellDockBaseType dock_type = fu_dell_kestrel_ec_get_dock_type(FU_DELL_KESTREL_EC(proxy));
+	FuDellKestrelDockSku dock_sku = fu_dell_kestrel_ec_get_dock_sku(FU_DELL_KESTREL_EC(proxy));
 	FuDellKestrelEcDevType dev_type = FU_DELL_KESTREL_EC_DEV_TYPE_WTPD;
 	guint32 wtpd_version;
 	g_autofree gchar *devname = NULL;
@@ -44,7 +42,7 @@ fu_dell_kestrel_wtpd_setup(FuDevice *device, GError **error)
 	fu_device_build_instance_id(device, error, "EC", "DOCKTYPE", "DOCKSKU", "DEVTYPE", NULL);
 
 	/* version */
-	wtpd_version = fu_dell_kestrel_ec_get_wtpd_version(proxy);
+	wtpd_version = fu_dell_kestrel_ec_get_wtpd_version(FU_DELL_KESTREL_EC(proxy));
 	fu_device_set_version_raw(device, wtpd_version);
 
 	return TRUE;
@@ -57,12 +55,13 @@ fu_dell_kestrel_wtpd_write(FuDevice *device,
 			   FwupdInstallFlags flags,
 			   GError **error)
 {
-	return fu_dell_kestrel_ec_write_firmware_helper(fu_device_get_proxy(device),
-							firmware,
-							progress,
-							FU_DELL_KESTREL_EC_DEV_TYPE_WTPD,
-							0,
-							error);
+	FuDevice *proxy = fu_device_get_proxy(device);
+	return fu_dell_kestrel_hid_device_write_firmware(FU_DELL_KESTREL_HID_DEVICE(proxy),
+							 firmware,
+							 progress,
+							 FU_DELL_KESTREL_EC_DEV_TYPE_WTPD,
+							 0,
+							 error);
 }
 
 static void

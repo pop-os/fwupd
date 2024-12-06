@@ -1186,6 +1186,16 @@ fu_context_set_power_state(FuContext *self, FuPowerState power_state)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_return_if_fail(FU_IS_CONTEXT(self));
+
+	/* quirk for behavior on Framework systems where the EC reports as discharging
+	 * while on AC but at 100% */
+	if (power_state == FU_POWER_STATE_BATTERY_DISCHARGING && priv->battery_level == 100 &&
+	    fu_context_has_hwid_flag(self, "discharging-when-fully-changed")) {
+		power_state = FU_POWER_STATE_AC_FULLY_CHARGED;
+		g_debug("quirking power state to %s", fu_power_state_to_string(power_state));
+	}
+
+	/* is the same */
 	if (priv->power_state == power_state)
 		return;
 	priv->power_state = power_state;
@@ -1968,8 +1978,17 @@ fu_context_get_esp_files(FuContext *self, FuContextEspFileFlags flags, GError **
 		return NULL;
 	for (guint i = 0; i < entries->len; i++) {
 		FuEfiLoadOption *entry = g_ptr_array_index(entries, i);
-		if (!fu_context_get_esp_files_for_entry(self, entry, files, flags, error))
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_context_get_esp_files_for_entry(self, entry, files, flags, &error_local)) {
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
+				g_debug("ignoring %s: %s",
+					fu_firmware_get_id(FU_FIRMWARE(entry)),
+					error_local->message);
+				continue;
+			}
+			g_propagate_error(error, g_steal_pointer(&error_local));
 			return NULL;
+		}
 	}
 
 	/* success */
@@ -2042,6 +2061,23 @@ fu_context_get_backend_by_name(FuContext *self, const gchar *name, GError **erro
 	}
 	g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no backend with name %s", name);
 	return NULL;
+}
+
+/* private */
+gboolean
+fu_context_has_backend(FuContext *self, const gchar *name)
+{
+	FuContextPrivate *priv = GET_PRIVATE(self);
+
+	g_return_val_if_fail(FU_IS_CONTEXT(self), FALSE);
+	g_return_val_if_fail(name != NULL, FALSE);
+
+	for (guint i = 0; i < priv->backends->len; i++) {
+		FuBackend *backend = g_ptr_array_index(priv->backends, i);
+		if (g_strcmp0(fu_backend_get_name(backend), name) == 0)
+			return TRUE;
+	}
+	return FALSE;
 }
 
 /* private */

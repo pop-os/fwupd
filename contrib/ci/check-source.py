@@ -11,6 +11,28 @@ import os
 from typing import List, Optional
 
 
+def _find_func_name(line: str) -> Optional[str]:
+    # these are not functions
+    for prefix in ["\t", " ", "typedef", "__attribute__", "G_DEFINE_"]:
+        if line.startswith(prefix):
+            return None
+
+    # ignore prototypes
+    if line.endswith(";"):
+        return None
+
+    # strip to function name then test for validity
+    idx: int = line.find("(")
+    if idx == -1:
+        return None
+    func_name = line[:idx]
+    if func_name.find(" ") != -1:
+        return None
+
+    # success!
+    return func_name
+
+
 class SourceFailure:
     def __init__(self, fn=None, linecnt=None, message=None, nocheck=None):
         self.fn: Optional[str] = fn
@@ -48,6 +70,10 @@ class Checker:
         )
 
     def _test_line_function_names_valid(self, func_name: str) -> None:
+        # sanity check
+        if not self._current_fn:
+            return
+
         # ignore headers
         if self._current_fn.endswith(".h"):
             return
@@ -120,21 +146,9 @@ class Checker:
         if line.find(self._current_nocheck) != -1:
             return
 
-        # these are not functions
-        for prefix in ["\t", " ", "typedef", "__attribute__", "G_DEFINE_"]:
-            if line.startswith(prefix):
-                return
-
-        # ignore prototypes
-        if line.endswith(";"):
-            return
-
-        # strip to function name then test for validity
-        idx: int = line.find("(")
-        if idx == -1:
-            return
-        func_name = line[:idx]
-        if func_name.find(" ") != -1:
+        # parse
+        func_name: str = _find_func_name(line)
+        if not func_name:
             return
         if func_name.startswith("_"):
             self._test_line_function_names_private(func_name)
@@ -195,6 +209,7 @@ class Checker:
             "g_usb_device_set_interface_alt(": "Use fu_usb_device_set_interface_alt() instead",
             "g_ascii_strtoull(": "Use fu_strtoull() instead",
             "g_ascii_strtoll(": "Use fu_strtoll() instead",
+            "g_random_int_range(": "Use a predicatable token instead",
             "g_assert(": "Use g_set_error() or g_return_val_if_fail() instead",
             "g_udev_device_get_sysfs_attr(": "Use fu_udev_device_read_sysfs() instead",
             "g_udev_device_get_property(": "Use fu_udev_device_read_property() instead",
@@ -212,6 +227,18 @@ class Checker:
             "&= ~(1ull <<": "Use FU_BIT_CLEAR() instead",
             "__attribute__((packed))": "Use rustgen instead",
             "memcpy(": "Use fu_memcpy_safe or rustgen instead",
+            "GUINT16_FROM_BE(": "Use fu_memread_uint16_safe() or rustgen instead",
+            "GUINT16_FROM_LE(": "Use fu_memread_uint16_safe() or rustgen instead",
+            "GUINT16_TO_BE(": "Use fu_memwrite_uint16_safe() or rustgen instead",
+            "GUINT16_TO_LE(": "Use fu_memwrite_uint16_safe() or rustgen instead",
+            "GUINT32_FROM_BE(": "Use fu_memread_uint32_safe() or rustgen instead",
+            "GUINT32_FROM_LE(": "Use fu_memread_uint32_safe() or rustgen instead",
+            "GUINT32_TO_BE(": "Use fu_memwrite_uint32_safe() or rustgen instead",
+            "GUINT32_TO_LE(": "Use fu_memwrite_uint32_safe() or rustgen instead",
+            "GUINT64_FROM_BE(": "Use fu_memread_uint64_safe() or rustgen instead",
+            "GUINT64_FROM_LE(": "Use fu_memread_uint64_safe() or rustgen instead",
+            "GUINT64_TO_BE(": "Use fu_memwrite_uint64_safe() or rustgen instead",
+            "GUINT64_TO_LE(": "Use fu_memwrite_uint64_safe() or rustgen instead",
             " ioctl(": "Use fu_udev_device_ioctl() instead",
         }.items():
             if line.find(token) != -1:
@@ -223,7 +250,7 @@ class Checker:
         for linecnt, line in enumerate(lines):
             if line.find(self._current_nocheck) != -1:
                 continue
-            self._current_linecnt = linecnt
+            self._current_linecnt = linecnt + 1
 
             # do not use G_IO_ERROR internally
             if line.find("g_set_error") != -1:
@@ -237,6 +264,7 @@ class Checker:
     def _test_lines_function_length(self, lines: List[str]) -> None:
         self._current_nocheck = "nocheck:lines"
         func_begin: int = 0
+        func_name: Optional[str] = None
         for linecnt, line in enumerate(lines):
             if line.find(self._current_nocheck) != -1:
                 func_begin = 0
@@ -247,10 +275,25 @@ class Checker:
             if func_begin > 0 and line == "}":
                 self._current_linecnt = func_begin
                 if linecnt - func_begin > self.MAX_FUNCTION_LINES:
-                    self.add_failure(
-                        f"function is too long, was {linecnt - func_begin} of {self.MAX_FUNCTION_LINES}"
-                    )
+                    if func_name:
+                        self.add_failure(
+                            f"{func_name} is too long, was {linecnt - func_begin} of {self.MAX_FUNCTION_LINES}"
+                        )
+                    else:
+                        self.add_failure(
+                            f"function is too long, was {linecnt - func_begin} of {self.MAX_FUNCTION_LINES}"
+                        )
+                if func_name and linecnt - func_begin < 3:
+                    if func_name.endswith("_finalize"):
+                        self.add_failure(f"{func_name} is redundant and can be removed")
                 func_begin = 0
+                func_name = None
+                continue
+
+            # is a function?
+            func_name_tmp: Optional[str] = _find_func_name(line)
+            if func_name_tmp:
+                func_name = func_name_tmp
 
     def _test_lines_firmware_convert_version(self, lines: List[str]) -> None:
         self._current_nocheck = "nocheck:set-version"
@@ -274,7 +317,7 @@ class Checker:
         for linecnt, line in enumerate(lines):
             if line.find(self._current_nocheck) != -1:
                 continue
-            self._current_linecnt = linecnt
+            self._current_linecnt = linecnt + 1
             if line.find("fu_firmware_set_version(") != -1:
                 self.add_failure(
                     "Use FuFirmwareClass->convert_version rather than fu_firmware_set_version()"
@@ -303,7 +346,7 @@ class Checker:
         for linecnt, line in enumerate(lines):
             if line.find(self._current_nocheck) != -1:
                 continue
-            self._current_linecnt = linecnt
+            self._current_linecnt = linecnt + 1
             if line.find("fu_device_set_version(") != -1:
                 self.add_failure(
                     "Use FuDeviceClass->convert_version rather than fu_device_set_version()"
@@ -316,7 +359,7 @@ class Checker:
         for linecnt, line in enumerate(lines):
             if line.find(self._current_nocheck) != -1:
                 continue
-            self._current_linecnt = linecnt
+            self._current_linecnt = linecnt + 1
             for char in line:
                 if char == "{":
                     depth += 1
@@ -342,7 +385,7 @@ class Checker:
 
         # tests we can do line by line
         for linecnt, line in enumerate(lines):
-            self._current_linecnt = linecnt
+            self._current_linecnt = linecnt + 1
 
             # test for blocked functions
             self._test_line_blocked_fns(line)
@@ -371,7 +414,10 @@ class Checker:
     def test_file(self, fn: str) -> None:
         self._current_fn = fn
         with open(fn, "rb") as f:
-            self._test_lines(f.read().decode().split("\n"))
+            try:
+                self._test_lines(f.read().decode().split("\n"))
+            except UnicodeDecodeError as e:
+                print(f"failed to read {fn}: {e}")
 
 
 def test_files() -> int:
@@ -379,12 +425,25 @@ def test_files() -> int:
     rc: int = 0
 
     checker = Checker()
-    for fn in (
-        glob.glob("libfwupd/*.[c|h]")
-        + glob.glob("libfwupdplugin/*.[c|h]")
-        + glob.glob("plugins/*/*.[c|h]")
-        + glob.glob("src/*.[c|h]")
-    ):
+
+    # use any file specified in argv, falling back to scanning the entire tree
+    fns: List[str] = []
+    if len(sys.argv) > 1:
+        for fn in sys.argv[1:]:
+            try:
+                ext: str = fn.rsplit(".", maxsplit=1)[1]
+            except IndexError:
+                continue
+            if ext in ["c", "h"]:
+                fns.append(fn)
+    else:
+        fns.extend(glob.glob("libfwupd/*.[c|h]"))
+        fns.extend(glob.glob("libfwupdplugin/*.[c|h]"))
+        fns.extend(glob.glob("plugins/*/*.[c|h]"))
+        fns.extend(glob.glob("src/*.[c|h]"))
+    for fn in fns:
+        if os.path.basename(fn) == "check-source.py":
+            continue
         checker.test_file(fn)
 
     # show issues
