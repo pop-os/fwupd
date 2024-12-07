@@ -1,3 +1,9 @@
+fwupd (2.0.3-2) unstable; urgency=medium
+
+  * Correct a typo in flaky tests patch
+
+ -- Mario Limonciello <superm1@gmail.com>  Fri, 06 Dec 2024 21:08:22 -0600
+
 fwupd (2.0.3-1) unstable; urgency=medium
 
   [ Mario Limonciello ]
