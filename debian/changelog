@@ -1,3 +1,9 @@
+fwupd (2.0.3-3) unstable; urgency=medium
+
+  * Revert "Add trivial compile/link/run test for libfwupdplugin-dev"
+
+ -- Mario Limonciello <superm1@gmail.com>  Sat, 07 Dec 2024 10:47:50 -0600
+
 fwupd (2.0.3-2) unstable; urgency=medium
 
   * Correct a typo in flaky tests patch
