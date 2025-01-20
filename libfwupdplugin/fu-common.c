@@ -93,40 +93,6 @@ fu_cpu_get_vendor(void)
 }
 
 /**
- * fu_common_is_live_media:
- *
- * Checks if the user is running from a live media using various heuristics.
- *
- * Returns: %TRUE if live
- *
- * Since: 1.4.6
- **/
-gboolean
-fu_common_is_live_media(void)
-{
-	gsize bufsz = 0;
-	g_autofree gchar *buf = NULL;
-	g_auto(GStrv) tokens = NULL;
-	const gchar *args[] = {
-	    "rd.live.image",
-	    "boot=live",
-	    NULL, /* last entry */
-	};
-	if (g_file_test("/cdrom/.disk/info", G_FILE_TEST_EXISTS))
-		return TRUE;
-	if (!g_file_get_contents("/proc/cmdline", &buf, &bufsz, NULL))
-		return FALSE;
-	if (bufsz <= 1)
-		return FALSE;
-	tokens = fu_strsplit(buf, bufsz - 1, " ", -1);
-	for (guint i = 0; args[i] != NULL; i++) {
-		if (g_strv_contains((const gchar *const *)tokens, args[i]))
-			return TRUE;
-	}
-	return FALSE;
-}
-
-/**
  * fu_common_get_memory_size:
  *
  * Returns the size of physical memory.
@@ -193,6 +159,7 @@ fu_common_check_full_disk_encryption(GError **error)
 				    g_variant_get_bytestring(device));
 			return FALSE;
 		}
+		/* TODO identify Ubuntu Core FDE volumes */
 	}
 	return TRUE;
 }
@@ -356,4 +323,19 @@ void
 fu_xmlb_builder_insert_kb(XbBuilderNode *bn, const gchar *key, gboolean value)
 {
 	xb_builder_node_insert_text(bn, key, value ? "true" : "false", NULL);
+}
+
+/**
+ * fu_snap_is_in_snap:
+ *
+ * Check whether the current process is running inside a snap.
+ *
+ * Returns: TRUE if current process is running inside a snap.
+ *
+ * Since: 2.0.4
+ **/
+gboolean
+fu_snap_is_in_snap(void)
+{
+	return getenv("SNAP") != NULL;
 }

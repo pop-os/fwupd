@@ -356,9 +356,8 @@ fu_elanfp_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "offer");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "payload");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "offer");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99, "payload");
 
 	/* send offers */
 	for (i = 0; items[i].tag != NULL; i++) {
@@ -433,7 +432,6 @@ fu_elanfp_device_init(FuElanfpDevice *device)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SELF_RECOVERY);
 	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_USE_RUNTIME_VERSION);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_remove_delay(FU_DEVICE(self), 5000);
 	fu_device_add_protocol(FU_DEVICE(self), "tw.com.emc.elanfp");

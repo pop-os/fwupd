@@ -130,3 +130,67 @@ enum FuLogitechHidppBootloaderCmd {
     FlashRamInvalidOrder = 0xd4,
     WriteSignature = 0xe0,
 }
+
+// HID++1.0 error codes
+#[derive(ToString)]
+enum FuLogitechHidppErr {
+    Success,
+    InvalidSubid,
+    InvalidAddress,
+    InvalidValue,
+    ConnectFail,
+    TooManyDevices,
+    AlreadyExists,
+    Busy,
+    UnknownDevice,
+    ResourceError,
+    RequestUnavailable,
+    InvalidParamValue,
+    WrongPinCode,
+}
+
+// HID++2.0 error codes
+#[derive(ToString)]
+enum FuLogitechHidppErr2 {
+    NoError,
+    Unknown,
+    InvalidArgument,
+    OutOfRange,
+    HwError,
+    LogitechInternal,
+    InvalidFeatureIndex,
+    InvalidFunctionId,
+    Busy,
+    Unsupported,
+}
+
+#[derive(ToString)]
+enum FuLogitechHidppStatus {
+    Invalid,
+    PacketSuccess,
+    DfuSuccess,
+    WaitForEvent,
+    GenericError04,
+    DfuSuccessEntityRestartRequired,
+    DfuSuccessSystemRestartRequired,
+    GenericError10 = 0x10,
+    BadVoltage,
+    Unknown12,
+    UnsupportedEncryptionMode,
+    BadMagicString,
+    EraseFailure,
+    DfuNotStarted,
+    BadSequenceNumber,
+    UnsupportedCommand,
+    CommandInProgress,
+    AddressOutOfRange,
+    UnalignedAddress,
+    BadSize,
+    MissingProgramData,
+    MissingCheckData,
+    ProgramFailedToWrite,
+    ProgramFailedToVerify,
+    BadFirmware,
+    FirmwareCheckFailure,
+    BlockedCommand,
+}

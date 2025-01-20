@@ -10,11 +10,7 @@
 
 #include "fu-thunderbolt-common.h"
 #include "fu-thunderbolt-controller.h"
-
-typedef enum {
-	FU_THUNDERBOLT_CONTROLLER_KIND_DEVICE,
-	FU_THUNDERBOLT_CONTROLLER_KIND_HOST,
-} FuThunderboltControllerKind;
+#include "fu-thunderbolt-struct.h"
 
 struct _FuThunderboltController {
 	FuThunderboltDevice parent_instance;
@@ -47,20 +43,23 @@ fu_thunderbolt_controller_check_safe_mode(FuThunderboltController *self)
 	fu_device_set_metadata_boolean(FU_DEVICE(self), FU_DEVICE_METADATA_TBT_IS_SAFE_MODE, TRUE);
 }
 
-static const gchar *
-fu_thunderbolt_controller_kind_to_string(FuThunderboltController *self)
+static void
+fu_thunderbolt_controller_ensure_fallback_name(FuThunderboltController *self)
 {
 	if (self->controller_kind == FU_THUNDERBOLT_CONTROLLER_KIND_HOST) {
-		if (self->gen >= 4)
-			return "USB4 host controller";
-		return "Thunderbolt host controller";
+		if (self->gen >= 4) {
+			fu_device_set_name(FU_DEVICE(self), "USB4 host controller");
+			return;
+		}
+		fu_device_set_name(FU_DEVICE(self), "Thunderbolt host controller");
 	}
 	if (self->controller_kind == FU_THUNDERBOLT_CONTROLLER_KIND_DEVICE) {
-		if (self->gen >= 4)
-			return "USB4 device controller";
-		return "Thunderbolt device controller";
+		if (self->gen >= 4) {
+			fu_device_set_name(FU_DEVICE(self), "USB4 device controller");
+			return;
+		}
+		fu_device_set_name(FU_DEVICE(self), "Thunderbolt device controller");
 	}
-	return "Unknown";
 }
 
 static void
@@ -70,7 +69,7 @@ fu_thunderbolt_controller_to_string(FuDevice *device, guint idt, GString *str)
 	fwupd_codec_string_append(str,
 				  idt,
 				  "DeviceType",
-				  fu_thunderbolt_controller_kind_to_string(self));
+				  fu_thunderbolt_controller_kind_to_string(self->controller_kind));
 	fwupd_codec_string_append_bool(str, idt, "SafeMode", self->safe_mode);
 	fwupd_codec_string_append_bool(str, idt, "NativeMode", self->is_native);
 	fwupd_codec_string_append_int(str, idt, "Generation", self->gen);
@@ -81,22 +80,29 @@ fu_thunderbolt_controller_probe(FuDevice *device, GError **error)
 {
 	FuThunderboltController *self = FU_THUNDERBOLT_CONTROLLER(device);
 	g_autofree gchar *attr_unique_id = NULL;
-	g_autoptr(FuDevice) device_parent = NULL;
+	g_autofree gchar *prop_type = NULL;
 
 	/* FuUdevDevice->probe */
 	if (!FU_DEVICE_CLASS(fu_thunderbolt_controller_parent_class)->probe(device, error))
 		return FALSE;
 
 	/* determine if host controller or not */
-	device_parent =
-	    fu_device_get_backend_parent_with_subsystem(FU_DEVICE(self),
-							"thunderbolt:thunderbolt_domain",
-							NULL);
-	if (device_parent != NULL) {
-		g_autofree gchar *parent_name = g_path_get_basename(
-		    fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device_parent)));
-		if (g_str_has_prefix(parent_name, "domain"))
-			self->controller_kind = FU_THUNDERBOLT_CONTROLLER_KIND_HOST;
+	prop_type = fu_udev_device_read_property(FU_UDEV_DEVICE(self), "USB4_TYPE", NULL);
+	if (prop_type != NULL) {
+		self->controller_kind = fu_thunderbolt_controller_kind_from_string(prop_type);
+	} else {
+		g_autoptr(FuDevice) device_parent =
+		    fu_device_get_backend_parent_with_subsystem(FU_DEVICE(self),
+								"thunderbolt:thunderbolt_domain",
+								NULL);
+		if (device_parent != NULL) {
+			g_autofree gchar *parent_name = g_path_get_basename(
+			    fu_udev_device_get_sysfs_path(FU_UDEV_DEVICE(device_parent)));
+			if (g_str_has_prefix(parent_name, "domain"))
+				self->controller_kind = FU_THUNDERBOLT_CONTROLLER_KIND_HOST;
+			else
+				self->controller_kind = FU_THUNDERBOLT_CONTROLLER_KIND_DEVICE;
+		}
 	}
 
 	attr_unique_id = fu_udev_device_read_sysfs(FU_UDEV_DEVICE(device),
@@ -191,29 +197,24 @@ fu_thunderbolt_controller_setup_usb4(FuThunderboltController *self, GError **err
 	return TRUE;
 }
 
-static void
-fu_thunderbolt_controller_set_signed(FuDevice *device)
-{
-	FuThunderboltController *self = FU_THUNDERBOLT_CONTROLLER(device);
-	g_autofree gchar *prop_type = NULL;
-
-	/* if it's a USB4 type not of host and generation 3; it's Intel */
-	prop_type = fu_udev_device_read_property(FU_UDEV_DEVICE(self), "USB4_TYPE", NULL);
-	if (g_strcmp0(prop_type, "host") != 0 && self->gen == 3)
-		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
-}
-
 static gboolean
 fu_thunderbolt_controller_setup(FuDevice *device, GError **error)
 {
 	FuThunderboltController *self = FU_THUNDERBOLT_CONTROLLER(device);
 	guint16 did;
 	guint16 vid;
-	g_autofree gchar *attr_device_name = NULL;
 	g_autofree gchar *attr_nvm_authenticate_on_disconnect = NULL;
 	g_autofree gchar *attr_vendor_name = NULL;
 	g_autoptr(GError) error_gen = NULL;
 	g_autoptr(GError) error_version = NULL;
+
+	/* requires kernel 5.5 or later, non-fatal if not available */
+	self->gen =
+	    fu_thunderbolt_udev_get_attr_uint16(FU_UDEV_DEVICE(self), "generation", &error_gen);
+	if (self->gen == 0)
+		g_debug("unable to read generation: %s", error_gen->message);
+	if (self->gen >= 4)
+		fu_thunderbolt_device_set_retries(FU_THUNDERBOLT_DEVICE(self), 1);
 
 	/* try to read the version */
 	if (!fu_thunderbolt_device_get_version(FU_THUNDERBOLT_DEVICE(self), &error_version)) {
@@ -234,27 +235,21 @@ fu_thunderbolt_controller_setup(FuDevice *device, GError **error)
 	if (did == 0x0)
 		g_debug("failed to get Device ID");
 
-	/* requires kernel 5.5 or later, non-fatal if not available */
-	self->gen =
-	    fu_thunderbolt_udev_get_attr_uint16(FU_UDEV_DEVICE(self), "generation", &error_gen);
-	if (self->gen == 0)
-		g_debug("unable to read generation: %s", error_gen->message);
-
 	if (self->controller_kind == FU_THUNDERBOLT_CONTROLLER_KIND_HOST) {
 		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_INTERNAL);
 		fu_device_set_summary(device, "Unmatched performance for high-speed I/O");
 	} else {
-		attr_device_name =
+		g_autofree gchar *attr_device_name =
 		    fu_udev_device_read_sysfs(FU_UDEV_DEVICE(self),
 					      "device_name",
 					      FU_UDEV_DEVICE_ATTR_READ_TIMEOUT_DEFAULT,
 					      NULL);
+		fu_device_set_name(device, attr_device_name);
 	}
 
 	/* set the controller name */
-	if (attr_device_name == NULL)
-		attr_device_name = g_strdup(fu_thunderbolt_controller_kind_to_string(self));
-	fu_device_set_name(device, attr_device_name);
+	if (fu_device_get_name(device) == NULL)
+		fu_thunderbolt_controller_ensure_fallback_name(self);
 
 	/* set vendor string */
 	attr_vendor_name = fu_udev_device_read_sysfs(FU_UDEV_DEVICE(self),
@@ -342,7 +337,8 @@ fu_thunderbolt_controller_setup(FuDevice *device, GError **error)
 	}
 
 	/* set up signed payload attribute */
-	fu_thunderbolt_controller_set_signed(device);
+	if (self->controller_kind == FU_THUNDERBOLT_CONTROLLER_KIND_HOST && self->gen >= 3)
+		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);
 
 	/* success */
 	return TRUE;

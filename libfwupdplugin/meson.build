@@ -4,8 +4,10 @@ fwupdplugin_structs = [
   'fu-acpi-table.rs', # fuzzing
   'fu-archive.rs', # fuzzing
   'fu-cab.rs', # fuzzing
+  'fu-cfi.rs', # fuzzing
   'fu-cfu-firmware.rs', # fuzzing
   'fu-coswid.rs', # fuzzing
+  'fu-device.rs', # fuzzing
   'fu-dfu-firmware.rs', # fuzzing
   'fu-dpaux.rs', # fuzzing
   'fu-edid.rs', # fuzzing
@@ -16,11 +18,13 @@ fwupdplugin_structs = [
   'fu-hid.rs', # fuzzing
   'fu-ifd.rs', # fuzzing
   'fu-ifwi.rs', # fuzzing
+  'fu-ihex.rs', # fuzzing
   'fu-intel-thunderbolt.rs', # fuzzing
   'fu-io-channel.rs', # fuzzing
   'fu-msgpack.rs', # fuzzing
   'fu-oprom.rs', # fuzzing
   'fu-pefile.rs', # fuzzing
+  'fu-pci.rs', # fuzzing
   'fu-sbatlevel-section.rs', # fuzzing
   'fu-smbios.rs', # fuzzing
   'fu-usb-device-ds20.rs', # fuzzing
@@ -145,6 +149,7 @@ fwupdplugin_src = [
   'fu-path.c', # fuzzing
   'fu-pefile-firmware.c', # fuzzing
   'fu-pci-device.c',
+  'fu-oprom-device.c',
   'fu-plugin.c',
   'fu-progress.c', # fuzzing
   'fu-quirks.c', # fuzzing
@@ -275,6 +280,7 @@ fwupdplugin_headers = [
   'fu-mem.h',
   'fu-mem-private.h',
   'fu-msgpack-item.h',
+  'fu-oprom-device.h',
   'fu-oprom-firmware.h',
   'fu-partial-input-stream.h',
   'fu-partial-input-stream-private.h',

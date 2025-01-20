@@ -31,6 +31,7 @@
 #include "fu-efivars-private.h"
 #include "fu-lzma-common.h"
 #include "fu-plugin-private.h"
+#include "fu-progress-private.h"
 #include "fu-security-attrs-private.h"
 #include "fu-self-test-struct.h"
 #include "fu-smbios-private.h"
@@ -425,6 +426,25 @@ fu_common_crc_func(void)
 	g_assert_cmpint(fu_crc32(FU_CRC_KIND_B32_C, buf, sizeof(buf)), ==, 0x5A14B9F9);
 	g_assert_cmpint(fu_crc32(FU_CRC_KIND_B32_D, buf, sizeof(buf)), ==, 0x68AD8D3C);
 	g_assert_cmpint(fu_crc32(FU_CRC_KIND_B32_Q, buf, sizeof(buf)), ==, 0xE955C875);
+}
+
+static void
+fu_common_guid_func(void)
+{
+	gboolean ret;
+	guint8 buf[16] = {0};
+
+	ret = fu_common_guid_is_plausible(buf);
+	g_assert_false(ret);
+
+	buf[0] = 0x5;
+	ret = fu_common_guid_is_plausible(buf);
+	g_assert_false(ret);
+
+	for (guint i = 0; i < sizeof(buf); i++)
+		buf[i] = 0xFF;
+	ret = fu_common_guid_is_plausible(buf);
+	g_assert_true(ret);
 }
 
 static void
@@ -987,6 +1007,7 @@ fu_strsafe_func(void)
 	ret = fu_device_build_instance_id(dev, &error, "SUB", "KEY", NULL);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+	fu_device_convert_instance_ids(dev);
 	instance_ids = fu_device_get_instance_ids(dev);
 	g_assert_cmpint(instance_ids->len, ==, 1);
 	g_assert_cmpstr(g_ptr_array_index(instance_ids, 0), ==, "SUB\\KEY_LEN-VO");
@@ -1717,15 +1738,23 @@ fu_plugin_quirks_device_func(void)
 	fu_device_add_instance_id_full(device,
 				       "USB\\VID_0BDA&PID_1100",
 				       FU_DEVICE_INSTANCE_FLAG_GENERIC |
-					   FU_DEVICE_INSTANCE_FLAG_QUIRKS |
-					   FU_DEVICE_INSTANCE_FLAG_VISIBLE);
+					   FU_DEVICE_INSTANCE_FLAG_QUIRKS);
 	fu_device_add_instance_id(device, "USB\\VID_0BDA&PID_1100&CID_1234");
-	fu_device_convert_instance_ids(device);
 	g_assert_cmpstr(fu_device_get_name(device), ==, "Hub");
 
 	/* ensure the non-customer-id instance ID is not available */
-	g_assert_true(fu_device_has_instance_id(device, "USB\\VID_0BDA&PID_1100&CID_1234"));
-	g_assert_false(fu_device_has_instance_id(device, "USB\\VID_0BDA&PID_1100"));
+	g_assert_true(fu_device_has_instance_id(device,
+						"USB\\VID_0BDA&PID_1100&CID_1234",
+						FU_DEVICE_INSTANCE_FLAG_QUIRKS));
+	g_assert_true(fu_device_has_instance_id(device,
+						"USB\\VID_0BDA&PID_1100&CID_1234",
+						FU_DEVICE_INSTANCE_FLAG_VISIBLE));
+	g_assert_true(fu_device_has_instance_id(device,
+						"USB\\VID_0BDA&PID_1100",
+						FU_DEVICE_INSTANCE_FLAG_QUIRKS));
+	g_assert_false(fu_device_has_instance_id(device,
+						 "USB\\VID_0BDA&PID_1100",
+						 FU_DEVICE_INSTANCE_FLAG_VISIBLE));
 
 	/* ensure children are created */
 	children = fu_device_get_children(device);
@@ -1762,6 +1791,46 @@ fu_common_kernel_lockdown_func(void)
 	(void)g_setenv("FWUPD_SYSFSSECURITYDIR", none_dir, TRUE);
 	ret = fu_kernel_locked_down();
 	g_assert_false(ret);
+}
+
+static void
+fu_common_kernel_search_func(void)
+{
+	gboolean ret;
+	const gchar *expect = "/foo/bar";
+	g_autofree gchar *result1 = NULL;
+	g_autofree gchar *result2 = NULL;
+	g_autoptr(GError) error = NULL;
+
+#ifndef __linux__
+	g_test_skip("only works on Linux");
+	return;
+#endif
+
+	(void)g_setenv("FWUPD_FIRMWARESEARCH", "/dev/null", TRUE);
+	result1 = fu_kernel_get_firmware_search_path(&error);
+	g_assert_null(result1);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL);
+	g_clear_error(&error);
+
+	(void)g_setenv("FWUPD_FIRMWARESEARCH", "/tmp/fwupd-self-test/search_path", TRUE);
+	ret = fu_kernel_set_firmware_search_path(expect, &error);
+	g_assert_true(ret);
+	g_assert_no_error(error);
+
+	result1 = fu_kernel_get_firmware_search_path(&error);
+	g_assert_nonnull(result1);
+	g_assert_cmpstr(result1, ==, expect);
+	g_assert_no_error(error);
+
+	ret = fu_kernel_reset_firmware_search_path(&error);
+	g_assert_true(ret);
+	g_assert_no_error(error);
+
+	result2 = fu_kernel_get_firmware_search_path(&error);
+	g_assert_nonnull(result2);
+	g_assert_no_error(error);
+	g_assert_cmpstr(g_strchomp(result2), ==, "");
 }
 
 static gboolean
@@ -2390,6 +2459,41 @@ fu_device_incorporate_descendant_func(void)
 }
 
 static void
+fu_device_incorporate_non_generic_func(void)
+{
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuDevice) device = fu_device_new(ctx);
+	g_autoptr(FuDevice) donor = fu_device_new(ctx);
+
+	fu_device_add_instance_id_full(donor,
+				       "USB\\VID_273F&PID_1004",
+				       FU_DEVICE_INSTANCE_FLAG_GENERIC |
+					   FU_DEVICE_INSTANCE_FLAG_VISIBLE);
+	fu_device_add_instance_id_full(donor,
+				       "USB\\VID_273F&PID_1004&CID_1234",
+				       FU_DEVICE_INSTANCE_FLAG_VISIBLE);
+	fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_NO_GENERIC_GUIDS);
+	fu_device_incorporate(device, donor, FU_DEVICE_INCORPORATE_FLAG_INSTANCE_IDS);
+	g_assert_false(fu_device_has_instance_id(device,
+						 "USB\\VID_273F&PID_1004",
+						 FU_DEVICE_INSTANCE_FLAG_VISIBLE));
+	g_assert_true(fu_device_has_instance_id(device,
+						"USB\\VID_273F&PID_1004&CID_1234",
+						FU_DEVICE_INSTANCE_FLAG_VISIBLE));
+	fu_device_convert_instance_ids(device);
+	g_assert_false(fu_device_has_instance_id(device,
+						 "USB\\VID_273F&PID_1004",
+						 FU_DEVICE_INSTANCE_FLAG_VISIBLE));
+	g_assert_true(fu_device_has_instance_id(device,
+						"USB\\VID_273F&PID_1004&CID_1234",
+						FU_DEVICE_INSTANCE_FLAG_VISIBLE));
+	g_assert_false(
+	    fwupd_device_has_instance_id(FWUPD_DEVICE(device), "USB\\VID_273F&PID_1004"));
+	g_assert_true(
+	    fwupd_device_has_instance_id(FWUPD_DEVICE(device), "USB\\VID_273F&PID_1004&CID_1234"));
+}
+
+static void
 fu_device_incorporate_flag_func(void)
 {
 	g_autoptr(FuContext) ctx = fu_context_new();
@@ -2433,6 +2537,8 @@ fu_device_incorporate_func(void)
 	fu_device_add_instance_str(donor, "VID", "0A5C");
 	fu_device_add_instance_u16(donor, "PID", 0x6412);
 	fu_device_add_instance_u32(donor, "BOARD_ID", 0x12345678);
+	fu_device_register_private_flag(donor, "self-test");
+	fu_device_add_private_flag(donor, "self-test");
 
 	/* match a quirk entry, and then clear to ensure encorporate uses the quirk instance ID */
 	ret = fu_device_build_instance_id_full(donor,
@@ -2472,7 +2578,8 @@ fu_device_incorporate_func(void)
 	ret = fu_device_build_instance_id(device, &error, "USB", "VID", NULL);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	g_assert_true(fu_device_has_instance_id(device, "USB\\VID_0A5C"));
+	g_assert_true(
+	    fu_device_has_instance_id(device, "USB\\VID_0A5C", FU_DEVICE_INSTANCE_FLAG_VISIBLE));
 	g_assert_cmpstr(fu_device_get_custom_flags(device), ==, "ignore-runtime");
 }
 
@@ -2967,6 +3074,7 @@ fu_common_version_func(void)
 	    {0xffffffff, "18.31.255.65535", FWUPD_VERSION_FORMAT_INTEL_ME},
 	    {0x0b32057a, "11.11.50.1402", FWUPD_VERSION_FORMAT_INTEL_ME},
 	    {0xb8320d84, "11.8.50.3460", FWUPD_VERSION_FORMAT_INTEL_ME2},
+	    {0x00000741, "19.0.0.1857", FWUPD_VERSION_FORMAT_INTEL_CSME19},
 	    {0x226a4b00, "137.2706.768", FWUPD_VERSION_FORMAT_SURFACE_LEGACY},
 	    {0x6001988, "6.25.136", FWUPD_VERSION_FORMAT_SURFACE},
 	    {0x00ff0001, "255.0.1", FWUPD_VERSION_FORMAT_DELL_BIOS},
@@ -5209,6 +5317,32 @@ fu_progress_finish_func(void)
 }
 
 static void
+fu_progress_global_fraction_func(void)
+{
+	FuProgress *child;
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+
+	/* sanity check */
+	fu_progress_set_steps(progress, 100);
+	g_assert_cmpfloat_with_epsilon(fu_progress_get_global_fraction(progress), 1.f, 0.001);
+
+	/* 1% */
+	child = fu_progress_get_child(progress);
+	g_assert_cmpfloat_with_epsilon(fu_progress_get_global_fraction(child), 0.01f, 0.001);
+
+	/* 0.01% */
+	fu_progress_set_id(child, G_STRLOC);
+	fu_progress_set_steps(child, 100);
+	fu_progress_step_done(child);
+	fu_progress_step_done(child);
+	fu_progress_step_done(child);
+	fu_progress_finished(child);
+
+	/* done */
+	fu_progress_finished(progress);
+}
+
+static void
 fu_progress_child_finished(void)
 {
 	FuProgress *child;
@@ -5225,6 +5359,48 @@ fu_progress_child_finished(void)
 	/* parent step done after child finish */
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_CHILD_FINISHED);
 	fu_progress_step_done(progress);
+}
+
+static void
+fu_partial_input_stream_composite_func(void)
+{
+	gboolean ret;
+	gint rc;
+	guint8 buf[4] = {0};
+	g_autoptr(GBytes) blob = g_bytes_new_static("12345678", 8);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GInputStream) composite_stream = fu_composite_input_stream_new();
+	g_autoptr(GInputStream) partial_stream = NULL;
+
+	fu_composite_input_stream_add_bytes(FU_COMPOSITE_INPUT_STREAM(composite_stream), blob);
+
+	/* limit to '34' */
+	partial_stream = fu_partial_input_stream_new(composite_stream, 2, 2, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(partial_stream);
+
+	/* seek to the start of the partial input stream */
+	ret = g_seekable_seek(G_SEEKABLE(partial_stream), 0x0, G_SEEK_SET, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(g_seekable_tell(G_SEEKABLE(composite_stream)), ==, 0x2);
+	g_assert_cmpint(g_seekable_tell(G_SEEKABLE(partial_stream)), ==, 0x0);
+
+	/* read the 34 */
+	rc = g_input_stream_read(partial_stream, buf, sizeof(buf), NULL, &error);
+	g_assert_no_error(error);
+	g_assert_cmpint(rc, ==, 2);
+	g_assert_cmpint(buf[0], ==, '3');
+	g_assert_cmpint(buf[1], ==, '4');
+	g_assert_cmpint(g_seekable_tell(G_SEEKABLE(composite_stream)), ==, 0x4);
+	g_assert_cmpint(g_seekable_tell(G_SEEKABLE(partial_stream)), ==, 0x2);
+
+	/* there is no more data to read */
+	rc = g_input_stream_read(partial_stream, buf, sizeof(buf), NULL, &error);
+	g_assert_no_error(error);
+	g_assert_cmpint(rc, ==, 0);
+	g_assert_cmpint(g_seekable_tell(G_SEEKABLE(composite_stream)), ==, 0x4);
+	g_assert_cmpint(g_seekable_tell(G_SEEKABLE(partial_stream)), ==, 0x2);
 }
 
 static void
@@ -5570,13 +5746,6 @@ fu_composite_input_stream_func(void)
 	g_assert_no_error(error);
 	g_assert_cmpint(rc, ==, 1);
 	g_assert_cmpint(buf[0], ==, 'g');
-
-	/* dump entire composite stream */
-	blob4 = fu_input_stream_read_bytes(composite_stream, 0x0, G_MAXUINT32, NULL, &error);
-	g_assert_no_error(error);
-	g_assert_nonnull(blob4);
-	g_assert_cmpint(g_bytes_get_size(blob4), ==, 7);
-	g_assert_cmpint(memcmp(g_bytes_get_data(blob4, NULL), "abcdefg", 7), ==, 0);
 }
 
 static gboolean
@@ -5606,13 +5775,13 @@ fu_strsplit_stream_func(void)
 	/* check includes NUL */
 	g_assert_cmpint(sizeof(str1), ==, 14);
 
-	stream1 = G_INPUT_STREAM(g_memory_input_stream_new_from_data(str1, sizeof(str1), NULL));
+	stream1 = G_INPUT_STREAM(g_memory_input_stream_new_from_data(str1, strlen(str1), NULL));
 	ret = fu_strsplit_stream(stream1, 0x0, " ", fu_strsplit_stream_cb, &cnt1, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	g_assert_cmpint(cnt1, ==, 2);
 
-	stream2 = G_INPUT_STREAM(g_memory_input_stream_new_from_data(str2, sizeof(str2), NULL));
+	stream2 = G_INPUT_STREAM(g_memory_input_stream_new_from_data(str2, strlen(str2), NULL));
 	ret = fu_strsplit_stream(stream2, 0x0, "123", fu_strsplit_stream_cb, &cnt2, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6177,6 +6346,8 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/input-stream{find}", fu_input_stream_find_func);
 	g_test_add_func("/fwupd/partial-input-stream", fu_partial_input_stream_func);
 	g_test_add_func("/fwupd/partial-input-stream{simple}", fu_partial_input_stream_simple_func);
+	g_test_add_func("/fwupd/partial-input-stream{composite}",
+			fu_partial_input_stream_composite_func);
 	g_test_add_func("/fwupd/composite-input-stream", fu_composite_input_stream_func);
 	g_test_add_func("/fwupd/struct", fu_plugin_struct_func);
 	g_test_add_func("/fwupd/struct{bits}", fu_plugin_struct_bits_func);
@@ -6198,6 +6369,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/progress{parent-1-step}", fu_progress_parent_one_step_proxy_func);
 	g_test_add_func("/fwupd/progress{no-equal}", fu_progress_non_equal_steps_func);
 	g_test_add_func("/fwupd/progress{finish}", fu_progress_finish_func);
+	g_test_add_func("/fwupd/progress{global-fraction}", fu_progress_global_fraction_func);
 	g_test_add_func("/fwupd/bios-attrs{load}", fu_bios_settings_load_func);
 	g_test_add_func("/fwupd/security-attrs{hsi}", fu_security_attrs_hsi_func);
 	g_test_add_func("/fwupd/security-attrs{compare}", fu_security_attrs_compare_func);
@@ -6225,6 +6397,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{bitwise}", fu_common_bitwise_func);
 	g_test_add_func("/fwupd/common{byte-array}", fu_common_byte_array_func);
 	g_test_add_func("/fwupd/common{crc}", fu_common_crc_func);
+	g_test_add_func("/fwupd/common{guid}", fu_common_guid_func);
 	g_test_add_func("/fwupd/common{string-append-kv}", fu_string_append_func);
 	g_test_add_func("/fwupd/common{version-guess-format}", fu_version_guess_format_func);
 	g_test_add_func("/fwupd/common{strtoull}", fu_strtoull_func);
@@ -6236,6 +6409,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{endian}", fu_common_endian_func);
 	g_test_add_func("/fwupd/common{bytes-get-data}", fu_common_bytes_get_data_func);
 	g_test_add_func("/fwupd/common{kernel-lockdown}", fu_common_kernel_lockdown_func);
+	g_test_add_func("/fwupd/common{kernel-search}", fu_common_kernel_search_func);
 	g_test_add_func("/fwupd/common{strsafe}", fu_strsafe_func);
 	g_test_add_func("/fwupd/msgpack", fu_msgpack_func);
 	g_test_add_func("/fwupd/msgpack{binary-stream}", fu_msgpack_binary_stream_func);
@@ -6299,6 +6473,8 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/device{children}", fu_device_children_func);
 	g_test_add_func("/fwupd/device{incorporate}", fu_device_incorporate_func);
 	g_test_add_func("/fwupd/device{incorporate-flag}", fu_device_incorporate_flag_func);
+	g_test_add_func("/fwupd/device{incorporate-non-generic}",
+			fu_device_incorporate_non_generic_func);
 	g_test_add_func("/fwupd/device{incorporate-descendant}",
 			fu_device_incorporate_descendant_func);
 	if (g_test_slow())

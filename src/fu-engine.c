@@ -1368,6 +1368,7 @@ fu_engine_get_component_by_guids(FuEngine *self, FuDevice *device)
 {
 	GPtrArray *guids = fu_device_get_guids(device);
 	XbNode *component = NULL;
+	fu_device_convert_instance_ids(device);
 	for (guint i = 0; i < guids->len; i++) {
 		const gchar *guid = g_ptr_array_index(guids, i);
 		component = fu_engine_get_component_by_guid(self, guid);
@@ -1834,6 +1835,31 @@ fu_engine_add_report_metadata_bool(GHashTable *hash, const gchar *key, gboolean 
 	g_hash_table_insert(hash, g_strdup(key), g_strdup(value ? "True" : "False"));
 }
 
+#ifdef HAVE_PASSIM
+static void
+fu_engine_ensure_passim_client(FuEngine *self)
+{
+	g_autoptr(GError) error_local = NULL;
+
+	/* disabled */
+	if (fu_engine_config_get_p2p_policy(self->config) == FU_P2P_POLICY_NOTHING)
+		return;
+
+	/* already loaded */
+	if (passim_client_get_version(self->passim_client) != NULL)
+		return;
+
+	/* connect to passimd */
+	if (!passim_client_load(self->passim_client, &error_local))
+		g_debug("failed to load Passim: %s", error_local->message);
+	if (passim_client_get_version(self->passim_client) != NULL) {
+		fu_engine_add_runtime_version(self,
+					      "org.freedesktop.Passim",
+					      passim_client_get_version(self->passim_client));
+	}
+}
+#endif
+
 GHashTable *
 fu_engine_get_report_metadata(FuEngine *self, GError **error)
 {
@@ -1886,6 +1912,7 @@ fu_engine_get_report_metadata(FuEngine *self, GError **error)
 
 #ifdef HAVE_PASSIM
 	/* this is useful to know if passim support is actually helping bandwidth use */
+	fu_engine_ensure_passim_client(self);
 	g_hash_table_insert(
 	    hash,
 	    g_strdup("PassimDownloadSaving"),
@@ -2070,6 +2097,9 @@ fu_engine_publish_release(FuEngine *self, FuRelease *release, GError **error)
 #ifdef HAVE_PASSIM
 	FuDevice *device = fu_release_get_device(release);
 	GInputStream *stream = fu_release_get_stream(release);
+
+	/* lazy load */
+	fu_engine_ensure_passim_client(self);
 
 	/* send to passimd, if enabled and running */
 	if (passim_client_get_version(self->passim_client) != NULL &&
@@ -2737,6 +2767,7 @@ fu_engine_device_check_power(FuEngine *self,
 
 	/* not enough just in case */
 	if (!fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_IGNORE_SYSTEM_POWER) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED) &&
 	    fu_context_get_battery_level(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
 	    fu_context_get_battery_threshold(self->ctx) != FWUPD_BATTERY_LEVEL_INVALID &&
 	    fu_context_get_battery_level(self->ctx) < fu_context_get_battery_threshold(self->ctx)) {
@@ -4159,6 +4190,9 @@ fu_engine_update_metadata_bytes(FuEngine *self,
 		return FALSE;
 
 #ifdef HAVE_PASSIM
+	/* lazy load */
+	fu_engine_ensure_passim_client(self);
+
 	/* send to passimd, if enabled and running */
 	if (passim_client_get_version(self->passim_client) != NULL &&
 	    fwupd_remote_get_username(remote) == NULL &&
@@ -4336,8 +4370,9 @@ fu_engine_get_result_from_component(FuEngine *self,
 		}
 
 		/* add GUID */
-		fu_device_add_guid(dev, guid);
+		fu_device_add_instance_id(dev, guid);
 	}
+	fu_device_convert_instance_ids(dev);
 	if (fu_device_get_guids(dev)->len == 0) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
@@ -5167,7 +5202,8 @@ fu_engine_get_releases(FuEngine *self,
 
 	/* dedupe by container checksum */
 	if (fu_engine_config_get_release_dedupe(self->config)) {
-		g_autoptr(GHashTable) checksums = g_hash_table_new(g_str_hash, g_str_equal);
+		g_autoptr(GHashTable) checksums =
+		    g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 		releases_deduped = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 		for (guint i = 0; i < releases->len; i++) {
 			FuRelease *rel = g_ptr_array_index(releases, i);
@@ -5177,11 +5213,13 @@ fu_engine_get_releases(FuEngine *self,
 			/* find existing */
 			for (guint j = 0; j < csums->len; j++) {
 				const gchar *csum = g_ptr_array_index(csums, j);
-				if (g_hash_table_contains(checksums, csum)) {
+				g_autofree gchar *key =
+				    g_strdup_printf("%s:%s", csum, fu_release_get_version(rel));
+				if (g_hash_table_contains(checksums, key)) {
 					found = TRUE;
 					break;
 				}
-				g_hash_table_add(checksums, (gpointer)csum);
+				g_hash_table_add(checksums, g_steal_pointer(&key));
 			}
 			if (found) {
 				g_debug("found higher priority release for %s, skipping",
@@ -6013,8 +6051,12 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 	GPtrArray *device_guids;
 	g_autoptr(XbNode) component = NULL;
 
-	/* device has no GUIDs set! */
+	/* make tests easier */
 	device_guids = fu_device_get_guids(device);
+	if (device_guids->len == 0)
+		fu_device_convert_instance_ids(device);
+
+	/* device still has no GUIDs set! */
 	if (device_guids->len == 0) {
 		g_warning("no GUIDs for device %s [%s]",
 			  fu_device_get_name(device),
@@ -6046,19 +6088,6 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 			  fu_device_get_id(device),
 			  fu_device_get_name(device));
 	}
-
-#ifndef SUPPORTED_BUILD
-	/* we don't know if this device has a signed or unsigned payload */
-	if (fu_device_is_updatable(device) &&
-	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD) &&
-	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD) &&
-	    !fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED)) {
-		g_critical("%s [%s] does not declare signed/unsigned payload -- perhaps add "
-			   "fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);",
-			   fu_device_get_plugin(device),
-			   fu_device_get_id(device));
-	}
-#endif
 
 	/* if this device is locked get some metadata from AppStream */
 	component = fu_engine_get_component_by_guids(self, device);
@@ -6117,6 +6146,19 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 
 	/* create new device */
 	fu_device_list_add(self->device_list, device);
+
+#ifndef SUPPORTED_BUILD
+	/* we don't know if this device has a signed or unsigned payload */
+	if (fu_device_is_updatable(device) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD) &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD) &&
+	    !fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED)) {
+		g_critical("%s [%s] does not declare signed/unsigned payload -- perhaps add "
+			   "fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);",
+			   fu_device_get_plugin(device),
+			   fu_device_get_id(device));
+	}
+#endif
 
 	/* clean up any state only valid for ->probe */
 	fu_device_probe_complete(device);
@@ -6965,6 +7007,8 @@ fu_engine_load_plugins_builtins(FuEngine *self, FuProgress *progress)
 	/* count possible steps */
 	for (guint i = 0; fu_plugin_externals[i] != NULL; i++)
 		steps++;
+	if (steps == 0)
+		return;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -7294,8 +7338,6 @@ fu_engine_backend_device_added_run_plugins(FuEngine *self, FuDevice *device, FuP
 static void
 fu_engine_backend_device_added(FuEngine *self, FuDevice *device, FuProgress *progress)
 {
-	g_autofree gchar *str1 = NULL;
-	g_autofree gchar *str2 = NULL;
 	g_autoptr(GError) error_local = NULL;
 
 	/* progress */
@@ -7306,8 +7348,10 @@ fu_engine_backend_device_added(FuEngine *self, FuDevice *device, FuProgress *pro
 	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 50, "query-possible-plugins");
 
 	/* super useful for plugin development */
-	str1 = fu_device_to_string(FU_DEVICE(device));
-	g_debug("%s added %s", fu_device_get_backend_id(device), str1);
+	if (g_getenv("FWUPD_VERBOSE") != NULL) {
+		g_autofree gchar *str = fu_device_to_string(FU_DEVICE(device));
+		g_debug("%s added %s", fu_device_get_backend_id(device), str);
+	}
 
 	/* add any extra quirks */
 	fu_device_set_context(device, self->ctx);
@@ -7331,8 +7375,10 @@ fu_engine_backend_device_added(FuEngine *self, FuDevice *device, FuProgress *pro
 	fu_engine_ensure_device_emulation_tag(self, device);
 
 	/* super useful for plugin development */
-	str2 = fu_device_to_string(FU_DEVICE(device));
-	g_debug("%s added %s", fu_device_get_backend_id(device), str2);
+	if (g_getenv("FWUPD_VERBOSE") != NULL) {
+		g_autofree gchar *str = fu_device_to_string(FU_DEVICE(device));
+		g_debug("%s added %s", fu_device_get_backend_id(device), str);
+	}
 
 	/* if this is for firmware attributes, reload that part of the daemon */
 	fu_engine_check_firmware_attributes(self, device, TRUE);
@@ -7384,6 +7430,8 @@ fu_engine_backend_device_changed_cb(FuBackend *backend, FuDevice *device, FuEngi
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device_tmp = g_ptr_array_index(devices, i);
 		if (!fu_device_has_flag(device_tmp, FWUPD_DEVICE_FLAG_EMULATED))
+			continue;
+		if (!fu_device_has_flag(device_tmp, FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG))
 			continue;
 		if (g_strcmp0(fu_device_get_backend_id(device_tmp),
 			      fu_device_get_backend_id(device)) == 0) {
@@ -7864,10 +7912,6 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	g_autoptr(GError) error_quirks = NULL;
 	g_autoptr(GError) error_json_devices = NULL;
 	g_autoptr(GError) error_local = NULL;
-#ifdef HAVE_PASSIM
-	g_autoptr(GError) error_passim = NULL;
-#endif
-	g_autoptr(GString) str = g_string_new(NULL);
 
 	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
 	g_return_val_if_fail(FU_IS_PROGRESS(progress), FALSE);
@@ -8202,17 +8246,20 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	}
 
 	/* dump plugin information to the console */
-	for (guint i = 0; i < backends->len; i++) {
-		FuBackend *backend = g_ptr_array_index(backends, i);
-		fu_backend_add_string(backend, 0, str);
+	if (g_getenv("FWUPD_VERBOSE") != NULL) {
+		g_autoptr(GString) str = g_string_new(NULL);
+		for (guint i = 0; i < backends->len; i++) {
+			FuBackend *backend = g_ptr_array_index(backends, i);
+			fu_backend_add_string(backend, 0, str);
+		}
+		for (guint i = 0; i < plugins->len; i++) {
+			FuPlugin *plugin = g_ptr_array_index(plugins, i);
+			if (fu_plugin_has_flag(plugin, FWUPD_PLUGIN_FLAG_DISABLED))
+				continue;
+			fu_plugin_add_string(plugin, 0, str);
+		}
+		g_info("%s", str->str);
 	}
-	for (guint i = 0; i < plugins->len; i++) {
-		FuPlugin *plugin = g_ptr_array_index(plugins, i);
-		if (fu_plugin_has_flag(plugin, FWUPD_PLUGIN_FLAG_DISABLED))
-			continue;
-		fu_plugin_add_string(plugin, 0, str);
-	}
-	g_info("%s", str->str);
 
 	/* update the db for devices that were updated during the reboot */
 	if (!fu_engine_update_history_database(self, error))
@@ -8222,17 +8269,6 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	/* update the devices JSON file */
 	if (!fu_engine_update_devices_file(self, &error_json_devices))
 		g_info("failed to update list of devices: %s", error_json_devices->message);
-
-#ifdef HAVE_PASSIM
-	/* connect to passimd */
-	if (!passim_client_load(self->passim_client, &error_passim))
-		g_debug("failed to load Passim: %s", error_passim->message);
-	if (passim_client_get_version(self->passim_client) != NULL) {
-		fu_engine_add_runtime_version(self,
-					      "org.freedesktop.Passim",
-					      passim_client_get_version(self->passim_client));
-	}
-#endif
 
 	fu_engine_set_status(self, FWUPD_STATUS_IDLE);
 	self->loaded = TRUE;

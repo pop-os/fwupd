@@ -23,7 +23,6 @@ typedef struct {
 	guint8 device_idx;
 	guint16 hidpp_pid;
 	guint8 hidpp_version;
-	FuIOChannel *io_channel;
 	gchar *model_id;
 	GPtrArray *feature_index; /* of FuLogitechHidppHidppMap */
 } FuLogitechHidppDevicePrivate;
@@ -146,7 +145,7 @@ fu_logitech_hidpp_device_ping(FuLogitechHidppDevice *self, GError **error)
 	msg->data[1] = 0x00;
 	msg->data[2] = 0xaa; /* user-selected value */
 	msg->hidpp_version = priv->hidpp_version;
-	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, &error_local)) {
+	if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, &error_local)) {
 		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
 			priv->hidpp_version = 1;
 			return TRUE;
@@ -185,20 +184,6 @@ fu_logitech_hidpp_device_ping(FuLogitechHidppDevice *self, GError **error)
 }
 
 static gboolean
-fu_logitech_hidpp_device_close(FuDevice *device, GError **error)
-{
-	FuLogitechHidppDevice *self = FU_HIDPP_DEVICE(device);
-	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
-
-	if (priv->io_channel != NULL) {
-		if (!fu_io_channel_shutdown(priv->io_channel, error))
-			return FALSE;
-		g_clear_object(&priv->io_channel);
-	}
-	return TRUE;
-}
-
-static gboolean
 fu_logitech_hidpp_device_poll(FuDevice *device, GError **error)
 {
 	FuLogitechHidppDevice *self = FU_HIDPP_DEVICE(device);
@@ -216,7 +201,7 @@ fu_logitech_hidpp_device_poll(FuDevice *device, GError **error)
 	/* flush pending data */
 	msg->device_id = priv->device_idx;
 	msg->hidpp_version = priv->hidpp_version;
-	if (!fu_logitech_hidpp_receive(priv->io_channel, msg, timeout, &error_local)) {
+	if (!fu_logitech_hidpp_receive(FU_UDEV_DEVICE(self), msg, timeout, &error_local)) {
 		if (!g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT)) {
 			g_warning("failed to get pending read: %s", error_local->message);
 			return TRUE;
@@ -243,33 +228,6 @@ fu_logitech_hidpp_device_poll(FuDevice *device, GError **error)
 	}
 
 	/* success */
-	return TRUE;
-}
-
-static gboolean
-fu_logitech_hidpp_device_open(FuDevice *device, GError **error)
-{
-	FuLogitechHidppDevice *self = FU_HIDPP_DEVICE(device);
-	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
-	const gchar *devpath = fu_udev_device_get_device_file(FU_UDEV_DEVICE(device));
-
-	if (devpath == NULL) {
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "device path is not detected for '%s'",
-			    fu_device_get_name(device));
-		return FALSE;
-	}
-
-	/* open */
-	priv->io_channel =
-	    fu_io_channel_new_file(devpath,
-				   FU_IO_CHANNEL_OPEN_FLAG_READ | FU_IO_CHANNEL_OPEN_FLAG_WRITE,
-				   error);
-	if (priv->io_channel == NULL)
-		return FALSE;
-
 	return TRUE;
 }
 
@@ -349,7 +307,7 @@ fu_logitech_hidpp_device_create_radio_child(FuLogitechHidppDevice *self,
 	    g_strdup_printf("%s-%s", fu_device_get_logical_id(FU_DEVICE(self)), priv->model_id);
 	fu_device_set_logical_id(FU_DEVICE(radio), logical_id);
 	instance_id = g_strdup_printf("HIDRAW\\VEN_%04X&MOD_%s&ENT_05",
-				      (guint)FU_LOGITECH_HIDPP_DEVICE_VID,
+				      fu_device_get_vid(FU_DEVICE(self)),
 				      priv->model_id);
 	fu_device_add_instance_id(FU_DEVICE(radio), instance_id);
 	fu_device_set_version(FU_DEVICE(radio), radio_version);
@@ -393,7 +351,7 @@ fu_logitech_hidpp_device_fetch_firmware_info(FuLogitechHidppDevice *self, GError
 	msg_count->sub_id = idx;
 	msg_count->function_id = 0x00 << 4; /* getCount */
 	msg_count->hidpp_version = priv->hidpp_version;
-	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg_count, error)) {
+	if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg_count, error)) {
 		g_prefix_error(error, "failed to get firmware count: ");
 		return FALSE;
 	}
@@ -413,7 +371,7 @@ fu_logitech_hidpp_device_fetch_firmware_info(FuLogitechHidppDevice *self, GError
 		msg->function_id = 0x01 << 4; /* getInfo */
 		msg->hidpp_version = priv->hidpp_version;
 		msg->data[0] = i;
-		if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+		if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 			g_prefix_error(error, "failed to get firmware info: ");
 			return FALSE;
 		}
@@ -471,6 +429,7 @@ fu_logitech_hidpp_device_fetch_model_id(FuLogitechHidppDevice *self, GError **er
 {
 	FuLogitechHidppDevicePrivate *priv = GET_PRIVATE(self);
 	guint8 idx;
+	guint64 pid_tmp = 0;
 	g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
 	g_autoptr(GString) str = g_string_new(NULL);
 
@@ -485,7 +444,7 @@ fu_logitech_hidpp_device_fetch_model_id(FuLogitechHidppDevice *self, GError **er
 	msg->sub_id = idx;
 	msg->function_id = 0x00 << 4; /* getDeviceInfo */
 	msg->hidpp_version = priv->hidpp_version;
-	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+	if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 		g_prefix_error(error, "failed to get the model ID: ");
 		return FALSE;
 	}
@@ -495,8 +454,16 @@ fu_logitech_hidpp_device_fetch_model_id(FuLogitechHidppDevice *self, GError **er
 		g_string_append_printf(str, "%02X", msg->data[i]);
 	fu_logitech_hidpp_device_set_model_id(self, str->str);
 
+	/* truncate to 4 chars and convert to a PID */
+	g_string_set_size(str, 4);
+	if (!fu_strtoull(str->str, &pid_tmp, 0, G_MAXUINT32, FU_INTEGER_BASE_16, error)) {
+		g_prefix_error(error, "failed to parse the model ID: ");
+		return FALSE;
+	}
+	fu_device_set_pid(FU_DEVICE(self), (guint32)pid_tmp);
+
 	/* add one more instance ID */
-	fu_device_add_instance_u16(FU_DEVICE(self), "VEN", FU_LOGITECH_HIDPP_DEVICE_VID);
+	fu_device_add_instance_u16(FU_DEVICE(self), "VEN", fu_device_get_vid(FU_DEVICE(self)));
 	fu_device_add_instance_str(FU_DEVICE(self), "MOD", priv->model_id);
 	return fu_device_build_instance_id(FU_DEVICE(self), error, "HIDRAW", "VEN", "MOD", NULL);
 }
@@ -522,14 +489,14 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidppDevice *self, GError
 			msg->sub_id = idx;
 			msg->function_id = 0x00 << 4; /* get_capabilities */
 			msg->hidpp_version = priv->hidpp_version;
-			if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+			if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 				g_prefix_error(error, "failed to get battery info: ");
 				return FALSE;
 			}
 			if (msg->data[1] & 0x02)
 				socc = TRUE;
 			msg->function_id = 0x01 << 4; /* get_status */
-			if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+			if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 				g_prefix_error(error, "failed to get battery info: ");
 				return FALSE;
 			}
@@ -568,7 +535,7 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidppDevice *self, GError
 			msg->sub_id = idx;
 			msg->function_id = 0x00 << 4; /* GetBatteryLevelStatus */
 			msg->hidpp_version = priv->hidpp_version;
-			if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+			if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 				g_prefix_error(error, "failed to get battery info: ");
 				return FALSE;
 			}
@@ -586,7 +553,7 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidppDevice *self, GError
 		msg->sub_id = FU_LOGITECH_HIDPP_SUBID_GET_REGISTER;
 		msg->function_id = FU_LOGITECH_HIDPP_REGISTER_BATTERY_MILEAGE << 4;
 		msg->hidpp_version = priv->hidpp_version;
-		if (fu_logitech_hidpp_transfer(priv->io_channel, msg, NULL)) {
+		if (fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, NULL)) {
 			if (msg->data[0] != 0x7F)
 				fu_device_set_battery_level(FU_DEVICE(self), msg->data[0]);
 			else
@@ -596,7 +563,7 @@ fu_logitech_hidpp_device_fetch_battery_level(FuLogitechHidppDevice *self, GError
 
 		/* try HID++1.0 battery status instead */
 		msg->function_id = FU_LOGITECH_HIDPP_REGISTER_BATTERY_STATUS << 4;
-		if (fu_logitech_hidpp_transfer(priv->io_channel, msg, NULL)) {
+		if (fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, NULL)) {
 			switch (msg->data[0]) {
 			case 1: /* 0 - 10 */
 				fu_device_set_battery_level(FU_DEVICE(self), 5);
@@ -640,7 +607,7 @@ fu_logitech_hidpp_device_feature_search(FuLogitechHidppDevice *self,
 	msg->data[1] = feature;
 	msg->data[2] = 0x00;
 	msg->hidpp_version = priv->hidpp_version;
-	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+	if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 		g_prefix_error(error,
 			       "failed to get idx for feature %s [0x%04x]: ",
 			       fu_logitech_hidpp_feature_to_string(feature),
@@ -692,10 +659,20 @@ fu_logitech_hidpp_device_probe(FuDevice *device, GError **error)
 		fu_device_set_logical_id(device, id_str->str);
 	}
 
-	/* this is a non-standard extension */
-	fu_device_add_instance_u16(FU_DEVICE(self), "VID", fu_device_get_vid(device));
-	fu_device_add_instance_u16(FU_DEVICE(self), "PID", fu_device_get_pid(device));
-	return fu_device_build_instance_id(FU_DEVICE(self), error, "UFY", "VID", "PID", NULL);
+	/* success */
+	return TRUE;
+}
+
+static void
+fu_logitech_hidpp_device_vid_pid_notify_cb(FuDevice *device, GParamSpec *pspec, gpointer user_data)
+{
+	if (fu_device_get_pid(device) == 0x0)
+		return;
+
+	/* this is a non-standard extension, but essentially API */
+	fu_device_add_instance_u16(device, "VID", fu_device_get_vid(device));
+	fu_device_add_instance_u16(device, "PID", fu_device_get_pid(device));
+	fu_device_build_instance_id(device, NULL, "UFY", "VID", "PID", NULL);
 }
 
 static gboolean
@@ -774,7 +751,7 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 		msg->sub_id = idx;
 		msg->function_id = 0x02 << 4; /* getDeviceType */
 		msg->hidpp_version = priv->hidpp_version;
-		if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+		if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 			g_prefix_error(error, "failed to get device type: ");
 			return FALSE;
 		}
@@ -808,7 +785,7 @@ fu_logitech_hidpp_device_setup(FuDevice *device, GError **error)
 		msg->sub_id = idx;
 		msg->function_id = 0x00 << 4; /* getDfuStatus */
 		msg->hidpp_version = priv->hidpp_version;
-		if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+		if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 			g_prefix_error(error, "failed to get DFU status: ");
 			return FALSE;
 		}
@@ -887,7 +864,7 @@ fu_logitech_hidpp_device_detach(FuDevice *device, FuProgress *progress, GError *
 		msg->hidpp_version = priv->hidpp_version;
 		msg->flags = FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_IGNORE_SUB_ID |
 			     FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_LONGER_TIMEOUT;
-		if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, &error_local)) {
+		if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, &error_local)) {
 			if (fu_device_has_private_flag(
 				device,
 				FU_LOGITECH_HIDPP_DEVICE_FLAG_NO_REQUEST_REQUIRED)) {
@@ -946,7 +923,7 @@ fu_logitech_hidpp_device_detach(FuDevice *device, FuProgress *progress, GError *
 		msg->data[5] = 'F';
 		msg->data[6] = 'U';
 		msg->flags = FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_IGNORE_SUB_ID;
-		if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+		if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 			g_prefix_error(error, "failed to put device into DFU mode: ");
 			return FALSE;
 		}
@@ -960,124 +937,51 @@ fu_logitech_hidpp_device_detach(FuDevice *device, FuProgress *progress, GError *
 }
 
 static gboolean
-fu_logitech_hidpp_device_check_status(guint8 status, GError **error)
+fu_logitech_hidpp_device_check_status(guint8 status_raw, GError **error)
 {
-	switch (status & 0x7f) {
-	case 0x00:
-		g_set_error(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_DATA,
-			    "invalid status value 0x%02x",
-			    status);
-		break;
-	case 0x01: /* packet success */
-	case 0x02: /* DFU success */
-	case 0x05: /* DFU success: entity restart required */
-	case 0x06: /* DFU success: system restart required */
+	FuLogitechHidppStatus status = status_raw & 0x7f;
+	const gchar *status_str = fu_logitech_hidpp_status_to_string(status);
+	switch (status) {
+	case FU_LOGITECH_HIDPP_STATUS_PACKET_SUCCESS:
+	case FU_LOGITECH_HIDPP_STATUS_DFU_SUCCESS:
+	case FU_LOGITECH_HIDPP_STATUS_DFU_SUCCESS_ENTITY_RESTART_REQUIRED:
+	case FU_LOGITECH_HIDPP_STATUS_DFU_SUCCESS_SYSTEM_RESTART_REQUIRED:
 		/* success */
+		g_debug("ignoring: %s", status_str);
 		return TRUE;
 		break;
-	case 0x03:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_BUSY,
-				    "wait for event (command in progress)");
+	case FU_LOGITECH_HIDPP_STATUS_COMMAND_IN_PROGRESS:
+	case FU_LOGITECH_HIDPP_STATUS_WAIT_FOR_EVENT:
+	case FU_LOGITECH_HIDPP_STATUS_BLOCKED_COMMAND:
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_BUSY, status_str);
 		break;
-	case 0x04:
-	case 0x10: /* unknown */
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "generic error");
+	case FU_LOGITECH_HIDPP_STATUS_GENERIC_ERROR04:
+	case FU_LOGITECH_HIDPP_STATUS_GENERIC_ERROR10:
+	case FU_LOGITECH_HIDPP_STATUS_BAD_VOLTAGE:
+	case FU_LOGITECH_HIDPP_STATUS_DFU_NOT_STARTED:
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, status_str);
 		break;
-	case 0x11:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INTERNAL,
-				    "bad voltage (power too low?)");
+	case FU_LOGITECH_HIDPP_STATUS_UNKNOWN12:
+	case FU_LOGITECH_HIDPP_STATUS_BAD_MAGIC_STRING:
+	case FU_LOGITECH_HIDPP_STATUS_BAD_FIRMWARE:
+	case FU_LOGITECH_HIDPP_STATUS_UNSUPPORTED_ENCRYPTION_MODE:
+	case FU_LOGITECH_HIDPP_STATUS_UNSUPPORTED_COMMAND:
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, status_str);
 		break;
-	case 0x12:
-	case 0x14: /* bad magic string */
-	case 0x21: /* bad firmware */
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "unsupported firmware");
+	case FU_LOGITECH_HIDPP_STATUS_INVALID:
+	case FU_LOGITECH_HIDPP_STATUS_BAD_SEQUENCE_NUMBER:
+	case FU_LOGITECH_HIDPP_STATUS_ADDRESS_OUT_OF_RANGE:
+	case FU_LOGITECH_HIDPP_STATUS_UNALIGNED_ADDRESS:
+	case FU_LOGITECH_HIDPP_STATUS_BAD_SIZE:
+	case FU_LOGITECH_HIDPP_STATUS_MISSING_PROGRAM_DATA:
+	case FU_LOGITECH_HIDPP_STATUS_MISSING_CHECK_DATA:
+	case FU_LOGITECH_HIDPP_STATUS_FIRMWARE_CHECK_FAILURE:
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, status_str);
 		break;
-	case 0x13:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "unsupported encryption mode");
-		break;
-	case 0x15:
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_WRITE, "erase failure");
-		break;
-	case 0x16:
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "DFU not started");
-		break;
-	case 0x17:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_DATA,
-				    "bad sequence number");
-		break;
-	case 0x18:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "unsupported command");
-		break;
-	case 0x19:
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_BUSY, "command in progress");
-		break;
-	case 0x1a:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_DATA,
-				    "address out of range");
-		break;
-	case 0x1b:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_DATA,
-				    "unaligned address");
-		break;
-	case 0x1c:
-		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA, "bad size");
-		break;
-	case 0x1d:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_DATA,
-				    "missing program data");
-		break;
-	case 0x1e:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_DATA,
-				    "missing check data");
-		break;
-	case 0x1f:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_WRITE,
-				    "program failed to write");
-		break;
-	case 0x20:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_WRITE,
-				    "program failed to verify");
-		break;
-	case 0x22:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_DATA,
-				    "firmware check failure");
-		break;
-	case 0x23:
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_BUSY,
-				    "blocked command (restart required)");
+	case FU_LOGITECH_HIDPP_STATUS_PROGRAM_FAILED_TO_WRITE:
+	case FU_LOGITECH_HIDPP_STATUS_PROGRAM_FAILED_TO_VERIFY:
+	case FU_LOGITECH_HIDPP_STATUS_ERASE_FAILURE:
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_WRITE, status_str);
 		break;
 	default:
 		g_set_error(error,
@@ -1121,7 +1025,7 @@ fu_logitech_hidpp_device_write_firmware_pkt(FuLogitechHidppDevice *self,
 			    16,
 			    error))
 		return FALSE;
-	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, error)) {
+	if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 		g_prefix_error(error, "failed to supply program data: ");
 		return FALSE;
 	}
@@ -1149,7 +1053,7 @@ fu_logitech_hidpp_device_write_firmware_pkt(FuLogitechHidppDevice *self,
 	for (guint retry = 0; retry < 10; retry++) {
 		g_autoptr(FuLogitechHidppHidppMsg) msg2 = fu_logitech_hidpp_msg_new();
 		msg2->flags = FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_IGNORE_FNCT_ID;
-		if (!fu_logitech_hidpp_receive(priv->io_channel, msg2, 15000, error))
+		if (!fu_logitech_hidpp_receive(FU_UDEV_DEVICE(self), msg2, 15000, error))
 			return FALSE;
 		if (fu_logitech_hidpp_msg_is_reply(msg, msg2)) {
 			g_autoptr(GError) error2 = NULL;
@@ -1273,7 +1177,7 @@ fu_logitech_hidpp_device_attach(FuLogitechHidppDevice *self,
 	msg->flags = FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_IGNORE_SUB_ID |
 		     FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_IGNORE_SWID | // inferred?
 		     FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_LONGER_TIMEOUT;
-	if (!fu_logitech_hidpp_transfer(priv->io_channel, msg, &error_local)) {
+	if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, &error_local)) {
 		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_READ) ||
 		    g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			g_debug("ignoring '%s' on reset", error_local->message);
@@ -1286,12 +1190,7 @@ fu_logitech_hidpp_device_attach(FuLogitechHidppDevice *self,
 
 	if (fu_device_has_private_flag(device, FU_LOGITECH_HIDPP_DEVICE_FLAG_REBIND_ATTACH)) {
 		fu_device_set_poll_interval(device, 0);
-		/*
-		 * Wait for device to become ready after flashing.
-		 * Possible race condition: after the device is reset, Linux might enumerate it as
-		 * a different hidraw device depending on timing.
-		 */
-		fu_device_sleep_full(FU_DEVICE(self), 1000, progress); /* ms */
+		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
 	} else {
 		/* device file hasn't been unbound/re-bound, just probe again */
 		if (!fu_device_retry(device, fu_logitech_hidpp_device_reprobe_cb, 10, NULL, error))
@@ -1372,8 +1271,6 @@ fu_logitech_hidpp_device_class_init(FuLogitechHidppDeviceClass *klass)
 
 	object_class->finalize = fu_logitech_hidpp_device_finalize;
 	device_class->setup = fu_logitech_hidpp_device_setup;
-	device_class->open = fu_logitech_hidpp_device_open;
-	device_class->close = fu_logitech_hidpp_device_close;
 	device_class->write_firmware = fu_logitech_hidpp_device_write_firmware;
 	device_class->attach = fu_logitech_hidpp_device_attach_cached;
 	device_class->detach = fu_logitech_hidpp_device_detach;
@@ -1392,10 +1289,13 @@ fu_logitech_hidpp_device_init(FuLogitechHidppDevice *self)
 	priv->device_idx = FU_LOGITECH_HIDPP_DEVICE_IDX_WIRED;
 	priv->feature_index = g_ptr_array_new_with_free_func(g_free);
 	fu_device_add_request_flag(FU_DEVICE(self), FWUPD_REQUEST_FLAG_ALLOW_GENERIC_MESSAGE);
+	fu_device_set_vid(FU_DEVICE(self), FU_LOGITECH_HIDPP_DEVICE_VID);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_PLAIN);
 	fu_device_set_vendor(FU_DEVICE(self), "Logitech");
 	fu_device_retry_set_delay(FU_DEVICE(self), 1000);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
+	fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
 	fu_device_register_private_flag(FU_DEVICE(self),
 					FU_LOGITECH_HIDPP_DEVICE_FLAG_FORCE_RECEIVER_ID);
 	fu_device_register_private_flag(FU_DEVICE(self), FU_LOGITECH_HIDPP_DEVICE_FLAG_BLE);
@@ -1406,20 +1306,23 @@ fu_logitech_hidpp_device_init(FuLogitechHidppDevice *self)
 	fu_device_register_private_flag(FU_DEVICE(self), FU_LOGITECH_HIDPP_DEVICE_FLAG_ADD_RADIO);
 	fu_device_set_remove_delay(FU_DEVICE(self), FU_DEVICE_REMOVE_DELAY_USER_REPLUG);
 	fu_device_set_battery_threshold(FU_DEVICE(self), 20);
+	g_signal_connect(FU_DEVICE(self),
+			 "notify::vid",
+			 G_CALLBACK(fu_logitech_hidpp_device_vid_pid_notify_cb),
+			 NULL);
+	g_signal_connect(FU_DEVICE(self),
+			 "notify::pid",
+			 G_CALLBACK(fu_logitech_hidpp_device_vid_pid_notify_cb),
+			 NULL);
 }
 
 FuLogitechHidppDevice *
 fu_logitech_hidpp_device_new(FuUdevDevice *parent)
 {
-	FuLogitechHidppDevice *self = NULL;
-	FuLogitechHidppDevicePrivate *priv;
-	self = g_object_new(FU_TYPE_HIDPP_DEVICE,
+	return g_object_new(FU_TYPE_HIDPP_DEVICE,
 			    "proxy",
 			    parent,
 			    "device-file",
 			    fu_udev_device_get_device_file(parent),
 			    NULL);
-	priv = GET_PRIVATE(self);
-	priv->io_channel = fu_udev_device_get_io_channel(FU_UDEV_DEVICE(parent));
-	return self;
 }

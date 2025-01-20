@@ -31,7 +31,7 @@ fu_pci_mei_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 					  "PciDevice",
 					  fu_device_get_id(self->pci_device));
 	}
-	for (guint i = 0; i < 6; i++) {
+	for (guint i = 1; i < G_N_ELEMENTS(self->hfsts_buf); i++) {
 		g_autofree gchar *title = g_strdup_printf("Hfsts%u", i);
 		fwupd_codec_string_append_hex(
 		    str,
@@ -610,11 +610,6 @@ fu_pci_mei_plugin_add_attrs_csme18_bootguard_otp(FuPlugin *plugin,
 	/* ensure vendor set the FPF configuration fuse */
 	if (!fu_mei_csme18_hfsts6_get_fpf_soc_configuration_lock(hfsts6)) {
 		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_VALID);
-		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONTACT_OEM);
-		return;
-	}
-	if (!fu_mei_csme18_hfsts6_get_manufacturing_lock(hfsts6)) {
-		fwupd_security_attr_set_result(attr, FWUPD_SECURITY_ATTR_RESULT_NOT_LOCKED);
 		fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_ACTION_CONTACT_OEM);
 		return;
 	}

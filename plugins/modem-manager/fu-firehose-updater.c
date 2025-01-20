@@ -45,7 +45,6 @@
 #define CONFIGURE_ALWAYS_VALIDATE		      0
 #define CONFIGURE_MAX_DIGEST_TABLE_SIZE_IN_BYTES      2048
 #define CONFIGURE_MAX_PAYLOAD_SIZE_TO_TARGET_IN_BYTES 8192
-#define CONFIGURE_ZLP_AWARE_HOST		      1
 #define CONFIGURE_SKIP_STORAGE_INIT		      0
 
 struct _FuFirehoseUpdater {
@@ -53,6 +52,7 @@ struct _FuFirehoseUpdater {
 	gchar *port;
 	FuSaharaLoader *sahara;
 	FuIOChannel *io_channel;
+	gboolean supports_zlp;
 };
 
 G_DEFINE_TYPE(FuFirehoseUpdater, fu_firehose_updater, G_TYPE_OBJECT)
@@ -206,6 +206,12 @@ fu_firehose_updater_validate_rawprogram(GBytes *rawprogram,
 	*out_silo = g_steal_pointer(&silo);
 	*out_action_nodes = g_steal_pointer(&action_nodes);
 	return TRUE;
+}
+
+void
+fu_firehose_updater_set_supports_zlp(FuFirehoseUpdater *self, gboolean supports_zlp)
+{
+	self->supports_zlp = supports_zlp;
 }
 
 gboolean
@@ -449,7 +455,7 @@ fu_firehose_updater_configure(FuFirehoseUpdater *self, GError **error)
 		g_string_append_printf(cmd_str,
 				       " MaxPayloadSizeToTargetInBytes=\"%d\"",
 				       max_payload_size);
-		g_string_append_printf(cmd_str, " ZlpAwareHost=\"%d\"", CONFIGURE_ZLP_AWARE_HOST);
+		g_string_append_printf(cmd_str, " ZlpAwareHost=\"%d\"", self->supports_zlp ? 1 : 0);
 		g_string_append_printf(cmd_str,
 				       " SkipStorageInit=\"%d\"",
 				       CONFIGURE_SKIP_STORAGE_INIT);
@@ -540,44 +546,39 @@ fu_firehose_updater_send_program_file(FuFirehoseUpdater *self,
 				      gsize sector_size,
 				      GError **error)
 {
-	g_autoptr(FuChunk) chk_last = NULL;
 	g_autoptr(FuChunkArray) chunks = fu_chunk_array_new_from_bytes(program_file,
 								       FU_CHUNK_ADDR_OFFSET_NONE,
 								       FU_CHUNK_PAGESZ_NONE,
 								       payload_size);
 
-	/* last block needs to be padded to the next sector_size,
-	 * so that we always send full sectors */
-	chk_last = fu_chunk_array_index(chunks, fu_chunk_array_length(chunks) - 1, error);
-	if (chk_last == NULL)
-		return FALSE;
-	if ((fu_chunk_get_data_sz(chk_last) % sector_size) != 0) {
-		g_autoptr(GBytes) padded_bytes = NULL;
-		gsize padded_sz = sector_size * (fu_chunk_get_data_sz(chk_last) / sector_size + 1);
-
-		padded_bytes = fu_bytes_pad(fu_chunk_get_bytes(chk_last), padded_sz);
-		fu_chunk_set_bytes(chk_last, padded_bytes);
-
-		g_return_val_if_fail(fu_chunk_get_data_sz(chk_last) == padded_sz, FALSE);
-	}
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
 		g_autoptr(FuChunk) chk = NULL;
+		g_autoptr(GBytes) block = NULL;
+		g_autoptr(GBytes) block_padded = NULL;
+		gsize block_padded_sz;
 
 		/* prepare chunk */
 		chk = fu_chunk_array_index(chunks, i, error);
 		if (chk == NULL)
 			return FALSE;
 
+		block = fu_chunk_get_bytes(chk);
+		/* block needs to be padded to the next sector_size,
+		 * so that we always send full sectors */
+		block_padded_sz =
+		    ((g_bytes_get_size(block) + sector_size - 1) / sector_size) * sector_size;
+		block_padded = fu_bytes_pad(block, block_padded_sz);
+
 		/* log only in blocks of 250 plus first/last */
 		if (i == 0 || i == (fu_chunk_array_length(chunks) - 1) || (i + 1) % 250 == 0)
-			g_debug("sending %u bytes in block %u/%u of file '%s'",
-				(guint)fu_chunk_get_data_sz(chk),
+			g_debug("sending %" G_GSIZE_FORMAT " bytes in block %u/%u of file '%s'",
+				block_padded_sz,
 				i + 1,
 				fu_chunk_array_length(chunks),
 				program_filename);
 
 		if (!fu_firehose_updater_write_internal(self,
-							fu_chunk_get_bytes(chk),
+							block_padded,
 							1500,
 							FU_IO_CHANNEL_FLAG_FLUSH_INPUT,
 							error)) {
@@ -885,6 +886,8 @@ fu_firehose_updater_write(FuFirehoseUpdater *self,
 static void
 fu_firehose_updater_init(FuFirehoseUpdater *self)
 {
+	/* supported by most devices - enable by default */
+	self->supports_zlp = TRUE;
 }
 
 static void

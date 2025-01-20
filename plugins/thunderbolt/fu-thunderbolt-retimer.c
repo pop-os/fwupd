@@ -90,13 +90,6 @@ fu_thunderbolt_retimer_setup(FuDevice *device, GError **error)
 				   fu_device_get_physical_id(device));
 	fu_device_add_instance_id(device, instance);
 
-	/* hardcoded for now:
-	 * 1. unsure if ID_VENDOR_FROM_DATABASE works in this instance
-	 * 2. we don't recognize anyone else yet
-	 */
-	if (fu_device_get_vendor(device) == NULL)
-		fu_device_set_vendor(device, "Intel");
-
 	/* success */
 	return TRUE;
 }
@@ -114,6 +107,7 @@ fu_thunderbolt_retimer_init(FuThunderboltRetimer *self)
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_NO_AUTO_REMOVE);
+	fu_thunderbolt_device_set_retries(FU_THUNDERBOLT_DEVICE(self), 1);
 }
 
 static void

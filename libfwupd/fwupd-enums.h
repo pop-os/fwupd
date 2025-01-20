@@ -1294,7 +1294,7 @@ typedef enum {
 	/**
 	 * FWUPD_VERSION_FORMAT_INTEL_ME2:
 	 *
-	 * Intel ME-style A.B.CC.DDDD notation notation.
+	 * Intel ME-style A.B.CC.DDDD notation notation, with offset 11.
 	 *
 	 * Since: 1.2.9
 	 */
@@ -1339,6 +1339,14 @@ typedef enum {
 	 * Since: 1.9.24
 	 */
 	FWUPD_VERSION_FORMAT_DELL_BIOS_MSB,
+	/**
+	 * FWUPD_VERSION_FORMAT_INTEL_CSME19:
+	 *
+	 * Intel ME-style bitshifted notation, with offset 19.
+	 *
+	 * Since: 2.0.4
+	 */
+	FWUPD_VERSION_FORMAT_INTEL_CSME19,
 	/*< private >*/
 	FWUPD_VERSION_FORMAT_LAST
 } FwupdVersionFormat;
@@ -1387,6 +1395,8 @@ FwupdVersionFormat
 fwupd_version_format_from_string(const gchar *str);
 const gchar *
 fwupd_version_format_to_string(FwupdVersionFormat kind);
+FwupdInstallFlags
+fwupd_install_flags_from_string(const gchar *str);
 const gchar *
 fwupd_install_flags_to_string(FwupdInstallFlags install_flags);
 

@@ -94,8 +94,6 @@ fu_cpuid(guint32 leaf, guint32 *eax, guint32 *ebx, guint32 *ecx, guint32 *edx, G
     G_GNUC_WARN_UNUSED_RESULT;
 FuCpuVendor
 fu_cpu_get_vendor(void);
-gboolean
-fu_common_is_live_media(void);
 guint64
 fu_common_get_memory_size(void);
 gchar *
@@ -119,3 +117,6 @@ void
 fu_xmlb_builder_insert_kx(XbBuilderNode *bn, const gchar *key, guint64 value) G_GNUC_NON_NULL(1);
 void
 fu_xmlb_builder_insert_kb(XbBuilderNode *bn, const gchar *key, gboolean value) G_GNUC_NON_NULL(1);
+
+gboolean
+fu_snap_is_in_snap(void);

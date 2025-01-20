@@ -36,11 +36,12 @@ fu_logitech_hidpp_runtime_unifying_detach(FuDevice *device, FuProgress *progress
 	msg->data[2] = 'P';
 	msg->hidpp_version = 1;
 	msg->flags = FU_LOGITECH_HIDPP_HIDPP_MSG_FLAG_LONGER_TIMEOUT;
-	if (!fu_logitech_hidpp_send(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
+	if (!fu_logitech_hidpp_send(FU_UDEV_DEVICE(self),
 				    msg,
 				    FU_LOGITECH_HIDPP_DEVICE_TIMEOUT_MS,
 				    &error_local)) {
-		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_WRITE)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_WRITE) ||
+		    g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			g_debug("failed to detach to bootloader: %s", error_local->message);
 		} else {
 			g_prefix_error(&error_local, "failed to detach to bootloader: ");
@@ -75,9 +76,7 @@ fu_logitech_hidpp_runtime_unifying_setup_internal(FuDevice *device, GError **err
 		msg->function_id = FU_LOGITECH_HIDPP_REGISTER_DEVICE_FIRMWARE_INFORMATION;
 		msg->data[0] = i;
 		msg->hidpp_version = 1;
-		if (!fu_logitech_hidpp_transfer(fu_udev_device_get_io_channel(FU_UDEV_DEVICE(self)),
-						msg,
-						error)) {
+		if (!fu_logitech_hidpp_transfer(FU_UDEV_DEVICE(self), msg, error)) {
 			g_prefix_error(error, "failed to read device config: ");
 			return FALSE;
 		}

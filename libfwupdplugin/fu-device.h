@@ -11,6 +11,7 @@
 #include "fu-context.h"
 #include "fu-device-event.h"
 #include "fu-device-locker.h"
+#include "fu-device-struct.h"
 #include "fu-firmware.h"
 #include "fu-progress.h"
 #include "fu-security-attrs.h"
@@ -92,24 +93,6 @@ struct _FuDeviceClass {
 	void (*register_flags)(FuDevice *self);
 #endif
 };
-
-/**
- * FuDeviceInstanceFlags:
- * @FU_DEVICE_INSTANCE_FLAG_NONE:		No flags set
- * @FU_DEVICE_INSTANCE_FLAG_VISIBLE:		Show to the user
- * @FU_DEVICE_INSTANCE_FLAG_QUIRKS:		Match against quirk files
- * @FU_DEVICE_INSTANCE_FLAG_GENERIC:		Generic GUID added by a baseclass
- *
- * The flags to use when interacting with a device instance
- **/
-typedef enum {
-	FU_DEVICE_INSTANCE_FLAG_NONE = 0,
-	FU_DEVICE_INSTANCE_FLAG_VISIBLE = 1 << 0,
-	FU_DEVICE_INSTANCE_FLAG_QUIRKS = 1 << 1,
-	FU_DEVICE_INSTANCE_FLAG_GENERIC = 1 << 2,
-	/*< private >*/
-	FU_DEVICE_INSTANCE_FLAG_UNKNOWN = G_MAXUINT64,
-} FuDeviceInstanceFlags;
 
 /**
  * FuDeviceIncorporateFlags:
@@ -253,6 +236,14 @@ typedef enum {
 	 * Since: 2.0.0
 	 **/
 	FU_DEVICE_INCORPORATE_FLAG_EVENTS = 1ull << 16,
+	/**
+	 * FU_DEVICE_INCORPORATE_FLAG_INSTANCE_IDS:
+	 *
+	 * Set the instance IDs.
+	 *
+	 * Since: 2.0.4
+	 **/
+	FU_DEVICE_INCORPORATE_FLAG_INSTANCE_IDS = 1ull << 17,
 	/*< private >*/
 	FU_DEVICE_INCORPORATE_FLAG_ALL = G_MAXUINT64,
 } FuDeviceIncorporateFlags;
@@ -297,7 +288,6 @@ fu_device_new(FuContext *ctx);
 #define fu_device_has_flag(d, v)	 fwupd_device_has_flag(FWUPD_DEVICE(d), v)
 #define fu_device_has_request_flag(d, v) fwupd_device_has_request_flag(FWUPD_DEVICE(d), v)
 #define fu_device_add_request_flag(d, v) fwupd_device_add_request_flag(FWUPD_DEVICE(d), v)
-#define fu_device_has_instance_id(d, v)	 fwupd_device_has_instance_id(FWUPD_DEVICE(d), v)
 #define fu_device_has_vendor_id(d, v)	 fwupd_device_has_vendor_id(FWUPD_DEVICE(d), v)
 #define fu_device_has_protocol(d, v)	 fwupd_device_has_protocol(FWUPD_DEVICE(d), v)
 #define fu_device_has_checksum(d, v)	 fwupd_device_has_checksum(FWUPD_DEVICE(d), v)
@@ -560,14 +550,14 @@ fu_device_new(FuContext *ctx);
  */
 #define FU_DEVICE_PRIVATE_FLAG_AUTO_PAUSE_POLLING "auto-pause-polling"
 /**
- * FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG:
+ * FU_DEVICE_PRIVATE_FLAG_DELAYED_REMOVAL:
  *
- * Only use the device removal delay when explicitly waiting for a replug, rather than
- * every time the device is removed.
+ * Use the device removal delay every time the device is removed, rather than when explicitly
+ * waiting for a replug.
  *
- * Since: 1.8.1
+ * Since: 2.0.3
  */
-#define FU_DEVICE_PRIVATE_FLAG_ONLY_WAIT_FOR_REPLUG "only-wait-for-replug"
+#define FU_DEVICE_PRIVATE_FLAG_DELAYED_REMOVAL "delayed-removal"
 /**
  * FU_DEVICE_PRIVATE_FLAG_IGNORE_SYSTEM_POWER:
  *
@@ -781,6 +771,17 @@ fu_device_new(FuContext *ctx);
  */
 #define FU_DEVICE_PRIVATE_FLAG_IS_FAKE "is-fake"
 
+/**
+ * FU_DEVICE_PRIVATE_FLAG_COUNTERPART_VISIBLE:
+ *
+ * Add the counterpart instance IDs as visible GUID that can be matched in firmware.
+ *
+ * This was how the daemon worked in 1.9.x, and some devices in recovery mode still expect this.
+ *
+ * Since: 2.0.4
+ */
+#define FU_DEVICE_PRIVATE_FLAG_COUNTERPART_VISIBLE "counterpart-visible"
+
 /* accessors */
 gchar *
 fu_device_to_string(FuDevice *self) G_GNUC_NON_NULL(1);
@@ -790,19 +791,16 @@ const gchar *
 fu_device_get_equivalent_id(FuDevice *self) G_GNUC_NON_NULL(1);
 void
 fu_device_set_equivalent_id(FuDevice *self, const gchar *equivalent_id) G_GNUC_NON_NULL(1, 2);
-void
-fu_device_add_guid(FuDevice *self, const gchar *guid) G_GNUC_NON_NULL(1, 2);
-void
-fu_device_add_guid_full(FuDevice *self, const gchar *guid, FuDeviceInstanceFlags flags)
-    G_GNUC_NON_NULL(1, 2);
 gboolean
 fu_device_has_guid(FuDevice *self, const gchar *guid) G_GNUC_NON_NULL(1);
 void
-fu_device_add_instance_id(FuDevice *self, const gchar *instance_id) G_GNUC_NON_NULL(1);
+fu_device_add_instance_id(FuDevice *self, const gchar *instance_id) G_GNUC_NON_NULL(1, 2);
+gboolean
+fu_device_has_instance_id(FuDevice *self, const gchar *instance_id, FuDeviceInstanceFlag flags)
+    G_GNUC_NON_NULL(1, 2);
 void
-fu_device_add_instance_id_full(FuDevice *self,
-			       const gchar *instance_id,
-			       FuDeviceInstanceFlags flags) G_GNUC_NON_NULL(1, 2);
+fu_device_add_instance_id_full(FuDevice *self, const gchar *instance_id, FuDeviceInstanceFlag flags)
+    G_GNUC_NON_NULL(1, 2);
 FuDevice *
 fu_device_get_root(FuDevice *self) G_GNUC_NON_NULL(1);
 FuDevice *
@@ -824,8 +822,6 @@ void
 fu_device_add_parent_physical_id(FuDevice *self, const gchar *physical_id) G_GNUC_NON_NULL(1, 2);
 void
 fu_device_add_parent_backend_id(FuDevice *self, const gchar *backend_id) G_GNUC_NON_NULL(1, 2);
-void
-fu_device_add_counterpart_guid(FuDevice *self, const gchar *guid) G_GNUC_NON_NULL(1, 2);
 FuDevice *
 fu_device_get_proxy(FuDevice *self) G_GNUC_NON_NULL(1);
 void
@@ -1129,7 +1125,7 @@ fu_device_build_instance_id(FuDevice *self, GError **error, const gchar *subsyst
     G_GNUC_NULL_TERMINATED G_GNUC_NON_NULL(1, 3);
 gboolean
 fu_device_build_instance_id_full(FuDevice *self,
-				 FuDeviceInstanceFlags flags,
+				 FuDeviceInstanceFlag flags,
 				 GError **error,
 				 const gchar *subsystem,
 				 ...) G_GNUC_NULL_TERMINATED G_GNUC_NON_NULL(1, 4);

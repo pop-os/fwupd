@@ -50,10 +50,6 @@
 #define SYSTEMD_SNAP_FWUPD_UNIT "snap.fwupd.fwupd.service"
 #endif
 
-/* custom return codes */
-#define EXIT_NOTHING_TO_DO 2
-#define EXIT_NOT_FOUND	   3
-
 typedef enum {
 	FU_UTIL_OPERATION_UNKNOWN,
 	FU_UTIL_OPERATION_UPDATE,
@@ -398,15 +394,19 @@ fu_util_update_device_request_cb(FwupdClient *client, FwupdRequest *request, FuU
 static void
 fu_util_engine_device_added_cb(FuEngine *engine, FuDevice *device, FuUtilPrivate *priv)
 {
-	g_autofree gchar *tmp = fu_device_to_string(device);
-	g_debug("ADDED:\n%s", tmp);
+	if (g_getenv("FWUPD_VERBOSE") != NULL) {
+		g_autofree gchar *tmp = fu_device_to_string(device);
+		g_debug("ADDED:\n%s", tmp);
+	}
 }
 
 static void
 fu_util_engine_device_removed_cb(FuEngine *engine, FuDevice *device, FuUtilPrivate *priv)
 {
-	g_autofree gchar *tmp = fu_device_to_string(device);
-	g_debug("REMOVED:\n%s", tmp);
+	if (g_getenv("FWUPD_VERBOSE") != NULL) {
+		g_autofree gchar *tmp = fu_device_to_string(device);
+		g_debug("REMOVED:\n%s", tmp);
+	}
 }
 
 static void
@@ -1568,10 +1568,6 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	priv->current_operation = FU_UTIL_OPERATION_UPDATE;
-	g_signal_connect(FU_ENGINE(priv->engine),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
 
 	devices = fu_engine_get_devices(priv->engine, error);
 	if (devices == NULL)
@@ -5293,6 +5289,9 @@ main(int argc, char *argv[])
 		} else if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO)) {
 			g_info("%s\n", error->message);
 			return EXIT_NOTHING_TO_DO;
+		} else if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_REACHABLE)) {
+			g_info("%s\n", error->message);
+			return EXIT_NOT_REACHABLE;
 		} else if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
 			g_info("%s\n", error->message);
 			return EXIT_NOT_FOUND;

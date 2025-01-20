@@ -17,6 +17,7 @@
 #define PEERS_CACHE_LEN	     16
 #define END_OF_TRANSFER_CHAR 0x0a
 #define INVALID_PEER_ID	     0xFF
+#define SELF_PEER_ID	     0x00
 
 #define FU_NORDIC_HID_CFG_CHANNEL_RETRIES	      10
 #define FU_NORDIC_HID_CFG_CHANNEL_RETRY_DELAY	      50   /* ms */
@@ -128,12 +129,11 @@ fu_nordic_hid_cfg_channel_module_free(FuNordicCfgChannelModule *mod)
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(FuNordicCfgChannelModule, fu_nordic_hid_cfg_channel_module_free);
 
-#ifdef HAVE_HIDRAW_H
 static FuUdevDevice *
 fu_nordic_hid_cfg_channel_get_udev_device(FuNordicHidCfgChannel *self, GError **error)
 {
 	/* ourselves */
-	if (self->peer_id == 0)
+	if (self->peer_id == SELF_PEER_ID)
 		return FU_UDEV_DEVICE(self);
 
 	/* parent */
@@ -148,7 +148,6 @@ fu_nordic_hid_cfg_channel_get_udev_device(FuNordicHidCfgChannel *self, GError **
 
 	return self->parent_udev;
 }
-#endif
 
 static gboolean
 fu_nordic_hid_cfg_channel_send(FuNordicHidCfgChannel *self,
@@ -156,7 +155,6 @@ fu_nordic_hid_cfg_channel_send(FuNordicHidCfgChannel *self,
 			       gsize bufsz,
 			       GError **error)
 {
-#ifdef HAVE_HIDRAW_H
 	FuUdevDevice *udev_device = fu_nordic_hid_cfg_channel_get_udev_device(self, error);
 	if (udev_device == NULL)
 		return FALSE;
@@ -165,13 +163,6 @@ fu_nordic_hid_cfg_channel_send(FuNordicHidCfgChannel *self,
 					    bufsz,
 					    FU_IOCTL_FLAG_NONE,
 					    error);
-#else
-	g_set_error_literal(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "<linux/hidraw.h> not available");
-	return FALSE;
-#endif
 }
 
 static gboolean
@@ -181,7 +172,6 @@ fu_nordic_hid_cfg_channel_receive(FuNordicHidCfgChannel *self,
 				  GError **error)
 {
 	g_autoptr(FuNordicCfgChannelMsg) recv_msg = g_new0(FuNordicCfgChannelMsg, 1);
-#ifdef HAVE_HIDRAW_H
 	FuUdevDevice *udev_device = fu_nordic_hid_cfg_channel_get_udev_device(self, error);
 	if (udev_device == NULL)
 		return FALSE;
@@ -221,13 +211,6 @@ fu_nordic_hid_cfg_channel_receive(FuNordicHidCfgChannel *self,
 	 * plugins/pixart-rf/fu-pxi-ble-device.c for an example.
 	 */
 	return TRUE;
-#else
-	g_set_error_literal(error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_NOT_SUPPORTED,
-			    "<linux/hidraw.h> not available");
-	return FALSE;
-#endif
 }
 
 static gboolean
@@ -685,7 +668,7 @@ fu_nordic_hid_cfg_channel_setup_peers(FuNordicHidCfgChannel *self, GError **erro
 	gboolean peers_cache_supported = FALSE;
 	guint8 peers_cache[PEERS_CACHE_LEN] = {0x00};
 
-	if (self->peer_id != 0) {
+	if (self->peer_id != SELF_PEER_ID) {
 		/* device connected through dongle cannot support peers */
 		return TRUE;
 	}
@@ -933,6 +916,10 @@ fu_nordic_hid_cfg_channel_get_hwid(FuNordicHidCfgChannel *self, GError **error)
 				      hw_id[6],
 				      hw_id[7]);
 	fu_device_set_physical_id(FU_DEVICE(self), physical_id);
+
+	/* avoid inheriting name from the dongle */
+	if (self->peer_id != SELF_PEER_ID)
+		fu_device_set_name(FU_DEVICE(self), physical_id);
 
 	/* success */
 	return TRUE;
@@ -1290,7 +1277,7 @@ fu_nordic_hid_cfg_channel_generate_ids(FuNordicHidCfgChannel *self, GError **err
 	 * 0x00 only for devices connected via dongle. This prevents from inheriting VID and PID of
 	 * the dongle.
 	 */
-	if ((self->vid != 0x00 && self->pid != 0x00) || (self->peer_id != 0)) {
+	if ((self->vid != 0x00 && self->pid != 0x00) || (self->peer_id != SELF_PEER_ID)) {
 		fu_device_add_instance_u16(device, "VEN", self->vid);
 		fu_device_add_instance_u16(device, "DEV", self->pid);
 	}
@@ -1706,6 +1693,9 @@ fu_nordic_hid_cfg_channel_new(guint8 id, FuNordicHidCfgChannel *parent)
 						   "context",
 						   fu_device_get_context(FU_DEVICE(parent)),
 						   NULL);
+	fu_device_incorporate(FU_DEVICE(self),
+			      FU_DEVICE(parent),
+			      FU_DEVICE_INCORPORATE_FLAG_BACKEND_ID);
 	self->peer_id = id;
 	self->parent_udev = FU_UDEV_DEVICE(parent);
 	return self;
