@@ -1,3 +1,9 @@
+fwupd (2.0.4-1) UNRELEASED; urgency=medium
+
+  * New upstream version (2.0.4)
+
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 20 Jan 2025 06:54:06 -0600
+
 fwupd (2.0.3-3) unstable; urgency=medium
 
   * Revert "Add trivial compile/link/run test for libfwupdplugin-dev"

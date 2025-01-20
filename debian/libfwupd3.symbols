@@ -76,6 +76,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  LIBFWUPD_2.0.0@LIBFWUPD_2.0.0 2.0.0
  LIBFWUPD_2.0.1@LIBFWUPD_2.0.1 2.0.1
  LIBFWUPD_2.0.2@LIBFWUPD_2.0.2 2.0.2
+ LIBFWUPD_2.0.4@LIBFWUPD_2.0.4 2.0.4
  fwupd_bios_setting_add_possible_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_get_current_value@LIBFWUPD_1.8.4 1.8.4
  fwupd_bios_setting_get_description@LIBFWUPD_1.8.4 1.8.4
@@ -430,6 +431,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_guid_hash_string@LIBFWUPD_1.2.5 1.2.5
  fwupd_guid_is_valid@LIBFWUPD_1.2.5 1.2.5
  fwupd_guid_to_string@LIBFWUPD_1.2.5 1.2.5
+ fwupd_install_flags_from_string@LIBFWUPD_2.0.4 2.0.4
  fwupd_install_flags_to_string@LIBFWUPD_2.0.0 2.0.0
  fwupd_plugin_add_flag@LIBFWUPD_1.5.0 1.5.0
  fwupd_plugin_flag_from_string@LIBFWUPD_1.5.0 1.5.0
