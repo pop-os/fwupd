@@ -21,6 +21,9 @@
 #ifdef HAVE_UTSNAME_H
 #include <sys/utsname.h>
 #endif
+#ifdef HAVE_AUXV_H
+#include <sys/auxv.h>
+#endif
 #include <errno.h>
 
 #ifdef _WIN32
@@ -63,6 +66,7 @@
 #include "fu-security-attr-common.h"
 #include "fu-security-attrs-private.h"
 #include "fu-udev-device-private.h"
+#include "fu-uefi-backend.h"
 #include "fu-usb-backend.h"
 #include "fu-usb-device-fw-ds20.h"
 #include "fu-usb-device-ms-ds20.h"
@@ -98,6 +102,8 @@ static void
 fu_engine_finalize(GObject *obj);
 static void
 fu_engine_ensure_security_attrs(FuEngine *self);
+static void
+fu_engine_md_refresh_device(FuEngine *self, FuDevice *device);
 
 struct _FuEngine {
 	GObject parent_instance;
@@ -707,6 +713,16 @@ fu_engine_load_release(FuEngine *self,
 	/* additional requirements */
 	if (!fu_engine_requirements_check(self, release, install_flags, error))
 		return FALSE;
+
+	/* match component properties */
+	if (fu_release_has_flag(release, FWUPD_RELEASE_FLAG_TRUSTED_METADATA)) {
+		FuDevice *device = fu_release_get_device(release);
+		if (device != NULL) {
+			fu_device_ensure_from_component(device, component);
+			if (rel != NULL)
+				fu_device_ensure_from_release(device, rel);
+		}
+	}
 
 	/* add any client-side BKC tags */
 	if (!fu_engine_add_local_release_metadata(self, release, error))
@@ -1955,6 +1971,13 @@ fu_engine_get_report_metadata(FuEngine *self, GError **error)
 		g_hash_table_insert(hash, g_strdup("KernelVersion"), g_strdup(name_tmp.release));
 	}
 #endif
+#ifdef HAVE_AUXV_H
+	/* this is the architecture of the userspace, e.g. i686 would be returned for
+	 * glibc-2.40-17.fc41.i686 on kernel-6.12.9-200.fc41.x86_64 */
+	g_hash_table_insert(hash,
+			    g_strdup("PlatformArchitecture"),
+			    g_strdup((const gchar *)getauxval(AT_PLATFORM)));
+#endif
 
 	/* add the kernel boot time so we can detect a reboot */
 	btime = fu_engine_get_boot_time();
@@ -3076,6 +3099,9 @@ fu_engine_reload(FuEngine *self, const gchar *device_id, GError **error)
 		return FALSE;
 	}
 
+	/* match again any metadata-provided values */
+	fu_engine_md_refresh_device(self, device);
+
 	/* save to emulated phase */
 	if (fu_context_has_flag(self->ctx, FU_CONTEXT_FLAG_SAVE_EVENTS) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_EMULATED)) {
@@ -3736,20 +3762,26 @@ fu_engine_ensure_device_supported(FuEngine *self, FuDevice *device)
 }
 
 static void
+fu_engine_md_refresh_device(FuEngine *self, FuDevice *device)
+{
+	g_autoptr(XbNode) component = fu_engine_get_component_by_guids(self, device);
+
+	/* set or clear the SUPPORTED flag */
+	fu_engine_ensure_device_supported(self, device);
+
+	/* fixup the name and format as needed */
+	if (component != NULL &&
+	    !fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_ONLY_CHECKSUM))
+		fu_device_ensure_from_component(device, component);
+}
+
+static void
 fu_engine_md_refresh_devices(FuEngine *self)
 {
 	g_autoptr(GPtrArray) devices = fu_device_list_get_active(self->device_list);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
-		g_autoptr(XbNode) component = fu_engine_get_component_by_guids(self, device);
-
-		/* set or clear the SUPPORTED flag */
-		fu_engine_ensure_device_supported(self, device);
-
-		/* fixup the name and format as needed */
-		if (component != NULL &&
-		    !fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_ONLY_CHECKSUM))
-			fu_device_ensure_from_component(device, component);
+		fu_engine_md_refresh_device(self, device);
 	}
 }
 
@@ -4714,6 +4746,8 @@ fu_engine_fixup_history_device(FuEngine *self, FuDevice *device)
 				g_warning("failed to load component: %s", error_local->message);
 				continue;
 			}
+			fu_release_set_device(FU_RELEASE(release), device);
+
 			if (!fu_release_load(FU_RELEASE(release),
 					     NULL,
 					     component,
@@ -8069,6 +8103,10 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 		g_warning("Failed to load quirks: %s", error_quirks->message);
 	fu_progress_step_done(progress);
 
+	/* do not mount disks if only loading readonly */
+	if (flags & FU_ENGINE_LOAD_FLAG_READONLY)
+		fu_context_add_flag(self->ctx, FU_CONTEXT_FLAG_INHIBIT_VOLUME_MOUNT);
+
 	/* load SMBIOS and the hwids */
 	if (flags & FU_ENGINE_LOAD_FLAG_HWINFO) {
 		if (!fu_context_load_hwinfo(self->ctx,
@@ -8112,6 +8150,8 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "sbatlevel", FU_TYPE_SBATLEVEL_SECTION);
 	fu_context_add_firmware_gtype(self->ctx, "edid", FU_TYPE_EDID);
 	fu_context_add_firmware_gtype(self->ctx, "efi-file", FU_TYPE_EFI_FILE);
+	fu_context_add_firmware_gtype(self->ctx, "efi-signature", FU_TYPE_EFI_SIGNATURE);
+	fu_context_add_firmware_gtype(self->ctx, "efi-signature-list", FU_TYPE_EFI_SIGNATURE_LIST);
 	fu_context_add_firmware_gtype(self->ctx, "efi-load-option", FU_TYPE_EFI_LOAD_OPTION);
 	fu_context_add_firmware_gtype(self->ctx,
 				      "efi-device-path-list",
@@ -8581,6 +8621,10 @@ fu_engine_constructed(GObject *obj)
 	/* backends */
 	{
 		g_autoptr(FuBackend) backend = fu_usb_backend_new(self->ctx);
+		fu_context_add_backend(self->ctx, backend);
+	}
+	{
+		g_autoptr(FuBackend) backend = fu_uefi_backend_new(self->ctx);
 		fu_context_add_backend(self->ctx, backend);
 	}
 #ifdef HAVE_UDEV

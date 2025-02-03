@@ -16,6 +16,7 @@
 #include "fu-plugin-private.h"
 #include "fu-uefi-dbx-device.h"
 #include "fu-uefi-dbx-plugin.h"
+#include "fu-uefi-device-private.h"
 
 static void
 fu_efi_image_func(void)
@@ -55,8 +56,8 @@ fu_efi_image_func(void)
 }
 
 typedef struct {
-	guint devices_cnt;
-	gboolean with_snapd;
+	gboolean running_in_snap;
+	gboolean snapd_fde_detected;
 	gboolean snapd_supported;
 	const gchar *mock_snapd_scenario;
 } FuTestCase;
@@ -206,15 +207,21 @@ fu_self_test_set_up(FuTestFixture *fixture, gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(GError) error = NULL;
 
-	if (tc->with_snapd && fu_self_test_mock_snapd_init(fixture)) {
+	fixture->ctx = fu_context_new();
+
+	if ((tc->running_in_snap || tc->snapd_fde_detected) &&
+	    fu_self_test_mock_snapd_init(fixture)) {
 		fixture->mock_snapd_available = TRUE;
 
-		(void)g_setenv("SNAP", "fwupd", TRUE);
+		if (tc->running_in_snap)
+			(void)g_setenv("SNAP", "fwupd", TRUE);
+		if (tc->snapd_fde_detected)
+			fu_context_add_flag(fixture->ctx, FU_CONTEXT_FLAG_FDE_SNAPD);
 
 		fu_self_test_mock_snapd_setup_scenario(fixture, tc->mock_snapd_scenario);
 	}
 
-	fixture->ctx = fu_context_new();
+	fu_context_add_flag(fixture->ctx, FU_CONTEXT_FLAG_INHIBIT_VOLUME_MOUNT);
 	ret = fu_context_load_quirks(fixture->ctx,
 				     FU_QUIRKS_LOAD_FLAG_NO_CACHE | FU_QUIRKS_LOAD_FLAG_NO_VERIFY,
 				     &error);
@@ -226,9 +233,9 @@ static void
 fu_self_test_tear_down(FuTestFixture *fixture, gconstpointer user_data)
 {
 	FuTestCase *tc = (FuTestCase *)user_data;
-	if (tc->with_snapd) {
+	if (tc->running_in_snap)
 		g_unsetenv("SNAP");
-
+	if (tc->running_in_snap || tc->snapd_fde_detected) {
 		if (fixture->mock_snapd_available)
 			fu_self_test_mock_snapd_reset(fixture);
 
@@ -240,24 +247,6 @@ fu_self_test_tear_down(FuTestFixture *fixture, gconstpointer user_data)
 	}
 
 	g_object_unref(fixture->ctx);
-}
-
-static void
-fu_uefi_dbx_test_plugin_coldplug_no_device(FuTestFixture *fixture, gconstpointer user_data)
-{
-	gboolean ret;
-	FuContext *ctx = fixture->ctx;
-	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
-	g_autoptr(GError) error = NULL;
-	g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(fu_uefi_dbx_plugin_get_type(), ctx);
-
-	ret = fu_plugin_runner_startup(plugin, progress, &error);
-	g_assert_no_error(error);
-	g_assert_true(ret);
-
-	ret = fu_plugin_runner_coldplug(plugin, progress, &error);
-	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND);
-	g_assert_false(ret);
 }
 
 static gboolean
@@ -332,15 +321,15 @@ fu_uefi_dbx_test_plugin_update(FuTestFixture *fixture, gconstpointer user_data)
 	FuTestCase *tc = (FuTestCase *)user_data;
 	gboolean ret;
 	FuContext *ctx = fixture->ctx;
-	GPtrArray *devs = NULL;
-	FuDevice *dev = NULL;
 	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GInputStream) stream_fw = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(fu_uefi_dbx_plugin_get_type(), ctx);
+	g_autoptr(FuUefiDbxDevice) uefi_device = NULL;
+	gboolean expect_snapd_calls = tc->running_in_snap || tc->snapd_fde_detected;
 
-	if (tc->with_snapd && !fixture->mock_snapd_available) {
+	if (expect_snapd_calls && !fixture->mock_snapd_available) {
 		g_test_skip("mock snapd not available");
 		return;
 	}
@@ -356,18 +345,16 @@ fu_uefi_dbx_test_plugin_update(FuTestFixture *fixture, gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	ret = fu_plugin_runner_coldplug(plugin, progress, &error);
+	uefi_device = g_object_new(FU_TYPE_UEFI_DBX_DEVICE, "context", ctx, NULL);
+	fu_uefi_device_set_guid(FU_UEFI_DEVICE(uefi_device), FU_EFIVARS_GUID_EFI_GLOBAL);
+	fu_uefi_device_set_name(FU_UEFI_DEVICE(uefi_device), "KEK");
+	ret = fu_plugin_runner_device_created(plugin, FU_DEVICE(uefi_device), &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	devs = fu_plugin_get_devices(plugin);
-	g_assert_nonnull(devs);
-	g_assert_cmpuint(devs->len, ==, 1);
-	dev = g_ptr_array_index(devs, 0);
-
 	stream_fw = fu_test_mock_dbx_update_stream();
 	ret = fu_plugin_runner_write_firmware(plugin,
-					      dev,
+					      FU_DEVICE(uefi_device),
 					      stream_fw,
 					      progress,
 					      /* skip verification of ESP binaries*/
@@ -375,14 +362,14 @@ fu_uefi_dbx_test_plugin_update(FuTestFixture *fixture, gconstpointer user_data)
 					      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
-	g_assert_true(fu_device_has_flag(dev, FWUPD_DEVICE_FLAG_NEEDS_REBOOT));
+	g_assert_true(fu_device_has_flag(FU_DEVICE(uefi_device), FWUPD_DEVICE_FLAG_NEEDS_REBOOT));
 
 	/* this is normally invoked by FuEngine */
-	ret = fu_device_cleanup(dev, progress, 0, &error);
+	ret = fu_device_cleanup(FU_DEVICE(uefi_device), progress, 0, &error);
 	g_assert_true(ret);
 	g_assert_no_error(error);
 
-	if (tc->with_snapd) {
+	if (expect_snapd_calls) {
 		fu_self_test_mock_snapd_assert_calls(fixture,
 						     (FuTestSnapdCalls){
 							 .startup = 1,
@@ -401,15 +388,14 @@ fu_uefi_dbx_test_plugin_failed_update(FuTestFixture *fixture, gconstpointer user
 	FuTestCase *tc = (FuTestCase *)user_data;
 	gboolean ret;
 	FuContext *ctx = fixture->ctx;
-	GPtrArray *devs = NULL;
-	FuDevice *dev = NULL;
 	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GInputStream) stream_fw = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(fu_uefi_dbx_plugin_get_type(), ctx);
+	g_autoptr(FuUefiDbxDevice) uefi_device = NULL;
 
-	if (!tc->with_snapd) {
+	if (!tc->running_in_snap && !tc->snapd_fde_detected) {
 		g_test_skip("only supports snapd integration variant");
 		return;
 	}
@@ -430,18 +416,16 @@ fu_uefi_dbx_test_plugin_failed_update(FuTestFixture *fixture, gconstpointer user
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	ret = fu_plugin_runner_coldplug(plugin, progress, &error);
+	uefi_device = g_object_new(FU_TYPE_UEFI_DBX_DEVICE, "context", ctx, NULL);
+	fu_uefi_device_set_guid(FU_UEFI_DEVICE(uefi_device), FU_EFIVARS_GUID_EFI_GLOBAL);
+	fu_uefi_device_set_name(FU_UEFI_DEVICE(uefi_device), "KEK");
+	ret = fu_plugin_runner_device_created(plugin, FU_DEVICE(uefi_device), &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	devs = fu_plugin_get_devices(plugin);
-	g_assert_nonnull(devs);
-	g_assert_cmpuint(devs->len, ==, 1);
-	dev = g_ptr_array_index(devs, 0);
-
 	stream_fw = fu_test_mock_dbx_update_stream();
 	ret = fu_plugin_runner_write_firmware(plugin,
-					      dev,
+					      FU_DEVICE(uefi_device),
 					      stream_fw,
 					      progress,
 					      /* skip verification of ESP binaries*/
@@ -456,7 +440,7 @@ fu_uefi_dbx_test_plugin_failed_update(FuTestFixture *fixture, gconstpointer user
 	}
 
 	/* engine invokes cleanup */
-	ret = fu_device_cleanup(dev, progress, 0, &error);
+	ret = fu_device_cleanup(FU_DEVICE(uefi_device), progress, 0, &error);
 	if (g_str_equal(tc->mock_snapd_scenario, "failed-cleanup")) {
 		g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL);
 	} else {
@@ -478,13 +462,14 @@ fu_uefi_dbx_test_plugin_coldplug_probed_device(FuTestFixture *fixture, gconstpoi
 	FuTestCase *tc = (FuTestCase *)user_data;
 	gboolean ret;
 	FuContext *ctx = fixture->ctx;
-	GPtrArray *devs = NULL;
 	FuEfivars *efivars = fu_context_get_efivars(ctx);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(fu_uefi_dbx_plugin_get_type(), ctx);
+	g_autoptr(FuUefiDbxDevice) uefi_device = NULL;
+	gboolean expect_snapd_calls = tc->running_in_snap || tc->snapd_fde_detected;
 
-	if (tc->with_snapd && !fixture->mock_snapd_available) {
+	if (expect_snapd_calls && !fixture->mock_snapd_available) {
 		g_test_skip("mock snapd not available");
 		return;
 	}
@@ -500,24 +485,22 @@ fu_uefi_dbx_test_plugin_coldplug_probed_device(FuTestFixture *fixture, gconstpoi
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	ret = fu_plugin_runner_coldplug(plugin, progress, &error);
+	uefi_device = g_object_new(FU_TYPE_UEFI_DBX_DEVICE, "context", ctx, NULL);
+	fu_uefi_device_set_guid(FU_UEFI_DEVICE(uefi_device), FU_EFIVARS_GUID_EFI_GLOBAL);
+	fu_uefi_device_set_name(FU_UEFI_DEVICE(uefi_device), "KEK");
+	ret = fu_plugin_runner_device_created(plugin, FU_DEVICE(uefi_device), &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	devs = fu_plugin_get_devices(plugin);
-	g_assert_nonnull(devs);
-	g_assert_cmpuint(devs->len, ==, 1);
-	g_assert_true(FU_IS_UEFI_DBX_DEVICE(g_ptr_array_index(devs, 0)));
-
-	ret = fu_device_has_inhibit(g_ptr_array_index(devs, 0), "no-snapd-dbx");
-	if (tc->with_snapd && tc->snapd_supported &&
+	ret = fu_device_has_inhibit(FU_DEVICE(uefi_device), "no-snapd-dbx");
+	if (expect_snapd_calls && tc->snapd_supported &&
 	    g_str_equal(tc->mock_snapd_scenario, "failed-startup")) {
 		/* startup failed for whatever reason, device updates are inhibited */
 		g_assert_true(ret);
 	} else
 		g_assert_false(ret);
 
-	if (tc->with_snapd) {
+	if (expect_snapd_calls) {
 		fu_self_test_mock_snapd_assert_calls(fixture,
 						     (FuTestSnapdCalls){
 							 .startup = 1,
@@ -535,7 +518,7 @@ fu_uefi_dbx_test_plugin_startup(FuTestFixture *fixture, gconstpointer user_data)
 	g_autoptr(GError) error = NULL;
 	g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(fu_uefi_dbx_plugin_get_type(), ctx);
 
-	if (tc->with_snapd && !fixture->mock_snapd_available) {
+	if (tc->running_in_snap && !fixture->mock_snapd_available) {
 		g_test_skip("mock snapd not available");
 		return;
 	}
@@ -550,7 +533,7 @@ fu_uefi_dbx_test_plugin_startup(FuTestFixture *fixture, gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	if (tc->with_snapd) {
+	if (tc->running_in_snap) {
 		fu_self_test_mock_snapd_assert_calls(fixture,
 						     (FuTestSnapdCalls){
 							 .startup = 1,
@@ -562,38 +545,73 @@ int
 main(int argc, char **argv)
 {
 	FuTestCase simple = {
-	    .with_snapd = FALSE,
-	    .devices_cnt = 0,
+	    .running_in_snap = FALSE,
 	};
 	/* test variants with snapd, see tests/snapd.py for what a specific scenario
 	 * supports */
-	FuTestCase with_snapd = {
-	    .with_snapd = TRUE,
+	FuTestCase running_in_snap = {
+	    .running_in_snap = TRUE,
 	    .snapd_supported = TRUE,
 	    .mock_snapd_scenario = "happy-startup",
 	};
-	FuTestCase with_snapd_no_support = {
-	    .with_snapd = TRUE,
+	FuTestCase snapd_fde_detected = {
+	    .snapd_fde_detected = TRUE,
+	    .snapd_supported = TRUE,
+	    .mock_snapd_scenario = "happy-startup",
+	};
+	FuTestCase running_in_snap_snapd_fde_detected = {
+	    .snapd_fde_detected = TRUE,
+	    .running_in_snap = TRUE,
+	    .snapd_supported = TRUE,
+	    .mock_snapd_scenario = "happy-startup",
+	};
+	FuTestCase running_in_snap_no_support = {
+	    .running_in_snap = TRUE,
 	    .snapd_supported = FALSE,
 	    .mock_snapd_scenario = "not-supported",
 	};
-	FuTestCase with_snapd_bad_startup = {
-	    .with_snapd = TRUE,
+	FuTestCase snapd_fde_detected_no_support = {
+	    .snapd_fde_detected = TRUE,
+	    .snapd_supported = FALSE,
+	    .mock_snapd_scenario = "not-supported",
+	};
+	FuTestCase running_in_snap_bad_startup = {
+	    .running_in_snap = TRUE,
 	    .snapd_supported = TRUE,
 	    .mock_snapd_scenario = "failed-startup",
 	};
-	FuTestCase with_snapd_update = {
-	    .with_snapd = TRUE,
+	FuTestCase snapd_fde_detected_bad_startup = {
+	    .snapd_fde_detected = TRUE,
+	    .snapd_supported = TRUE,
+	    .mock_snapd_scenario = "failed-startup",
+	};
+	FuTestCase running_in_snap_update = {
+	    .running_in_snap = TRUE,
 	    .snapd_supported = TRUE,
 	    .mock_snapd_scenario = "happy-update",
 	};
-	FuTestCase with_snapd_update_failed_prepare = {
-	    .with_snapd = TRUE,
+	FuTestCase snapd_fde_detected_update = {
+	    .snapd_fde_detected = TRUE,
+	    .snapd_supported = TRUE,
+	    .mock_snapd_scenario = "happy-update",
+	};
+	FuTestCase running_in_snap_update_failed_prepare = {
+	    .running_in_snap = TRUE,
 	    .snapd_supported = TRUE,
 	    .mock_snapd_scenario = "failed-prepare",
 	};
-	FuTestCase with_snapd_update_failed_cleanup = {
-	    .with_snapd = TRUE,
+	FuTestCase snapd_fde_detected_update_failed_prepare = {
+	    .snapd_fde_detected = TRUE,
+	    .snapd_supported = TRUE,
+	    .mock_snapd_scenario = "failed-prepare",
+	};
+	FuTestCase running_in_snap_update_failed_cleanup = {
+	    .running_in_snap = TRUE,
+	    .snapd_supported = TRUE,
+	    .mock_snapd_scenario = "failed-cleanup",
+	};
+	FuTestCase snapd_fde_detected_update_failed_cleanup = {
+	    .snapd_fde_detected = TRUE,
 	    .snapd_supported = TRUE,
 	    .mock_snapd_scenario = "failed-cleanup",
 	};
@@ -630,30 +648,47 @@ main(int argc, char **argv)
 		   fu_uefi_dbx_test_plugin_update,
 		   fu_self_test_tear_down);
 
-	g_test_add("/uefi-dbx/startup/snapd/supported",
+	g_test_add("/uefi-dbx/startup/snapd/running-in-snap/supported",
 		   FuTestFixture,
-		   &with_snapd,
+		   &running_in_snap,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_startup,
 		   fu_self_test_tear_down);
-	g_test_add("/uefi-dbx/startup/snapd/not-supported",
+	g_test_add("/uefi-dbx/startup/snapd/fde-detected/supported",
 		   FuTestFixture,
-		   &with_snapd_no_support,
+		   &snapd_fde_detected,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_startup,
 		   fu_self_test_tear_down);
-	g_test_add("/uefi-dbx/startup/snapd/supported-failure",
+	g_test_add("/uefi-dbx/startup/snapd/running-in-snap-and-fde-detected/supported",
 		   FuTestFixture,
-		   &with_snapd_bad_startup,
+		   &running_in_snap_snapd_fde_detected,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_startup,
 		   fu_self_test_tear_down);
-
-	g_test_add("/uefi-dbx/coldplug/no-device",
+	g_test_add("/uefi-dbx/startup/snapd/running-in-snap/not-supported",
 		   FuTestFixture,
-		   &simple,
+		   &running_in_snap_no_support,
 		   fu_self_test_set_up,
-		   fu_uefi_dbx_test_plugin_coldplug_no_device,
+		   fu_uefi_dbx_test_plugin_startup,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/startup/snapd/fde-detected/not-supported",
+		   FuTestFixture,
+		   &snapd_fde_detected_no_support,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_startup,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/startup/snapd/running-in-snap/supported-failure",
+		   FuTestFixture,
+		   &running_in_snap_bad_startup,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_startup,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/startup/snapd/fde-detected/supported-failure",
+		   FuTestFixture,
+		   &snapd_fde_detected_bad_startup,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_startup,
 		   fu_self_test_tear_down);
 
 	g_test_add("/uefi-dbx/coldplug/with-device",
@@ -663,43 +698,79 @@ main(int argc, char **argv)
 		   fu_uefi_dbx_test_plugin_coldplug_probed_device,
 		   fu_self_test_tear_down);
 
-	g_test_add("/uefi-dbx/coldplug/snapd/supported",
+	g_test_add("/uefi-dbx/coldplug/snapd/running-in-snap/supported",
 		   FuTestFixture,
-		   &with_snapd,
+		   &running_in_snap,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_coldplug_probed_device,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/coldplug/snapd/fde-detected/supported",
+		   FuTestFixture,
+		   &snapd_fde_detected,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_coldplug_probed_device,
 		   fu_self_test_tear_down);
 
-	g_test_add("/uefi-dbx/coldplug/snapd/not-supported",
+	g_test_add("/uefi-dbx/coldplug/snapd/running-in-snap/not-supported",
 		   FuTestFixture,
-		   &with_snapd_no_support,
+		   &running_in_snap_no_support,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_coldplug_probed_device,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/coldplug/snapd/fde-detected/not-supported",
+		   FuTestFixture,
+		   &snapd_fde_detected_no_support,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_coldplug_probed_device,
 		   fu_self_test_tear_down);
 
-	g_test_add("/uefi-dbx/coldplug/snapd/supported-failure",
+	g_test_add("/uefi-dbx/coldplug/snapd/running-in-snap/supported-failure",
 		   FuTestFixture,
-		   &with_snapd_bad_startup,
+		   &running_in_snap_bad_startup,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_coldplug_probed_device,
 		   fu_self_test_tear_down);
-	g_test_add("/uefi-dbx/update/snapd/success",
+	g_test_add("/uefi-dbx/coldplug/snapd/fde-detected/supported-failure",
 		   FuTestFixture,
-		   &with_snapd_update,
+		   &snapd_fde_detected_bad_startup,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_coldplug_probed_device,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/update/snapd/running-in-snap/success",
+		   FuTestFixture,
+		   &running_in_snap_update,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_update,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/update/snapd/fde-detected/success",
+		   FuTestFixture,
+		   &snapd_fde_detected_update,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_update,
 		   fu_self_test_tear_down);
 
-	g_test_add("/uefi-dbx/update/snapd/failed-prepare",
+	g_test_add("/uefi-dbx/update/snapd/running-in-snap/failed-prepare",
 		   FuTestFixture,
-		   &with_snapd_update_failed_prepare,
+		   &running_in_snap_update_failed_prepare,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_failed_update,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/update/snapd/fde-detected/failed-prepare",
+		   FuTestFixture,
+		   &snapd_fde_detected_update_failed_prepare,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_failed_update,
 		   fu_self_test_tear_down);
 
-	g_test_add("/uefi-dbx/update/snapd/failed-cleanup",
+	g_test_add("/uefi-dbx/update/snapd/running-in-snap/failed-cleanup",
 		   FuTestFixture,
-		   &with_snapd_update_failed_cleanup,
+		   &running_in_snap_update_failed_cleanup,
+		   fu_self_test_set_up,
+		   fu_uefi_dbx_test_plugin_failed_update,
+		   fu_self_test_tear_down);
+	g_test_add("/uefi-dbx/update/snapd/fde-detected/failed-cleanup",
+		   FuTestFixture,
+		   &snapd_fde_detected_update_failed_cleanup,
 		   fu_self_test_set_up,
 		   fu_uefi_dbx_test_plugin_failed_update,
 		   fu_self_test_tear_down);

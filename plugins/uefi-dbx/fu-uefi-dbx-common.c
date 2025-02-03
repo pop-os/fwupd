@@ -6,7 +6,39 @@
 
 #include "config.h"
 
+#ifdef HAVE_UTSNAME_H
+#include <sys/utsname.h>
+#endif
+
 #include "fu-uefi-dbx-common.h"
+
+const gchar *
+fu_uefi_dbx_get_efi_arch(void)
+{
+#ifdef HAVE_UTSNAME_H
+	struct utsname name_tmp;
+	struct {
+		const gchar *arch;
+		const gchar *arch_efi;
+	} map[] = {
+	    {"x86", "ia32"},
+	    {"x86_64", "x64"},
+	    {"arm", "arm"},
+	    {"aarch64", "aa64"},
+	    {"loongarch64", "loongarch64"},
+	    {"riscv64", "riscv64"},
+	};
+
+	memset(&name_tmp, 0, sizeof(struct utsname));
+	if (uname(&name_tmp) < 0)
+		return NULL;
+	for (guint i = 0; i < G_N_ELEMENTS(map); i++) {
+		if (g_strcmp0(name_tmp.machine, map[i].arch) == 0)
+			return map[i].arch_efi;
+	}
+#endif
+	return NULL;
+}
 
 static gchar *
 fu_uefi_dbx_get_authenticode_hash(const gchar *fn, GError **error)
@@ -60,13 +92,19 @@ fu_uefi_dbx_signature_list_validate(FuContext *ctx,
 				    GError **error)
 {
 	g_autoptr(GPtrArray) files = NULL;
+	g_autoptr(GError) error_local = NULL;
 
 	files = fu_context_get_esp_files(ctx,
 					 FU_CONTEXT_ESP_FILE_FLAG_INCLUDE_FIRST_STAGE |
 					     FU_CONTEXT_ESP_FILE_FLAG_INCLUDE_SECOND_STAGE,
-					 error);
-	if (files == NULL)
+					 &error_local);
+	if (files == NULL) {
+		/* there is no BootOrder in CI */
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND))
+			return TRUE;
+		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
+	}
 	for (guint i = 0; i < files->len; i++) {
 		FuFirmware *firmware = g_ptr_array_index(files, i);
 		if (!fu_uefi_dbx_signature_list_validate_filename(

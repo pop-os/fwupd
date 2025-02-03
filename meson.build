@@ -1,8 +1,8 @@
 project('fwupd', 'c',
-  version: '2.0.4',
+  version: '2.0.5',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=1.3.0',
-  default_options: ['warning_level=2', 'c_std=c11'],
+  default_options: ['warning_level=2', 'c_std=c17'],
 )
 
 fwupd_version = meson.project_version()
@@ -358,6 +358,9 @@ endif
 libsystemd = dependency('libsystemd',
                         required: get_option('systemd').disable_auto_if(host_machine.system() != 'linux'))
 
+if cc.has_header('sys/auxv.h')
+  conf.set('HAVE_AUXV_H', '1')
+endif
 if cc.has_header('sys/utsname.h')
   conf.set('HAVE_UTSNAME_H', '1')
 endif
@@ -482,22 +485,6 @@ endif
 if build_standalone
   efi_app_location = join_paths(libexecdir, 'fwupd', 'efi')
   conf.set_quoted('EFI_APP_LOCATION', efi_app_location)
-  if host_cpu == 'x86'
-    EFI_MACHINE_TYPE_NAME = 'ia32'
-  elif host_cpu == 'x86_64'
-    EFI_MACHINE_TYPE_NAME = 'x64'
-  elif host_cpu == 'arm'
-    EFI_MACHINE_TYPE_NAME = 'arm'
-  elif host_cpu == 'aarch64'
-    EFI_MACHINE_TYPE_NAME = 'aa64'
-  elif host_cpu == 'loongarch64'
-    EFI_MACHINE_TYPE_NAME = 'loongarch64'
-  elif host_cpu == 'riscv64'
-    EFI_MACHINE_TYPE_NAME = 'riscv64'
-  else
-    EFI_MACHINE_TYPE_NAME = ''
-  endif
-  conf.set_quoted('EFI_MACHINE_TYPE_NAME', EFI_MACHINE_TYPE_NAME)
 endif
 
 flashrom = get_option('plugin_flashrom').disable_auto_if(host_machine.system() != 'linux')

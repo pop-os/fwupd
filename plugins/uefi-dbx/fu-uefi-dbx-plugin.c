@@ -20,25 +20,10 @@ struct _FuUefiDbxPlugin {
 G_DEFINE_TYPE(FuUefiDbxPlugin, fu_uefi_dbx_plugin, FU_TYPE_PLUGIN)
 
 static gboolean
-fu_uefi_dbx_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
+fu_uefi_dbx_plugin_device_created(FuPlugin *plugin, FuDevice *device, GError **error)
 {
-	FuContext *ctx = fu_plugin_get_context(plugin);
-	g_autoptr(FuUefiDbxDevice) device = fu_uefi_dbx_device_new(ctx);
 	FuUefiDbxPlugin *self = FU_UEFI_DBX_PLUGIN(plugin);
 	gboolean inhibited = FALSE;
-
-	/* progress */
-	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 99, "probe");
-	fu_progress_add_step(progress, FWUPD_STATUS_LOADING, 1, "setup");
-
-	if (!fu_device_probe(FU_DEVICE(device), error))
-		return FALSE;
-	fu_progress_step_done(progress);
-
-	if (!fu_device_setup(FU_DEVICE(device), error))
-		return FALSE;
-	fu_progress_step_done(progress);
 
 	if (fu_context_has_hwid_flag(fu_plugin_get_context(plugin), "no-dbx-updates")) {
 		fu_device_inhibit(FU_DEVICE(device),
@@ -48,21 +33,17 @@ fu_uefi_dbx_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **err
 	}
 
 	if (self->snapd_notifier != NULL) {
-		fu_uefi_dbx_device_set_snapd_notifier(device, self->snapd_notifier);
-	} else if (!inhibited && self->snapd_integration_supported && fu_snap_is_in_snap()) {
-		/* we're running inside a snap, the device is not inhibited and snapd
-		 * supports integration, in which case this is a hard error and we
-		 * should not give an option to dbx */
-
-		/* TODO should check for FDE flag, otherwise in a system where DBX is
-		measured during the boot, updating it without notifying snapd
-		can result in failed boot or needing to use recovery keys */
+		fu_uefi_dbx_device_set_snapd_notifier(FU_UEFI_DBX_DEVICE(device),
+						      self->snapd_notifier);
+	} else if (!inhibited && self->snapd_integration_supported) {
+		/* if snapd integration is supported, but we are unable to use the snapd notifier,
+		then we should inhibit the update if it isn't already inhibited */
 		fu_device_inhibit(FU_DEVICE(device),
 				  "no-snapd-dbx",
 				  "Snapd integration for DBX update is not available");
 	}
 
-	fu_plugin_device_add(plugin, FU_DEVICE(device));
+	/* success */
 	return TRUE;
 }
 
@@ -99,28 +80,40 @@ static void
 fu_uefi_dbx_plugin_constructed(GObject *obj)
 {
 	FuPlugin *plugin = FU_PLUGIN(obj);
+	g_autoptr(FuVolume) esp = NULL;
+	g_autoptr(GError) error_udisks2 = NULL;
+	FuUefiDbxPlugin *self = FU_UEFI_DBX_PLUGIN(plugin);
+	FuContext *ctx = fu_plugin_get_context(plugin);
+
 	fu_plugin_add_rule(plugin, FU_PLUGIN_RULE_METADATA_SOURCE, "uefi_capsule");
 	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_EFI_SIGNATURE_LIST);
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_UEFI_DBX_DEVICE);
 
-	if (fu_snap_is_in_snap()) {
-		FuUefiDbxPlugin *self = FU_UEFI_DBX_PLUGIN(plugin);
+	/* only enable snapd integration if either running inside a snap or we detect that this is a
+	snapd FDE setup. either of these cases makes snapd integration mandatory */
+	if (fu_snap_is_in_snap() || fu_context_has_flag(ctx, FU_CONTEXT_FLAG_FDE_SNAPD)) {
 		g_autoptr(GError) error_local = NULL;
-		/* only enable snapd integration if running inside a snap */
 		if (!fu_uefi_dbx_plugin_snapd_notify_init(FU_UEFI_DBX_PLUGIN(obj), &error_local)) {
-			/* specific error code if relevant APIs are not present and thus
-			 * integration cannot be supported */
+			/* unless we got specific error code indicating lack of relevant APIs, snapd
+			integration is considered to be supported, even if snapd itself cannot be
+			reached */
 			self->snapd_integration_supported =
 			    !g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED);
 
 			g_info("snapd integration non-functional: %s", error_local->message);
 		} else {
-			g_info("snapd integration enabled ");
+			g_info("snapd integration enabled");
 			self->snapd_integration_supported = TRUE;
 		}
-	} else {
-		/* TODO figure out non-snap scenarios */
-		g_info("snapd integration outside of snap is not supported");
+	}
+
+	/* ensure that an ESP was found */
+	esp = fu_context_get_default_esp(fu_plugin_get_context(plugin), &error_udisks2);
+	if (esp == NULL) {
+		g_info("cannot find default ESP: %s", error_udisks2->message);
+		fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_ESP_NOT_FOUND);
+		fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_CLEAR_UPDATABLE);
+		fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_USER_WARNING);
 	}
 }
 
@@ -131,7 +124,7 @@ fu_uefi_dbx_plugin_class_init(FuUefiDbxPluginClass *klass)
 	FuPluginClass *plugin_class = FU_PLUGIN_CLASS(klass);
 
 	plugin_class->constructed = fu_uefi_dbx_plugin_constructed;
-	plugin_class->coldplug = fu_uefi_dbx_plugin_coldplug;
+	plugin_class->device_created = fu_uefi_dbx_plugin_device_created;
 
 	object_class->finalize = fu_uefi_dbx_plugin_finalize;
 }

@@ -108,6 +108,9 @@ fu_util_show_plugin_warnings(FuUtilPrivate *priv)
 	FwupdPluginFlags flags = FWUPD_PLUGIN_FLAG_NONE;
 	GPtrArray *plugins;
 
+	if (priv->as_json)
+		return;
+
 	/* get a superset so we do not show the same message more than once */
 	plugins = fu_engine_get_plugins(priv->engine);
 	for (guint i = 0; i < plugins->len; i++) {
@@ -245,20 +248,25 @@ fu_util_start_engine(FuUtilPrivate *priv,
 	flags |= FU_ENGINE_LOAD_FLAG_EXTERNAL_PLUGINS;
 	if (!fu_engine_load(priv->engine, flags, progress, error))
 		return FALSE;
-	fu_util_show_plugin_warnings(priv);
-	fu_util_show_unsupported_warning(priv->console);
+
+	if (!priv->as_json) {
+		fu_util_show_plugin_warnings(priv);
+		fu_util_show_unsupported_warning(priv->console);
+	}
 
 	/* copy properties from engine to client */
-	g_object_set(priv->client,
-		     "host-vendor",
-		     fu_engine_get_host_vendor(priv->engine),
-		     "host-product",
-		     fu_engine_get_host_product(priv->engine),
-		     "battery-level",
-		     fu_context_get_battery_level(fu_engine_get_context(priv->engine)),
-		     "battery-threshold",
-		     fu_context_get_battery_threshold(fu_engine_get_context(priv->engine)),
-		     NULL);
+	if (flags & FU_ENGINE_LOAD_FLAG_HWINFO) {
+		g_object_set(priv->client,
+			     "host-vendor",
+			     fu_engine_get_host_vendor(priv->engine),
+			     "host-product",
+			     fu_engine_get_host_product(priv->engine),
+			     "battery-level",
+			     fu_context_get_battery_level(fu_engine_get_context(priv->engine)),
+			     "battery-threshold",
+			     fu_context_get_battery_threshold(fu_engine_get_context(priv->engine)),
+			     NULL);
+	}
 
 	/* success */
 	return TRUE;
@@ -2038,6 +2046,9 @@ fu_util_modify_config(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 	}
 
+	if (priv->as_json)
+		return TRUE;
+
 	/* TRANSLATORS: success message -- a per-system setting value */
 	fu_console_print_literal(priv->console, _("Successfully modified configuration value"));
 	return TRUE;
@@ -2061,6 +2072,9 @@ fu_util_reset_config(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	if (!fu_engine_reset_config(priv->engine, values[0], error))
 		return FALSE;
+
+	if (priv->as_json)
+		return TRUE;
 
 	/* TRANSLATORS: success message -- a per-system setting value */
 	fu_console_print_literal(priv->console, _("Successfully reset configuration section"));
@@ -2268,6 +2282,9 @@ fu_util_enable_test_devices(FuUtilPrivate *priv, gchar **values, GError **error)
 			    "failed to enable fwupd-tests remote");
 		return FALSE;
 	}
+
+	if (priv->as_json)
+		return TRUE;
 
 	/* TRANSLATORS: comment explaining result of command */
 	fu_console_print_literal(priv->console, _("Successfully enabled test devices"));
@@ -2550,7 +2567,12 @@ fu_util_self_sign(FuUtilPrivate *priv, gchar **values, GError **error)
 				  error);
 	if (sig == NULL)
 		return FALSE;
-	fu_console_print_literal(priv->console, sig);
+
+	if (priv->as_json)
+		fu_console_print(priv->console, "{\"signature\": \"%s\"}", sig);
+	else
+		fu_console_print(priv->console, "%s", sig);
+
 	return TRUE;
 }
 
@@ -2558,7 +2580,13 @@ static void
 fu_util_device_added_cb(FwupdClient *client, FwupdDevice *device, gpointer user_data)
 {
 	FuUtilPrivate *priv = (FuUtilPrivate *)user_data;
-	g_autofree gchar *tmp = fu_util_device_to_string(priv->client, device, 0);
+	g_autofree gchar *tmp = NULL;
+
+	if (priv->as_json)
+		return;
+
+	tmp = fu_util_device_to_string(priv->client, device, 0);
+
 	/* TRANSLATORS: this is when a device is hotplugged */
 	fu_console_print(priv->console, "%s\n%s", _("Device added:"), tmp);
 }
@@ -2567,7 +2595,13 @@ static void
 fu_util_device_removed_cb(FwupdClient *client, FwupdDevice *device, gpointer user_data)
 {
 	FuUtilPrivate *priv = (FuUtilPrivate *)user_data;
-	g_autofree gchar *tmp = fu_util_device_to_string(priv->client, device, 0);
+	g_autofree gchar *tmp = NULL;
+
+	if (priv->as_json)
+		return;
+
+	tmp = fu_util_device_to_string(priv->client, device, 0);
+
 	/* TRANSLATORS: this is when a device is hotplugged */
 	fu_console_print(priv->console, "%s\n%s", _("Device removed:"), tmp);
 }
@@ -2576,7 +2610,13 @@ static void
 fu_util_device_changed_cb(FwupdClient *client, FwupdDevice *device, gpointer user_data)
 {
 	FuUtilPrivate *priv = (FuUtilPrivate *)user_data;
-	g_autofree gchar *tmp = fu_util_device_to_string(priv->client, device, 0);
+	g_autofree gchar *tmp = NULL;
+
+	if (priv->as_json)
+		return;
+
+	tmp = fu_util_device_to_string(priv->client, device, 0);
+
 	/* TRANSLATORS: this is when a device has been updated */
 	fu_console_print(priv->console, "%s\n%s", _("Device changed:"), tmp);
 }
@@ -2585,6 +2625,10 @@ static void
 fu_util_changed_cb(FwupdClient *client, gpointer user_data)
 {
 	FuUtilPrivate *priv = (FuUtilPrivate *)user_data;
+
+	if (priv->as_json)
+		return;
+
 	/* TRANSLATORS: this is when the daemon state changes */
 	fu_console_print_literal(priv->console, _("Changed"));
 }
@@ -2640,9 +2684,12 @@ fu_util_get_firmware_types(FuUtilPrivate *priv, gchar **values, GError **error)
 		fu_console_print_literal(priv->console, id);
 	}
 	if (firmware_types->len == 0) {
-		/* TRANSLATORS: nothing found */
-		fu_console_print_literal(priv->console, _("No firmware IDs found"));
-		return TRUE;
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    /* TRANSLATORS: nothing found */
+				    _("No firmware IDs found"));
+		return FALSE;
 	}
 
 	return TRUE;
@@ -2667,9 +2714,12 @@ fu_util_get_firmware_gtypes(FuUtilPrivate *priv, gchar **values, GError **error)
 		fu_console_print_literal(priv->console, g_type_name(gtype));
 	}
 	if (firmware_types->len == 0) {
-		/* TRANSLATORS: nothing found */
-		fu_console_print_literal(priv->console, _("No firmware found"));
-		return TRUE;
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    /* TRANSLATORS: nothing found */
+				    _("No firmware found"));
+		return FALSE;
 	}
 
 	return TRUE;
@@ -3359,6 +3409,15 @@ fu_util_get_history(FuUtilPrivate *priv, gchar **values, GError **error)
 	devices = fu_engine_get_history(priv->engine, error);
 	if (devices == NULL)
 		return FALSE;
+
+	/* not for human consumption */
+	if (priv->as_json) {
+		g_autoptr(JsonBuilder) builder = json_builder_new();
+		json_builder_begin_object(builder);
+		fwupd_codec_array_to_json(devices, "Devices", builder, FWUPD_CODEC_FLAG_TRUSTED);
+		json_builder_end_object(builder);
+		return fu_util_print_builder(priv->console, builder, error);
+	}
 
 	/* show each device */
 	for (guint i = 0; i < devices->len; i++) {
@@ -5280,7 +5339,8 @@ main(int argc, char *argv[])
 		}
 #endif
 		fu_util_print_error(priv, error);
-		if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_ARGS)) {
+		if (!priv->as_json &&
+		    g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_ARGS)) {
 			fu_console_print(priv->console,
 					 /* TRANSLATORS: explain how to get help, %1 is
 					  * 'fwupdtool --help' */

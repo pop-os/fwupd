@@ -98,18 +98,17 @@ fu_pefile_firmware_region_sort_cb(gconstpointer a, gconstpointer b)
 static gboolean
 fu_pefile_firmware_parse_section(FuFirmware *firmware,
 				 GInputStream *stream,
+				 guint idx,
 				 gsize hdr_offset,
 				 gsize strtab_offset,
 				 GPtrArray *regions,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
-	guint32 sect_offset;
 	g_autofree gchar *sect_id = NULL;
 	g_autofree gchar *sect_id_tmp = NULL;
 	g_autoptr(FuFirmware) img = NULL;
 	g_autoptr(GByteArray) st = NULL;
-	g_autoptr(GInputStream) img_stream = NULL;
 
 	st = fu_struct_pe_coff_section_parse_stream(stream, hdr_offset, error);
 	if (st == NULL) {
@@ -118,13 +117,8 @@ fu_pefile_firmware_parse_section(FuFirmware *firmware,
 	}
 	sect_id_tmp = fu_struct_pe_coff_section_get_name(st);
 	if (sect_id_tmp == NULL) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "invalid section name");
-		return FALSE;
-	}
-	if (sect_id_tmp[0] == '/') {
+		sect_id = g_strdup_printf(".nul%04x", idx);
+	} else if (sect_id_tmp[0] == '/') {
 		guint64 str_idx = 0x0;
 		guint8 buf[FU_PEFILE_SECTION_ID_STRTAB_SIZE] = {0};
 
@@ -169,32 +163,39 @@ fu_pefile_firmware_parse_section(FuFirmware *firmware,
 		fu_csv_firmware_add_column_id(FU_CSV_FIRMWARE(img), "vendor_package_name");
 		fu_csv_firmware_add_column_id(FU_CSV_FIRMWARE(img), "$version");
 		fu_csv_firmware_add_column_id(FU_CSV_FIRMWARE(img), "vendor_url");
+		fu_csv_firmware_set_write_column_ids(FU_CSV_FIRMWARE(img), FALSE);
 	} else if (g_strcmp0(sect_id, ".sbatlevel") == 0) {
 		img = fu_sbatlevel_section_new();
 	} else {
 		img = fu_firmware_new();
 	}
 	fu_firmware_set_id(img, sect_id);
+	fu_firmware_set_idx(img, idx);
 
 	/* add data */
-	sect_offset = fu_struct_pe_coff_section_get_pointer_to_raw_data(st);
-	fu_firmware_set_offset(img, sect_offset);
-	img_stream = fu_partial_input_stream_new(stream,
-						 sect_offset,
-						 fu_struct_pe_coff_section_get_size_of_raw_data(st),
-						 error);
-	if (img_stream == NULL)
-		return FALSE;
-	if (!fu_firmware_parse_stream(img, img_stream, 0x0, flags, error)) {
-		g_prefix_error(error, "failed to parse raw data %s: ", sect_id);
-		return FALSE;
-	}
+	if (fu_struct_pe_coff_section_get_size_of_raw_data(st) > 0) {
+		guint32 sect_offset = fu_struct_pe_coff_section_get_pointer_to_raw_data(st);
+		g_autoptr(GInputStream) img_stream = NULL;
 
-	/* add region for Authenticode checksum */
-	fu_pefile_firmware_add_region(regions,
-				      sect_id,
-				      sect_offset,
-				      fu_struct_pe_coff_section_get_size_of_raw_data(st));
+		fu_firmware_set_offset(img, sect_offset);
+		img_stream =
+		    fu_partial_input_stream_new(stream,
+						sect_offset,
+						fu_struct_pe_coff_section_get_size_of_raw_data(st),
+						error);
+		if (img_stream == NULL)
+			return FALSE;
+		if (!fu_firmware_parse_stream(img, img_stream, 0x0, flags, error)) {
+			g_prefix_error(error, "failed to parse raw data %s: ", sect_id);
+			return FALSE;
+		}
+
+		/* add region for Authenticode checksum */
+		fu_pefile_firmware_add_region(regions,
+					      sect_id,
+					      sect_offset,
+					      fu_struct_pe_coff_section_get_size_of_raw_data(st));
+	}
 
 	/* success */
 	return fu_firmware_add_image_full(firmware, img, error);
@@ -305,6 +306,7 @@ fu_pefile_firmware_parse(FuFirmware *firmware,
 	for (guint idx = 0; idx < nr_sections; idx++) {
 		if (!fu_pefile_firmware_parse_section(firmware,
 						      stream,
+						      idx,
 						      offset,
 						      strtab_offset,
 						      regions,

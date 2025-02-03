@@ -3095,7 +3095,11 @@ fu_device_set_version(FuDevice *self, const gchar *version)
 	/* print a console warning for an invalid version, if semver */
 	if (version_safe != NULL &&
 	    !fu_version_verify_format(version_safe, fu_device_get_version_format(self), &error))
+#ifdef SUPPORTED_BUILD
 		g_warning("%s", error->message);
+#else
+		g_critical("%s", error->message);
+#endif
 
 	/* if different */
 	if (g_strcmp0(fu_device_get_version(self), version_safe) != 0) {
@@ -3139,7 +3143,11 @@ fu_device_set_version_lowest(FuDevice *self, const gchar *version)
 	/* print a console warning for an invalid version, if semver */
 	if (version_safe != NULL &&
 	    !fu_version_verify_format(version_safe, fu_device_get_version_format(self), &error))
+#ifdef SUPPORTED_BUILD
 		g_warning("%s", error->message);
+#else
+		g_critical("%s", error->message);
+#endif
 
 	/* if different */
 	if (g_strcmp0(fu_device_get_version_lowest(self), version_safe) != 0) {
@@ -3183,7 +3191,11 @@ fu_device_set_version_bootloader(FuDevice *self, const gchar *version)
 	/* print a console warning for an invalid version, if semver */
 	if (version_safe != NULL &&
 	    !fu_version_verify_format(version_safe, fu_device_get_version_format(self), &error))
+#ifdef SUPPORTED_BUILD
 		g_warning("%s", error->message);
+#else
+		g_critical("%s", error->message);
+#endif
 
 	/* if different */
 	if (g_strcmp0(fu_device_get_version_bootloader(self), version_safe) != 0) {
@@ -5174,6 +5186,12 @@ fu_device_read_firmware(FuDevice *self, FuProgress *progress, GError **error)
 	fw = fu_device_dump_firmware(self, progress, error);
 	if (fw == NULL)
 		return NULL;
+	if (priv->firmware_gtype != G_TYPE_INVALID) {
+		g_autoptr(FuFirmware) firmware = g_object_new(priv->firmware_gtype, NULL);
+		if (!fu_firmware_parse_bytes(firmware, fw, 0x0, FWUPD_INSTALL_FLAG_NONE, error))
+			return NULL;
+		return g_steal_pointer(&firmware);
+	}
 	return fu_firmware_new_from_bytes(fw);
 }
 
@@ -6722,6 +6740,50 @@ fu_device_ensure_from_component(FuDevice *self, XbNode *component)
 		fu_device_ensure_from_component_verfmt(self, component);
 	if (fu_device_has_private_flag(self, FU_DEVICE_PRIVATE_FLAG_MD_SET_FLAGS))
 		fu_device_ensure_from_component_flags(self, component);
+}
+
+/**
+ * fu_device_ensure_from_release:
+ * @self: a #FuDevice
+ * @rel: (not nullable): a #XbNode
+ *
+ * Ensure all properties from the donor AppStream release as required.
+ *
+ * Since: 2.0.5
+ **/
+void
+fu_device_ensure_from_release(FuDevice *self, XbNode *rel)
+{
+	g_return_if_fail(FU_IS_DEVICE(self));
+	g_return_if_fail(XB_IS_NODE(rel));
+
+	/* optionally filter by device checksum */
+	if (fu_device_has_private_flag(self, FU_DEVICE_PRIVATE_FLAG_MD_ONLY_CHECKSUM)) {
+		gboolean valid = FALSE;
+		g_autoptr(GPtrArray) device_checksums = NULL;
+
+		if (fu_device_get_checksums(self)->len == 0)
+			return;
+		device_checksums = xb_node_query(rel, "checksum[@target='device']", 0, NULL);
+		for (guint i = 0; device_checksums != NULL && i < device_checksums->len; i++) {
+			XbNode *device_checksum = g_ptr_array_index(device_checksums, i);
+			if (fu_device_has_checksum(self, xb_node_get_text(device_checksum))) {
+				valid = TRUE;
+				break;
+			}
+		}
+		if (!valid)
+			return;
+	}
+
+	/* set the version */
+	if (fu_device_has_private_flag(self, FU_DEVICE_PRIVATE_FLAG_MD_SET_VERSION)) {
+		const gchar *version = xb_node_get_attr(rel, "version");
+		if (version != NULL) {
+			fu_device_set_version(self, version);
+			fu_device_remove_private_flag(self, FU_DEVICE_PRIVATE_FLAG_MD_SET_VERSION);
+		}
+	}
 }
 
 /**

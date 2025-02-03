@@ -1,5 +1,6 @@
 #!/bin/sh -e
 
+exec 0>/dev/null
 exec 2>&1
 
 run_test()
@@ -19,10 +20,9 @@ run_device_tests()
 				--no-unreported-check \
 				--no-remote-check \
 				--no-metadata-check \
-				--verbose \
+				--json \
 				"$f"
 		done
-		fwupdmgr quit
 	fi
 }
 
@@ -59,9 +59,10 @@ run_test tpm-self-test
 run_test uefi-dbx-self-test
 run_test vli-self-test
 run_test wacom-usb-self-test
-run_device_tests
 run_umockdev_test fwupd_test.py
 run_umockdev_test pci_psp_test.py
+run_device_tests
+fwupdmgr quit
 
 # success!
 exit 0
