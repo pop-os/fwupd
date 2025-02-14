@@ -1,3 +1,10 @@
+fwupd (2.0.6-1) unstable; urgency=medium
+
+  * New upstream version (2.0.6)
+  * Drop patch for unneeded file.
+
+ -- Mario Limonciello <superm1@gmail.com>  Fri, 14 Feb 2025 08:12:59 -0600
+
 fwupd (2.0.5-1) unstable; urgency=medium
 
   * New upstream version (2.0.5)
