@@ -50,6 +50,7 @@ Build-Depends:
 	meson,
 	mingw-w64-tools [amd64 arm64 armhf i386],
 	pkg-config,
+	polkitd,
 	protobuf-c-compiler,
 	python3-gi-cairo,
 	python3-jinja2,
