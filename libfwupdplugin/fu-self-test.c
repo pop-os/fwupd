@@ -29,6 +29,7 @@
 #include "fu-dummy-efivars.h"
 #include "fu-efi-lz77-decompressor.h"
 #include "fu-efivars-private.h"
+#include "fu-kernel-search-path-private.h"
 #include "fu-lzma-common.h"
 #include "fu-plugin-private.h"
 #include "fu-progress-private.h"
@@ -869,6 +870,65 @@ fu_context_hwids_dmi_func(void)
 
 	g_assert_cmpstr(fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER), ==, "FwupdTest");
 	g_assert_cmpuint(fu_context_get_chassis_kind(ctx), ==, 16);
+}
+
+static void
+fu_context_hwids_fdt_func(void)
+{
+	gboolean ret;
+	g_autofree gchar *dump = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(FuFirmware) fdt_tmp = fu_fdt_firmware_new();
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GFile) file =
+	    g_file_new_for_path("/tmp/fwupd-self-test/var/lib/fwupd/system.dtb");
+
+	/* write file */
+	ret = fu_firmware_build_from_xml(
+	    FU_FIRMWARE(fdt_tmp),
+	    "<firmware gtype=\"FuFdtFirmware\">\n"
+	    "  <firmware gtype=\"FuFdtImage\">\n"
+	    "    <metadata key=\"compatible\" format=\"str\">pine64,rockpro64-v2.1</metadata>\n"
+	    "    <metadata key=\"chassis-type\" format=\"str\">tablet</metadata>\n"
+	    "    <metadata key=\"vendor\" format=\"str\">fwupd</metadata>\n"
+	    "    <firmware gtype=\"FuFdtImage\">\n"
+	    "      <id>ibm,firmware-versions</id>\n"
+	    "      <metadata key=\"version\" format=\"str\">1.2.3</metadata>\n"
+	    "    </firmware>\n"
+	    "    <firmware gtype=\"FuFdtImage\">\n"
+	    "      <id>vpd</id>\n"
+	    "      <firmware gtype=\"FuFdtImage\">\n"
+	    "        <id>root-node-vpd@a000</id>\n"
+	    "        <firmware gtype=\"FuFdtImage\">\n"
+	    "          <id>enclosure@1e00</id>\n"
+	    "          <firmware gtype=\"FuFdtImage\">\n"
+	    "            <id>backplane@800</id>\n"
+	    "            <metadata key=\"part-number\" format=\"str\">Tablet</metadata>\n"
+	    "          </firmware>\n"
+	    "        </firmware>\n"
+	    "      </firmware>\n"
+	    "    </firmware>\n"
+	    "  </firmware>\n"
+	    "</firmware>\n",
+	    &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_firmware_write_file(FU_FIRMWARE(fdt_tmp), file, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	ret = fu_context_load_hwinfo(ctx, progress, FU_CONTEXT_HWID_FLAG_LOAD_FDT, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	dump = fu_firmware_to_string(FU_FIRMWARE(fu_context_get_smbios(ctx)));
+	g_debug("%s", dump);
+
+	g_assert_cmpstr(fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_MANUFACTURER), ==, "fwupd");
+	g_assert_cmpstr(fu_context_get_hwid_value(ctx, FU_HWIDS_KEY_BASEBOARD_PRODUCT),
+			==,
+			"Tablet");
+	g_assert_cmpuint(fu_context_get_chassis_kind(ctx), ==, FU_SMBIOS_CHASSIS_KIND_TABLET);
 }
 
 static gboolean
@@ -1797,9 +1857,9 @@ static void
 fu_common_kernel_search_func(void)
 {
 	gboolean ret;
-	const gchar *expect = "/foo/bar";
 	g_autofree gchar *result1 = NULL;
 	g_autofree gchar *result2 = NULL;
+	g_autoptr(FuKernelSearchPathLocker) locker = NULL;
 	g_autoptr(GError) error = NULL;
 
 #ifndef __linux__
@@ -1808,29 +1868,30 @@ fu_common_kernel_search_func(void)
 #endif
 
 	(void)g_setenv("FWUPD_FIRMWARESEARCH", "/dev/null", TRUE);
-	result1 = fu_kernel_get_firmware_search_path(&error);
+	result1 = fu_kernel_search_path_get_current(&error);
 	g_assert_null(result1);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL);
 	g_clear_error(&error);
 
+	ret = g_file_set_contents("/tmp/fwupd-self-test/search_path", "oldvalue", -1, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
 	(void)g_setenv("FWUPD_FIRMWARESEARCH", "/tmp/fwupd-self-test/search_path", TRUE);
-	ret = fu_kernel_set_firmware_search_path(expect, &error);
-	g_assert_true(ret);
+	locker = fu_kernel_search_path_locker_new("/foo/bar", &error);
 	g_assert_no_error(error);
+	g_assert_nonnull(locker);
 
-	result1 = fu_kernel_get_firmware_search_path(&error);
+	result1 = fu_kernel_search_path_get_current(&error);
 	g_assert_nonnull(result1);
-	g_assert_cmpstr(result1, ==, expect);
+	g_assert_cmpstr(result1, ==, "/foo/bar");
 	g_assert_no_error(error);
+	g_clear_object(&locker);
 
-	ret = fu_kernel_reset_firmware_search_path(&error);
-	g_assert_true(ret);
-	g_assert_no_error(error);
-
-	result2 = fu_kernel_get_firmware_search_path(&error);
+	result2 = fu_kernel_search_path_get_current(&error);
 	g_assert_nonnull(result2);
+	g_assert_cmpstr(result2, ==, "oldvalue");
 	g_assert_no_error(error);
-	g_assert_cmpstr(g_strchomp(result2), ==, "");
 }
 
 static gboolean
@@ -2069,11 +2130,17 @@ fu_device_event_func(void)
 	g_autoptr(GBytes) blob2 = NULL;
 	g_autoptr(GBytes) blob3 = NULL;
 	g_autoptr(GError) error = NULL;
+	g_autoptr(GError) error_copy = NULL;
 
 	fu_device_event_set_str(event1, "Name", "Richard");
 	fu_device_event_set_i64(event1, "Age", 123);
 	fu_device_event_set_bytes(event1, "Blob", blob1);
 	fu_device_event_set_data(event1, "Data", NULL, 0);
+
+	/* no event set */
+	ret = fu_device_event_check_error(event1, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 
 	json = fwupd_codec_to_json_string(FWUPD_CODEC(event1), FWUPD_CODEC_FLAG_NONE, &error);
 	g_assert_no_error(error);
@@ -2104,6 +2171,13 @@ fu_device_event_func(void)
 	str = fu_device_event_get_str(event2, "Age", &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA);
 	g_assert_null(str);
+
+	/* set error */
+	fu_device_event_set_error(event2, error);
+	ret = fu_device_event_check_error(event2, &error_copy);
+	g_assert_error(error_copy, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA);
+	g_assert_cmpstr(error_copy->message, ==, "invalid event type for key Age");
+	g_assert_false(ret);
 }
 
 static void
@@ -5039,6 +5113,12 @@ fu_firmware_builder_round_trip_func(void)
 		FU_FIRMWARE_BUILDER_FLAG_NONE,
 	    },
 	    {
+		FU_TYPE_EFI_LOAD_OPTION,
+		"efi-load-option-data.builder.xml",
+		"6e6190dc6b1bf45bc6e30ba7a6a98d891d692dd0",
+		FU_FIRMWARE_BUILDER_FLAG_NONE,
+	    },
+	    {
 		FU_TYPE_EDID,
 		"edid.builder.xml",
 		"64cef10b75ccce684a483d576dd4a4ce6bef8165",
@@ -5127,6 +5207,18 @@ fu_firmware_builder_round_trip_func(void)
 		"intel-thunderbolt.builder.xml",
 		"b3a73baf05078dfdd833b407a0a6afb239ec2f23",
 		FU_FIRMWARE_BUILDER_FLAG_NO_BINARY_COMPARE,
+	    },
+	    {
+		FU_TYPE_INTEL_THUNDERBOLT_FIRMWARE,
+		"intel-thunderbolt.builder.xml",
+		"1a2dec48aab3e1e29907f2148ab16e4730387325",
+		FU_FIRMWARE_BUILDER_FLAG_NO_BINARY_COMPARE,
+	    },
+	    {
+		FU_TYPE_USB_BOS_DESCRIPTOR,
+		"usb-bos-descriptor.builder.xml",
+		"a305749853781c6899c4b28039cb4c7d9059b910",
+		FU_FIRMWARE_BUILDER_FLAG_NONE,
 	    },
 #ifdef HAVE_CBOR
 	    {
@@ -6570,6 +6662,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/context{flags}", fu_context_flags_func);
 	g_test_add_func("/fwupd/context{backends}", fu_context_backends_func);
 	g_test_add_func("/fwupd/context{hwids-dmi}", fu_context_hwids_dmi_func);
+	g_test_add_func("/fwupd/context{hwids-fdt}", fu_context_hwids_fdt_func);
 	g_test_add_func("/fwupd/context{firmware-gtypes}", fu_context_firmware_gtypes_func);
 	g_test_add_func("/fwupd/context{state}", fu_context_state_func);
 	g_test_add_func("/fwupd/context{udev-subsystems}", fu_context_udev_subsystems_func);

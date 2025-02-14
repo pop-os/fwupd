@@ -4224,7 +4224,7 @@ fu_util_reboot_cleanup(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
-fu_util_efivar_boot_as_json(FuUtilPrivate *priv, GPtrArray *entries, GError **error)
+fu_util_efiboot_info_as_json(FuUtilPrivate *priv, GPtrArray *entries, GError **error)
 {
 	FuEfivars *efivars = fu_context_get_efivars(priv->ctx);
 	guint16 idx = 0;
@@ -4256,7 +4256,261 @@ fu_util_efivar_boot_as_json(FuUtilPrivate *priv, GPtrArray *entries, GError **er
 }
 
 static gboolean
-fu_util_efivar_boot(FuUtilPrivate *priv, gchar **values, GError **error)
+fu_util_efiboot_next(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	FuEfivars *efivars = fu_context_get_efivars(priv->ctx);
+	guint64 value = 0;
+
+	/* just show */
+	if (values[0] == NULL) {
+		guint16 idx = 0;
+		if (!fu_efivars_get_boot_next(efivars, &idx, error))
+			return FALSE;
+		fu_console_print(priv->console, "Boot%04X", idx);
+		return TRUE;
+	}
+
+	/* modify */
+	if (!fu_strtoull(values[0], &value, 0x0, G_MAXUINT16, FU_INTEGER_BASE_16, error))
+		return FALSE;
+	return fu_efivars_set_boot_next(efivars, (guint16)value, error);
+}
+
+static gboolean
+fu_util_efiboot_order(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	FuEfivars *efivars = fu_context_get_efivars(priv->ctx);
+	g_auto(GStrv) split = NULL;
+	g_autoptr(GArray) order = NULL;
+
+	/* just show */
+	if (values[0] == NULL) {
+		order = fu_efivars_get_boot_order(efivars, error);
+		if (order == NULL)
+			return FALSE;
+		for (guint i = 0; i < order->len; i++) {
+			guint16 idx = g_array_index(order, guint16, i);
+			fu_console_print(priv->console, "Boot%04X", idx);
+		}
+		return TRUE;
+	}
+
+	/* modify */
+	order = g_array_new(FALSE, FALSE, sizeof(guint16));
+	split = g_strsplit(values[0], ",", -1);
+	for (guint i = 0; split[i] != NULL; i++) {
+		guint64 value = 0;
+		guint16 value_as_u16;
+		if (!fu_strtoull(split[i], &value, 0x0, G_MAXUINT16, FU_INTEGER_BASE_16, error))
+			return FALSE;
+		value_as_u16 = (guint16)value;
+		g_array_append_val(order, value_as_u16);
+	}
+	return fu_efivars_set_boot_order(efivars, order, error);
+}
+
+static gboolean
+fu_util_efiboot_create(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	FuEfivars *efivars = fu_context_get_efivars(priv->ctx);
+	g_autoptr(FuVolume) volume = NULL;
+	guint64 idx = 0;
+
+	/* check args */
+	if (g_strv_length(values) < 3) {
+		g_set_error_literal(
+		    error,
+		    FWUPD_ERROR,
+		    FWUPD_ERROR_NOTHING_TO_DO,
+		    /* TRANSLATORS: error message */
+		    _("Invalid arguments, expected INDEX NAME TARGET [MOUNTPOINT]"));
+		return FALSE;
+	}
+
+	/* check the index does not already exist */
+	if (!fu_strtoull(values[0], &idx, 0x0, G_MAXUINT16, FU_INTEGER_BASE_16, error))
+		return FALSE;
+	if ((priv->flags & FWUPD_INSTALL_FLAG_FORCE) == 0) {
+		g_autoptr(GBytes) blob = fu_efivars_get_boot_data(efivars, (guint16)idx, NULL);
+		if (blob != NULL) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOTHING_TO_DO,
+					    /* TRANSLATORS: error message */
+					    _("Already exists, and no --force specified"));
+			return FALSE;
+		}
+	}
+
+	/* get volume */
+	if (values[3] == NULL) {
+		volume = fu_util_prompt_for_volume(priv, error);
+		if (volume == NULL)
+			return FALSE;
+	} else {
+		g_autoptr(GPtrArray) volumes = NULL;
+		volumes = fu_context_get_esp_volumes(priv->ctx, error);
+		if (volumes == NULL)
+			return FALSE;
+		for (guint i = 0; i < volumes->len; i++) {
+			FuVolume *volume_tmp = g_ptr_array_index(volumes, i);
+			g_autofree gchar *mount_point = fu_volume_get_mount_point(volume_tmp);
+			if (g_strcmp0(mount_point, values[3]) == 0) {
+				volume = g_object_ref(volume_tmp);
+				break;
+			}
+		}
+		if (volume == NULL) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    /* TRANSLATORS: error message */
+				    _("No volume matched %s"),
+				    values[3]);
+			return FALSE;
+		}
+	}
+	return fu_efivars_create_boot_entry_for_volume(efivars,
+						       (guint16)idx,
+						       volume,
+						       values[1],
+						       values[2],
+						       error);
+}
+
+static gboolean
+fu_util_efiboot_delete(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	FuEfivars *efivars = fu_context_get_efivars(priv->ctx);
+	guint64 value = 0;
+
+	if (values[0] == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    /* TRANSLATORS: error message */
+				    _("Invalid arguments, expected base-16 integer"));
+		return FALSE;
+	}
+	if (!fu_strtoull(values[0], &value, 0x0, G_MAXUINT16, FU_INTEGER_BASE_16, error))
+		return FALSE;
+
+	/* success */
+	return fu_efivars_set_boot_data(efivars, (guint16)value, NULL, error);
+}
+
+static gboolean
+fu_util_efiboot_hive_check_loadopt_is_shim(FuEfiLoadOption *loadopt, GError **error)
+{
+	gboolean seen_shim = FALSE;
+	g_autoptr(FuFirmware) firmware = NULL;
+	g_autoptr(GPtrArray) dps = NULL;
+
+	/* get FuEfiDevicePathList */
+	firmware = fu_firmware_get_image_by_idx(FU_FIRMWARE(loadopt), 0x0, error);
+	if (firmware == NULL)
+		return FALSE;
+	dps = fu_firmware_get_images(firmware);
+	for (guint i = 0; i < dps->len; i++) {
+		FuFirmware *dp = g_ptr_array_index(dps, i);
+		if (FU_IS_EFI_FILE_PATH_DEVICE_PATH(dp)) {
+			g_autofree gchar *name =
+			    fu_efi_file_path_device_path_get_name(FU_EFI_FILE_PATH_DEVICE_PATH(dp),
+								  error);
+			if (name == NULL)
+				return FALSE;
+			if (g_pattern_match_simple("*shim*.efi", name)) {
+				seen_shim = TRUE;
+				break;
+			}
+		}
+	}
+	if (!seen_shim) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "Only the shim bootloader supports the hive format");
+		return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_util_efiboot_hive(FuUtilPrivate *priv, gchar **values, GError **error)
+{
+	FuEfivars *efivars = fu_context_get_efivars(priv->ctx);
+	g_autoptr(FuEfiLoadOption) loadopt = NULL;
+	guint64 idx = 0;
+
+	/* check args */
+	if (g_strv_length(values) < 2) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    /* TRANSLATORS: error message */
+				    _("Invalid arguments, expected INDEX KEY [VALUE]"));
+		return FALSE;
+	}
+
+	/* load the boot entry */
+	if (!fu_strtoull(values[0], &idx, 0x0, G_MAXUINT16, FU_INTEGER_BASE_16, error))
+		return FALSE;
+	loadopt = fu_efivars_get_boot_entry(efivars, (guint16)idx, error);
+	if (loadopt == NULL)
+		return FALSE;
+
+	/* get value */
+	if (values[2] == NULL) {
+		const gchar *value;
+		fu_console_print_full(priv->console,
+				      FU_CONSOLE_PRINT_FLAG_WARNING,
+				      "%s\n",
+				      /* TRANSLATORS: try to treat the legacy format as a hive */
+				      _("The EFI boot entry was not in hive format, falling back"));
+		value = fu_efi_load_option_get_metadata(loadopt, values[1], error);
+		if (value == NULL)
+			return FALSE;
+		fu_console_print_literal(priv->console, value);
+		return TRUE;
+	}
+
+	/* check this is actually shim */
+	if (!fu_util_efiboot_hive_check_loadopt_is_shim(loadopt, error))
+		return FALSE;
+
+	/* change the format if required */
+	if (fu_efi_load_option_get_kind(loadopt) != FU_EFI_LOAD_OPTION_KIND_HIVE) {
+		fu_console_print_full(priv->console,
+				      FU_CONSOLE_PRINT_FLAG_WARNING,
+				      "%s\n",
+				      /* TRANSLATORS: the boot entry was in a legacy format */
+				      _("The EFI boot entry is not in hive format, "
+					"and shim may not be new enough to read it."));
+		if ((priv->flags & FWUPD_INSTALL_FLAG_FORCE) == 0 &&
+		    !fu_console_input_bool(priv->console,
+					   FALSE,
+					   "%s",
+					   /* TRANSLATORS: ask the user if it's okay to convert,
+					    * "it" being the data contained in the EFI boot entry */
+					   _("Do you want to convert it now?"))) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_PERMISSION_DENIED,
+					    "User declined action");
+			return FALSE;
+		}
+		fu_efi_load_option_set_kind(loadopt, FU_EFI_LOAD_OPTION_KIND_HIVE);
+	}
+
+	/* set value */
+	fu_efi_load_option_set_metadata(loadopt, values[1], values[2]);
+	return fu_efivars_set_boot_entry(efivars, (guint16)idx, loadopt, error);
+}
+
+static gboolean
+fu_util_efiboot_info(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	FuEfivars *efivars = fu_context_get_efivars(priv->ctx);
 	g_autoptr(GPtrArray) entries = NULL;
@@ -4269,7 +4523,7 @@ fu_util_efivar_boot(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* dump to the screen in the most appropriate format */
 	if (priv->as_json)
-		return fu_util_efivar_boot_as_json(priv, entries, error);
+		return fu_util_efiboot_info_as_json(priv, entries, error);
 
 	if (fu_efivars_get_boot_current(efivars, &idx, NULL))
 		fwupd_codec_string_append_hex(str, 0, "BootCurrent", idx);
@@ -5087,14 +5341,50 @@ main(int argc, char *argv[])
 			      _("List EFI variables with a specific GUID"),
 			      fu_util_efivar_list);
 	fu_util_cmd_array_add(cmd_array,
-			      "efivar-boot",
-			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      "efiboot-info,efivar-boot",
+			      /* TRANSLATORS: lowercase sub-command (do not translate): then
+			       * uppercase, spaces->dashes */
 			      NULL,
 			      /* TRANSLATORS: command description */
 			      _("List EFI boot parameters"),
-			      fu_util_efivar_boot);
+			      fu_util_efiboot_info);
 	fu_util_cmd_array_add(cmd_array,
-			      "efivar-files",
+			      "efiboot-next",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("INDEX"),
+			      /* TRANSLATORS: command description */
+			      _("Set the EFI boot next"),
+			      fu_util_efiboot_next);
+	fu_util_cmd_array_add(cmd_array,
+			      "efiboot-order",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("INDEX1,INDEX2"),
+			      /* TRANSLATORS: command description */
+			      _("Set the EFI boot order"),
+			      fu_util_efiboot_order);
+	fu_util_cmd_array_add(cmd_array,
+			      "efiboot-delete",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("INDEX"),
+			      /* TRANSLATORS: command description */
+			      _("Delete an EFI boot entry"),
+			      fu_util_efiboot_delete);
+	fu_util_cmd_array_add(cmd_array,
+			      "efiboot-create",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("INDEX NAME TARGET [MOUNTPOINT]"),
+			      /* TRANSLATORS: command description */
+			      _("Create an EFI boot entry"),
+			      fu_util_efiboot_create);
+	fu_util_cmd_array_add(cmd_array,
+			      "efiboot-hive",
+			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
+			      _("INDEX KEY [VALUE]"),
+			      /* TRANSLATORS: command description */
+			      _("Set or remove an EFI boot hive entry"),
+			      fu_util_efiboot_hive);
+	fu_util_cmd_array_add(cmd_array,
+			      "efiboot-files,efivar-files",
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
 			      NULL,
 			      /* TRANSLATORS: command description */

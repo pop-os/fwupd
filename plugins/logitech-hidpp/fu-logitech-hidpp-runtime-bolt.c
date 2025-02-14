@@ -156,6 +156,8 @@ fu_logitech_hidpp_runtime_bolt_update_paired_device(FuLogitechHidppRuntimeBolt *
 		fu_device_set_name(FU_DEVICE(child), name);
 		fu_logitech_hidpp_device_set_device_idx(child, msg->device_id);
 		fu_logitech_hidpp_device_set_hidpp_pid(child, hidpp_pid);
+		if (!fu_device_open(FU_DEVICE(child), error))
+			return FALSE;
 		if (!fu_device_probe(FU_DEVICE(child), error))
 			return FALSE;
 		if (!fu_device_setup(FU_DEVICE(child), error))
@@ -208,6 +210,8 @@ fu_logitech_hidpp_runtime_bolt_poll_peripherals(FuDevice *device)
 			fu_device_set_name(FU_DEVICE(child), name);
 			fu_logitech_hidpp_device_set_device_idx(child, i);
 			fu_logitech_hidpp_device_set_hidpp_pid(child, hidpp_pid);
+			if (!fu_device_open(FU_DEVICE(child), &error_local))
+				continue;
 			if (!fu_device_probe(FU_DEVICE(child), &error_local))
 				continue;
 			if (!fu_device_setup(FU_DEVICE(child), &error_local))
@@ -282,7 +286,7 @@ fu_logitech_hidpp_runtime_bolt_poll(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* drain all the pending messages into the array */
-	while (TRUE) {
+	for (guint i = 0; i < 50; i++) {
 		g_autoptr(FuLogitechHidppHidppMsg) msg = fu_logitech_hidpp_msg_new();
 		g_autoptr(GError) error_local = NULL;
 		msg->hidpp_version = 1;
@@ -292,6 +296,10 @@ fu_logitech_hidpp_runtime_bolt_poll(FuDevice *device, GError **error)
 					       &error_local)) {
 			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT))
 				break;
+			if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND)) {
+				g_debug("ignoring: %s", error_local->message);
+				break;
+			}
 			g_propagate_prefixed_error(error,
 						   g_steal_pointer(&error_local),
 						   "error polling Bolt receiver: ");

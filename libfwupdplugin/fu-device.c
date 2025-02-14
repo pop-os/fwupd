@@ -363,6 +363,15 @@ fu_device_add_private_flag(FuDevice *self, const gchar *flag)
 	if (g_strcmp0(flag, FU_DEVICE_PRIVATE_FLAG_UNCONNECTED) == 0)
 		fu_device_inhibit(self, "unconnected", "Device has been removed");
 
+	/* add counterpart GUIDs already added */
+	if (g_strcmp0(flag, FU_DEVICE_PRIVATE_FLAG_COUNTERPART_VISIBLE) == 0) {
+		for (guint i = 0; priv->instance_ids != NULL && i < priv->instance_ids->len; i++) {
+			FuDeviceInstanceIdItem *item = g_ptr_array_index(priv->instance_ids, i);
+			if (item->flags & FU_DEVICE_INSTANCE_FLAG_COUNTERPART)
+				item->flags |= FU_DEVICE_INSTANCE_FLAG_VISIBLE;
+		}
+	}
+
 	/* reset this back to the default */
 	if (g_strcmp0(flag, FU_DEVICE_PRIVATE_FLAG_EXPLICIT_ORDER) == 0) {
 		GPtrArray *children = fu_device_get_children(self);
@@ -6325,6 +6334,19 @@ fu_device_incorporate(FuDevice *self, FuDevice *donor, FuDeviceIncorporateFlags 
 	}
 	if (flag & FU_DEVICE_INCORPORATE_FLAG_INSTANCE_IDS)
 		fu_device_incorporate_instance_ids(self, donor);
+	if (flag & FU_DEVICE_INCORPORATE_FLAG_GTYPE) {
+		if (priv->specialized_gtype == G_TYPE_INVALID &&
+		    priv_donor->specialized_gtype != G_TYPE_INVALID) {
+			fu_device_set_specialized_gtype(self, priv_donor->specialized_gtype);
+		}
+	}
+	if (flag & FU_DEVICE_INCORPORATE_FLAG_POSSIBLE_PLUGINS) {
+		for (guint i = 0; i < priv_donor->possible_plugins->len; i++) {
+			const gchar *possible_plugin =
+			    g_ptr_array_index(priv_donor->possible_plugins, i);
+			fu_device_add_possible_plugin(self, possible_plugin);
+		}
+	}
 
 	/* everything else */
 	if (flag == FU_DEVICE_INCORPORATE_FLAG_ALL) {
@@ -6387,13 +6409,6 @@ fu_device_incorporate(FuDevice *self, FuDevice *donor, FuDeviceIncorporateFlags 
 				if (fu_device_get_metadata(self, key) == NULL)
 					fu_device_set_metadata(self, key, value);
 			}
-		}
-
-		/* probably not required, but seems safer */
-		for (guint i = 0; i < priv_donor->possible_plugins->len; i++) {
-			const gchar *possible_plugin =
-			    g_ptr_array_index(priv_donor->possible_plugins, i);
-			fu_device_add_possible_plugin(self, possible_plugin);
 		}
 
 		/* copy all instance ID keys if not already set */
@@ -7427,9 +7442,13 @@ fu_device_load_event(FuDevice *self, const gchar *id, GError **error)
 	for (guint i = 0; i < priv->events->len; i++) {
 		FuDeviceEvent *event = g_ptr_array_index(priv->events, i);
 		if (g_strcmp0(fu_device_event_get_id(event), id_hash) == 0) {
-			g_debug("found out-of-order %s at position %u", id, i);
-			priv->event_idx = i + 1;
-			return event;
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "found out-of-order event %s at position %u",
+				    id,
+				    i);
+			return NULL;
 		}
 	}
 

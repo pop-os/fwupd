@@ -728,6 +728,29 @@ fu_util_device_test_helper_new(void)
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(FuUtilDeviceTestHelper, fu_util_device_test_helper_free)
 
+static GPtrArray *
+fu_util_filter_devices(FuUtilPrivate *priv, GPtrArray *devices, GError **error)
+{
+	g_autoptr(GPtrArray) devices_filtered =
+	    g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
+	for (guint i = 0; i < devices->len; i++) {
+		FwupdDevice *dev = g_ptr_array_index(devices, i);
+		if (!fwupd_device_match_flags(dev,
+					      priv->filter_device_include,
+					      priv->filter_device_exclude))
+			continue;
+		g_ptr_array_add(devices_filtered, g_object_ref(dev));
+	}
+	if (devices_filtered->len == 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_FOUND,
+				    "failed to find any devices");
+		return NULL;
+	}
+	return g_steal_pointer(&devices_filtered);
+}
+
 static gboolean
 fu_util_device_test_component(FuUtilPrivate *priv,
 			      FuUtilDeviceTestHelper *helper,
@@ -767,13 +790,17 @@ fu_util_device_test_component(FuUtilPrivate *priv,
 		FwupdDevice *device_tmp;
 		const gchar *guid = json_node_get_string(json_node);
 		g_autoptr(GPtrArray) devices = NULL;
+		g_autoptr(GPtrArray) devices_filtered = NULL;
 
 		g_debug("looking for guid %s", guid);
 		devices =
 		    fwupd_client_get_devices_by_guid(priv->client, guid, priv->cancellable, NULL);
 		if (devices == NULL)
 			continue;
-		if (devices->len > 1) {
+		devices_filtered = fu_util_filter_devices(priv, devices, NULL);
+		if (devices_filtered == NULL)
+			continue;
+		if (devices_filtered->len > 1) {
 			g_set_error(error,
 				    FWUPD_ERROR,
 				    FWUPD_ERROR_NOT_SUPPORTED,
@@ -781,7 +808,7 @@ fu_util_device_test_component(FuUtilPrivate *priv,
 				    guid);
 			return FALSE;
 		}
-		device_tmp = g_ptr_array_index(devices, 0);
+		device_tmp = g_ptr_array_index(devices_filtered, 0);
 		if (protocol != NULL && !fwupd_device_has_protocol(device_tmp, protocol))
 			continue;
 		device = g_object_ref(device_tmp);
@@ -1116,24 +1143,80 @@ fu_util_device_test_filename(FuUtilPrivate *priv,
 	return TRUE;
 }
 
+typedef struct {
+	FuUtilPrivate *priv;
+	gchar *inhibit_id;
+} FuUtilInhibitHelper;
+
+static void
+fu_util_inhibit_helper_free(FuUtilInhibitHelper *helper)
+{
+	g_free(helper->inhibit_id);
+	g_free(helper);
+}
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(FuUtilInhibitHelper, fu_util_inhibit_helper_free)
+
+static gboolean
+fu_util_inhibit_timeout_cb(FuUtilInhibitHelper *helper)
+{
+	FuUtilPrivate *priv = helper->priv;
+	g_autoptr(GError) error_local = NULL;
+
+	if (!fwupd_client_uninhibit(priv->client,
+				    helper->inhibit_id,
+				    priv->cancellable,
+				    &error_local)) {
+		g_warning("failed to auto-uninhibit: %s", error_local->message);
+	}
+	g_main_loop_quit(priv->loop);
+	return G_SOURCE_REMOVE;
+}
+
 static gboolean
 fu_util_inhibit(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	const gchar *reason = "not set";
-	g_autofree gchar *inhibit_id = NULL;
+	guint64 timeout_ms = 0;
+	g_autoptr(FuUtilInhibitHelper) helper = g_new0(FuUtilInhibitHelper, 1);
 	g_autoptr(GString) str = g_string_new(NULL);
 
 	if (g_strv_length(values) > 0)
-		reason = values[1];
+		reason = values[0];
+	if (g_strv_length(values) > 1) {
+		if (!fu_strtoull(values[1],
+				 &timeout_ms,
+				 0,
+				 G_MAXUINT32,
+				 FU_INTEGER_BASE_AUTO,
+				 error))
+			return FALSE;
+	}
 
 	/* inhibit then wait */
-	inhibit_id = fwupd_client_inhibit(priv->client, reason, priv->cancellable, error);
-	if (inhibit_id == NULL)
+	helper->priv = priv;
+	helper->inhibit_id = fwupd_client_inhibit(priv->client, reason, priv->cancellable, error);
+	if (helper->inhibit_id == NULL)
 		return FALSE;
+	if (timeout_ms > 0) {
+		g_autoptr(GSource) source = g_timeout_source_new(timeout_ms);
+		g_source_set_callback(source,
+				      (GSourceFunc)fu_util_inhibit_timeout_cb,
+				      helper,
+				      NULL);
+		g_source_attach(source, priv->main_ctx);
+	}
 
 	/* TRANSLATORS: the inhibit ID is a short string like dbus-123456 */
-	g_string_append_printf(str, _("Inhibit ID is %s."), inhibit_id);
+	g_string_append_printf(str, _("Inhibit ID is %s."), helper->inhibit_id);
 	g_string_append(str, "\n");
+	if (timeout_ms > 0) {
+		g_string_append_printf(str,
+				       /* TRANSLATORS: we can auto-uninhibit after a timeout */
+				       _("Automatically uninhibiting in %ums…"),
+				       (guint)timeout_ms);
+		g_string_append(str, "\n");
+	}
 	/* TRANSLATORS: CTRL^C [holding control, and then pressing C] will exit the program */
 	g_string_append(str, _("Use CTRL^C to cancel."));
 	/* TRANSLATORS: this CLI tool is now preventing system updates */
@@ -1342,6 +1425,7 @@ fu_util_device_emulate(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FuUtilDeviceTestHelper) helper = fu_util_device_test_helper_new();
 	helper->use_emulation = TRUE;
+	priv->filter_device_include |= FWUPD_DEVICE_FLAG_EMULATED;
 	return fu_util_device_test_full(priv, values, helper, error);
 }
 
@@ -1349,6 +1433,7 @@ static gboolean
 fu_util_device_test(FuUtilPrivate *priv, gchar **values, GError **error)
 {
 	g_autoptr(FuUtilDeviceTestHelper) helper = fu_util_device_test_helper_new();
+	priv->filter_device_exclude |= FWUPD_DEVICE_FLAG_EMULATED;
 	return fu_util_device_test_full(priv, values, helper, error);
 }
 
@@ -4637,7 +4722,7 @@ fu_util_get_bios_setting(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (!found) {
 		g_set_error_literal(error,
 				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_ARGS,
+				    FWUPD_ERROR_NOT_FOUND,
 				    /* TRANSLATORS: error message */
 				    _("Unable to find attribute"));
 		return FALSE;
@@ -4910,6 +4995,9 @@ main(int argc, char *argv[])
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GError) error_console = NULL;
 	g_autoptr(GPtrArray) cmd_array = fu_util_cmd_array_new();
+#ifdef HAVE_POLKIT
+	g_autoptr(FuPolkitAgent) polkit_agent = fu_polkit_agent_new();
+#endif
 	g_autofree gchar *cmd_descriptions = NULL;
 	g_autofree gchar *filter_device = NULL;
 	g_autofree gchar *filter_release = NULL;
@@ -5398,7 +5486,7 @@ main(int argc, char *argv[])
 	fu_util_cmd_array_add(cmd_array,
 			      "inhibit",
 			      /* TRANSLATORS: command argument: uppercase, spaces->dashes */
-			      _("[REASON]"),
+			      _("[REASON] [TIMEOUT]"),
 			      /* TRANSLATORS: command description */
 			      _("Inhibit the system to prevent upgrades"),
 			      fu_util_inhibit);
@@ -5622,7 +5710,7 @@ main(int argc, char *argv[])
 	/* start polkit tty agent to listen for password requests */
 	if (is_interactive) {
 		g_autoptr(GError) error_polkit = NULL;
-		if (!fu_polkit_agent_open(&error_polkit)) {
+		if (!fu_polkit_agent_open(polkit_agent, &error_polkit)) {
 			fu_console_print(priv->console,
 					 "Failed to open polkit agent: %s",
 					 error_polkit->message);
@@ -5753,11 +5841,6 @@ main(int argc, char *argv[])
 			return EXIT_NOT_FOUND;
 		return EXIT_FAILURE;
 	}
-
-#ifdef HAVE_POLKIT
-	/* stop listening for polkit questions */
-	fu_polkit_agent_close();
-#endif
 
 	/* success */
 	return EXIT_SUCCESS;

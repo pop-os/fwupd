@@ -74,9 +74,9 @@ struct FuStructEfiSectionCompression {
 
 #[derive(ToString)]
 enum FuEfiLz77DecompressorVersion {
-    None = 0,
-    Legacy = 1,
-    Tiano = 2,
+    None,
+    Legacy,
+    Tiano,
 }
 
 #[derive(ParseStream)]
@@ -200,6 +200,14 @@ enum FuEfiLoadOptionAttrs {
     Category = 0x1F00,
     CategoryBoot = 0x0,
     CategoryAp = 0x100,
+}
+
+#[derive(ToString, FromString)]
+enum FuEfiLoadOptionKind {
+    Unknown,
+    Path,
+    Hive,
+    Data,
 }
 
 #[derive(ParseStream, New)]

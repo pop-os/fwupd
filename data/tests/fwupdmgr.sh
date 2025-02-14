@@ -43,6 +43,33 @@ echo "Getting the list of plugins..."
 fwupdmgr get-plugins
 rc=$?; if [ $rc != 0 ]; then error $rc; fi
 
+if [ -n "$CI" ]; then
+    # ---
+    echo "Setting BIOS setting..."
+    fwupdmgr set-bios-setting fwupd_self_test value
+    rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+    # ---
+    echo "Getting BIOS settings..."
+    fwupdmgr get-bios-setting
+    rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+    # ---
+    echo "Getting BIOS settings (json)..."
+    fwupdmgr get-bios-setting --json
+    rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+    # ---
+    echo "Getting BIOS settings (unfound)..."
+    fwupdmgr get-bios-setting foo
+    rc=$?; if [ $rc != 3 ]; then error $rc; fi
+
+    # ---
+    echo "Setting BIOS setting (unfound)..."
+    fwupdmgr set-bios-setting unfound value
+    rc=$?; if [ $rc != 3 ]; then error $rc; fi
+fi
+
 # ---
 echo "Getting the list of plugins (json)..."
 fwupdmgr get-plugins --json
@@ -200,6 +227,56 @@ rc=$?; if [ $rc != 0 ]; then error $rc; fi
 echo "Resetting empty config ..."
 fwupdmgr reset-config fwupd --json
 rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Inhibiting for 100ms..."
+fwupdmgr inhibit test 100
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Add blocked firmware..."
+fwupdmgr block-firmware foo
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Add blocked firmware (again)..."
+fwupdmgr block-firmware foo
+rc=$?; if [ $rc != 2 ]; then error $rc; fi
+
+# ---
+echo "Getting blocked firmware..."
+fwupdmgr get-blocked-firmware
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Remove blocked firmware..."
+fwupdmgr unblock-firmware foo
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Remove blocked firmware (again)..."
+fwupdmgr unblock-firmware foo
+rc=$?; if [ $rc != 2 ]; then error $rc; fi
+
+# ---
+echo "Setting approved firmware..."
+fwupdmgr set-approved-firmware foo,bar,baz
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Getting approved firmware..."
+fwupdmgr get-approved-firmware
+rc=$?; if [ $rc != 0 ]; then error $rc; fi
+
+# ---
+echo "Run security tests..."
+fwupdmgr security
+rc=$?; if [ $rc = 1 ]; then error $rc; fi
+
+# ---
+echo "Run security tests (json)..."
+fwupdmgr security --json
+rc=$?; if [ $rc = 1 ]; then error $rc; fi
 
 # success!
 exit 0

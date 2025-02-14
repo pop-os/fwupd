@@ -38,6 +38,11 @@ fu_test_self_init(FuTest *self)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
+	/* load the config file */
+	ret = fu_context_load_hwinfo(ctx, progress, FU_CONTEXT_HWID_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
 	/* generic BMC */
 	self->plugin = fu_plugin_new_from_gtype(fu_redfish_plugin_get_type(), ctx);
 	ret = fu_plugin_runner_startup(self->plugin, progress, &error);
@@ -304,6 +309,9 @@ fu_test_redfish_devices_func(gconstpointer user_data)
 	g_assert_true(
 	    fu_device_has_guid(dev, "REDFISH\\VENDOR_Lenovo&SOFTWAREID_UEFI-AFE1-6&TYPE_UNSIGNED"));
 	g_assert_true(fu_device_has_vendor_id(dev, "REDFISH:LENOVO"));
+	g_assert_true(fu_device_has_guid(dev, "aa148d2e-6e09-453e-bc6f-63baa5f5ccc4"));
+	g_assert_true(fu_device_has_guid(dev, "00000000-0000-0000-0000-000000000229"));
+	g_assert_true(fu_device_has_guid(dev, "00000000-0000-0000-0000-000001413436"));
 
 	/* BIOS */
 	dev = g_ptr_array_index(devices, 0);

@@ -100,6 +100,7 @@ fu_redfish_smc_device_start_update(FuDevice *device, FuProgress *progress, GErro
 	CURL *curl;
 	const gchar *location = NULL;
 	g_autoptr(FuRedfishRequest) request = fu_redfish_backend_request_new(backend);
+	g_autoptr(GError) error_local = NULL;
 
 	curl = fu_redfish_request_get_curl(request);
 	(void)curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
@@ -108,10 +109,10 @@ fu_redfish_smc_device_start_update(FuDevice *device, FuProgress *progress, GErro
 		request,
 		"/redfish/v1/UpdateService/Actions/UpdateService.StartUpdate",
 		FU_REDFISH_REQUEST_PERFORM_FLAG_LOAD_JSON,
-		error)) {
-		if (g_error_matches(*error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
+		&error_local)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED))
 			fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_UPDATE_PENDING);
-		}
+		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
 	}
 	json_obj = fu_redfish_request_get_json_object(request);
@@ -145,6 +146,7 @@ fu_redfish_smc_device_write_firmware(FuDevice *device,
 	g_autoptr(curl_mime) mime = NULL;
 	g_autoptr(FuRedfishRequest) request = NULL;
 	g_autoptr(GBytes) fw = NULL;
+	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GString) params = NULL;
 
 	fu_progress_set_id(progress, G_STRLOC);
@@ -160,7 +162,6 @@ fu_redfish_smc_device_write_firmware(FuDevice *device,
 	request = fu_redfish_backend_request_new(backend);
 	curl = fu_redfish_request_get_curl(request);
 	mime = curl_mime_init(curl);
-	(void)curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
 
 	params = fu_redfish_smc_device_get_parameters(self);
 	part = curl_mime_addpart(mime);
@@ -172,17 +173,19 @@ fu_redfish_smc_device_write_firmware(FuDevice *device,
 	part = curl_mime_addpart(mime);
 	curl_mime_name(part, "UpdateFile");
 	(void)curl_mime_type(part, "application/octet-stream");
-	(void)curl_mime_filedata(part, "firmware.bin");
+	(void)curl_mime_filename(part, "firmware.bin");
 	(void)curl_mime_data(part, g_bytes_get_data(fw, NULL), g_bytes_get_size(fw));
+
+	(void)curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
 
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
 	if (!fu_redfish_request_perform(request,
 					fu_redfish_backend_get_push_uri_path(backend),
 					FU_REDFISH_REQUEST_PERFORM_FLAG_LOAD_JSON,
-					error)) {
-		if (g_error_matches(*error, FWUPD_ERROR, FWUPD_ERROR_ALREADY_PENDING)) {
+					&error_local)) {
+		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_ALREADY_PENDING))
 			fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_UPDATE_PENDING);
-		}
+		g_propagate_error(error, g_steal_pointer(&error_local));
 		return FALSE;
 	}
 	if (fu_redfish_request_get_status_code(request) != 202) {

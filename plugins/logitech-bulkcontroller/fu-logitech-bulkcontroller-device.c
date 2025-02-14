@@ -26,8 +26,6 @@
 
 enum { EP_OUT, EP_IN, EP_LAST };
 
-typedef enum { BULK_INTERFACE_UPD, BULK_INTERFACE_SYNC } FuLogitechBulkcontrollerBulkInterface;
-
 struct _FuLogitechBulkcontrollerDevice {
 	FuUsbDevice parent_instance;
 	guint sync_ep[EP_LAST];
@@ -122,83 +120,6 @@ fu_logitech_bulkcontroller_device_probe(FuDevice *device, GError **error)
 	return TRUE;
 }
 
-static gboolean
-fu_logitech_bulkcontroller_device_send(FuLogitechBulkcontrollerDevice *self,
-				       guint8 *buf,
-				       gsize bufsz,
-				       FuLogitechBulkcontrollerBulkInterface interface_id,
-				       GError **error)
-{
-	gint ep;
-
-	g_return_val_if_fail(buf != NULL, FALSE);
-
-	if (interface_id == BULK_INTERFACE_SYNC) {
-		ep = self->sync_ep[EP_OUT];
-	} else if (interface_id == BULK_INTERFACE_UPD) {
-		ep = self->update_ep[EP_OUT];
-	} else {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "interface is invalid");
-		return FALSE;
-	}
-	fu_dump_raw(G_LOG_DOMAIN, "request", buf, MIN(bufsz, 12));
-	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
-					 ep,
-					 buf,
-					 bufsz,
-					 NULL, /* transferred */
-					 BULK_TRANSFER_TIMEOUT,
-					 NULL,
-					 error)) {
-		g_prefix_error(error, "failed to send using bulk transfer: ");
-		fu_error_convert(error);
-		return FALSE;
-	}
-	return TRUE;
-}
-
-static gboolean
-fu_logitech_bulkcontroller_device_recv(FuLogitechBulkcontrollerDevice *self,
-				       guint8 *buf,
-				       gsize bufsz,
-				       FuLogitechBulkcontrollerBulkInterface interface_id,
-				       guint timeout,
-				       GError **error)
-{
-	gint ep;
-	gsize actual_length = 0;
-
-	g_return_val_if_fail(buf != NULL, FALSE);
-
-	if (interface_id == BULK_INTERFACE_SYNC) {
-		ep = self->sync_ep[EP_IN];
-	} else if (interface_id == BULK_INTERFACE_UPD) {
-		ep = self->update_ep[EP_IN];
-	} else {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "interface is invalid");
-		return FALSE;
-	}
-	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
-					 ep,
-					 buf,
-					 bufsz,
-					 &actual_length,
-					 timeout,
-					 NULL,
-					 error)) {
-		g_prefix_error(error, "failed to receive: ");
-		return FALSE;
-	}
-	fu_dump_raw(G_LOG_DOMAIN, "response", buf, MIN(actual_length, 12));
-	return TRUE;
-}
-
 typedef struct {
 	FuLogitechBulkcontrollerCmd cmd;
 	guint32 sequence_id;
@@ -247,12 +168,18 @@ fu_logitech_bulkcontroller_device_sync_send_cmd(FuLogitechBulkcontrollerDevice *
 	}
 	str = fu_struct_logitech_bulkcontroller_send_sync_req_to_string(st_req);
 	g_debug("sending: %s", str);
-	if (!fu_logitech_bulkcontroller_device_send(self,
-						    st_req->data,
-						    st_req->len,
-						    BULK_INTERFACE_SYNC,
-						    error))
+
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->sync_ep[EP_OUT],
+					 st_req->data,
+					 st_req->len,
+					 NULL, /* transferred */
+					 BULK_TRANSFER_TIMEOUT,
+					 NULL,
+					 error)) {
+		g_prefix_error(error, "failed to send sync bulk transfer: ");
 		return FALSE;
+	}
 
 	/* success */
 	return TRUE;
@@ -281,18 +208,25 @@ static FuLogitechBulkcontrollerResponse *
 fu_logitech_bulkcontroller_device_sync_wait_any(FuLogitechBulkcontrollerDevice *self,
 						GError **error)
 {
+	gsize actual_length = 0;
 	g_autofree guint8 *buf = g_malloc0(self->transfer_bufsz);
 	g_autoptr(FuStructLogitechBulkcontrollerSendSyncRes) st = NULL;
 	g_autoptr(FuLogitechBulkcontrollerResponse) response =
 	    fu_logitech_bulkcontroller_device_response_new();
 
-	if (!fu_logitech_bulkcontroller_device_recv(self,
-						    buf,
-						    self->transfer_bufsz,
-						    BULK_INTERFACE_SYNC,
-						    BULK_TRANSFER_TIMEOUT,
-						    error))
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->sync_ep[EP_IN],
+					 buf,
+					 self->transfer_bufsz,
+					 &actual_length,
+					 BULK_TRANSFER_TIMEOUT,
+					 NULL,
+					 error)) {
+		g_prefix_error(error, "failed to receive: ");
 		return NULL;
+	}
+	fu_dump_raw(G_LOG_DOMAIN, "response", buf, MIN(actual_length, 12));
+
 	st = fu_struct_logitech_bulkcontroller_send_sync_res_parse(buf,
 								   self->transfer_bufsz,
 								   0x0,
@@ -605,6 +539,7 @@ fu_logitech_bulkcontroller_device_upd_send_cmd(FuLogitechBulkcontrollerDevice *s
 					       guint timeout,
 					       GError **error)
 {
+	gsize actual_length = 0;
 	g_autofree guint8 *buf_tmp = g_malloc0(self->transfer_bufsz);
 	GByteArray buf_ack = {.data = buf_tmp, .len = self->transfer_bufsz};
 	g_autoptr(FuStructLogitechBulkcontrollerUpdateReq) buf_pkt =
@@ -617,21 +552,35 @@ fu_logitech_bulkcontroller_device_upd_send_cmd(FuLogitechBulkcontrollerDevice *s
 		    g_bytes_get_size(buf));
 		fu_byte_array_append_bytes(buf_pkt, buf);
 	}
-	if (!fu_logitech_bulkcontroller_device_send(self,
-						    buf_pkt->data,
-						    buf_pkt->len,
-						    BULK_INTERFACE_UPD,
-						    error))
-		return FALSE;
 
-	/* receiving INIT ACK */
-	if (!fu_logitech_bulkcontroller_device_recv(self,
-						    buf_tmp,
-						    self->transfer_bufsz,
-						    BULK_INTERFACE_UPD,
-						    timeout,
-						    error))
+	fu_dump_raw(G_LOG_DOMAIN, "request", buf_pkt->data, MIN(buf_pkt->len, 12));
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->update_ep[EP_OUT],
+					 buf_pkt->data,
+					 buf_pkt->len,
+					 NULL, /* transferred */
+					 BULK_TRANSFER_TIMEOUT,
+					 NULL,
+					 error)) {
+		g_prefix_error(error, "failed to send upd bulk transfer: ");
+		fu_error_convert(error);
 		return FALSE;
+	}
+
+	/* receiving ACK */
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->update_ep[EP_IN],
+					 buf_tmp,
+					 self->transfer_bufsz,
+					 &actual_length,
+					 timeout,
+					 NULL,
+					 error)) {
+		g_prefix_error(error, "failed to receive: ");
+		return FALSE;
+	}
+	fu_dump_raw(G_LOG_DOMAIN, "response", buf_tmp, MIN(actual_length, 12));
+
 	if (fu_struct_logitech_bulkcontroller_update_res_get_cmd(&buf_ack) !=
 	    FU_LOGITECH_BULKCONTROLLER_CMD_ACK) {
 		g_set_error(error,
@@ -654,32 +603,6 @@ fu_logitech_bulkcontroller_device_upd_send_cmd(FuLogitechBulkcontrollerDevice *s
 		return FALSE;
 	}
 	return TRUE;
-}
-
-static gboolean
-fu_logitech_bulkcontroller_device_compute_hash_cb(const guint8 *buf,
-						  gsize bufsz,
-						  gpointer user_data,
-						  GError **error)
-{
-	GChecksum *checksum = (GChecksum *)user_data;
-	g_checksum_update(checksum, buf, bufsz);
-	return TRUE;
-}
-
-static gchar *
-fu_logitech_bulkcontroller_device_compute_hash(GInputStream *stream, GError **error)
-{
-	guint8 md5buf[HASH_VALUE_SIZE] = {0};
-	gsize data_len = sizeof(md5buf);
-	g_autoptr(GChecksum) checksum = g_checksum_new(G_CHECKSUM_MD5);
-	if (!fu_input_stream_chunkify(stream,
-				      fu_logitech_bulkcontroller_device_compute_hash_cb,
-				      checksum,
-				      error))
-		return NULL;
-	g_checksum_get_digest(checksum, (guint8 *)&md5buf, &data_len);
-	return g_base64_encode(md5buf, sizeof(md5buf));
 }
 
 static FwupdStatus
@@ -1055,6 +978,8 @@ fu_logitech_bulkcontroller_device_write_firmware(FuDevice *device,
 	FuLogitechBulkcontrollerDevice *self = FU_LOGITECH_BULKCONTROLLER_DEVICE(device);
 	gsize streamsz = 0;
 	g_autofree gchar *base64hash = NULL;
+	g_autofree gchar *md5_str = NULL;
+	g_autoptr(GByteArray) md5_buf = NULL;
 	g_autoptr(GByteArray) end_pkt = g_byte_array_new();
 	g_autoptr(GByteArray) start_pkt = g_byte_array_new();
 	g_autoptr(GInputStream) stream = NULL;
@@ -1063,8 +988,9 @@ fu_logitech_bulkcontroller_device_write_firmware(FuDevice *device,
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 4, "checksum-stream");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "init");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 55, "device-write-blocks");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 51, "device-write-blocks");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "end-transfer");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "uninit");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_VERIFY, 40, NULL);
@@ -1073,6 +999,14 @@ fu_logitech_bulkcontroller_device_write_firmware(FuDevice *device,
 	stream = fu_firmware_get_stream(firmware, error);
 	if (stream == NULL)
 		return FALSE;
+
+	/* calculate firmware checksum, weirdly as a base64 string */
+	md5_str = fu_firmware_get_checksum(firmware, G_CHECKSUM_MD5, error);
+	md5_buf = fu_byte_array_from_string(md5_str, error);
+	if (md5_buf == NULL)
+		return FALSE;
+	base64hash = g_base64_encode(md5_buf->data, md5_buf->len);
+	fu_progress_step_done(progress);
 
 	/* sending INIT. Retry if device is not in IDLE state to receive the file */
 	if (!fu_device_retry(device,
@@ -1113,9 +1047,6 @@ fu_logitech_bulkcontroller_device_write_firmware(FuDevice *device,
 
 	/* sending end transfer -- extend the bulk transfer timeout value, as android device takes
 	 * some time to calculate the hash and respond */
-	base64hash = fu_logitech_bulkcontroller_device_compute_hash(stream, error);
-	if (base64hash == NULL)
-		return FALSE;
 	fu_byte_array_append_uint32(end_pkt, 1, G_LITTLE_ENDIAN); /* update */
 	fu_byte_array_append_uint32(end_pkt, 0, G_LITTLE_ENDIAN); /* force */
 	fu_byte_array_append_uint32(end_pkt,
@@ -1286,15 +1217,18 @@ fu_logitech_bulkcontroller_device_clear_queue_cb(FuDevice *device,
 						 GError **error)
 {
 	FuLogitechBulkcontrollerDevice *self = FU_LOGITECH_BULKCONTROLLER_DEVICE(device);
+	gsize actual_length = 0;
 	g_autofree guint8 *buf = g_malloc0(self->transfer_bufsz);
 	g_autoptr(GError) error_local = NULL;
 
-	if (!fu_logitech_bulkcontroller_device_recv(self,
-						    buf,
-						    self->transfer_bufsz,
-						    BULK_INTERFACE_SYNC,
-						    250, /* ms */
-						    &error_local)) {
+	if (!fu_usb_device_bulk_transfer(FU_USB_DEVICE(self),
+					 self->sync_ep[EP_IN],
+					 buf,
+					 self->transfer_bufsz,
+					 &actual_length,
+					 250, /* ms */
+					 NULL,
+					 &error_local)) {
 		if (g_error_matches(error_local, FWUPD_ERROR, FWUPD_ERROR_TIMED_OUT)) {
 			g_debug("timed out successfully");
 			return TRUE;
