@@ -1,3 +1,10 @@
+fwupd (2.0.6-3) unstable; urgency=medium
+
+  * Backport a patch to test for correct values for fwupdmgr security
+    during autopkgtest.
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 19 Feb 2025 06:59:54 -0600
+
 fwupd (2.0.6-2) unstable; urgency=medium
 
   * d/control: Add polkitd to b-d.
