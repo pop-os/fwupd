@@ -82,6 +82,13 @@ override_dh_install:
 	# the below step is automatic with debhelper >= 14
 	dh_installsysusers
 
+override_dh_gencontrol:
+	if dpkg-vendor --derives-from ubuntu; then \
+		dh_gencontrol -- -Vrecommends:secureboot-db="secureboot-db,"; \
+	else \
+		dh_gencontrol -- -Vrecommends:secureboot-db=""; \
+	fi
+
 override_dh_strip_nondeterminism:
 	dh_strip_nondeterminism -Xfirmware-example.xml.gz
 
