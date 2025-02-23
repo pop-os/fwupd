@@ -98,7 +98,7 @@ Depends: ${misc:Depends},
 Recommends: python3,
 	    bolt,
 	    default-dbus-system-bus | dbus-system-bus,
-	    secureboot-db,
+	    ${recommends:secureboot-db}
 	    udisks2,
 	    fwupd-signed,
 	    jq
