@@ -1,2 +1,3 @@
 flaky-p2p.patch
 0001-trivial-tests-Only-run-fwupdmgr-security-tests-on-x8.patch
+0001-trivial-fix-Expected-a-Fwupd.DeviceFlags-but-got-int.patch

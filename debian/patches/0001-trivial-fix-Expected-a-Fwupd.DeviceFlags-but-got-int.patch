@@ -1,0 +1,34 @@
+From 3d2cfc49533fcb283d2d3d9ea370182372efaba9 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Tue, 18 Mar 2025 15:46:05 -0500
+Subject: [PATCH] trivial: fix "** Expected a Fwupd.DeviceFlags, but got int
+ ***"
+
+Adjust the script to use the correct value.
+
+Suggested-by: Adrien Dorsaz <adrien@adorsaz.ch>
+Link: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1093432
+---
+ contrib/firmware_packager/install_dell_bios_exe.py | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/contrib/firmware_packager/install_dell_bios_exe.py b/contrib/firmware_packager/install_dell_bios_exe.py
+index 85fe3c85b..dd0864d48 100755
+--- a/contrib/firmware_packager/install_dell_bios_exe.py
++++ b/contrib/firmware_packager/install_dell_bios_exe.py
+@@ -68,10 +68,10 @@ def find_uefi_device(client, deviceid):
+             if item.get_id() != deviceid:
+                 continue
+         # internal
+-        if not item.has_flag(1 << 0):
++        if not item.has_flag(Fwupd.DeviceFlags.INTERNAL):
+             continue
+         # needs reboot
+-        if not item.has_flag(1 << 8):
++        if not item.has_flag(Fwupd.DeviceFlags.NEEDS_REBOOT):
+             continue
+         # return the first hit for UEFI plugin
+         if item.get_plugin() == "uefi" or item.get_plugin() == "uefi_capsule":
+-- 
+2.43.0
+
