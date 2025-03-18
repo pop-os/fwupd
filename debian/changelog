@@ -1,3 +1,16 @@
+fwupd (2.0.6-5) unstable; urgency=medium
+
+  [ Michael Biebl ]
+  * Remove obsolete conffiles on upgrade (Closes: #1064877, #1100757)
+  * Bump versions of existing rm_conffile entries (Closes: #980570, #1005417)
+
+  [ Mario Limonciello ]
+  * Backport a patch to fix install_dell_bios_exe.py (Closes: #1093432)
+  * Backport a patch to fix a critical warning (Closes: #1099791)
+  * Backport a patch to fix compilation against newer Pango versions
+
+ -- Mario Limonciello <superm1@gmail.com>  Tue, 18 Mar 2025 17:07:45 -0500
+
 fwupd (2.0.6-4) unstable; urgency=medium
 
   [ Michael Biebl ]
