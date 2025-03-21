@@ -44,7 +44,7 @@ Build-Depends:
 	libsystemd-dev,
 	libtss2-dev,
 	libusb-1.0-0-dev,
-	libxmlb-dev,
+	libxmlb-dev (>= 0.3.22),
 	libzstd-dev,
 	locales,
 	meson,
@@ -92,6 +92,7 @@ Package: fwupd
 Architecture: linux-any
 Depends: ${misc:Depends},
          ${shlibs:Depends},
+         libxmlb2 (>= 0.3.22),
          libfwupd3 (= ${binary:Version}),
          shared-mime-info,
          systemd-sysusers
