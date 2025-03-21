@@ -1,3 +1,9 @@
+fwupd (2.0.6-7) unstable; urgency=medium
+
+  * Add explicit dependency on libxmlb 0.3.22 or later.
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 20 Mar 2025 19:58:50 -0500
+
 fwupd (2.0.6-6) unstable; urgency=medium
 
   * Backport a patch to fix autopkgtest failure on newer libxmlb
