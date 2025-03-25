@@ -218,7 +218,8 @@ fu_context_get_config(FuContext *self)
 /**
  * fu_context_get_smbios_string:
  * @self: a #FuContext
- * @structure_type: a SMBIOS structure type, e.g. %FU_SMBIOS_STRUCTURE_TYPE_BIOS
+ * @type: a SMBIOS structure type, e.g. %FU_SMBIOS_STRUCTURE_TYPE_BIOS
+ * @length: expected length of the structure, or %FU_SMBIOS_STRUCTURE_LENGTH_ANY
  * @offset: a SMBIOS offset
  * @error: (nullable): optional return location for an error
  *
@@ -229,10 +230,14 @@ fu_context_get_config(FuContext *self)
  *
  * Returns: a string, or %NULL
  *
- * Since: 1.6.0
+ * Since: 2.0.7
  **/
 const gchar *
-fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offset, GError **error)
+fu_context_get_smbios_string(FuContext *self,
+			     guint8 type,
+			     guint8 length,
+			     guint8 offset,
+			     GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_CONTEXT(self), NULL);
@@ -240,23 +245,24 @@ fu_context_get_smbios_string(FuContext *self, guint8 structure_type, guint8 offs
 		g_critical("cannot use SMBIOS before calling ->load_hwinfo()");
 		return NULL;
 	}
-	return fu_smbios_get_string(priv->smbios, structure_type, offset, error);
+	return fu_smbios_get_string(priv->smbios, type, length, offset, error);
 }
 
 /**
  * fu_context_get_smbios_data:
  * @self: a #FuContext
- * @structure_type: a SMBIOS structure type, e.g. %FU_SMBIOS_STRUCTURE_TYPE_BIOS
+ * @type: a SMBIOS structure type, e.g. %FU_SMBIOS_STRUCTURE_TYPE_BIOS
+ * @length: expected length of the structure, or %FU_SMBIOS_STRUCTURE_LENGTH_ANY
  * @error: (nullable): optional return location for an error
  *
  * Gets all hardware SMBIOS data for a specific type.
  *
  * Returns: (transfer container) (element-type GBytes): a #GBytes, or %NULL if not found
  *
- * Since: 1.9.8
+ * Since: 2.0.7
  **/
 GPtrArray *
-fu_context_get_smbios_data(FuContext *self, guint8 structure_type, GError **error)
+fu_context_get_smbios_data(FuContext *self, guint8 type, guint8 length, GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 
@@ -268,13 +274,14 @@ fu_context_get_smbios_data(FuContext *self, guint8 structure_type, GError **erro
 		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_INTERNAL, "no data");
 		return NULL;
 	}
-	return fu_smbios_get_data(priv->smbios, structure_type, error);
+	return fu_smbios_get_data(priv->smbios, type, length, error);
 }
 
 /**
  * fu_context_get_smbios_integer:
  * @self: a #FuContext
  * @type: a structure type, e.g. %FU_SMBIOS_STRUCTURE_TYPE_BIOS
+ * @length: expected length of the structure, or %FU_SMBIOS_STRUCTURE_LENGTH_ANY
  * @offset: a structure offset
  * @error: (nullable): optional return location for an error
  *
@@ -285,10 +292,14 @@ fu_context_get_smbios_data(FuContext *self, guint8 structure_type, GError **erro
  *
  * Returns: an integer, or %G_MAXUINT if invalid or not found
  *
- * Since: 1.6.0
+ * Since: 2.0.7
  **/
 guint
-fu_context_get_smbios_integer(FuContext *self, guint8 type, guint8 offset, GError **error)
+fu_context_get_smbios_integer(FuContext *self,
+			      guint8 type,
+			      guint8 length,
+			      guint8 offset,
+			      GError **error)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_CONTEXT(self), G_MAXUINT);
@@ -296,7 +307,7 @@ fu_context_get_smbios_integer(FuContext *self, guint8 type, guint8 offset, GErro
 		g_critical("cannot use SMBIOS before calling ->load_hwinfo()");
 		return G_MAXUINT;
 	}
-	return fu_smbios_get_integer(priv->smbios, type, offset, error);
+	return fu_smbios_get_integer(priv->smbios, type, length, offset, error);
 }
 
 /**
@@ -1609,6 +1620,20 @@ fu_context_get_esp_volumes(FuContext *self, GError **error)
 }
 
 static gboolean
+fu_context_is_esp(FuVolume *esp)
+{
+	g_autofree gchar *mount_point = fu_volume_get_mount_point(esp);
+	g_autofree gchar *fn = NULL;
+
+	if (mount_point == NULL)
+		return FALSE;
+
+	fn = g_build_filename(mount_point, "EFI", NULL);
+
+	return g_file_test(fn, G_FILE_TEST_IS_DIR);
+}
+
+static gboolean
 fu_context_is_esp_linux(FuVolume *esp, GError **error)
 {
 	const gchar *prefixes[] = {"grub", "shim", "systemd-boot", "zfsbootmenu", NULL};
@@ -1726,6 +1751,11 @@ fu_context_get_default_esp(FuContext *self, GError **error)
 						mount);
 					continue;
 				}
+			}
+
+			if (!fu_context_is_esp(esp)) {
+				g_debug("not an ESP: %s", fu_volume_get_id(esp));
+				continue;
 			}
 
 			/* big partitions are better than small partitions */

@@ -50,16 +50,7 @@ typedef struct {
 	gboolean properties_valid;
 } FuUdevDevicePrivate;
 
-static void
-fu_udev_device_codec_iface_init(FwupdCodecInterface *iface);
-
-G_DEFINE_TYPE_EXTENDED(FuUdevDevice,
-		       fu_udev_device,
-		       FU_TYPE_DEVICE,
-		       0,
-		       G_ADD_PRIVATE(FuUdevDevice)
-			   G_IMPLEMENT_INTERFACE(FWUPD_TYPE_CODEC,
-						 fu_udev_device_codec_iface_init));
+G_DEFINE_TYPE_WITH_PRIVATE(FuUdevDevice, fu_udev_device, FU_TYPE_DEVICE);
 
 enum {
 	PROP_0,
@@ -963,6 +954,11 @@ fu_udev_device_set_physical_id(FuUdevDevice *self, const gchar *subsystems, GErr
 	}
 
 	subsystem = fu_udev_device_get_subsystem(udev_device);
+	if (subsystem == NULL && fu_device_get_physical_id(FU_DEVICE(udev_device)) != NULL) {
+		fu_device_set_physical_id(FU_DEVICE(self),
+					  fu_device_get_physical_id(FU_DEVICE(udev_device)));
+		return TRUE;
+	}
 	if (g_strcmp0(subsystem, "pci") == 0) {
 		g_autofree gchar *prop_id =
 		    fu_udev_device_read_property(udev_device, "PCI_SLOT_NAME", error);
@@ -1095,11 +1091,10 @@ fu_udev_device_open(FuDevice *device, GError **error)
 	 * could add more flags, or set the flags back to NONE -- detect and fixup */
 	if (priv->device_file != NULL && priv->open_flags == FU_IO_CHANNEL_OPEN_FLAG_NONE) {
 #ifndef SUPPORTED_BUILD
-		g_critical(
-		    "%s [%s] forgot to call fu_udev_device_add_open_flag() with OPEN_READ and/or "
-		    "OPEN_WRITE",
-		    fu_device_get_name(device),
-		    fu_device_get_id(device));
+		g_critical("%s [%s] forgot to call fu_udev_device_add_open_flag() with "
+			   "FU_IO_CHANNEL_OPEN_FLAG_READ and/or FU_IO_CHANNEL_OPEN_FLAG_WRITE",
+			   fu_device_get_name(device),
+			   fu_device_get_id(device));
 #endif
 		fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_READ);
 		fu_udev_device_add_open_flag(FU_UDEV_DEVICE(self), FU_IO_CHANNEL_OPEN_FLAG_WRITE);
@@ -1526,6 +1521,40 @@ fu_udev_device_read(FuUdevDevice *self,
 }
 
 /**
+ * fu_udev_device_read_bytes:
+ * @self: a #FuUdevDevice
+ * @count: bytes to read
+ * @timeout_ms: timeout in ms
+ * @flags: channel flags, e.g. %FU_IO_CHANNEL_FLAG_SINGLE_SHOT
+ * @error: (nullable): optional return location for an error
+ *
+ * Read a buffer from a file descriptor.
+ *
+ * Returns: (transfer full): A #GBytes, or %NULL
+ *
+ * Since: 2.0.7
+ **/
+GBytes *
+fu_udev_device_read_bytes(FuUdevDevice *self,
+			  gsize count,
+			  guint timeout_ms,
+			  FuIOChannelFlags flags,
+			  GError **error)
+{
+	gsize bytes_read = 0;
+	g_autofree guint8 *buf = NULL;
+
+	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), NULL);
+	g_return_val_if_fail(count > 0, NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	buf = g_malloc0(count);
+	if (!fu_udev_device_read(self, buf, count, &bytes_read, timeout_ms, flags, error))
+		return NULL;
+	return g_bytes_new(buf, bytes_read);
+}
+
+/**
  * fu_udev_device_write:
  * @self: a #FuUdevDevice
  * @buf: (out): data
@@ -1591,6 +1620,38 @@ fu_udev_device_write(FuUdevDevice *self,
 
 	/* success */
 	return TRUE;
+}
+
+/**
+ * fu_udev_device_write_bytes:
+ * @self: a #FuUdevDevice
+ * @blob: a #GBytes
+ * @timeout_ms: timeout in ms
+ * @flags: channel flags, e.g. %FU_IO_CHANNEL_FLAG_SINGLE_SHOT
+ * @error: (nullable): optional return location for an error
+ *
+ * Write a buffer to a file descriptor.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 2.0.7
+ **/
+gboolean
+fu_udev_device_write_bytes(FuUdevDevice *self,
+			   GBytes *blob,
+			   guint timeout_ms,
+			   FuIOChannelFlags flags,
+			   GError **error)
+{
+	g_return_val_if_fail(FU_IS_UDEV_DEVICE(self), FALSE);
+	g_return_val_if_fail(blob != NULL, FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+	return fu_udev_device_write(self,
+				    g_bytes_get_data(blob, NULL),
+				    g_bytes_get_size(blob),
+				    timeout_ms,
+				    flags,
+				    error);
 }
 
 /**
@@ -2096,10 +2157,9 @@ fu_udev_device_read_property(FuUdevDevice *self, const gchar *key, GError **erro
 }
 
 static void
-fu_udev_device_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags flags)
+fu_udev_device_add_json(FuDevice *device, JsonBuilder *builder, FwupdCodecFlags flags)
 {
-	FuDevice *device = FU_DEVICE(codec);
-	FuUdevDevice *self = FU_UDEV_DEVICE(codec);
+	FuUdevDevice *self = FU_UDEV_DEVICE(device);
 	FuUdevDevicePrivate *priv = GET_PRIVATE(self);
 	GPtrArray *events = fu_device_get_events(device);
 
@@ -2122,16 +2182,6 @@ fu_udev_device_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags
 	if (fu_device_get_pid(device) != 0)
 		fwupd_codec_json_append_int(builder, "Model", fu_device_get_pid(device));
 
-#if GLIB_CHECK_VERSION(2, 80, 0)
-	if (fu_device_get_created_usec(device) != 0) {
-		g_autoptr(GDateTime) dt =
-		    g_date_time_new_from_unix_utc_usec(fu_device_get_created_usec(device));
-		g_autofree gchar *str = g_date_time_format_iso8601(dt);
-		json_builder_set_member_name(builder, "Created");
-		json_builder_add_string_value(builder, str);
-	}
-#endif
-
 	/* events */
 	if (events->len > 0) {
 		json_builder_set_member_name(builder, "Events");
@@ -2147,11 +2197,9 @@ fu_udev_device_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags
 }
 
 static gboolean
-fu_udev_device_from_json(FwupdCodec *codec, JsonNode *json_node, GError **error)
+fu_udev_device_from_json(FuDevice *device, JsonObject *json_object, GError **error)
 {
-	FuDevice *device = FU_DEVICE(codec);
-	FuUdevDevice *self = FU_UDEV_DEVICE(codec);
-	JsonObject *json_object = json_node_get_object(json_node);
+	FuUdevDevice *self = FU_UDEV_DEVICE(device);
 	const gchar *tmp;
 	gint64 tmp64;
 
@@ -2179,15 +2227,6 @@ fu_udev_device_from_json(FwupdCodec *codec, JsonNode *json_node, GError **error)
 	tmp64 = json_object_get_int_member_with_default(json_object, "Model", 0);
 	if (tmp64 != 0)
 		fu_device_set_pid(device, tmp64);
-
-#if GLIB_CHECK_VERSION(2, 80, 0)
-	tmp = json_object_get_string_member_with_default(json_object, "Created", NULL);
-	if (tmp != NULL) {
-		g_autoptr(GDateTime) dt = g_date_time_new_from_iso8601(tmp, NULL);
-		if (dt != NULL)
-			fu_device_set_created_usec(device, g_date_time_to_unix_usec(dt));
-	}
-#endif
 
 	/* array of events */
 	if (json_object_has_member(json_object, "Events")) {
@@ -2325,6 +2364,8 @@ fu_udev_device_class_init(FuUdevDeviceClass *klass)
 	device_class->bind_driver = fu_udev_device_bind_driver;
 	device_class->unbind_driver = fu_udev_device_unbind_driver;
 	device_class->probe_complete = fu_udev_device_probe_complete;
+	device_class->from_json = fu_udev_device_from_json;
+	device_class->add_json = fu_udev_device_add_json;
 
 	/**
 	 * FuUdevDevice::changed:
@@ -2413,13 +2454,6 @@ fu_udev_device_class_init(FuUdevDeviceClass *klass)
 				    NULL,
 				    G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 	g_object_class_install_property(object_class, PROP_DEVTYPE, pspec);
-}
-
-static void
-fu_udev_device_codec_iface_init(FwupdCodecInterface *iface)
-{
-	iface->add_json = fu_udev_device_add_json;
-	iface->from_json = fu_udev_device_from_json;
 }
 
 /**

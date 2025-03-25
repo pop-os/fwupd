@@ -299,7 +299,7 @@ fu_uf2_device_setup(FuDevice *device, GError **error)
 	if (fn1 == NULL)
 		return FALSE;
 	blob_txt = fu_device_get_contents_bytes(device, fn1, NULL, error);
-	lines = fu_strsplit(g_bytes_get_data(blob_txt, NULL), g_bytes_get_size(blob_txt), "\n", -1);
+	lines = fu_strsplit_bytes(blob_txt, "\n", -1);
 	for (guint i = 0; lines[i] != NULL; i++) {
 		if (g_str_has_prefix(lines[i], "Model: ")) {
 			fu_device_set_name(device, lines[i] + 7);
@@ -389,6 +389,7 @@ fu_uf2_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");

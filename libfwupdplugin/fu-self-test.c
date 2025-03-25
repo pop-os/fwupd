@@ -494,6 +494,25 @@ fu_device_version_format_func(void)
 }
 
 static void
+fu_device_version_format_raw_func(void)
+{
+	g_autoptr(FuDevice) device = g_object_new(FU_TYPE_USB_DEVICE, NULL);
+
+	/* like normal */
+	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_BCD);
+	fu_device_set_version_raw(device, 256);
+	fu_device_set_version_lowest_raw(device, 257);
+
+	g_assert_cmpstr(fu_device_get_version(device), ==, "1.0");
+	g_assert_cmpstr(fu_device_get_version_lowest(device), ==, "1.1");
+
+	/* ensure both are changed */
+	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_PLAIN);
+	g_assert_cmpstr(fu_device_get_version(device), ==, "256");
+	g_assert_cmpstr(fu_device_get_version_lowest(device), ==, "257");
+}
+
+static void
 fu_device_open_refcount_func(void)
 {
 	gboolean ret;
@@ -515,6 +534,19 @@ fu_device_open_refcount_func(void)
 	ret = fu_device_close(device, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOTHING_TO_DO);
 	g_assert_false(ret);
+}
+
+static void
+fu_device_rescan_func(void)
+{
+	gboolean ret;
+	g_autoptr(FuDevice) device = fu_device_new(NULL);
+	g_autoptr(GError) error = NULL;
+
+	/* no GUIDs! */
+	ret = fu_device_rescan(device, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 }
 
 static void
@@ -647,6 +679,7 @@ fu_smbios_func(void)
 	gboolean ret;
 	g_autofree gchar *dump = NULL;
 	g_autofree gchar *testdatadir = NULL;
+	g_autofree gchar *full_path = NULL;
 	g_autoptr(FuSmbios) smbios = NULL;
 	g_autoptr(GError) error = NULL;
 
@@ -659,6 +692,12 @@ fu_smbios_func(void)
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 
+	full_path = g_test_build_filename(G_TEST_DIST, "tests", "dmi", "tables", NULL);
+	if (!g_file_test(full_path, G_FILE_TEST_IS_DIR)) {
+		g_test_skip("no DMI tables found");
+		return;
+	}
+
 	smbios = fu_smbios_new();
 	ret = fu_smbios_setup(smbios, &error);
 	g_assert_no_error(error);
@@ -667,19 +706,38 @@ fu_smbios_func(void)
 	g_debug("%s", dump);
 
 	/* test for missing table */
-	str = fu_smbios_get_string(smbios, 0xff, 0, &error);
+	str = fu_smbios_get_string(smbios, 0xff, FU_SMBIOS_STRUCTURE_LENGTH_ANY, 0, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_null(str);
 	g_clear_error(&error);
 
 	/* check for invalid offset */
-	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0xff, &error);
+	str = fu_smbios_get_string(smbios,
+				   FU_SMBIOS_STRUCTURE_TYPE_BIOS,
+				   FU_SMBIOS_STRUCTURE_LENGTH_ANY,
+				   0xff,
+				   &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_null(str);
 	g_clear_error(&error);
 
+	/* check for invalid length */
+	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0x01, 0xff, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
+	g_assert_null(str);
+	g_clear_error(&error);
+
+	/* get vendor -- explicit length */
+	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0x18, 0x04, &error);
+	g_assert_no_error(error);
+	g_assert_cmpstr(str, ==, "LENOVO");
+
 	/* get vendor */
-	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0x04, &error);
+	str = fu_smbios_get_string(smbios,
+				   FU_SMBIOS_STRUCTURE_TYPE_BIOS,
+				   FU_SMBIOS_STRUCTURE_LENGTH_ANY,
+				   0x04,
+				   &error);
 	g_assert_no_error(error);
 	g_assert_cmpstr(str, ==, "LENOVO");
 }
@@ -729,6 +787,12 @@ fu_smbios3_func(void)
 	g_autoptr(GError) error = NULL;
 
 	path = g_test_build_filename(G_TEST_DIST, "tests", "dmi", "tables64", NULL);
+
+	if (!g_file_test(path, G_FILE_TEST_IS_DIR)) {
+		g_test_skip("no DMI tables found");
+		return;
+	}
+
 	smbios = fu_smbios_new();
 	ret = fu_smbios_setup_from_path(smbios, path, &error);
 	g_assert_no_error(error);
@@ -737,7 +801,7 @@ fu_smbios3_func(void)
 	g_debug("%s", dump);
 
 	/* get vendor */
-	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0x04, &error);
+	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0x18, 0x04, &error);
 	g_assert_no_error(error);
 	g_assert_cmpstr(str, ==, "Dell Inc.");
 }
@@ -1045,6 +1109,19 @@ fu_common_olson_timezone_id_func(void)
 }
 
 static void
+fu_cpuid_func(void)
+{
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GHashTable) cpu_attrs = NULL;
+
+	cpu_attrs = fu_cpu_get_attrs(&error);
+	g_assert_no_error(error);
+	g_assert_nonnull(cpu_attrs);
+	g_assert_cmpstr(g_hash_table_lookup(cpu_attrs, "vendor_id"), ==, "AuthenticAMD");
+	g_assert_cmpstr(g_hash_table_lookup(cpu_attrs, "fpu_exception"), ==, "yes");
+}
+
+static void
 fu_strsafe_func(void)
 {
 	struct {
@@ -1082,6 +1159,7 @@ static void
 fu_hwids_func(void)
 {
 	g_autofree gchar *testdatadir = NULL;
+	g_autofree gchar *full_path = NULL;
 	g_autoptr(FuContext) context = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
 	g_autoptr(GError) error = NULL;
@@ -1116,6 +1194,13 @@ fu_hwids_func(void)
 	/* these tests will not write */
 	testdatadir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
+
+	/* DMI */
+	full_path = g_test_build_filename(G_TEST_DIST, "tests", "dmi", "tables", NULL);
+	if (!g_file_test(full_path, G_FILE_TEST_IS_DIR)) {
+		g_test_skip("no DMI tables found");
+		return;
+	}
 
 	context = fu_context_new();
 	ret = fu_context_load_hwinfo(context, progress, FU_CONTEXT_HWID_FLAG_LOAD_SMBIOS, &error);
@@ -1624,10 +1709,6 @@ fu_quirks_vendor_ids_func(void)
 	g_autoptr(FuQuirks) quirks = fu_quirks_new(ctx);
 	g_autoptr(GError) error = NULL;
 
-#ifndef HAVE_SQLITE
-	g_test_skip("no sqlite");
-	return;
-#endif
 	g_debug("deleting %s if exists", quirksdb);
 	g_unlink(quirksdb);
 
@@ -1881,6 +1962,7 @@ fu_common_kernel_search_func(void)
 	locker = fu_kernel_search_path_locker_new("/foo/bar", &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(locker);
+	g_assert_cmpstr(fu_kernel_search_path_locker_get_path(locker), ==, "/foo/bar");
 
 	result1 = fu_kernel_search_path_get_current(&error);
 	g_assert_nonnull(result1);
@@ -2187,7 +2269,7 @@ fu_device_vfuncs_func(void)
 	g_autoptr(FuContext) ctx = fu_context_new();
 	g_autoptr(FuDevice) device = fu_device_new(ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
-	g_autoptr(GInputStream) istream = g_memory_input_stream_new();
+	g_autoptr(FuFirmware) firmware_dummy = fu_firmware_new();
 	g_autoptr(FuFirmware) firmware = NULL;
 	g_autoptr(GBytes) blob = NULL;
 	g_autoptr(GError) error = NULL;
@@ -2198,7 +2280,11 @@ fu_device_vfuncs_func(void)
 	g_assert_false(ret);
 	g_clear_error(&error);
 
-	ret = fu_device_write_firmware(device, istream, progress, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_device_write_firmware(device,
+				       firmware_dummy,
+				       progress,
+				       FWUPD_INSTALL_FLAG_NONE,
+				       &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED);
 	g_assert_false(ret);
 	g_clear_error(&error);
@@ -2681,9 +2767,9 @@ fu_backend_emulate_func(void)
 	const gchar *json1 = "{"
 			     "  \"UsbDevices\" : ["
 			     "    {"
+			     "      \"Created\" : \"2023-02-01T16:35:03.302027Z\","
 			     "      \"GType\" : \"FuUdevDevice\",\n"
 			     "      \"BackendId\" : \"foo:bar:baz\","
-			     "      \"Created\" : \"2023-02-01T16:35:03.302027Z\","
 			     "      \"Events\" : ["
 			     "        {"
 			     "          \"Id\" : \"Ioctl:Request=0x007b,Data=AAA=,Length=0x2\","
@@ -2703,13 +2789,9 @@ fu_backend_emulate_func(void)
 			     "  \"FwupdVersion\" : \"" PACKAGE_VERSION "\",\n"
 			     "  \"UsbDevices\" : [\n"
 			     "    {\n"
+			     "      \"Created\" : \"2099-02-01T16:35:03Z\",\n"
 			     "      \"GType\" : \"FuUdevDevice\",\n"
-#if GLIB_CHECK_VERSION(2, 80, 0)
-			     "      \"BackendId\" : \"usb:FF:FF:06\",\n"
-			     "      \"Created\" : \"2099-02-01T16:35:03Z\"\n"
-#else
 			     "      \"BackendId\" : \"usb:FF:FF:06\"\n"
-#endif
 			     "    }\n"
 			     "  ]\n"
 			     "}";
@@ -2949,7 +3031,11 @@ fu_chunk_func(void)
 	chunked5 = fu_chunk_array_new(NULL, 0, 0x0, 0x0, 4);
 	g_assert_cmpint(chunked5->len, ==, 0);
 	chunked5_str = fu_chunk_array_to_string(chunked5);
-	g_assert_cmpstr(chunked5_str, ==, "<chunks>\n</chunks>\n");
+	if (fu_version_compare(xb_version_string(), "0.3.22", FWUPD_VERSION_FORMAT_TRIPLET) >= 0) {
+		g_assert_cmpstr(chunked5_str, ==, "<chunks />\n");
+	} else {
+		g_assert_cmpstr(chunked5_str, ==, "<chunks>\n</chunks>\n");
+	}
 
 	chunked1 = fu_chunk_array_new((const guint8 *)"0123456789abcdef", 16, 0x0, 10, 4);
 	chunked1_str = fu_chunk_array_to_string(chunked1);
@@ -3643,7 +3729,7 @@ fu_firmware_build_func(void)
 	g_assert_cmpstr(fu_firmware_get_version(firmware), ==, "1.2.3");
 
 	/* verify image */
-	img = fu_firmware_get_image_by_id(firmware, "header", &error);
+	img = fu_firmware_get_image_by_id(firmware, "xxx|h?ad*", &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(img);
 	g_assert_cmpstr(fu_firmware_get_version(img), ==, "4.5.6");
@@ -4837,7 +4923,7 @@ fu_security_attrs_hsi_func(void)
 
 	/* no attrs */
 	attrs = fu_security_attrs_new();
-	hsi1 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi1 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi1, ==, "HSI:0");
 
 	/* just success from HSI:1 */
@@ -4847,28 +4933,30 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi2 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi2 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi2, ==, "HSI:1");
 	g_clear_object(&attr);
 
 	/* add failed from HSI:2, so still HSI:1 */
 	attr = fwupd_security_attr_new("org.fwupd.hsi.PRX");
 	fwupd_security_attr_set_plugin(attr, "test");
+	fwupd_security_attr_set_fwupd_version(attr, "2.0.7");
 	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi3 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi3 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi3, ==, "HSI:1");
 	g_clear_object(&attr);
 
 	/* add an implicit obsolete via duplication */
 	attr = fwupd_security_attr_new("org.fwupd.hsi.PRX");
 	fwupd_security_attr_set_plugin(attr, "other-plugin");
+	fwupd_security_attr_set_fwupd_version(attr, "2.0.7");
 	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
 	fwupd_security_attr_set_url(attr, "http://other-plugin");
 	fu_security_attrs_append(attrs, attr);
 	fu_security_attrs_depsolve(attrs);
-	hsi4 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi4 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi4, ==, "HSI:1");
 	g_assert_true(fwupd_security_attr_has_flag(attr, FWUPD_SECURITY_ATTR_FLAG_OBSOLETED));
 	g_clear_object(&attr);
@@ -4876,13 +4964,14 @@ fu_security_attrs_hsi_func(void)
 	/* add attr from HSI:3, obsoleting the failure */
 	attr = fwupd_security_attr_new("org.fwupd.hsi.BIOSGuard");
 	fwupd_security_attr_set_plugin(attr, "test");
+	fwupd_security_attr_set_fwupd_version(attr, "2.0.7");
 	fwupd_security_attr_set_level(attr, FWUPD_SECURITY_ATTR_LEVEL_THEORETICAL);
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
 	fwupd_security_attr_add_obsolete(attr, "org.fwupd.hsi.PRX");
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
 	fu_security_attrs_depsolve(attrs);
-	hsi5 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi5 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi5, ==, "HSI:3");
 	g_clear_object(&attr);
 
@@ -4893,7 +4982,7 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi6 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi6 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi6, ==, "HSI:3");
 	g_clear_object(&attr);
 
@@ -4903,7 +4992,7 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_SUCCESS);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi7 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi7 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi7, ==, "HSI:3");
 	g_clear_object(&attr);
 
@@ -4913,7 +5002,7 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi8 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_NONE);
+	hsi8 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_NONE);
 	g_assert_cmpstr(hsi8, ==, "HSI:3!");
 	g_clear_object(&attr);
 
@@ -4923,7 +5012,7 @@ fu_security_attrs_hsi_func(void)
 	fwupd_security_attr_add_flag(attr, FWUPD_SECURITY_ATTR_FLAG_RUNTIME_ISSUE);
 	fwupd_security_attr_set_url(attr, "http://test");
 	fu_security_attrs_append(attrs, attr);
-	hsi9 = fu_security_attrs_calculate_hsi(attrs, FU_SECURITY_ATTRS_FLAG_ADD_VERSION);
+	hsi9 = fu_security_attrs_calculate_hsi(attrs, NULL, FU_SECURITY_ATTRS_FLAG_ADD_VERSION);
 	expected_hsi9 = g_strdup_printf("HSI:3! (v%d.%d.%d)",
 					FWUPD_MAJOR_VERSION,
 					FWUPD_MINOR_VERSION,
@@ -5672,6 +5761,32 @@ fu_partial_input_stream_simple_func(void)
 }
 
 static void
+fu_partial_input_stream_closed_base_func(void)
+{
+	gboolean ret;
+	gssize rc;
+	guint8 buf[2] = {0x0};
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GInputStream) stream = NULL;
+
+	{
+		g_autoptr(GBytes) blob = g_bytes_new_static("12345678", 8);
+		g_autoptr(FuInputStreamLocker) base_stream =
+		    g_memory_input_stream_new_from_bytes(blob);
+		stream = fu_partial_input_stream_new(base_stream, 2, 4, &error);
+		g_assert_no_error(error);
+		g_assert_nonnull(stream);
+	}
+
+	ret = g_seekable_seek(G_SEEKABLE(stream), 0x0, G_SEEK_SET, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	rc = g_input_stream_read(stream, buf, sizeof(buf), NULL, &error);
+	g_assert_error(error, G_IO_ERROR, G_IO_ERROR_CLOSED);
+	g_assert_cmpint(rc, ==, -1);
+}
+
+static void
 fu_partial_input_stream_func(void)
 {
 	gboolean ret;
@@ -5871,7 +5986,6 @@ fu_composite_input_stream_func(void)
 	g_autoptr(GBytes) blob1 = g_bytes_new_static("ab", 2);
 	g_autoptr(GBytes) blob2 = g_bytes_new_static("cde", 3);
 	g_autoptr(GBytes) blob3 = g_bytes_new_static("xxxfgyyy", 8);
-	g_autoptr(GBytes) blob4 = NULL;
 	g_autoptr(GInputStream) composite_stream = fu_composite_input_stream_new();
 	g_autoptr(GInputStream) stream3 = g_memory_input_stream_new_from_bytes(blob3);
 	g_autoptr(GInputStream) stream4 = NULL;
@@ -6125,11 +6239,6 @@ fu_lzma_func(void)
 	g_autoptr(GBytes) blob_out = NULL;
 	g_autoptr(GError) error = NULL;
 
-#ifndef HAVE_LZMA
-	g_test_skip("not compiled with lzma support");
-	return;
-#endif
-
 	/* create a repeating pattern */
 	for (guint i = 0; i < 10000; i++) {
 		guint8 tmp = i % 8;
@@ -6144,7 +6253,7 @@ fu_lzma_func(void)
 	g_assert_cmpint(g_bytes_get_size(blob_out), <, 500);
 
 	/* decompress */
-	blob_orig = fu_lzma_decompress_bytes(blob_out, &error);
+	blob_orig = fu_lzma_decompress_bytes(blob_out, 128 * 1024 * 1024, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_orig);
 	ret = fu_bytes_compare(blob_in, blob_orig, &error);
@@ -6197,6 +6306,10 @@ fu_efi_lz77_decompressor_func(void)
 	g_autoptr(GError) error = NULL;
 
 	filename_tiano = g_test_build_filename(G_TEST_DIST, "tests", "efi-lz77-tiano.bin", NULL);
+	if (!g_file_test(filename_tiano, G_FILE_TEST_EXISTS)) {
+		g_test_skip("Missing efi-lz77-tiano.bin");
+		return;
+	}
 	blob_tiano = fu_bytes_get_contents(filename_tiano, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_tiano);
@@ -6216,6 +6329,10 @@ fu_efi_lz77_decompressor_func(void)
 	g_assert_cmpstr(csum_tiano, ==, "40f7fbaff684a6bcf67c81b3079422c2529741e1");
 
 	filename_legacy = g_test_build_filename(G_TEST_DIST, "tests", "efi-lz77-legacy.bin", NULL);
+	if (!g_file_test(filename_tiano, G_FILE_TEST_EXISTS)) {
+		g_test_skip("Missing efi-lz77-legacy.bin");
+		return;
+	}
 	blob_legacy = fu_bytes_get_contents(filename_legacy, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(blob_legacy);
@@ -6573,6 +6690,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_SYSFSFWDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSFWATTRIBDIR", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_SYSFSDMIDIR", testdatadir, TRUE);
+	(void)g_setenv("FWUPD_PROCFS", testdatadir, TRUE);
 	(void)g_setenv("FWUPD_LOCALSTATEDIR", "/tmp/fwupd-self-test/var", TRUE);
 	(void)g_setenv("FWUPD_PROFILE", "1", TRUE);
 	(void)g_setenv("FWUPD_EFIVARS", "dummy", TRUE);
@@ -6585,6 +6703,8 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/input-stream{chunkify}", fu_input_stream_chunkify_func);
 	g_test_add_func("/fwupd/input-stream{find}", fu_input_stream_find_func);
 	g_test_add_func("/fwupd/partial-input-stream", fu_partial_input_stream_func);
+	g_test_add_func("/fwupd/partial-input-stream{closed-base}",
+			fu_partial_input_stream_closed_base_func);
 	g_test_add_func("/fwupd/partial-input-stream{simple}", fu_partial_input_stream_simple_func);
 	g_test_add_func("/fwupd/partial-input-stream{composite}",
 			fu_partial_input_stream_composite_func);
@@ -6651,6 +6771,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/common{kernel-lockdown}", fu_common_kernel_lockdown_func);
 	g_test_add_func("/fwupd/common{kernel-search}", fu_common_kernel_search_func);
 	g_test_add_func("/fwupd/common{strsafe}", fu_strsafe_func);
+	g_test_add_func("/fwupd/common{cpuid}", fu_cpuid_func);
 	g_test_add_func("/fwupd/msgpack", fu_msgpack_func);
 	g_test_add_func("/fwupd/msgpack{binary-stream}", fu_msgpack_binary_stream_func);
 	g_test_add_func("/fwupd/msgpack{parse-binary}", fu_msgpack_parse_binary_func);
@@ -6723,9 +6844,11 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/device-locker{success}", fu_device_locker_func);
 	g_test_add_func("/fwupd/device-locker{fail}", fu_device_locker_fail_func);
 	g_test_add_func("/fwupd/device{name}", fu_device_name_func);
+	g_test_add_func("/fwupd/device{rescan}", fu_device_rescan_func);
 	g_test_add_func("/fwupd/device{metadata}", fu_device_metadata_func);
 	g_test_add_func("/fwupd/device{open-refcount}", fu_device_open_refcount_func);
 	g_test_add_func("/fwupd/device{version-format}", fu_device_version_format_func);
+	g_test_add_func("/fwupd/device{version-format-raw}", fu_device_version_format_raw_func);
 	g_test_add_func("/fwupd/device{retry-success}", fu_device_retry_success_func);
 	g_test_add_func("/fwupd/device{retry-failed}", fu_device_retry_failed_func);
 	g_test_add_func("/fwupd/device{retry-hardware}", fu_device_retry_hardware_func);

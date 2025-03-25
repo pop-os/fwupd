@@ -8,9 +8,6 @@ The Unified Extensible Firmware Interface (UEFI) is a specification that
 defines the software interface between an OS and platform firmware.
 With the UpdateCapsule boot service it can be used to update system firmware.
 
-If you don't want or need this functionality you can use the
-`-Dplugin_uefi_capsule=disabled` option.
-
 When this plugin is enabled, the companion UEFI binary may also be built from the [fwupd-efi](https://github.com/fwupd/fwupd-efi) project if not already present on the filesystem by using the meson option `-Defi_binary=true`.
 
 For this companion binary to work with secure boot, it will need to be signed by an authority trusted with shim and/or the host environment.
@@ -182,6 +179,13 @@ Modify `BootOrder` as well as `BootNext` to work around BIOS bugs.
 ### `Flags=cod-dell-recovery`
 
 Use Dell customized file location for the capsule on disk.
+
+### `Flags=no-esp-backup`
+
+The UEFI ESRT entry does not need extra ESP space to write a backup ROM.
+If this flag is set then the `RequireESPFreeSpace` config file option is ignored.
+
+Since: 2.0.7
 
 ## External Interface Access
 

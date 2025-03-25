@@ -169,6 +169,7 @@ fwupd_release_func(void)
 	fwupd_release_set_homepage(release1, "homepage");
 	fwupd_release_set_details_url(release1, "details_url");
 	fwupd_release_set_source_url(release1, "source_url");
+	fwupd_release_set_sbom_url(release1, "sbom_url");
 	fwupd_release_set_version(release1, "version");
 	fwupd_release_set_vendor(release1, "vendor");
 	fwupd_release_set_size(release1, 1234);
@@ -213,6 +214,7 @@ fwupd_release_func(void)
 	g_assert_cmpstr(fwupd_release_get_homepage(release2), ==, "homepage");
 	g_assert_cmpstr(fwupd_release_get_details_url(release2), ==, "details_url");
 	g_assert_cmpstr(fwupd_release_get_source_url(release2), ==, "source_url");
+	g_assert_cmpstr(fwupd_release_get_sbom_url(release2), ==, "sbom_url");
 	g_assert_cmpstr(fwupd_release_get_version(release2), ==, "version");
 	g_assert_cmpstr(fwupd_release_get_vendor(release2), ==, "vendor");
 	g_assert_cmpint(fwupd_release_get_size(release2), ==, 1234);
@@ -267,6 +269,7 @@ fwupd_release_func(void)
 				    "  Homepage:             homepage\n"
 				    "  DetailsUrl:           details_url\n"
 				    "  SourceUrl:            source_url\n"
+				    "  SbomUrl:              sbom_url\n"
 				    "  Urgency:              medium\n"
 				    "  Vendor:               vendor\n"
 				    "  Flags:                is-upgrade\n"
@@ -488,7 +491,9 @@ fwupd_client_api_undefined_setter(void)
 		g_value_init(&value_bool, G_TYPE_BOOLEAN);
 		g_object_set_property(G_OBJECT(client), "battery-adapter", &value_bool);
 	} else {
-		g_test_trap_subprocess(NULL, 0, G_TEST_SUBPROCESS_DEFAULT);
+		g_test_trap_subprocess("/fwupd/client_api{undefined_setter}",
+				       0,
+				       G_TEST_SUBPROCESS_DEFAULT);
 		g_test_trap_assert_failed();
 		g_test_trap_assert_stderr(
 		    "*GLib-GObject-CRITICAL*has no property named 'battery-adapter'*");
@@ -509,7 +514,9 @@ fwupd_client_api_undefined_getter(void)
 		g_value_init(&value_bool, G_TYPE_BOOLEAN);
 		g_object_get_property(G_OBJECT(client), "battery-adapter", &value_bool);
 	} else {
-		g_test_trap_subprocess(NULL, 0, G_TEST_SUBPROCESS_DEFAULT);
+		g_test_trap_subprocess("/fwupd/client_api{undefined_getter}",
+				       0,
+				       G_TEST_SUBPROCESS_DEFAULT);
 		g_test_trap_assert_failed();
 		g_test_trap_assert_stderr(
 		    "*GLib-GObject-CRITICAL*has no property named 'battery-adapter'*");
@@ -533,7 +540,9 @@ fwupd_client_api_ro_props(void)
 			g_value_init(&value_bool, G_TYPE_BOOLEAN);
 			g_object_set_property(G_OBJECT(client), props[i], &value_bool);
 		} else {
-			g_test_trap_subprocess(NULL, 0, G_TEST_SUBPROCESS_DEFAULT);
+			g_test_trap_subprocess("/fwupd/client_api{ro_props}",
+					       0,
+					       G_TEST_SUBPROCESS_DEFAULT);
 			g_test_trap_assert_failed();
 			g_test_trap_assert_stderr(
 			    "*GLib-GObject-CRITICAL*property*is not writable*");
@@ -687,7 +696,7 @@ fwupd_common_history_report_func(void)
 	fwupd_device_add_checksum(dev, "beefdead");
 	fwupd_device_add_guid(dev, "2082b5e0-7a64-478a-b1b2-e3404fab6dad");
 	fwupd_device_add_protocol(dev, "org.hughski.colorhug");
-	fwupd_device_set_plugin(dev, "colorhug");
+	fwupd_device_set_plugin(dev, "hughski_colorhug");
 	fwupd_device_set_update_error(dev, "device dead");
 	fwupd_device_set_version(dev, "1.2.3");
 	fwupd_release_add_checksum(rel, "beefdead");
@@ -728,7 +737,7 @@ fwupd_common_history_report_func(void)
 			"      \"Guid\" : [\n"
 			"        \"2082b5e0-7a64-478a-b1b2-e3404fab6dad\"\n"
 			"      ],\n"
-			"      \"Plugin\" : \"colorhug\",\n"
+			"      \"Plugin\" : \"hughski_colorhug\",\n"
 			"      \"VersionOld\" : \"1.2.3\",\n"
 			"      \"VersionNew\" : \"1.2.4\",\n"
 			"      \"Flags\" : 0,\n"
@@ -1143,6 +1152,7 @@ fwupd_security_attr_func(void)
 
 	g_assert_cmpstr(fwupd_security_attr_get_appstream_id(attr1), ==, "org.fwupd.hsi.bar");
 	fwupd_security_attr_set_appstream_id(attr1, "org.fwupd.hsi.baz");
+	fwupd_security_attr_set_fwupd_version(attr1, "2.0.7");
 	g_assert_cmpstr(fwupd_security_attr_get_appstream_id(attr1), ==, "org.fwupd.hsi.baz");
 
 	fwupd_security_attr_set_level(attr1, FWUPD_SECURITY_ATTR_LEVEL_IMPORTANT);
@@ -1167,6 +1177,7 @@ fwupd_security_attr_func(void)
 
 	fwupd_security_attr_set_plugin(attr1, "uefi-capsule");
 	g_assert_cmpstr(fwupd_security_attr_get_plugin(attr1), ==, "uefi-capsule");
+	g_assert_cmpstr(fwupd_security_attr_get_fwupd_version(attr1), ==, "2.0.7");
 
 	fwupd_security_attr_set_url(attr1, "https://foo.bar");
 	g_assert_cmpstr(fwupd_security_attr_get_url(attr1), ==, "https://foo.bar");
@@ -1190,6 +1201,7 @@ fwupd_security_attr_func(void)
 				    "  Flags:                success\n"
 				    "  Name:                 DCI\n"
 				    "  Plugin:               uefi-capsule\n"
+				    "  Version:              2.0.7\n"
 				    "  Uri:                  https://foo.bar\n"
 				    "  Guid:                 af3fc12c-d090-5783-8a67-845b90d3cfec\n"
 				    "  KEY:                  VALUE\n",
@@ -1212,6 +1224,7 @@ fwupd_security_attr_func(void)
 				    "  Flags:                success\n"
 				    "  Name:                 DCI\n"
 				    "  Plugin:               uefi-capsule\n"
+				    "  Version:              2.0.7\n"
 				    "  Uri:                  https://foo.bar\n"
 				    "  Guid:                 af3fc12c-d090-5783-8a67-845b90d3cfec\n"
 				    "  KEY:                  VALUE\n",
@@ -1230,6 +1243,7 @@ fwupd_security_attr_func(void)
 				    "  \"HsiResult\" : \"enabled\",\n"
 				    "  \"Name\" : \"DCI\",\n"
 				    "  \"Plugin\" : \"uefi-capsule\",\n"
+				    "  \"Version\" : \"2.0.7\",\n"
 				    "  \"Uri\" : \"https://foo.bar\",\n"
 				    "  \"Flags\" : [\n"
 				    "    \"success\"\n"

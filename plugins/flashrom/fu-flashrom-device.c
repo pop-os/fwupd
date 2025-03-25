@@ -69,6 +69,12 @@ fu_flashrom_device_open(FuDevice *device, GError **error)
 {
 	FuFlashromDevice *self = FU_FLASHROM_DEVICE(device);
 
+	/* sanity check */
+	if (self->flashctx == NULL) {
+		g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "no flashctx");
+		return FALSE;
+	}
+
 	/* get the flash size from the device if not already been quirked */
 	if (fu_device_get_firmware_size_max(device) == 0) {
 		gsize flash_size = flashrom_flash_getsize(self->flashctx);
@@ -125,6 +131,28 @@ fu_flashrom_device_close(FuDevice *device, GError **error)
 	return TRUE;
 }
 
+#ifdef HAVE_FLASHROM_SET_PROGRESS_CALLBACK_V2
+static void
+fu_flashrom_device_progress_cb(enum flashrom_progress_stage stage,
+			       size_t current,
+			       size_t total,
+			       void *user_data)
+{
+	FuProgress *progress = FU_PROGRESS(user_data);
+
+	/* status */
+	if (stage == FLASHROM_PROGRESS_READ)
+		fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_READ);
+	else if (stage == FLASHROM_PROGRESS_WRITE)
+		fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_WRITE);
+	else if (stage == FLASHROM_PROGRESS_ERASE)
+		fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_ERASE);
+
+	/* progress */
+	fu_progress_set_percentage_full(progress, current, total);
+}
+#endif
+
 static GBytes *
 fu_flashrom_device_dump_firmware(FuDevice *device, FuProgress *progress, GError **error)
 {
@@ -134,7 +162,13 @@ fu_flashrom_device_dump_firmware(FuDevice *device, FuProgress *progress, GError 
 	g_autofree guint8 *buf = g_malloc0(bufsz);
 
 	fu_progress_set_status(progress, FWUPD_STATUS_DEVICE_READ);
+#ifdef HAVE_FLASHROM_SET_PROGRESS_CALLBACK_V2
+	flashrom_set_progress_callback_v2(self->flashctx, fu_flashrom_device_progress_cb, progress);
+#endif
 	rc = flashrom_image_read(self->flashctx, buf, bufsz);
+#ifdef HAVE_FLASHROM_SET_PROGRESS_CALLBACK_V2
+	flashrom_set_progress_callback_v2(self->flashctx, NULL, NULL);
+#endif
 	if (rc != 0) {
 		g_set_error(error, FWUPD_ERROR, FWUPD_ERROR_READ, "failed to read flash [%i]", rc);
 		return NULL;
@@ -210,7 +244,13 @@ fu_flashrom_device_write_firmware(FuDevice *device,
 			    (guint)fu_device_get_firmware_size_max(device));
 		return FALSE;
 	}
+#ifdef HAVE_FLASHROM_SET_PROGRESS_CALLBACK_V2
+	flashrom_set_progress_callback_v2(self->flashctx, fu_flashrom_device_progress_cb, progress);
+#endif
 	rc = flashrom_image_write(self->flashctx, (void *)buf, sz, NULL /* refbuffer */);
+#ifdef HAVE_FLASHROM_SET_PROGRESS_CALLBACK_V2
+	flashrom_set_progress_callback_v2(self->flashctx, NULL, NULL);
+#endif
 	if (rc != 0) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -245,6 +285,7 @@ fu_flashrom_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 100, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");

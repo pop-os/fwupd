@@ -159,7 +159,8 @@ fu_mm_device_add_instance_id(FuDevice *dev, const gchar *device_id)
 		fu_device_add_instance_id_full(dev, device_id, FU_DEVICE_INSTANCE_FLAG_QUIRKS);
 		return;
 	}
-	if (g_pattern_match_simple("???\\VID_????&PID_????", device_id)) {
+	if (g_pattern_match_simple("???\\VID_????&PID_????", device_id) ||
+	    g_pattern_match_simple("???\\VID_????&PID_????&NAME_*", device_id)) {
 		fu_device_add_instance_id(dev, device_id);
 		return;
 	}
@@ -169,6 +170,11 @@ fu_mm_device_add_instance_id(FuDevice *dev, const gchar *device_id)
 		return;
 	}
 	if (g_pattern_match_simple("???\\VID_????&PID_????&REV_????&CARRIER_*", device_id)) {
+		if (!fu_device_has_private_flag(dev, FU_MM_DEVICE_FLAG_USE_BRANCH))
+			fu_device_add_instance_id(dev, device_id);
+		return;
+	}
+	if (g_pattern_match_simple("???\\SSVID_????&SSPID_????&REV_????&CARRIER_*", device_id)) {
 		if (!fu_device_has_private_flag(dev, FU_MM_DEVICE_FLAG_USE_BRANCH))
 			fu_device_add_instance_id(dev, device_id);
 		return;
@@ -2091,6 +2097,7 @@ fu_mm_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");

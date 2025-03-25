@@ -57,7 +57,8 @@ fu_sahara_loader_find_interface(FuSaharaLoader *self, FuUsbDevice *usb_device, G
 		FuUsbInterface *intf = g_ptr_array_index(intfs, i);
 		if (fu_usb_interface_get_class(intf) == 0xFF &&
 		    fu_usb_interface_get_subclass(intf) == 0xFF &&
-		    fu_usb_interface_get_protocol(intf) == 0xFF) {
+		    (fu_usb_interface_get_protocol(intf) == 0xFF ||
+		     fu_usb_interface_get_protocol(intf) == 0x11)) {
 			FuUsbEndpoint *ep;
 			g_autoptr(GPtrArray) endpoints = NULL;
 
@@ -85,7 +86,10 @@ fu_sahara_loader_find_interface(FuSaharaLoader *self, FuUsbDevice *usb_device, G
 		}
 	}
 
-	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND, "no update interface found");
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "no valid usb interface found");
 	return FALSE;
 }
 
@@ -105,6 +109,13 @@ fu_sahara_loader_open(FuSaharaLoader *self, FuUsbDevice *usb_device, GError **er
 gboolean
 fu_sahara_loader_close(FuSaharaLoader *self, GError **error)
 {
+	if (self->usb_device == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    "usb device interface was not found");
+		return FALSE;
+	}
 	if (!fu_device_close(FU_DEVICE(self->usb_device), error))
 		return FALSE;
 	g_clear_object(&self->usb_device);

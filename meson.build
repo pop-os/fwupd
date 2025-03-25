@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '2.0.6',
+  version: '2.0.7',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=1.3.0',
   default_options: ['warning_level=2', 'c_std=c17'],
@@ -130,6 +130,17 @@ if cc.get_id() == 'msvc'
   error('MSVC is not supported as it does not support __attribute__((cleanup))')
 endif
 
+# ensure tests do not fail because of locale specific decimal separators (e.g. when comparing
+# outputs with `diff`)
+add_test_setup(
+  'default',
+  env: {
+    'LANG': 'C.UTF-8',
+    'LC_ALL': 'C.UTF-8',
+  },
+  is_default: true,
+)
+
 # enable full RELRO where possible
 # FIXME: until https://github.com/mesonbuild/meson/issues/1140 is fixed
 global_link_args = []
@@ -208,8 +219,7 @@ if giounix.found()
   conf.set('HAVE_GIO_UNIX', '1')
 endif
 gmodule = dependency('gmodule-2.0')
-enable_udev = get_option('udev').disable_auto_if(host_machine.system() != 'linux').allowed()
-if enable_udev
+if host_machine.system() == 'linux'
   conf.set('HAVE_UDEV', '1')
 endif
 if build_standalone
@@ -245,7 +255,7 @@ if cc.has_header_symbol('libusb.h', 'libusb_get_parent', dependencies: libusb)
   conf.set('HAVE_LIBUSB_GET_PARENT', '1')
 endif
 
-sqlite = dependency('sqlite3', required: get_option('sqlite'))
+sqlite = dependency('sqlite3')
 if sqlite.found()
   conf.set('HAVE_SQLITE', '1')
 endif
@@ -268,10 +278,7 @@ if libblkid.found()
   conf.set('HAVE_BLKID', '1')
 endif
 valgrind = dependency('valgrind', required: get_option('valgrind'))
-libcurl = dependency('libcurl', version: '>= 7.62.0', required: get_option('curl'))
-if libcurl.found()
-  conf.set('HAVE_LIBCURL', '1')
-endif
+libcurl = dependency('libcurl', version: '>= 7.62.0')
 libdrm = dependency('libdrm', required: get_option('libdrm'))
 if libdrm.found()
   conf.set('HAVE_LIBDRM' , '1')
@@ -328,11 +335,7 @@ if gnutls.found()
   conf.set('HAVE_GNUTLS', '1')
 endif
 
-lzma = dependency('liblzma', required: get_option('lzma'))
-if lzma.found()
-  conf.set('HAVE_LZMA', '1')
-endif
-
+lzma = dependency('liblzma')
 cbor = dependency('libcbor', version: '>= 0.7.0', required: get_option('cbor'))
 if cbor.found()
   conf.set('HAVE_CBOR', '1')
@@ -421,7 +424,7 @@ if cc.has_header('malloc.h')
 	 conf.set('HAVE_MALLOC_TRIM', '1')
   endif
 endif
-has_cpuid = cc.has_header_symbol('cpuid.h', '__get_cpuid_count', required: get_option('plugin_msr'))
+has_cpuid = cc.has_header_symbol('cpuid.h', '__get_cpuid_count', required: false)
 if has_cpuid
   conf.set('HAVE_CPUID_H', '1')
 endif
@@ -444,10 +447,7 @@ if cc.has_header_symbol('locale.h', 'LC_MESSAGES')
   conf.set('HAVE_LC_MESSAGES', '1')
 endif
 if cc.has_header('linux/ipmi.h')
-  have_linux_ipmi = true
   conf.set('HAVE_LINUX_IPMI_H', '1')
-else
-  have_linux_ipmi = false
 endif
 if cc.has_header_symbol('fcntl.h', 'F_WRLCK')
   conf.set('HAVE_WRLCK', '1')
@@ -468,15 +468,13 @@ if host_machine.system() == 'freebsd'
   endif
 endif
 
-launchctl = find_program('launchctl',
-  required: get_option('launchd').disable_auto_if(host_machine.system() != 'darwin').allowed(),
-)
+launchctl = find_program('launchctl', required: host_machine.system() == 'darwin')
 
 # this is way less hassle than including TargetConditionals.h and looking for TARGET_OS_MAC=1
 if host_machine.system() == 'darwin'
   conf.set('HOST_MACHINE_SYSTEM_DARWIN', '1')
   summary({
-    'launchd': launchctl,
+    'launchctl': launchctl,
     'launchd_agent_dir': get_option('launchd_agent_dir'),
   }, section: 'Darwin options')
 endif
@@ -493,6 +491,9 @@ if build_standalone
   libflashrom = dependency('flashrom',
                             fallback: ['flashrom', 'flashrom_dep'],
                             required: flashrom)
+  if libflashrom.type_name() == 'pkgconfig' and cc.has_function('flashrom_set_progress_callback_v2', dependencies: libflashrom)
+      conf.set('HAVE_FLASHROM_SET_PROGRESS_CALLBACK_V2' , '1')
+  endif
 endif
 
 if libsystemd.found()
@@ -511,16 +512,6 @@ if libsystemd.found()
     systemd_modules_load_dir = systemd.get_variable(pkgconfig: 'modulesloaddir', pkgconfig_define: ['root_prefix', systemd_root_prefix])
     systemd_sysusers_dir = systemd.get_variable(pkgconfig: 'sysusersdir', pkgconfig_define: ['root_prefix', systemd_root_prefix])
   endif
-endif
-
-elogind = dependency('systemd', 'libelogind', required: get_option('elogind'))
-if elogind.found()
-  conf.set('HAVE_LOGIND' , '1')
-endif
-
-consolekit = get_option('consolekit').disable_auto_if(host_machine.system() != 'linux').allowed()
-if consolekit
-  conf.set('HAVE_CONSOLEKIT' , '1')
 endif
 
 supported_build = get_option('supported_build').disable_auto_if(not tag).allowed()
@@ -569,11 +560,9 @@ configure_file(
   configuration: conf
 )
 
-libdrm_amdgpu = dependency('libdrm_amdgpu',
-                           version: '>= 2.4.113',
-                           required: get_option('plugin_amdgpu'))
-protobufc = dependency('libprotobuf-c', required: get_option('plugin_logitech_bulkcontroller'))
-protoc = find_program('protoc', 'protoc-c', required: get_option('plugin_logitech_bulkcontroller'))
+libdrm_amdgpu = dependency('libdrm_amdgpu', version: '>= 2.4.113', required: get_option('libdrm'))
+protobufc = dependency('libprotobuf-c', required: get_option('protobuf'))
+protoc = find_program('protoc', 'protoc-c', required: get_option('protobuf'))
 
 root_incdir = include_directories('.')
 
@@ -644,7 +633,7 @@ if dbusmock.returncode() != 0 and get_option('umockdev_tests').allowed()
   warning('python dbusmock not found, umockdev tests will be disabled')
 endif
 
-allow_uefi_capsule = get_option('plugin_uefi_capsule').disable_auto_if(host_machine.system() not in ['linux', 'freebsd']).allowed()
+allow_uefi_capsule = host_machine.system() in ['linux', 'freebsd']
 
 subdir('generate-build')
 subdir('libfwupd')
@@ -706,18 +695,14 @@ summary({
 
 summary({
   'cbor': cbor,
-  'consolekit': consolekit,
   'dbus_socket_address': get_option('dbus_socket_address'),
   'vendor_ids_dir': vendor_ids_dir,
   'docs': build_docs,
-  'elogind': elogind,
   'gnutls': gnutls,
   'introspection': introspection.allowed(),
   'libblkid': libblkid,
-  'libcurl': libcurl,
   'libdrm': libdrm,
   'valgrind': valgrind,
-  'lzma': lzma,
   'polkit': polkit,
   'python3': python3,
   'supported_build': supported_build,
@@ -730,12 +715,10 @@ if build_daemon
   summary({
     'bluez': bluez.allowed(),
     'libusb': libusb,
-    'udev': enable_udev,
     'hsi': hsi,
     'lvfs_metadata_format': lvfs_metadata_format,
     'libarchive': libarchive.found(),
     'passim': passim,
-    'sqlite': sqlite,
     'GPG support': supported_gpg,
     'PKCS7 support': supported_pkcs7,
   }, section: 'daemon features')

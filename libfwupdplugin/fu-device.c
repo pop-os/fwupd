@@ -139,7 +139,16 @@ enum { SIGNAL_CHILD_ADDED, SIGNAL_CHILD_REMOVED, SIGNAL_REQUEST, SIGNAL_LAST };
 
 static guint signals[SIGNAL_LAST] = {0};
 
-G_DEFINE_TYPE_WITH_PRIVATE(FuDevice, fu_device, FWUPD_TYPE_DEVICE)
+static void
+fu_device_codec_iface_init(FwupdCodecInterface *iface);
+
+G_DEFINE_TYPE_EXTENDED(FuDevice,
+		       fu_device,
+		       FWUPD_TYPE_DEVICE,
+		       0,
+		       G_ADD_PRIVATE(FuDevice)
+			   G_IMPLEMENT_INTERFACE(FWUPD_TYPE_CODEC, fu_device_codec_iface_init));
+
 #define GET_PRIVATE(o) (fu_device_get_instance_private(o))
 
 static void
@@ -304,6 +313,9 @@ fu_device_register_flags(FuDevice *self)
 	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_SKIPS_RESTART);
 	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_IS_FAKE);
 	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_COUNTERPART_VISIBLE);
+	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_DETACH_PREPARE_FIRMWARE);
+	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_EMULATED_REQUIRE_SETUP);
+	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_INSTALL_LOOP_RESTART);
 }
 
 static void
@@ -3066,11 +3078,18 @@ fu_device_set_version_format(FuDevice *self, FwupdVersionFormat fmt)
 	fwupd_device_set_version_format(FWUPD_DEVICE(self), fmt);
 
 	/* convert this, now we know */
-	if (device_class->convert_version != NULL && fu_device_get_version(self) != NULL &&
-	    fu_device_get_version_raw(self) != 0) {
-		g_autofree gchar *version =
-		    device_class->convert_version(self, fu_device_get_version_raw(self));
-		fu_device_set_version(self, version);
+	if (device_class->convert_version != NULL) {
+		if (fu_device_get_version_raw(self) != 0) {
+			g_autofree gchar *version =
+			    device_class->convert_version(self, fu_device_get_version_raw(self));
+			fu_device_set_version(self, version);
+		}
+		if (fu_device_get_version_lowest_raw(self) != 0) {
+			g_autofree gchar *version =
+			    device_class->convert_version(self,
+							  fu_device_get_version_lowest_raw(self));
+			fu_device_set_version_lowest(self, version);
+		}
 	}
 }
 
@@ -3238,6 +3257,29 @@ fu_device_set_version_raw(FuDevice *self, guint64 version_raw)
 		g_autofree gchar *version = device_class->convert_version(self, version_raw);
 		if (version != NULL)
 			fu_device_set_version(self, version);
+	}
+}
+
+/**
+ * fu_device_set_version_lowest_raw:
+ * @self: a #FuDevice
+ * @version_raw: an integer
+ *
+ * Sets the raw device version from a integer value and the device version format.
+ *
+ * Since: 2.0.7
+ **/
+void
+fu_device_set_version_lowest_raw(FuDevice *self, guint64 version_raw)
+{
+	FuDeviceClass *device_class = FU_DEVICE_GET_CLASS(self);
+	g_return_if_fail(FU_IS_DEVICE(self));
+
+	fwupd_device_set_version_lowest_raw(FWUPD_DEVICE(self), version_raw);
+	if (device_class->convert_version != NULL) {
+		g_autofree gchar *version = device_class->convert_version(self, version_raw);
+		if (version != NULL)
+			fu_device_set_version_lowest(self, version);
 	}
 }
 
@@ -3860,11 +3902,17 @@ fu_device_get_backend_parent_with_subsystem(FuDevice *self, const gchar *subsyst
 	if (event != NULL) {
 		fu_device_event_set_str(event, "GType", G_OBJECT_TYPE_NAME(parent));
 		if (fu_device_get_id(self) != NULL)
-			fu_device_event_set_str(event, "DeviceId", fu_device_get_id(self));
-		if (priv->backend_id != NULL)
-			fu_device_event_set_str(event, "BackendId", priv->backend_id);
-		if (priv->physical_id != NULL)
-			fu_device_event_set_str(event, "PhysicalId", priv->physical_id);
+			fu_device_event_set_str(event, "DeviceId", fu_device_get_id(parent));
+		if (fu_device_get_backend_id(parent) != NULL) {
+			fu_device_event_set_str(event,
+						"BackendId",
+						fu_device_get_backend_id(parent));
+		}
+		if (fu_device_get_physical_id(parent) != NULL) {
+			fu_device_event_set_str(event,
+						"PhysicalId",
+						fu_device_get_physical_id(parent));
+		}
 	}
 
 	if (parent != self)
@@ -4988,7 +5036,7 @@ fu_device_get_results(FuDevice *self, GError **error)
 /**
  * fu_device_write_firmware:
  * @self: a #FuDevice
- * @stream: #GInputStream firmware
+ * @firmware: a #FuFirmware
  * @progress: a #FuProgress
  * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_FORCE
  * @error: (nullable): optional return location for an error
@@ -4997,22 +5045,21 @@ fu_device_get_results(FuDevice *self, GError **error)
  *
  * Returns: %TRUE on success
  *
- * Since: 1.0.8
+ * Since: 2.0.7
  **/
 gboolean
 fu_device_write_firmware(FuDevice *self,
-			 GInputStream *stream,
+			 FuFirmware *firmware,
 			 FuProgress *progress,
 			 FwupdInstallFlags flags,
 			 GError **error)
 {
 	FuDeviceClass *device_class = FU_DEVICE_GET_CLASS(self);
 	FuDevicePrivate *priv = GET_PRIVATE(self);
-	g_autoptr(FuFirmware) firmware = NULL;
 	g_autofree gchar *str = NULL;
 
 	g_return_val_if_fail(FU_IS_DEVICE(self), FALSE);
-	g_return_val_if_fail(G_IS_INPUT_STREAM(stream), FALSE);
+	g_return_val_if_fail(FU_IS_FIRMWARE(firmware), FALSE);
 	g_return_val_if_fail(FU_IS_PROGRESS(progress), FALSE);
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
@@ -5025,25 +5072,12 @@ fu_device_write_firmware(FuDevice *self,
 		return FALSE;
 	}
 
-	/* progress */
-	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 1, "prepare-firmware");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 99, "write-firmware");
-
-	/* prepare (e.g. decompress) firmware */
-	firmware =
-	    fu_device_prepare_firmware(self, stream, fu_progress_get_child(progress), flags, error);
-	if (firmware == NULL)
-		return FALSE;
+	/* call vfunc */
 	str = fu_firmware_to_string(firmware);
 	g_info("installing onto %s:\n%s", fu_device_get_id(self), str);
-	fu_progress_step_done(progress);
-
-	/* call vfunc */
-	g_set_object(&priv->progress, fu_progress_get_child(progress));
+	g_set_object(&priv->progress, progress);
 	if (!device_class->write_firmware(self, firmware, priv->progress, flags, error))
 		return FALSE;
-	fu_progress_step_done(progress);
 
 	/* the device set an UpdateMessage (possibly from a quirk, or XML file)
 	 * but did not do an event; guess something */
@@ -5754,7 +5788,8 @@ fu_device_rescan(FuDevice *self, GError **error)
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* remove all GUIDs */
-	g_ptr_array_set_size(priv->instance_ids, 0);
+	if (priv->instance_ids != NULL)
+		g_ptr_array_set_size(priv->instance_ids, 0);
 	g_ptr_array_set_size(fu_device_get_instance_ids(self), 0);
 	g_ptr_array_set_size(fu_device_get_guids(self), 0);
 
@@ -7534,6 +7569,78 @@ fu_device_set_target(FuDevice *self, FuDevice *target)
 
 	fu_device_incorporate(target, self, FU_DEVICE_INCORPORATE_FLAG_EVENTS);
 	g_set_object(&priv->target, target);
+}
+
+static void
+fu_device_add_json(FwupdCodec *codec, JsonBuilder *builder, FwupdCodecFlags flags)
+{
+	FuDevice *self = FU_DEVICE(codec);
+	FuDeviceClass *device_class = FU_DEVICE_GET_CLASS(self);
+
+	if (fu_device_get_created_usec(self) != 0) {
+#if GLIB_CHECK_VERSION(2, 80, 0)
+		g_autoptr(GDateTime) dt =
+		    g_date_time_new_from_unix_utc_usec(fu_device_get_created_usec(self));
+#else
+		g_autoptr(GDateTime) dt = g_date_time_new_from_unix_utc(
+		    fu_device_get_created_usec(self) / G_USEC_PER_SEC);
+#endif
+		g_autofree gchar *str = g_date_time_format_iso8601(dt);
+		json_builder_set_member_name(builder, "Created");
+		json_builder_add_string_value(builder, str);
+	}
+
+	/* subclassed */
+	if (device_class->add_json != NULL)
+		device_class->add_json(self, builder, flags);
+}
+
+static gboolean
+fu_device_from_json(FwupdCodec *codec, JsonNode *json_node, GError **error)
+{
+	FuDevice *self = FU_DEVICE(codec);
+	JsonObject *json_object;
+	const gchar *tmp;
+	FuDeviceClass *device_class = FU_DEVICE_GET_CLASS(self);
+
+	/* sanity check */
+	if (!JSON_NODE_HOLDS_OBJECT(json_node)) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "not JSON object");
+		return FALSE;
+	}
+	json_object = json_node_get_object(json_node);
+
+	tmp = json_object_get_string_member_with_default(json_object, "Created", NULL);
+	if (tmp != NULL) {
+		g_autoptr(GDateTime) dt = g_date_time_new_from_iso8601(tmp, NULL);
+#if GLIB_CHECK_VERSION(2, 80, 0)
+		if (dt != NULL)
+			fu_device_set_created_usec(self, g_date_time_to_unix_usec(dt));
+#else
+		if (dt != NULL) {
+			fu_device_set_created_usec(self, g_date_time_to_unix(dt) * G_USEC_PER_SEC);
+		}
+#endif
+	}
+
+	/* subclassed */
+	if (device_class->from_json != NULL) {
+		if (!device_class->from_json(self, json_object, error))
+			return FALSE;
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static void
+fu_device_codec_iface_init(FwupdCodecInterface *iface)
+{
+	iface->add_json = fu_device_add_json;
+	iface->from_json = fu_device_from_json;
 }
 
 static void

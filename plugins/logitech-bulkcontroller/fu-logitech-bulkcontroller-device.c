@@ -21,6 +21,7 @@
 #define BULK_TRANSFER_TIMEOUT	      2500
 #define HASH_VALUE_SIZE		      16
 #define MAX_RETRIES		      5
+#define MAX_SETUP_RETRIES	      50
 #define MAX_WAIT_COUNT		      150
 #define POST_INSTALL_SLEEP_DURATION   80 * 1000 /* ms */
 
@@ -860,7 +861,7 @@ fu_logitech_bulkcontroller_device_ensure_info(FuLogitechBulkcontrollerDevice *se
 {
 	return fu_device_retry(FU_DEVICE(self),
 			       fu_logitech_bulkcontroller_device_ensure_info_cb,
-			       MAX_RETRIES,
+			       MAX_SETUP_RETRIES,
 			       &send_req,
 			       error);
 }
@@ -1157,7 +1158,7 @@ fu_logitech_bulkcontroller_device_set_time(FuLogitechBulkcontrollerDevice *self,
 {
 	return fu_device_retry(FU_DEVICE(self),
 			       fu_logitech_bulkcontroller_device_set_time_cb,
-			       MAX_RETRIES,
+			       MAX_SETUP_RETRIES,
 			       NULL,
 			       error);
 }
@@ -1206,7 +1207,7 @@ fu_logitech_bulkcontroller_device_transition_to_device_mode(FuLogitechBulkcontro
 {
 	return fu_device_retry(FU_DEVICE(self),
 			       fu_logitech_bulkcontroller_device_transition_to_device_mode_cb,
-			       MAX_RETRIES,
+			       MAX_SETUP_RETRIES,
 			       NULL,
 			       error);
 }
@@ -1288,6 +1289,14 @@ fu_logitech_bulkcontroller_device_setup(FuDevice *device, GError **error)
 {
 	FuLogitechBulkcontrollerDevice *self = FU_LOGITECH_BULKCONTROLLER_DEVICE(device);
 
+	/* the hardware is unable to handle requests -- firmware issue */
+	if (fu_device_has_private_flag(device,
+				       FU_LOGITECH_BULKCONTROLLER_DEVICE_FLAG_POST_INSTALL)) {
+		fu_device_sleep(device, POST_INSTALL_SLEEP_DURATION);
+		fu_device_remove_private_flag(device,
+					      FU_LOGITECH_BULKCONTROLLER_DEVICE_FLAG_POST_INSTALL);
+	}
+
 	/* FuUsbDevice->setup */
 	if (!FU_DEVICE_CLASS(fu_logitech_bulkcontroller_device_parent_class)
 		 ->setup(device, error)) {
@@ -1316,14 +1325,6 @@ fu_logitech_bulkcontroller_device_setup(FuDevice *device, GError **error)
 		return FALSE;
 	}
 
-	/* the hardware is unable to handle requests -- firmware issue */
-	if (fu_device_has_private_flag(device,
-				       FU_LOGITECH_BULKCONTROLLER_DEVICE_FLAG_POST_INSTALL)) {
-		fu_device_sleep(device, POST_INSTALL_SLEEP_DURATION);
-		fu_device_remove_private_flag(device,
-					      FU_LOGITECH_BULKCONTROLLER_DEVICE_FLAG_POST_INSTALL);
-	}
-
 	/* set device time */
 	if (!fu_logitech_bulkcontroller_device_set_time(self, error)) {
 		g_prefix_error(error, "failed to set time: ");
@@ -1344,6 +1345,7 @@ static void
 fu_logitech_bulkcontroller_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 90, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");

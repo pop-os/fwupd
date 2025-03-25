@@ -14,6 +14,7 @@
 #include "fu-redfish-backend.h"
 #include "fu-redfish-common.h"
 #include "fu-redfish-device.h"
+#include "fu-redfish-hpe-device.h"
 #include "fu-redfish-legacy-device.h"
 #include "fu-redfish-multipart-device.h"
 #include "fu-redfish-network.h"
@@ -147,6 +148,18 @@ fu_redfish_plugin_set_credentials(FuPlugin *plugin, const gchar *username, const
 	fu_redfish_backend_set_password(self->backend, password);
 }
 
+gboolean
+fu_redfish_plugin_reload(FuPlugin *plugin, FuProgress *progress, GError **error)
+{
+	FuRedfishPlugin *self = FU_REDFISH_PLUGIN(plugin);
+
+	fu_backend_invalidate(FU_BACKEND(self->backend));
+	return fu_backend_setup(FU_BACKEND(self->backend),
+				FU_BACKEND_SETUP_FLAG_NONE,
+				progress,
+				error);
+}
+
 static gboolean
 fu_redfish_plugin_discover_uefi_credentials(FuPlugin *plugin, GError **error)
 {
@@ -225,7 +238,10 @@ fu_redfish_plugin_discover_smbios_table(FuPlugin *plugin, GError **error)
 	}
 
 	/* is optional */
-	type42_tables = fu_context_get_smbios_data(ctx, REDFISH_SMBIOS_TABLE_TYPE, NULL);
+	type42_tables = fu_context_get_smbios_data(ctx,
+						   REDFISH_SMBIOS_TABLE_TYPE,
+						   FU_SMBIOS_STRUCTURE_LENGTH_ANY,
+						   NULL);
 	if (type42_tables == NULL)
 		return TRUE;
 	for (guint i = 0; i < type42_tables->len; i++) {
@@ -709,6 +725,7 @@ fu_redfish_plugin_constructed(GObject *obj)
 	self->backend = fu_redfish_backend_new(ctx);
 	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_REDFISH_SMBIOS);
 	fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_SECURE_CONFIG);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_REDFISH_HPE_DEVICE);	      /* coverage */
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_REDFISH_LEGACY_DEVICE);    /* coverage */
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_REDFISH_MULTIPART_DEVICE); /* coverage */
 	fu_plugin_add_device_gtype(plugin, FU_TYPE_IPMI_DEVICE);	      /* coverage */

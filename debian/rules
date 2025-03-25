@@ -24,12 +24,6 @@ else
 	CONFARGS += -Dplugin_flashrom=disabled
 endif
 
-ifneq ($(filter $(DEB_HOST_ARCH_CPU),i386 amd64),)
-	CONFARGS += -Dplugin_msr=enabled
-else
-	CONFARGS += -Dplugin_msr=disabled
-endif
-
 ifneq ($(QUBES_OPTION),)
 	CONFARGS += -Dqubes=true
 endif
@@ -38,7 +32,7 @@ ifneq ($(filter nodoc,$(DEB_BUILD_PROFILES)),)
 	CONFARGS += -Ddocs=disabled
 endif
 
-CONFARGS += -Dplugin_powerd=disabled -Dplugin_modem_manager=enabled
+CONFARGS += -Dplugin_modem_manager=enabled
 
 %:
 	dh $@ --with gir

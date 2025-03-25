@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Pena Christian <christian.a.pena@hp.com>
+ * Copyright 2024 HP Development Company, L.P.
  *
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
@@ -1462,8 +1462,8 @@ static void
 fu_hpi_cfu_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_set_percentage(progress, 0);
 	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
 	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 4, "detach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 5, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 86, "attach");

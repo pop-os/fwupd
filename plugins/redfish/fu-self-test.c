@@ -22,6 +22,8 @@ typedef struct {
 	FuPlugin *plugin;
 	FuPlugin *smc_plugin;
 	FuPlugin *unlicensed_plugin;
+	FuPlugin *hpe_plugin;
+	FuPlugin *dell_plugin;
 } FuTest;
 
 static void
@@ -77,6 +79,7 @@ fu_test_self_init(FuTest *self)
 	ret = fu_plugin_runner_startup(self->unlicensed_plugin, progress, &error);
 	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE)) {
 		g_test_skip("no redfish.py running");
+		g_clear_error(&error);
 	} else {
 		g_assert_no_error(error);
 		g_assert_true(ret);
@@ -84,6 +87,49 @@ fu_test_self_init(FuTest *self)
 						  "unlicensed_username",
 						  "password2");
 		ret = fu_plugin_runner_coldplug(self->unlicensed_plugin, progress, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
+	}
+
+	/* HPE BMC */
+	self->hpe_plugin = fu_plugin_new_from_gtype(fu_redfish_plugin_get_type(), ctx);
+	ret = fu_plugin_runner_startup(self->hpe_plugin, progress, &error);
+	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE)) {
+		g_test_skip("no redfish.py running");
+		g_clear_error(&error);
+	} else {
+		g_assert_no_error(error);
+		g_assert_true(ret);
+
+		fu_redfish_plugin_set_credentials(self->hpe_plugin, "hpe_username", "password2");
+		/* We just changed the credentials and need to resetup again to discover the vendor
+		 * Here we need to get a device to query the backend
+		 */
+		ret = fu_redfish_plugin_reload(self->hpe_plugin, progress, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
+		ret = fu_plugin_runner_coldplug(self->hpe_plugin, progress, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
+	}
+
+	/* Dell BMC */
+	self->dell_plugin = fu_plugin_new_from_gtype(fu_redfish_plugin_get_type(), ctx);
+	ret = fu_plugin_runner_startup(self->dell_plugin, progress, &error);
+	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE)) {
+		g_test_skip("no redfish.py running");
+	} else {
+		g_assert_no_error(error);
+		g_assert_true(ret);
+
+		fu_redfish_plugin_set_credentials(self->dell_plugin, "dell_username", "password2");
+		/* We just changed the credentials and need to resetup again to discover the vendor
+		 * Here we need to get a device to query the backend
+		 */
+		ret = fu_redfish_plugin_reload(self->dell_plugin, progress, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
+		ret = fu_plugin_runner_coldplug(self->dell_plugin, progress, &error);
 		g_assert_no_error(error);
 		g_assert_true(ret);
 	}
@@ -384,6 +430,66 @@ fu_test_redfish_smc_devices_func(gconstpointer user_data)
 }
 
 static void
+fu_test_redfish_dell_devices_func(gconstpointer user_data)
+{
+	FuDevice *dev;
+	FuTest *self = (FuTest *)user_data;
+	GPtrArray *devices;
+
+	devices = fu_plugin_get_devices(self->dell_plugin);
+	g_assert_nonnull(devices);
+	if (devices->len == 0) {
+		g_test_skip("no redfish support");
+		return;
+	}
+	g_assert_cmpint(devices->len, ==, 2);
+
+	dev = g_ptr_array_index(devices, 1);
+	g_assert_true(FU_IS_REDFISH_DEVICE(dev));
+	g_assert_true(
+	    fu_device_has_guid(dev, "REDFISH\\VENDOR_Lenovo&SYSTEMID_0C60&SOFTWAREID_UEFI-AFE1-6"));
+}
+
+static void
+fu_test_redfish_hpe_update_func(gconstpointer user_data)
+{
+	FuDevice *dev;
+	FuTest *self = (FuTest *)user_data;
+	GPtrArray *devices;
+	gboolean ret;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GBytes) blob_fw = NULL;
+	g_autoptr(FuFirmware) stream_fw = NULL;
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+
+	/* progress */
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+
+	devices = fu_plugin_get_devices(self->hpe_plugin);
+	g_assert_nonnull(devices);
+	if (devices->len == 0) {
+		g_test_skip("no redfish support");
+		return;
+	}
+	g_assert_cmpint(devices->len, ==, 2);
+
+	/* BMC */
+	dev = g_ptr_array_index(devices, 0);
+	blob_fw = g_bytes_new_static("hello", 5);
+	stream_fw = fu_firmware_new_from_bytes(blob_fw);
+	ret = fu_plugin_runner_write_firmware(self->hpe_plugin,
+					      dev,
+					      stream_fw,
+					      fu_progress_get_child(progress),
+					      FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+}
+
+static void
 fu_test_redfish_update_func(gconstpointer user_data)
 {
 	FuDevice *dev;
@@ -392,8 +498,13 @@ fu_test_redfish_update_func(gconstpointer user_data)
 	gboolean ret;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GBytes) blob_fw = NULL;
-	g_autoptr(GInputStream) stream_fw = NULL;
+	g_autoptr(FuFirmware) firmware = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+
+	/* progress */
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
 
 	devices = fu_plugin_get_devices(self->plugin);
 	g_assert_nonnull(devices);
@@ -406,22 +517,23 @@ fu_test_redfish_update_func(gconstpointer user_data)
 	/* BMC */
 	dev = g_ptr_array_index(devices, 1);
 	blob_fw = g_bytes_new_static("hello", 5);
-	stream_fw = g_memory_input_stream_new_from_bytes(blob_fw);
+	firmware = fu_firmware_new_from_bytes(blob_fw);
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      stream_fw,
-					      progress,
+					      firmware,
+					      fu_progress_get_child(progress),
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	g_assert_true(fu_device_has_flag(dev, FWUPD_DEVICE_FLAG_NEEDS_REBOOT));
+	fu_progress_step_done(progress);
 
 	/* try again */
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      stream_fw,
-					      progress,
+					      firmware,
+					      fu_progress_get_child(progress),
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_WRITE);
@@ -438,9 +550,14 @@ fu_test_redfish_smc_update_func(gconstpointer user_data)
 	g_autoptr(GBytes) blob_fw1 = NULL;
 	g_autoptr(GBytes) blob_fw2 = NULL;
 	g_autoptr(GError) error = NULL;
-	g_autoptr(GInputStream) stream_fw1 = NULL;
-	g_autoptr(GInputStream) stream_fw2 = NULL;
+	g_autoptr(FuFirmware) firmware1 = NULL;
+	g_autoptr(FuFirmware) firmware2 = NULL;
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+
+	/* progress */
+	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_NO_PROFILE);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 50, NULL);
 
 	devices = fu_plugin_get_devices(self->smc_plugin);
 	g_assert_nonnull(devices);
@@ -453,26 +570,28 @@ fu_test_redfish_smc_update_func(gconstpointer user_data)
 	/* BMC */
 	dev = g_ptr_array_index(devices, 1);
 	blob_fw1 = g_bytes_new_static("hello", 5);
-	stream_fw1 = g_memory_input_stream_new_from_bytes(blob_fw1);
+	firmware1 = fu_firmware_new_from_bytes(blob_fw1);
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      stream_fw1,
-					      progress,
+					      firmware1,
+					      fu_progress_get_child(progress),
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+	fu_progress_step_done(progress);
 
 	/* stuck update */
 	blob_fw2 = g_bytes_new_static("stuck", 5);
-	stream_fw2 = g_memory_input_stream_new_from_bytes(blob_fw2);
+	firmware2 = fu_firmware_new_from_bytes(blob_fw2);
 	ret = fu_plugin_runner_write_firmware(self->plugin,
 					      dev,
-					      stream_fw2,
-					      progress,
+					      firmware2,
+					      fu_progress_get_child(progress),
 					      FWUPD_INSTALL_FLAG_NO_SEARCH,
 					      &error);
 	g_assert_false(ret);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_ALREADY_PENDING);
 	g_assert_true(fu_device_has_inhibit(
 	    dev,
 	    fwupd_device_problem_to_string(FWUPD_DEVICE_PROBLEM_UPDATE_PENDING)));
@@ -487,6 +606,10 @@ fu_test_self_free(FuTest *self)
 		g_object_unref(self->smc_plugin);
 	if (self->unlicensed_plugin != NULL)
 		g_object_unref(self->unlicensed_plugin);
+	if (self->hpe_plugin != NULL)
+		g_object_unref(self->hpe_plugin);
+	if (self->dell_plugin != NULL)
+		g_object_unref(self->dell_plugin);
 	g_free(self);
 }
 
@@ -529,7 +652,11 @@ main(int argc, char **argv)
 			     self,
 			     fu_test_redfish_smc_devices_func);
 	g_test_add_data_func("/redfish/smc_plugin{update}", self, fu_test_redfish_smc_update_func);
+	g_test_add_data_func("/redfish/hpe_plugin{update}", self, fu_test_redfish_hpe_update_func);
 	g_test_add_data_func("/redfish/plugin{devices}", self, fu_test_redfish_devices_func);
+	g_test_add_data_func("/redfish/dell_plugin{devices}",
+			     self,
+			     fu_test_redfish_dell_devices_func);
 	g_test_add_data_func("/redfish/plugin{update}", self, fu_test_redfish_update_func);
 	return g_test_run();
 }

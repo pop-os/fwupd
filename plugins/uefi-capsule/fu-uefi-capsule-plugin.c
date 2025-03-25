@@ -489,7 +489,7 @@ fu_uefi_capsule_plugin_update_splash(FuPlugin *plugin, FuDevice *device, GError 
 static gboolean
 fu_uefi_capsule_plugin_write_firmware(FuPlugin *plugin,
 				      FuDevice *device,
-				      GInputStream *stream,
+				      FuFirmware *firmware,
 				      FuProgress *progress,
 				      FwupdInstallFlags flags,
 				      GError **error)
@@ -527,7 +527,7 @@ fu_uefi_capsule_plugin_write_firmware(FuPlugin *plugin,
 	if (!fu_uefi_capsule_plugin_update_splash(plugin, device, &error_splash))
 		g_info("failed to upload UEFI UX capsule text: %s", error_splash->message);
 
-	return fu_device_write_firmware(device, stream, progress, flags, error);
+	return fu_device_write_firmware(device, firmware, progress, flags, error);
 }
 
 static void
@@ -751,19 +751,21 @@ fu_uefi_capsule_plugin_test_secure_boot(FuPlugin *plugin)
 				      secureboot_enabled ? "Enabled" : "Disabled");
 }
 
-static gboolean
+static FuFirmware *
 fu_uefi_capsule_plugin_parse_acpi_uefi(FuUefiCapsulePlugin *self, GError **error)
 {
 	g_autofree gchar *fn = NULL;
 	g_autofree gchar *path = NULL;
+	g_autoptr(FuFirmware) firmware = fu_acpi_uefi_new();
 	g_autoptr(GFile) file = NULL;
 
 	/* if we have a table, parse it and validate it */
 	path = fu_path_from_kind(FU_PATH_KIND_ACPI_TABLES);
 	fn = g_build_filename(path, "UEFI", NULL);
 	file = g_file_new_for_path(fn);
-	self->acpi_uefi = fu_acpi_uefi_new();
-	return fu_firmware_parse_file(self->acpi_uefi, file, FWUPD_INSTALL_FLAG_NONE, error);
+	if (!fu_firmware_parse_file(firmware, file, FWUPD_INSTALL_FLAG_NONE, error))
+		return NULL;
+	return g_steal_pointer(&firmware);
 }
 
 static gboolean
@@ -892,8 +894,14 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 	fu_plugin_add_report_metadata(plugin, "EfivarsNvramUsed", nvram_total_str);
 
 	/* we use this both for quirking the CoD implementation sanity and the CoD filename */
-	if (!fu_uefi_capsule_plugin_parse_acpi_uefi(self, &error_acpi_uefi))
+	self->acpi_uefi = fu_uefi_capsule_plugin_parse_acpi_uefi(self, &error_acpi_uefi);
+	if (self->acpi_uefi == NULL) {
 		g_debug("failed to load ACPI UEFI table: %s", error_acpi_uefi->message);
+	} else {
+		/* we do not need to read from this again */
+		if (!fu_firmware_set_stream(self->acpi_uefi, NULL, error))
+			return FALSE;
+	}
 
 	/* test for invalid ESP in coldplug, and set the update-error rather
 	 * than showing no output if the plugin had self-disabled here */
@@ -985,12 +993,34 @@ fu_uefi_capsule_plugin_check_cod_support(FuUefiCapsulePlugin *self, GError **err
 }
 
 static gboolean
+fu_uefi_capsule_plugin_bootloader_supports_fwupd(FuContext *ctx)
+{
+	FuEfivars *efivars = fu_context_get_efivars(ctx);
+	gsize data_sz = 0;
+	g_autofree guint8 *data = NULL;
+
+	/* if the bootloader supports installing the capsule updates provided by fwupd, it sets this
+	 * runtime-accessible UEFI variable with a one-byte value of 1 */
+	if (!fu_efivars_get_data(efivars,
+				 FU_EFIVARS_GUID_FWUPDATE,
+				 "BootloaderSupportsFwupd",
+				 &data,
+				 &data_sz,
+				 NULL,
+				 NULL)) {
+		return FALSE;
+	}
+	return data_sz == 1 && data[0] == 1;
+}
+
+static gboolean
 fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError **error)
 {
 	FuUefiCapsulePlugin *self = FU_UEFI_CAPSULE_PLUGIN(plugin);
 	FuContext *ctx = fu_plugin_get_context(plugin);
 	const gchar *str;
 	gboolean has_fde = FALSE;
+	gboolean bootloader_supports_fwupd = fu_uefi_capsule_plugin_bootloader_supports_fwupd(ctx);
 	g_autoptr(GError) error_fde = NULL;
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GPtrArray) devices = NULL;
@@ -1041,6 +1071,13 @@ fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 		}
 		fu_device_add_flag(FU_DEVICE(dev), FWUPD_DEVICE_FLAG_UPDATABLE);
 		fu_device_add_flag(FU_DEVICE(dev), FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
+
+		/* if the bootloader doesn't know how to install capsules provided by fwupd,
+		 * enable fwupd-efi */
+		if (!bootloader_supports_fwupd) {
+			fu_device_add_private_flag(FU_DEVICE(dev),
+						   FU_UEFI_CAPSULE_DEVICE_FLAG_USE_FWUPD_EFI);
+		}
 
 		/* system firmware "BIOS" can change the PCRx registers */
 		if (fu_uefi_capsule_device_get_kind(dev) ==

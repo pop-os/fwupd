@@ -27,7 +27,7 @@ G_DEFINE_TYPE(FuWacPlugin, fu_wac_plugin, FU_TYPE_PLUGIN)
 static gboolean
 fu_wac_plugin_write_firmware(FuPlugin *plugin,
 			     FuDevice *device,
-			     GInputStream *stream,
+			     FuFirmware *firmware,
 			     FuProgress *progress,
 			     FwupdInstallFlags flags,
 			     GError **error)
@@ -37,7 +37,7 @@ fu_wac_plugin_write_firmware(FuPlugin *plugin,
 	locker = fu_device_locker_new(parent != NULL ? parent : device, error);
 	if (locker == NULL)
 		return FALSE;
-	return fu_device_write_firmware(device, stream, progress, flags, error);
+	return fu_device_write_firmware(device, firmware, progress, flags, error);
 }
 
 static gboolean
@@ -60,18 +60,33 @@ fu_wac_plugin_composite_prepare(FuPlugin *self, GPtrArray *devices, GError **err
 static gboolean
 fu_wac_plugin_composite_cleanup(FuPlugin *self, GPtrArray *devices, GError **error)
 {
+	g_autoptr(FuWacDevice) main_device = NULL;
+
+	/* find the main device in transaction (which may *be* the main device, or just a proxy) */
 	for (guint i = 0; i < devices->len; i++) {
-		FuDevice *device = g_ptr_array_index(devices, i);
-		if (FU_IS_WAC_DEVICE(device)) {
-			g_autoptr(FuDeviceLocker) locker = fu_device_locker_new(device, error);
-			if (locker == NULL)
-				return FALSE;
-			g_info("resetting main device");
-			fu_device_add_flag(device, FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
-			if (!fu_wac_device_update_reset(FU_WAC_DEVICE(device), error))
-				return FALSE;
+		FuDevice *device_tmp = g_ptr_array_index(devices, i);
+		if (FU_IS_WAC_DEVICE(device_tmp)) {
+			g_set_object(&main_device, FU_WAC_DEVICE(device_tmp));
+			break;
+		}
+		if (FU_IS_WAC_MODULE(device_tmp)) {
+			g_set_object(&main_device, FU_WAC_DEVICE(fu_device_get_proxy(device_tmp)));
+			break;
 		}
 	}
+
+	/* reset */
+	if (main_device != NULL) {
+		g_autoptr(FuDeviceLocker) locker = fu_device_locker_new(main_device, error);
+		if (locker == NULL)
+			return FALSE;
+		g_info("resetting main device");
+		fu_device_add_flag(FU_DEVICE(main_device), FWUPD_DEVICE_FLAG_WAIT_FOR_REPLUG);
+		if (!fu_wac_device_update_reset(main_device, error))
+			return FALSE;
+	}
+
+	/* success */
 	return TRUE;
 }
 

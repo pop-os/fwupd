@@ -435,7 +435,8 @@ fu_device_list_get_by_guids_removed(FuDeviceList *self, GPtrArray *guids)
 			if (fu_device_has_guid(item->device, guid) ||
 			    fu_device_has_instance_id(item->device,
 						      guid,
-						      FU_DEVICE_INSTANCE_FLAG_COUNTERPART))
+						      FU_DEVICE_INSTANCE_FLAG_COUNTERPART |
+							  FU_DEVICE_INSTANCE_FLAG_VISIBLE))
 				return item;
 		}
 	}
@@ -450,7 +451,8 @@ fu_device_list_get_by_guids_removed(FuDeviceList *self, GPtrArray *guids)
 			if (fu_device_has_guid(item->device_old, guid) ||
 			    fu_device_has_instance_id(item->device_old,
 						      guid,
-						      FU_DEVICE_INSTANCE_FLAG_COUNTERPART))
+						      FU_DEVICE_INSTANCE_FLAG_COUNTERPART |
+							  FU_DEVICE_INSTANCE_FLAG_VISIBLE))
 				return item;
 		}
 	}
@@ -751,9 +753,6 @@ fu_device_list_replace(FuDeviceList *self, FuDeviceItem *item, FuDevice *device)
 		fu_device_set_version(device, version); /* nocheck:set-version */
 		fu_device_set_version_raw(device, raw);
 	}
-
-	/* allow another plugin to handle the write too */
-	fu_device_incorporate_flag(device, item->device, FWUPD_DEVICE_FLAG_ANOTHER_WRITE_REQUIRED);
 
 	/* seems like a sane assumption if we've tagged the runtime mode as signed */
 	fu_device_incorporate_flag(device, item->device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD);

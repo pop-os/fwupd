@@ -610,10 +610,12 @@ fu_util_get_devices(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (devs->len > 0)
 		fu_util_build_device_tree(priv, root, devs);
 	if (g_node_n_children(root) == 0) {
-		fu_console_print_literal(priv->console,
-					 /* TRANSLATORS: nothing attached that can be upgraded */
-					 _("No hardware detected with firmware update capability"));
-		return TRUE;
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOTHING_TO_DO,
+				    /* TRANSLATORS: nothing attached that can be upgraded */
+				    _("No hardware detected with firmware update capability"));
+		return FALSE;
 	}
 	fu_util_print_node(priv->console, priv->client, root);
 
@@ -3110,7 +3112,8 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 				error_install->message);
 			continue;
 		}
-		fu_util_display_current_message(priv);
+		if (ret)
+			fu_util_display_current_message(priv);
 
 		/* send report if we're supposed to */
 		if (!fu_util_maybe_send_reports(priv, rel, &error_report)) {
@@ -3350,7 +3353,8 @@ fu_util_downgrade(FuUtilPrivate *priv, gchar **values, GError **error)
 	priv->current_operation = FU_UTIL_OPERATION_DOWNGRADE;
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
 	ret = fu_util_update_device_with_release(priv, dev, rel, error);
-	fu_util_display_current_message(priv);
+	if (ret)
+		fu_util_display_current_message(priv);
 
 	/* send report if we're supposed to */
 	if (!fu_util_maybe_send_reports(priv, rel, &error_report)) {
@@ -3400,7 +3404,8 @@ fu_util_reinstall(FuUtilPrivate *priv, gchar **values, GError **error)
 	priv->current_operation = FU_UTIL_OPERATION_INSTALL;
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
 	ret = fu_util_update_device_with_release(priv, dev, rel, error);
-	fu_util_display_current_message(priv);
+	if (ret)
+		fu_util_display_current_message(priv);
 
 	/* send report if we're supposed to */
 	if (!fu_util_maybe_send_reports(priv, rel, &error_report)) {
@@ -3470,7 +3475,8 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_OLDER;
 	ret = fu_util_update_device_with_release(priv, dev, rel, error);
-	fu_util_display_current_message(priv);
+	if (ret)
+		fu_util_display_current_message(priv);
 
 	/* send report if we're supposed to */
 	if (!fu_util_maybe_send_reports(priv, rel, &error_report)) {
@@ -3609,7 +3615,8 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH;
 	ret = fu_util_update_device_with_release(priv, dev, rel, error);
-	fu_util_display_current_message(priv);
+	if (ret)
+		fu_util_display_current_message(priv);
 
 	/* send report if we're supposed to */
 	if (!fu_util_maybe_send_reports(priv, rel, &error_report)) {

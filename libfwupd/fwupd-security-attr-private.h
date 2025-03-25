@@ -286,7 +286,7 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_UEFI_PK "org.fwupd.hsi.Uefi.Pk"
 /**
- * FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU
+ * FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU:
  *
  * Host Security ID attribute for Supported CPU
  *
@@ -294,7 +294,7 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_SUPPORTED_CPU "org.fwupd.hsi.SupportedCpu"
 /**
- * FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION
+ * FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION:
  *
  * Host Security ID attribute for Rollback protection of AMD platform
  * firmware
@@ -303,7 +303,7 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_AMD_ROLLBACK_PROTECTION "org.fwupd.hsi.Amd.RollbackProtection"
 /**
- * FWUPD_SECURITY_ATTR_ID_AMD_SPI_WRITE_PROTECTION
+ * FWUPD_SECURITY_ATTR_ID_AMD_SPI_WRITE_PROTECTION:
  *
  * Host Security ID attribute for SPI Write protection
  *
@@ -311,7 +311,7 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_AMD_SPI_WRITE_PROTECTION "org.fwupd.hsi.Amd.SpiWriteProtection"
 /**
- * FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION
+ * FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION:
  *
  * Host Security ID attribute for SPI replay protection
  *
@@ -319,7 +319,7 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_AMD_SPI_REPLAY_PROTECTION "org.fwupd.hsi.Amd.SpiReplayProtection"
 /**
- * FWUPD_SECURITY_ATTR_ID_HOST_EMULATION
+ * FWUPD_SECURITY_ATTR_ID_HOST_EMULATION:
  *
  * Host Security ID attribute for host emulation
  *
@@ -327,7 +327,7 @@ G_BEGIN_DECLS
  **/
 #define FWUPD_SECURITY_ATTR_ID_HOST_EMULATION "org.fwupd.hsi.HostEmulation"
 /**
- * FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION
+ * FWUPD_SECURITY_ATTR_ID_BIOS_ROLLBACK_PROTECTION:
  *
  * Host Security ID attribute for Rollback protection of BIOS firmware
  *
@@ -388,6 +388,14 @@ G_BEGIN_DECLS
  * Since: 2.0.2
  **/
 #define FWUPD_SECURITY_ATTR_ID_AMD_SMM_LOCKED "org.fwupd.hsi.Amd.SmmLocked"
+/**
+ * FWUPD_SECURITY_ATTR_ID_UEFI_MEMORY_PROTECTION:
+ *
+ * Host Security ID attribute for UEFI memory protection
+ *
+ * Since: 2.0.7
+ **/
+#define FWUPD_SECURITY_ATTR_ID_UEFI_MEMORY_PROTECTION "org.fwupd.hsi.Uefi.MemoryProtection"
 
 FwupdSecurityAttr *
 fwupd_security_attr_copy(FwupdSecurityAttr *self) G_GNUC_NON_NULL(1);

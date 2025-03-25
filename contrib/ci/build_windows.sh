@@ -26,7 +26,7 @@ mkdir -p $build $DESTDIR && cd $build
 # run before using meson
 export WINEPREFIX=$build/.wine
 
-# For logitech bulk controller being disabled (-Dplugin_logitech_bulkcontroller=disabled):
+# For logitech bulk controller being disabled (-Dprotobuf=disabled):
 # See https://bugzilla.redhat.com/show_bug.cgi?id=1991749
 # When fixed need to do the following to enable:
 # 1. need to add mingw64-protobuf mingw64-protobuf-tools to CI build deps
@@ -160,11 +160,11 @@ wixl -v \
 	-D DESTDIR="$DESTDIR" \
 	-o "${MSI_FILENAME}"
 
+#generate news release
+contrib/ci/generate_news.py $VERSION > $DESTDIR/news.txt
+
 # check the msi archive can be installed and removed (use "wine uninstaller" to do manually)
 wine msiexec /i "${MSI_FILENAME}"
 ls -R ${WINEPREFIX}/drive_c/Program\ Files/fwupd/
 wine ${WINEPREFIX}/drive_c/Program\ Files/fwupd/bin/fwupdtool.exe get-plugins --json
 wine msiexec /x "${MSI_FILENAME}"
-
-#generate news release
-contrib/ci/generate_news.py $VERSION > $DESTDIR/news.txt

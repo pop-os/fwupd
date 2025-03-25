@@ -1,12 +1,11 @@
-if get_option('plugin_redfish').require(libcurl.found(),
-    error_message: 'curl is needed for plugin_redfish').disable_auto_if(host_machine.system() != 'linux').allowed()
+if host_machine.system() == 'linux'
 cargs = ['-DG_LOG_DOMAIN="FuPluginRedfish"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
 plugin_quirks += files('redfish.quirk')
 
 ipmi_src = []
-if have_linux_ipmi
+if cc.has_header('linux/ipmi.h')
   ipmi_src += 'fu-ipmi-device.c'
 endif
 
@@ -21,6 +20,7 @@ plugin_builtin_redfish = static_library('fu_plugin_redfish',
     'fu-redfish-device.c',
     'fu-redfish-smc-device.c',
     'fu-redfish-legacy-device.c',
+    'fu-redfish-hpe-device.c',
     'fu-redfish-multipart-device.c',
     'fu-redfish-network.c',
     'fu-redfish-network-device.c',

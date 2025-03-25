@@ -583,7 +583,7 @@ fu_qc_s5gen2_device_write_blocks(FuQcS5gen2Device *self,
 			return FALSE;
 		}
 
-		more_data = (blobsz <= (cur_offset + data_sz)) ? FU_QC_MORE_DATA_LAST
+		more_data = (blobsz <= (cur_offset + data_sz)) ? FU_QC_MORE_DATA_LAST_PACKET
 							       : FU_QC_MORE_DATA_MORE;
 
 		data_out = g_bytes_new_from_bytes(bytes, cur_offset, data_sz);
@@ -599,7 +599,7 @@ fu_qc_s5gen2_device_write_blocks(FuQcS5gen2Device *self,
 
 		/* FIXME: petentially infinite loop if device requesting wrong data?
 		   some counter or timeout? */
-	} while (more_data != FU_QC_MORE_DATA_LAST);
+	} while (more_data != FU_QC_MORE_DATA_LAST_PACKET);
 
 	/* success */
 	return TRUE;
@@ -715,6 +715,7 @@ static void
 fu_qc_s5gen2_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 0, "detach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");

@@ -20,6 +20,7 @@ install_data([
   install_dir: join_paths(installed_test_datadir, 'tests/America'),
 )
 install_data([
+    'cpuinfo',
     'cab.builder.xml',
     'cab-compressed.builder.xml',
     'cfu-offer.builder.xml',
@@ -34,8 +35,6 @@ install_data([
     'efi-load-option.builder.xml',
     'efi-load-option-data.builder.xml',
     'efi-load-option-hive.builder.xml',
-    'efi-lz77-legacy.bin',
-    'efi-lz77-tiano.bin',
     'efi-section.builder.xml',
     'efi-signature.builder.xml',
     'efi-signature-list.builder.xml',
@@ -71,29 +70,15 @@ install_data([
   install_dir: join_paths(installed_test_datadir, 'tests')
 )
 
-if sqlite.found()
-  install_data([
-      'oui.txt',
-      'pci.ids',
-      'pnp.ids',
-      'usb.ids',
-    ],
-    install_dir: join_paths(installed_test_datadir, 'tests')
-  )
-endif
+install_data([
+    'oui.txt',
+    'pci.ids',
+    'pnp.ids',
+    'usb.ids',
+  ],
+  install_dir: join_paths(installed_test_datadir, 'tests')
+)
 
-install_data([
-    'dmi/tables/DMI',
-    'dmi/tables/smbios_entry_point',
-  ],
-  install_dir: join_paths(installed_test_datadir, 'tests/dmi/tables'),
-)
-install_data([
-    'dmi/tables64/DMI',
-    'dmi/tables64/smbios_entry_point',
-  ],
-  install_dir: join_paths(installed_test_datadir, 'tests/dmi/tables64'),
-)
 install_data([
     'lockdown/locked/lockdown',
   ],

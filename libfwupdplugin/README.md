@@ -167,3 +167,14 @@ Remember: Plugins should be upstream!
 * `fu_kernel_get_firmware_search_path()`: Use `FuKernelSearchPathLocker` instead.
 * `fu_kernel_set_firmware_search_path()`: Use `FuKernelSearchPathLocker` instead.
 * `fu_kernel_reset_firmware_search_path()`: Use `FuKernelSearchPathLocker` instead.
+
+## 2.0.7
+
+* `fu_device_write_firmware()`: Use `FuFirmware` rather than a `GInputStream`.
+* `fu_bytes_pad()`: Add a data byte, typically `0xFF`.
+* `fu_smbios_get_string()`: Add an expected structure length, typically `FU_SMBIOS_STRUCTURE_LENGTH_ANY`.
+* `fu_smbios_get_integer()`: Add an expected structure length, typically `FU_SMBIOS_STRUCTURE_LENGTH_ANY`.
+* `fu_smbios_get_data()`: Add an expected structure length, typically `FU_SMBIOS_STRUCTURE_LENGTH_ANY`.
+* `fu_context_get_smbios_string()`: Add an expected structure length, typically `FU_SMBIOS_STRUCTURE_LENGTH_ANY`.
+* `fu_context_get_smbios_integer()`: Add an expected structure length, typically `FU_SMBIOS_STRUCTURE_LENGTH_ANY`.
+* `fu_context_get_smbios_data()`: Add an expected structure length, typically `FU_SMBIOS_STRUCTURE_LENGTH_ANY`.

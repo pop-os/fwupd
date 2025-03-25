@@ -6,31 +6,28 @@
 
 #include "config.h"
 
-#ifdef HAVE_LZMA
 #include <lzma.h>
-#endif
 
 #include "fu-lzma-common.h"
 
 /**
  * fu_lzma_decompress_bytes:
  * @blob: data
+ * @memlimit: decompression memory limit, in bytes
  * @error: (nullable): optional return location for an error
  *
  * Decompresses a LZMA stream.
  *
- * Returns: decompressed data
+ * Returns: (transfer full): decompressed data
  *
- * Since: 1.9.8
+ * Since: 2.0.7
  **/
 GBytes *
-fu_lzma_decompress_bytes(GBytes *blob, GError **error)
+fu_lzma_decompress_bytes(GBytes *blob, guint64 memlimit, GError **error)
 {
-#ifdef HAVE_LZMA
 	const gsize tmpbufsz = 0x20000;
 	lzma_ret rc;
 	lzma_stream strm = LZMA_STREAM_INIT;
-	uint64_t memlimit = G_MAXUINT32;
 	g_autofree guint8 *tmpbuf = g_malloc0(tmpbufsz);
 	g_autoptr(GByteArray) buf = g_byte_array_new();
 
@@ -67,10 +64,6 @@ fu_lzma_decompress_bytes(GBytes *blob, GError **error)
 		return NULL;
 	}
 	return g_bytes_new(buf->data, buf->len);
-#else
-	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "missing lzma support");
-	return NULL;
-#endif
 }
 
 /**
@@ -80,14 +73,13 @@ fu_lzma_decompress_bytes(GBytes *blob, GError **error)
  *
  * Compresses into a LZMA stream.
  *
- * Returns: compressed data
+ * Returns: (transfer full): compressed data
  *
  * Since: 1.9.8
  **/
 GBytes *
 fu_lzma_compress_bytes(GBytes *blob, GError **error)
 {
-#ifdef HAVE_LZMA
 	const gsize tmpbufsz = 0x20000;
 	lzma_ret rc;
 	lzma_stream strm = LZMA_STREAM_INIT;
@@ -127,8 +119,4 @@ fu_lzma_compress_bytes(GBytes *blob, GError **error)
 		return NULL;
 	}
 	return g_bytes_new(buf->data, buf->len);
-#else
-	g_set_error_literal(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED, "missing lzma support");
-	return NULL;
-#endif
 }

@@ -117,6 +117,7 @@ typedef struct {
 	z_stream zstrm;
 	guint8 *decompress_buf;
 	gsize decompress_bufsz;
+	gsize ndatabsz;
 } FuCabFirmwareParseHelper;
 
 static void
@@ -239,8 +240,10 @@ fu_cab_firmware_parse_data(FuCabFirmware *self,
 	/* verify checksum */
 	partial_stream =
 	    fu_partial_input_stream_new(helper->stream, *offset + hdr_sz, blob_comp, error);
-	if (partial_stream == NULL)
+	if (partial_stream == NULL) {
+		g_prefix_error(error, "failed to cut cabinet checksum: ");
 		return FALSE;
+	}
 	if ((helper->install_flags & FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM) == 0) {
 		guint32 checksum = fu_struct_cab_data_get_checksum(st);
 		if (checksum != 0) {
@@ -368,7 +371,6 @@ fu_cab_firmware_parse_folder(FuCabFirmware *self,
 			     GError **error)
 {
 	FuCabFirmwarePrivate *priv = GET_PRIVATE(self);
-	gsize offset_folder;
 	g_autoptr(GByteArray) st = NULL;
 
 	/* parse header */
@@ -397,11 +399,18 @@ fu_cab_firmware_parse_folder(FuCabFirmware *self,
 		return FALSE;
 	}
 
-	/* parse CDATA */
-	offset_folder = fu_struct_cab_folder_get_offset(st);
-	for (guint i = 0; i < fu_struct_cab_folder_get_ndatab(st); i++) {
-		if (!fu_cab_firmware_parse_data(self, helper, &offset_folder, folder_data, error))
-			return FALSE;
+	/* parse CDATA, either using the stream offset or the per-spec FuStructCabFolder.ndatab */
+	if (helper->ndatabsz > 0) {
+		for (gsize off = fu_struct_cab_folder_get_offset(st); off < helper->ndatabsz;) {
+			if (!fu_cab_firmware_parse_data(self, helper, &off, folder_data, error))
+				return FALSE;
+		}
+	} else {
+		gsize off = fu_struct_cab_folder_get_offset(st);
+		for (guint16 i = 0; i < fu_struct_cab_folder_get_ndatab(st); i++) {
+			if (!fu_cab_firmware_parse_data(self, helper, &off, folder_data, error))
+				return FALSE;
+		}
 	}
 
 	/* success */
@@ -478,8 +487,10 @@ fu_cab_firmware_parse_file(FuCabFirmware *self,
 					     fu_struct_cab_file_get_uoffset(st),
 					     fu_struct_cab_file_get_usize(st),
 					     error);
-	if (stream == NULL)
+	if (stream == NULL) {
+		g_prefix_error(error, "failed to cut cabinet image: ");
 		return FALSE;
+	}
 	if (!fu_firmware_parse_stream(FU_FIRMWARE(img), stream, 0x0, helper->install_flags, error))
 		return FALSE;
 	if (!fu_firmware_add_image_full(FU_FIRMWARE(self), FU_FIRMWARE(img), error))
@@ -612,6 +623,10 @@ fu_cab_firmware_parse(FuFirmware *firmware,
 	helper = fu_cab_firmware_parse_helper_new(stream, flags, error);
 	if (helper == NULL)
 		return FALSE;
+
+	/* if the only folder is >= 2GB then FuStructCabFolder.ndatab will overflow */
+	if (streamsz >= 0x8000 * 0xFFFF && fu_struct_cab_header_get_nr_folders(st) == 1)
+		helper->ndatabsz = streamsz;
 
 	/* reserved sizes */
 	offset += st->len;

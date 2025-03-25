@@ -1,5 +1,4 @@
-if get_option('plugin_synaptics_mst').require(enable_udev,
-    error_message: 'udev is needed for plugin_synaptics_mst').allowed()
+if host_machine.system() == 'linux'
 cargs = ['-DG_LOG_DOMAIN="FuPluginSynapticsMST"']
 plugins += {meson.current_source_dir().split('/')[-1]: true}
 
@@ -23,6 +22,13 @@ plugin_builtin_synaptics_mst = static_library('fu_plugin_synaptics_mst',
   dependencies: plugin_deps,
 )
 plugin_builtins += plugin_builtin_synaptics_mst
+
+device_tests += files(
+  'tests/synaptics-panamera.json',
+)
+enumeration_data += files(
+  'tests/synaptics-panamera-setup.json',
+)
 
 if get_option('tests')
   install_data(['tests/synaptics-mst.builder.xml'],

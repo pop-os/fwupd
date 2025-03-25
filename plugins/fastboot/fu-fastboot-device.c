@@ -685,11 +685,11 @@ static void
 fu_fastboot_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
-	fu_progress_add_flag(progress, FU_PROGRESS_FLAG_GUESSED);
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "detach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 94, "write");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 2, "attach");
-	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 2, "reload");
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "detach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 97, "write");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 1, "attach");
+	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_BUSY, 1, "reload");
 }
 
 static void
@@ -706,6 +706,7 @@ fu_fastboot_device_init(FuFastbootDevice *self)
 	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_REPLUG_MATCH_GUID);
 	fu_device_set_remove_delay(FU_DEVICE(self), FASTBOOT_REMOVE_DELAY_RE_ENUMERATE);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_ARCHIVE_FIRMWARE);
+	fu_usb_device_set_claim_retry_count(FU_USB_DEVICE(self), 5);
 }
 
 static void

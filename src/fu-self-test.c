@@ -218,8 +218,13 @@ fu_engine_generate_md_func(gconstpointer user_data)
 	g_autoptr(XbNode) component = NULL;
 
 	/* put cab file somewhere we can parse it */
-	filename =
-	    g_test_build_filename(G_TEST_DIST, "tests", "colorhug", "colorhug-als-3.0.2.cab", NULL);
+	filename = g_test_build_filename(G_TEST_BUILT,
+					 "..",
+					 "libfwupdplugin",
+					 "tests",
+					 "colorhug",
+					 "colorhug-als-3.0.2.cab",
+					 NULL);
 	data = fu_bytes_get_contents(filename, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(data);
@@ -246,7 +251,7 @@ fu_engine_generate_md_func(gconstpointer user_data)
 
 	/* verify checksums */
 	tmp = xb_node_query_text(component, "releases/release/checksum[@target='container']", NULL);
-	g_assert_cmpstr(tmp, ==, "3da49ddd961144a79336b3ac3b0e469cb2531d0e");
+	g_assert_cmpstr(tmp, ==, "71aefb2a9b412833d8c519d5816ef4c5668e5e76");
 	tmp = xb_node_query_text(component, "releases/release/checksum[@target='content']", NULL);
 	g_assert_cmpstr(tmp, ==, NULL);
 }
@@ -1165,12 +1170,35 @@ fu_engine_plugin_gtypes_func(gconstpointer user_data)
 	    "linux_swap",
 	    "linux_tainted",
 	};
+	const gchar *external_plugins[] = {
+	    "flashrom",
+	};
 
 	/* no metadata in daemon */
 	fu_engine_set_silo(engine, silo_empty);
 
-	/* load all internal plugins */
-	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_BUILTIN_PLUGINS, progress, &error);
+	/* load these from the build directory, not the install directory */
+	if (g_getenv("G_TEST_BUILDDIR") != NULL) {
+		g_autoptr(GPtrArray) external_plugin_dirs = g_ptr_array_new_with_free_func(g_free);
+		g_autofree gchar *external_plugindir = NULL;
+		for (guint i = 0; i < G_N_ELEMENTS(external_plugins); i++) {
+			g_ptr_array_add(external_plugin_dirs,
+					g_test_build_filename(G_TEST_BUILT,
+							      "..",
+							      "plugins",
+							      external_plugins[i],
+							      NULL));
+		}
+		external_plugindir = fu_strjoin(",", external_plugin_dirs);
+		(void)g_setenv("FWUPD_LIBDIR_PKG", external_plugindir, TRUE);
+	}
+
+	/* load all plugins */
+	ret = fu_engine_load(engine,
+			     FU_ENGINE_LOAD_FLAG_BUILTIN_PLUGINS |
+				 FU_ENGINE_LOAD_FLAG_EXTERNAL_PLUGINS,
+			     progress,
+			     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	plugins = fu_engine_get_plugins(engine);
@@ -2797,11 +2825,6 @@ fu_engine_history_modify_func(gconstpointer user_data)
 	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
 
-#ifndef HAVE_SQLITE
-	g_test_skip("no sqlite support");
-	return;
-#endif
-
 	/* add a new entry */
 	fu_device_set_id(device, "foobarbaz");
 	fu_history_remove_device(history, device, NULL);
@@ -2922,10 +2945,6 @@ fu_engine_history_func(gconstpointer user_data)
 	/* check the history database */
 	history = fu_history_new(self->ctx);
 	device2 = fu_history_get_device_by_id(history, fu_device_get_id(device), &error);
-	if (g_error_matches(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
-		g_test_skip("no sqlite support");
-		return;
-	}
 	g_assert_no_error(error);
 	g_assert_nonnull(device2);
 	g_assert_cmpint(fu_device_get_update_state(device2), ==, FWUPD_UPDATE_STATE_SUCCESS);
@@ -3018,6 +3037,72 @@ fu_engine_history_verfmt_func(gconstpointer user_data)
 }
 
 static void
+fu_engine_install_loop_restart_func(gconstpointer user_data)
+{
+	FuTest *self = (FuTest *)user_data;
+	gboolean ret;
+	g_autoptr(FuDevice) device = fu_device_new(self->ctx);
+	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
+	g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(fu_test_plugin_get_type(), self->ctx);
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GInputStream) stream_fw = NULL;
+	g_autoptr(XbSilo) silo_empty = xb_silo_new();
+
+	/* ensure empty tree */
+	fu_self_test_mkroot();
+
+	/* no metadata in daemon */
+	fu_engine_set_silo(engine, silo_empty);
+
+	/* set up dummy plugin */
+	ret = fu_plugin_reset_config_values(plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_plugin_set_config_value(plugin, "InstallLoopRestart", "true", &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	fu_engine_add_plugin(engine, plugin);
+
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* add a device so we can install it */
+	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
+	fu_device_set_version(device, "1.2.2");
+	fu_device_set_id(device, "test_device");
+	fu_device_build_vendor_id_u16(device, "USB", 0xFFFF);
+	fu_device_add_protocol(device, "com.acme");
+	fu_device_set_plugin(device, "test");
+	fu_device_add_instance_id(device, "12345678-1234-1234-1234-123456789012");
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(device, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
+	fu_engine_add_device(engine, device);
+
+	/* set up counters */
+	fu_device_set_metadata_integer(device, "nr-update", 0);
+	fu_device_set_metadata_integer(device, "nr-attach", 0);
+
+	stream_fw = g_memory_input_stream_new_from_data((const guint8 *)"1.2.3", 5, NULL);
+	ret = fu_engine_install_blob(engine,
+				     device,
+				     stream_fw,
+				     progress,
+				     FWUPD_INSTALL_FLAG_NO_HISTORY,
+				     FWUPD_FEATURE_FLAG_NONE,
+				     &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* check we did two write loops */
+	g_assert_cmpint(fu_device_get_metadata_integer(device, "nr-update"), ==, 2);
+
+	/* check we only attached once */
+	g_assert_cmpint(fu_device_get_metadata_integer(device, "nr-attach"), ==, 1);
+}
+
+static void
 fu_engine_multiple_rels_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
@@ -3091,8 +3176,9 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_nonnull(component);
 
-	/* set up counter */
+	/* set up counters */
 	fu_device_set_metadata_integer(device, "nr-update", 0);
+	fu_device_set_metadata_integer(device, "nr-attach", 0);
 
 	/* get all */
 	query = xb_query_new_full(xb_node_get_silo(component),
@@ -3135,6 +3221,7 @@ fu_engine_multiple_rels_func(gconstpointer user_data)
 
 	/* check we did 1.2.2 -> 1.2.3 -> 1.2.4 */
 	g_assert_cmpint(fu_device_get_metadata_integer(device, "nr-update"), ==, 2);
+	g_assert_cmpint(fu_device_get_metadata_integer(device, "nr-attach"), ==, 2);
 	g_assert_cmpstr(fu_device_get_version(device), ==, "1.2.4");
 
 	/* reset the config back to defaults */
@@ -3162,11 +3249,6 @@ fu_engine_history_inherit(gconstpointer user_data)
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(XbNode) component = NULL;
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
-
-#ifndef HAVE_SQLITE
-	g_test_skip("no sqlite support");
-	return;
-#endif
 
 	/* delete history */
 	localstatedir = fu_path_from_kind(FU_PATH_KIND_LOCALSTATEDIR_PKG);
@@ -3430,6 +3512,9 @@ fu_engine_install_request(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
+	ret = fu_plugin_reset_config_values(plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	ret = fu_plugin_set_config_value(plugin, "RequestSupported", "true", &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -3527,6 +3612,9 @@ fu_engine_history_error_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* set up dummy plugin */
+	ret = fu_plugin_reset_config_values(plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	ret = fu_plugin_set_config_value(plugin, "WriteSupported", "false", &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -3585,10 +3673,6 @@ fu_engine_history_error_func(gconstpointer user_data)
 	/* check the history database */
 	history = fu_history_new(self->ctx);
 	device2 = fu_history_get_device_by_id(history, fu_device_get_id(device), &error2);
-	if (g_error_matches(error2, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
-		g_test_skip("no sqlite support");
-		return;
-	}
 	g_assert_no_error(error2);
 	g_assert_nonnull(device2);
 	g_assert_cmpint(fu_device_get_update_state(device2), ==, FWUPD_UPDATE_STATE_FAILED);
@@ -4391,11 +4475,6 @@ fu_history_migrate_v1_func(gconstpointer user_data)
 	g_autoptr(FuHistory) history = NULL;
 	g_autofree gchar *filename = NULL;
 
-#ifndef HAVE_SQLITE
-	g_test_skip("no sqlite support");
-	return;
-#endif
-
 	/* load old version */
 	filename = g_test_build_filename(G_TEST_DIST, "tests", "history_v1.db", NULL);
 	file_src = g_file_new_for_path(filename);
@@ -4428,11 +4507,6 @@ fu_history_migrate_v2_func(gconstpointer user_data)
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuHistory) history = NULL;
 	g_autofree gchar *filename = NULL;
-
-#ifndef HAVE_SQLITE
-	g_test_skip("no sqlite support");
-	return;
-#endif
 
 	/* load old version */
 	filename = g_test_build_filename(G_TEST_DIST, "tests", "history_v2.db", NULL);
@@ -4532,11 +4606,6 @@ fu_backend_usb_func(gconstpointer user_data)
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) devices = NULL;
 	g_autoptr(GPtrArray) possible_plugins = NULL;
-
-#if !GLIB_CHECK_VERSION(2, 80, 0)
-	g_test_skip("GLib version too old");
-	return;
-#endif
 
 	/* check there were events */
 	g_object_set(backend, "device-gtype", FU_TYPE_USB_DEVICE, NULL);
@@ -4680,6 +4749,9 @@ fu_plugin_module_func(gconstpointer user_data)
 	fu_engine_set_silo(engine, silo_empty);
 
 	/* create a fake device */
+	ret = fu_plugin_reset_config_values(plugin, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 	ret = fu_plugin_set_config_value(plugin, "RegistrationSupported", "true", &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -4725,11 +4797,6 @@ fu_history_func(gconstpointer user_data)
 	g_autoptr(GPtrArray) approved_firmware = NULL;
 	g_autofree gchar *dirname = NULL;
 	g_autofree gchar *filename = NULL;
-
-#ifndef HAVE_SQLITE
-	g_test_skip("no sqlite support");
-	return;
-#endif
 
 	/* create */
 	history = fu_history_new(self->ctx);
@@ -7024,7 +7091,7 @@ fu_test_engine_fake_usb(gconstpointer user_data)
 	}
 
 	/* load engine and check the device was found */
-	fu_engine_add_plugin_filter(engine, "colorhug");
+	fu_engine_add_plugin_filter(engine, "hughski_colorhug");
 	ret = fu_engine_load(engine,
 			     FU_ENGINE_LOAD_FLAG_COLDPLUG | FU_ENGINE_LOAD_FLAG_BUILTIN_PLUGINS |
 				 FU_ENGINE_LOAD_FLAG_NO_IDLE_SOURCES | FU_ENGINE_LOAD_FLAG_READONLY,
@@ -7042,7 +7109,7 @@ fu_test_engine_fake_usb(gconstpointer user_data)
 	g_assert_cmpstr(fu_udev_device_get_driver(FU_UDEV_DEVICE(device)), ==, "usb");
 	g_assert_cmpint(fu_device_get_vid(device), ==, 0x093a);
 	g_assert_cmpint(fu_device_get_pid(device), ==, 0x2862);
-	g_assert_cmpstr(fu_device_get_plugin(device), ==, "colorhug");
+	g_assert_cmpstr(fu_device_get_plugin(device), ==, "hughski_colorhug");
 	g_assert_cmpstr(fu_device_get_physical_id(device), ==, "1-1");
 	g_assert_cmpstr(fu_device_get_logical_id(device), ==, NULL);
 }
@@ -7162,7 +7229,7 @@ fu_test_engine_fake_nvme(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	/* no -Dplugin_nvme=enabled */
+	/* no linux/nvme_ioctl.h */
 	if (fu_engine_get_plugin_by_name(engine, "nvme", &error) == NULL) {
 		g_test_skip(error->message);
 		return;
@@ -7312,7 +7379,7 @@ fu_test_engine_fake_mei(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	/* no -Dplugin_intel_me=enabled */
+	/* not linux */
 	if (fu_engine_get_plugin_by_name(engine, "intel_me", &error) == NULL) {
 		g_test_skip(error->message);
 		return;
@@ -7359,7 +7426,7 @@ fu_test_engine_fake_block(gconstpointer user_data)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	/* no -Dplugin_scsi=enabled */
+	/* no Udev */
 	if (fu_engine_get_plugin_by_name(engine, "scsi", &error) == NULL) {
 		g_test_skip(error->message);
 		return;
@@ -7509,6 +7576,9 @@ main(int argc, char **argv)
 	g_test_add_data_func("/fwupd/engine{multiple-releases}",
 			     self,
 			     fu_engine_multiple_rels_func);
+	g_test_add_data_func("/fwupd/engine{install-loop-restart}",
+			     self,
+			     fu_engine_install_loop_restart_func);
 	g_test_add_data_func("/fwupd/engine{install-request}", self, fu_engine_install_request);
 	g_test_add_data_func("/fwupd/engine{history-success}", self, fu_engine_history_func);
 	g_test_add_data_func("/fwupd/engine{history-verfmt}", self, fu_engine_history_verfmt_func);

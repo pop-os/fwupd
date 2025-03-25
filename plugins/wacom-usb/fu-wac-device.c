@@ -505,7 +505,7 @@ fu_wac_device_write_firmware(FuDevice *device,
 		blob_tmp = fu_firmware_write_chunk(img, fd->start_addr, fd->block_sz, NULL);
 		if (blob_tmp == NULL)
 			break;
-		blob_block = fu_bytes_pad(blob_tmp, fd->block_sz);
+		blob_block = fu_bytes_pad(blob_tmp, fd->block_sz, 0xFF);
 		g_hash_table_insert(fd_blobs, fd, blob_block);
 	}
 
@@ -949,6 +949,7 @@ static void
 fu_wac_device_set_progress(FuDevice *self, FuProgress *progress)
 {
 	fu_progress_set_id(progress, G_STRLOC);
+	fu_progress_add_step(progress, FWUPD_STATUS_DECOMPRESSING, 0, "prepare-fw");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "detach");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_WRITE, 98, "write");
 	fu_progress_add_step(progress, FWUPD_STATUS_DEVICE_RESTART, 0, "attach");

@@ -12,9 +12,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <xmlb.h>
-#ifdef HAVE_LIBCURL
 #include <curl/curl.h>
-#endif
 
 #include "fu-console.h"
 #include "fu-device-private.h"
@@ -212,24 +210,11 @@ fu_util_update_shutdown(GError **error)
 					  -1,
 					  NULL,
 					  error);
-#elif defined(HAVE_CONSOLEKIT)
-	/* shutdown using ConsoleKit */
-	val = g_dbus_connection_call_sync(connection,
-					  "org.freedesktop.ConsoleKit",
-					  "/org/freedesktop/ConsoleKit/Manager",
-					  "org.freedesktop.ConsoleKit.Manager",
-					  "Stop",
-					  NULL,
-					  NULL,
-					  G_DBUS_CALL_FLAGS_NONE,
-					  -1,
-					  NULL,
-					  error);
 #else
 	g_set_error_literal(error,
 			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_ARGS,
-			    "No supported backend compiled in to perform the operation.");
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "No way to perform the operation");
 #endif
 	return val != NULL;
 }
@@ -257,24 +242,11 @@ fu_util_update_reboot(GError **error)
 					  -1,
 					  NULL,
 					  error);
-#elif defined(HAVE_CONSOLEKIT)
-	/* reboot using ConsoleKit */
-	val = g_dbus_connection_call_sync(connection,
-					  "org.freedesktop.ConsoleKit",
-					  "/org/freedesktop/ConsoleKit/Manager",
-					  "org.freedesktop.ConsoleKit.Manager",
-					  "Restart",
-					  NULL,
-					  NULL,
-					  G_DBUS_CALL_FLAGS_NONE,
-					  -1,
-					  NULL,
-					  error);
 #else
 	g_set_error_literal(error,
 			    FWUPD_ERROR,
-			    FWUPD_ERROR_INVALID_ARGS,
-			    "No supported backend compiled in to perform the operation.");
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "No way to perform the operation");
 #endif
 	return val != NULL;
 }
@@ -1943,6 +1915,11 @@ fu_util_release_to_string(FwupdRelease *rel, guint idt)
 				  fwupd_release_get_source_url(rel));
 	fwupd_codec_string_append(str,
 				  idt + 1,
+				  /* TRANSLATORS: Software Bill of Materials link */
+				  _("SBOM"),
+				  fwupd_release_get_sbom_url(rel));
+	fwupd_codec_string_append(str,
+				  idt + 1,
 				  /* TRANSLATORS: manufacturer of hardware */
 				  _("Vendor"),
 				  fwupd_release_get_vendor(rel));
@@ -2419,6 +2396,27 @@ fu_util_security_event_to_string(FwupdSecurityAttr *attr)
 		      FWUPD_SECURITY_ATTR_RESULT_VALID,
 		      /* TRANSLATORS: HSI event title */
 		      _("TPM PCR0 reconstruction is now valid")},
+		     /* ------------------------------------------*/
+		     {FWUPD_SECURITY_ATTR_ID_UEFI_MEMORY_PROTECTION,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_LOCKED,
+		      /* TRANSLATORS: HSI event title */
+		      _("UEFI memory protection enabled but not locked")},
+		     {FWUPD_SECURITY_ATTR_ID_UEFI_MEMORY_PROTECTION,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_ENABLED,
+		      FWUPD_SECURITY_ATTR_RESULT_LOCKED,
+		      /* TRANSLATORS: HSI event title */
+		      _("UEFI memory protection enabled and locked")},
+		     {FWUPD_SECURITY_ATTR_ID_UEFI_MEMORY_PROTECTION,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_LOCKED,
+		      FWUPD_SECURITY_ATTR_RESULT_LOCKED,
+		      /* TRANSLATORS: HSI event title */
+		      _("UEFI memory protection is now locked")},
+		     {FWUPD_SECURITY_ATTR_ID_UEFI_MEMORY_PROTECTION,
+		      FWUPD_SECURITY_ATTR_RESULT_LOCKED,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_LOCKED,
+		      /* TRANSLATORS: HSI event title */
+		      _("UEFI memory protection is now unlocked")},
 		     {NULL, 0, 0, NULL}};
 
 	/* sanity check */
@@ -2822,20 +2820,13 @@ fu_util_modify_remote_warning(FuConsole *console,
 	return TRUE;
 }
 
-#ifdef HAVE_LIBCURL
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(CURLU, curl_url_cleanup)
-#endif
 
 gboolean
 fu_util_is_url(const gchar *perhaps_url)
 {
-#ifdef HAVE_LIBCURL
 	g_autoptr(CURLU) h = curl_url();
 	return curl_url_set(h, CURLUPART_URL, perhaps_url, 0) == CURLUE_OK;
-#else
-	return g_str_has_prefix(perhaps_url, "http://") ||
-	       g_str_has_prefix(perhaps_url, "https://");
-#endif
 }
 
 gboolean

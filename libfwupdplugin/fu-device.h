@@ -91,6 +91,10 @@ struct _FuDeviceClass {
 	void (*invalidate)(FuDevice *self);
 	gchar *(*convert_version)(FuDevice *self, guint64 version_raw);
 	void (*register_flags)(FuDevice *self);
+	void (*add_json)(FuDevice *self, JsonBuilder *builder, FwupdCodecFlags flags);
+	gboolean (*from_json)(FuDevice *self,
+			      JsonObject *json_object,
+			      GError **error) G_GNUC_WARN_UNUSED_RESULT;
 #endif
 };
 
@@ -321,8 +325,6 @@ fu_device_new(FuContext *ctx);
 #define fu_device_set_update_error(d, v) fwupd_device_set_update_error(FWUPD_DEVICE(d), v)
 #define fu_device_add_vendor_id(d, v)	 fwupd_device_add_vendor_id(FWUPD_DEVICE(d), v)
 #define fu_device_add_protocol(d, v)	 fwupd_device_add_protocol(FWUPD_DEVICE(d), v)
-#define fu_device_set_version_lowest_raw(d, v)                                                     \
-	fwupd_device_set_version_lowest_raw(FWUPD_DEVICE(d), v)
 #define fu_device_set_version_bootloader_raw(d, v)                                                 \
 	fwupd_device_set_version_bootloader_raw(FWUPD_DEVICE(d), v)
 #define fu_device_set_version_build_date(d, v)                                                     \
@@ -800,6 +802,36 @@ fu_device_new(FuContext *ctx);
  */
 #define FU_DEVICE_PRIVATE_FLAG_COUNTERPART_VISIBLE "counterpart-visible"
 
+/**
+ * FU_DEVICE_PRIVATE_FLAG_DETACH_PREPARE_FIRMWARE:
+ *
+ * Detach, then prepare firmware rather than parsing firmware from the runtime device.
+ * For some devices the firmware GType isn't known until the bootloader gets added.
+ *
+ * Since: 2.0.7
+ */
+#define FU_DEVICE_PRIVATE_FLAG_DETACH_PREPARE_FIRMWARE "detach-prepare-firmware"
+
+/**
+ * FU_DEVICE_PRIVATE_FLAG_EMULATED_REQUIRE_SETUP:
+ *
+ * The device requires `FuDevice->setup()` rather than `FuDevice->probe()` to add instance IDs
+ * during emulated device enumeration.
+ *
+ * Since: 2.0.7
+ */
+#define FU_DEVICE_PRIVATE_FLAG_EMULATED_REQUIRE_SETUP "emulated-require-setup"
+
+/**
+ * FU_DEVICE_PRIVATE_FLAG_INSTALL_LOOP_RESTART:
+ *
+ * Restart the `detach->write_firmware->attach->reload` loop without completing the sequence.
+ * This can be set on any step, unlike `another-write-required` which does all steps.
+ *
+ * Since: 2.0.7
+ */
+#define FU_DEVICE_PRIVATE_FLAG_INSTALL_LOOP_RESTART "install-loop-restart"
+
 /* accessors */
 gchar *
 fu_device_to_string(FuDevice *self) G_GNUC_NON_NULL(1);
@@ -873,6 +905,8 @@ void
 fu_device_set_version_bootloader(FuDevice *self, const gchar *version) G_GNUC_NON_NULL(1);
 void
 fu_device_set_version_raw(FuDevice *self, guint64 version_raw) G_GNUC_NON_NULL(1);
+void
+fu_device_set_version_lowest_raw(FuDevice *self, guint64 version_raw) G_GNUC_NON_NULL(1);
 void
 fu_device_inhibit(FuDevice *self, const gchar *inhibit_id, const gchar *reason)
     G_GNUC_NON_NULL(1, 2);
@@ -985,7 +1019,7 @@ gboolean
 fu_device_get_results(FuDevice *self, GError **error) G_GNUC_NON_NULL(1);
 gboolean
 fu_device_write_firmware(FuDevice *self,
-			 GInputStream *stream,
+			 FuFirmware *firmware,
 			 FuProgress *progress,
 			 FwupdInstallFlags flags,
 			 GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2, 3);
@@ -1118,6 +1152,8 @@ fu_device_get_contents_bytes(FuDevice *self,
 gboolean
 fu_device_query_file_exists(FuDevice *self, const gchar *filename, gboolean *exists, GError **error)
     G_GNUC_NON_NULL(1, 2, 3);
+void
+fu_device_add_possible_plugin(FuDevice *self, const gchar *plugin) G_GNUC_NON_NULL(1, 2);
 
 const gchar *
 fu_device_get_instance_str(FuDevice *self, const gchar *key) G_GNUC_NON_NULL(1, 2);

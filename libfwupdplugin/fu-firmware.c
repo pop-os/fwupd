@@ -1140,8 +1140,10 @@ fu_firmware_parse_stream(FuFirmware *self,
 	} else {
 		g_autoptr(GInputStream) partial_stream =
 		    fu_partial_input_stream_new(stream, offset, priv->streamsz, error);
-		if (partial_stream == NULL)
+		if (partial_stream == NULL) {
+			g_prefix_error(error, "failed to cut firmware: ");
 			return FALSE;
+		}
 		g_set_object(&priv->stream, partial_stream);
 	}
 
@@ -1347,7 +1349,7 @@ fu_firmware_build(FuFirmware *self, XbNode *n, GError **error)
 		if (sz == 0 || sz == G_MAXUINT64) {
 			fu_firmware_set_bytes(self, blob);
 		} else {
-			g_autoptr(GBytes) blob_padded = fu_bytes_pad(blob, (gsize)sz);
+			g_autoptr(GBytes) blob_padded = fu_bytes_pad(blob, (gsize)sz, 0xFF);
 			fu_firmware_set_bytes(self, blob_padded);
 		}
 	}
@@ -1990,7 +1992,7 @@ fu_firmware_get_images(FuFirmware *self)
 /**
  * fu_firmware_get_image_by_id:
  * @self: a #FuPlugin
- * @id: (nullable): image ID, e.g. `config`
+ * @id: (nullable): image ID, e.g. `config` or `*.mfg|*.elf`
  * @error: (nullable): optional return location for an error
  *
  * Gets the firmware image using the image ID.
@@ -2007,16 +2009,34 @@ fu_firmware_get_image_by_id(FuFirmware *self, const gchar *id, GError **error)
 	g_return_val_if_fail(FU_IS_FIRMWARE(self), NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
+	/* non-NULL */
+	if (id != NULL) {
+		g_auto(GStrv) split = g_strsplit(id, "|", 0);
+		for (guint i = 0; i < priv->images->len; i++) {
+			FuFirmware *img = g_ptr_array_index(priv->images, i);
+			for (guint j = 0; split[j] != NULL; j++) {
+				if (g_pattern_match_simple(split[j], fu_firmware_get_id(img)))
+					return g_object_ref(img);
+			}
+		}
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "no image id %s found in firmware",
+			    id);
+		return NULL;
+	}
+
+	/* NULL */
 	for (guint i = 0; i < priv->images->len; i++) {
 		FuFirmware *img = g_ptr_array_index(priv->images, i);
-		if (g_strcmp0(fu_firmware_get_id(img), id) == 0)
+		if (fu_firmware_get_id(img) == NULL)
 			return g_object_ref(img);
 	}
-	g_set_error(error,
-		    FWUPD_ERROR,
-		    FWUPD_ERROR_NOT_FOUND,
-		    "no image id %s found in firmware",
-		    id);
+	g_set_error_literal(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_FOUND,
+			    "no NULL image id found in firmware");
 	return NULL;
 }
 
@@ -2314,6 +2334,8 @@ fu_firmware_export(FuFirmware *self, FuFirmwareExportFlags flags, XbBuilderNode 
 			}
 		}
 		xb_builder_node_insert_text(bn, "data", datastr, "size", dataszstr, NULL);
+	} else if (priv->bytes != NULL && g_bytes_get_size(priv->bytes) == 0) {
+		xb_builder_node_insert_text(bn, "data", NULL, NULL);
 	} else if (priv->bytes != NULL) {
 		gsize bufsz = 0;
 		const guint8 *buf = g_bytes_get_data(priv->bytes, &bufsz);

@@ -83,11 +83,6 @@ if build_daemon
       dynamic_options += 'StateDirectory=fwupd'
       dynamic_options += 'CacheDirectory=fwupd'
     endif
-    if not get_option('plugin_redfish').disabled()
-      dynamic_options += 'RestrictAddressFamilies=AF_NETLINK AF_UNIX AF_INET AF_INET6'
-    else
-      dynamic_options += 'RestrictAddressFamilies=AF_NETLINK AF_UNIX'
-    endif
 
     device_allows = [
       'block-sd',
@@ -96,22 +91,18 @@ if build_daemon
       'char-drm',
       'char-gpiochip',
       'char-hidraw',
+      'char-mei',
+      'char-tpm',
       'char-usb',
       'char-usb_device',
     ]
     if allow_flashrom
       device_allows += ['char-mem']
     endif
-    if get_option('plugin_nvme').allowed()
+    if cc.has_header('linux/nvme_ioctl.h', required: false)
       device_allows += ['char-nvme']
     endif
-    if get_option('plugin_tpm').allowed()
-      device_allows += ['char-tpm']
-    endif
-    if get_option('plugin_intel_me').allowed()
-      device_allows += ['char-mei']
-    endif
-    if get_option('plugin_uefi_capsule').allowed()
+    if allow_uefi_capsule
       # for BLKSSZGET
       device_allows += ['block-blkext']
     endif
@@ -120,38 +111,36 @@ if build_daemon
     endforeach
 
     # allow-list, see `systemd-analyze syscall-filter` for what each group adds
-    if get_option('systemd_syscall_filter')
-      syscall_filter = [
-        '@basic-io',
-        '@file-system',
-        '@io-event',
-        '@ipc',
-        '@network-io',
-        '@process',
-        '@sync',
-        '@signal',  # for g_local_file_monitor_new
-        '@timer',   # for usbi_create_timer
-        '@chown',   # for sqlite3Step
-        'ioctl',
-        'uname',
-        'fadvise64',
-        'sysinfo',  # for sysconf
-        'madvise',  # for mtrim
-        'mremap',   # for g_realloc
-        'splice', 'vmsplice', 'copy_file_range', # for g_file_copy
-      ]
-      if allow_flashrom
-        syscall_filter += ['@raw-io']
-      endif
-      dynamic_options += ['SystemCallFilter=' + ' '.join(syscall_filter)]
-      if supported_build
-        dynamic_options += ['Environment="FWUPD_SYSCALL_FILTER=systemd"']
-        dynamic_options += ['SystemCallErrorNumber=EPERM']
-      else
-        # to debug what additional syscalls are required, we set SystemCallErrorNumber=SIGSYS
-        # and then can do `coredumpctl debug` and get the syscall number with `(gdb) p $rax`
-        dynamic_options += ['SystemCallErrorNumber=SIGSYS']
-      endif
+    syscall_filter = [
+      '@basic-io',
+      '@file-system',
+      '@io-event',
+      '@ipc',
+      '@network-io',
+      '@process',
+      '@sync',
+      '@signal',  # for g_local_file_monitor_new
+      '@timer',   # for usbi_create_timer
+      '@chown',   # for sqlite3Step
+      'ioctl',
+      'uname',
+      'fadvise64',
+      'sysinfo',  # for sysconf
+      'madvise',  # for mtrim
+      'mremap',   # for g_realloc
+      'splice', 'vmsplice', 'copy_file_range', # for g_file_copy
+    ]
+    if allow_flashrom
+      syscall_filter += ['@raw-io']
+    endif
+    dynamic_options += ['SystemCallFilter=' + ' '.join(syscall_filter)]
+    if supported_build
+      dynamic_options += ['Environment="FWUPD_SYSCALL_FILTER=systemd"']
+      dynamic_options += ['SystemCallErrorNumber=EPERM']
+    else
+      # to debug what additional syscalls are required, we set SystemCallErrorNumber=SIGSYS
+      # and then can do `coredumpctl debug` and get the syscall number with `(gdb) p $rax`
+      dynamic_options += ['SystemCallErrorNumber=SIGSYS']
     endif
     if not supported_build
       dynamic_options += ['Environment="G_DEBUG=fatal-criticals"']
@@ -178,7 +167,7 @@ if build_daemon
     )
   endif
 
-  if libsystemd.found() or elogind.found()
+  if libsystemd.found()
     con2 = configuration_data()
     con2.set('libexecdir', libexecdir)
 
@@ -194,7 +183,7 @@ if build_daemon
     )
   endif
 
-  if get_option('launchd').allowed() and launchctl.found()
+  if launchctl.found()
     con2 = configuration_data()
     con2.set('libexecdir', libexecdir)
     con2.set('dbus_socket_address', get_option('dbus_socket_address'))
