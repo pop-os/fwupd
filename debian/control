@@ -168,7 +168,6 @@ Description: Firmware update daemon documentation (HTML format)
 
 Package: libfwupd-dev
 Architecture: linux-any
-Multi-Arch: same
 Depends: libfwupd3 (= ${binary:Version}),
          gir1.2-fwupd-2.0 (= ${binary:Version}),
          libcurl4-gnutls-dev,
