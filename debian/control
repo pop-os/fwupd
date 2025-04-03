@@ -67,7 +67,7 @@ Build-Depends:
 	valgrind-if-available,
 Build-Depends-Indep: gi-docgen <!nodoc>,
 Rules-Requires-Root: no
-Standards-Version: 4.6.0.1
+Standards-Version: 4.7.2
 Section: admin
 Homepage: https://github.com/fwupd/fwupd
 Vcs-Git: https://salsa.debian.org/efi-team/fwupd.git
