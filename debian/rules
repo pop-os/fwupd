@@ -69,6 +69,10 @@ override_dh_install:
 	#this is placed in fwupd-tests
 	rm -f debian/fwupd/usr/share/fwupd/remotes.d/fwupd-tests.conf
 
+	#use ieee-data
+	rm -f debian/fwupd/usr/share/ieee-data/oui.txt
+	ln -s /usr/share/ieee-data/oui.txt debian/fwupd/usr/share/ieee-data/oui.txt
+
 	# avoid shipping an empty directory
 	[ ! -d debian/fwupd/lib/systemd ] || find debian/fwupd/lib/systemd -type d -empty -delete
 	[ ! -d debian/fwupd/usr/lib/systemd ] || find debian/fwupd/usr/lib/systemd -type d -empty -delete
