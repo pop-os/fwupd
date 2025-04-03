@@ -1,0 +1,27 @@
+From a32a846f66ffe806f678d074672ba3e5b8c4081e Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Thu, 3 Apr 2025 13:53:34 -0500
+Subject: [PATCH] trivial: motd: correct fwupd-refresh.service man page
+ location
+
+The man page is installed to section 8, update the markdown to match.
+---
+ data/motd/fwupd-refresh.service.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/data/motd/fwupd-refresh.service.md b/data/motd/fwupd-refresh.service.md
+index 18c9ba876..a6c09a893 100644
+--- a/data/motd/fwupd-refresh.service.md
++++ b/data/motd/fwupd-refresh.service.md
+@@ -2,7 +2,7 @@
+ title: Message Of The Day Integration
+ ---
+ 
+-% fwupd-refresh.service(5) {{PACKAGE_VERSION}} | Message Of The Day Integration
++% fwupd-refresh.service(8) {{PACKAGE_VERSION}} | Message Of The Day Integration
+ 
+ ## NAME
+ 
+-- 
+2.43.0
+
