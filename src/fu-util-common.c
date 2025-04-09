@@ -8,11 +8,11 @@
 
 #include "config.h"
 
+#include <curl/curl.h>
 #include <glib/gi18n.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <xmlb.h>
-#include <curl/curl.h>
 
 #include "fu-console.h"
 #include "fu-device-private.h"
@@ -2417,6 +2417,11 @@ fu_util_security_event_to_string(FwupdSecurityAttr *attr)
 		      FWUPD_SECURITY_ATTR_RESULT_NOT_LOCKED,
 		      /* TRANSLATORS: HSI event title */
 		      _("UEFI memory protection is now unlocked")},
+		     {FWUPD_SECURITY_ATTR_ID_UEFI_DB,
+		      FWUPD_SECURITY_ATTR_RESULT_NOT_VALID,
+		      FWUPD_SECURITY_ATTR_RESULT_VALID,
+		      /* TRANSLATORS: HSI event title */
+		      _("The UEFI certificate store is now up to date")},
 		     {NULL, 0, 0, NULL}};
 
 	/* sanity check */

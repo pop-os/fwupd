@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '2.0.7',
+  version: '2.0.8',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=1.3.0',
   default_options: ['warning_level=2', 'c_std=c17'],
@@ -633,7 +633,8 @@ if dbusmock.returncode() != 0 and get_option('umockdev_tests').allowed()
   warning('python dbusmock not found, umockdev tests will be disabled')
 endif
 
-allow_uefi_capsule = host_machine.system() in ['linux', 'freebsd']
+allow_uefi_capsule = host_machine.system() in ['linux', 'freebsd'] and \
+                     host_machine.cpu_family() in ['x86', 'x86_64', 'aarch64', 'riscv64', 'loongarch64']
 
 subdir('generate-build')
 subdir('libfwupd')

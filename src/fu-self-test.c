@@ -595,6 +595,9 @@ fu_engine_requirements_version_lowest_func(gconstpointer user_data)
 	fu_release_set_device(release, device);
 	fu_release_set_request(release, request);
 	ret = fu_release_load(release, NULL, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_release_check_version(release, component, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED);
 	g_assert_true(
 	    g_str_has_prefix(error->message, "Specified firmware is older than the minimum"));
@@ -992,6 +995,9 @@ fu_engine_requirements_version_format_func(gconstpointer user_data)
 	fu_release_set_device(release, device);
 	fu_release_set_request(release, request);
 	ret = fu_release_load(release, NULL, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_release_check_version(release, component, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED);
 	g_assert_nonnull(
 	    g_strstr_len(error->message, -1, "Firmware version formats were different"));
@@ -1038,6 +1044,9 @@ fu_engine_requirements_only_upgrade_func(gconstpointer user_data)
 	fu_release_set_device(release, device);
 	fu_release_set_request(release, request);
 	ret = fu_release_load(release, NULL, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_release_check_version(release, component, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED);
 	g_assert_nonnull(g_strstr_len(error->message, -1, "Device only supports version upgrades"));
 	g_assert_false(ret);
@@ -1050,6 +1059,7 @@ fu_engine_plugin_device_gtype(FuTest *self, GType gtype)
 	g_autofree gchar *str = NULL;
 	g_autoptr(FuDevice) device = NULL;
 	g_autoptr(FuProgress) progress_tmp = fu_progress_new(G_STRLOC);
+	g_autoptr(FuSecurityAttrs) attrs = fu_security_attrs_new();
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GHashTable) metadata_post = NULL;
 	g_autoptr(GHashTable) metadata_pre = NULL;
@@ -1063,6 +1073,7 @@ fu_engine_plugin_device_gtype(FuTest *self, GType gtype)
 	g_debug("loading %s", g_type_name(gtype));
 	device = g_object_new(gtype, "context", self->ctx, "physical-id", "/sys", NULL);
 	g_assert_nonnull(device);
+	fu_device_set_plugin(device, "test");
 
 	/* version convert */
 	if (fu_device_get_version_format(device) != FWUPD_VERSION_FORMAT_UNKNOWN)
@@ -1078,6 +1089,9 @@ fu_engine_plugin_device_gtype(FuTest *self, GType gtype)
 	metadata_post = fu_device_report_metadata_post(device);
 	if (metadata_post != NULL)
 		g_debug("got %u metadata items", g_hash_table_size(metadata_post));
+
+	/* security attrs */
+	fu_device_add_security_attrs(device, attrs);
 
 	/* quirk kvs */
 	ret = fu_device_set_quirk_kv(device,

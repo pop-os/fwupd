@@ -126,8 +126,8 @@ struct _FuEngine {
 	FuPluginList *plugin_list;
 	GPtrArray *plugin_filter;
 	FuContext *ctx;
-	GHashTable *approved_firmware;	      /* (nullable) */
-	GHashTable *blocked_firmware;	      /* (nullable) */
+	GHashTable *approved_firmware; /* (nullable) */
+	GHashTable *blocked_firmware;  /* (nullable) */
 	FuEngineEmulator *emulation;
 	GHashTable *device_changed_allowlist; /* (element-type str int) */
 	gchar *host_machine_id;
@@ -349,15 +349,6 @@ fu_engine_set_emulator_phase(FuEngine *self, FuEngineEmulatorPhase emulator_phas
 {
 	g_info("install phase now %s", fu_engine_emulator_phase_to_string(emulator_phase));
 	self->emulator_phase = emulator_phase;
-}
-
-gboolean
-fu_engine_emulation_load_phase(FuEngine *self, FuEngineEmulatorPhase emulator_phase, GError **error)
-{
-	return fu_engine_emulator_load_phase(self->emulation,
-					     emulator_phase,
-					     FU_ENGINE_EMULATOR_WRITE_COUNT_DEFAULT,
-					     error);
 }
 
 static void
@@ -588,6 +579,7 @@ fu_engine_add_local_release_metadata(FuEngine *self, FuRelease *release, GError 
 			    g_error_matches(error_local, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT))
 				continue;
 			g_propagate_error(error, g_steal_pointer(&error_local));
+			fwupd_error_convert(error);
 			return FALSE;
 		}
 		for (guint j = 0; j < tags->len; j++) {
@@ -686,7 +678,7 @@ fu_engine_add_trusted_report(FuEngine *self, FuRelease *release)
 	}
 }
 
-static gboolean
+gboolean
 fu_engine_load_release(FuEngine *self,
 		       FuRelease *release,
 		       FuCabinet *cabinet,
@@ -695,7 +687,12 @@ fu_engine_load_release(FuEngine *self,
 		       FwupdInstallFlags install_flags,
 		       GError **error)
 {
+	g_return_val_if_fail(FU_IS_ENGINE(self), FALSE);
+	g_return_val_if_fail(FU_IS_RELEASE(release), FALSE);
 	g_return_val_if_fail(cabinet == NULL || FU_IS_CABINET(cabinet), FALSE);
+	g_return_val_if_fail(XB_IS_NODE(component), FALSE);
+	g_return_val_if_fail(rel == NULL || XB_IS_NODE(rel), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* load release from XML */
 	fu_release_set_config(release, self->config);
@@ -727,6 +724,10 @@ fu_engine_load_release(FuEngine *self,
 				fu_device_ensure_from_release(device, rel);
 		}
 	}
+
+	/* post-ensure checks */
+	if (!fu_release_check_version(release, component, install_flags, error))
+		return FALSE;
 
 	/* add any client-side BKC tags */
 	if (!fu_engine_add_local_release_metadata(self, release, error))
@@ -1359,8 +1360,10 @@ fu_engine_verify_update(FuEngine *self,
 		return FALSE;
 	file = g_file_new_for_path(fn);
 	silo = xb_builder_compile(builder, XB_BUILDER_COMPILE_FLAG_NONE, NULL, error);
-	if (silo == NULL)
+	if (silo == NULL) {
+		fwupd_error_convert(error);
 		return FALSE;
+	}
 	if (!xb_silo_export_file(silo, file, XB_NODE_EXPORT_FLAG_FORMAT_MULTILINE, NULL, error))
 		return FALSE;
 
@@ -1429,12 +1432,16 @@ fu_engine_verify_from_local_metadata(FuEngine *self, FuDevice *device, GError **
 		return NULL;
 	}
 
-	if (!xb_builder_source_load_file(source, file, XB_BUILDER_SOURCE_FLAG_NONE, NULL, error))
+	if (!xb_builder_source_load_file(source, file, XB_BUILDER_SOURCE_FLAG_NONE, NULL, error)) {
+		fwupd_error_convert(error);
 		return NULL;
+	}
 	xb_builder_import_source(builder, source);
 	silo = xb_builder_compile(builder, XB_BUILDER_COMPILE_FLAG_NONE, NULL, error);
-	if (silo == NULL)
+	if (silo == NULL) {
+		fwupd_error_convert(error);
 		return NULL;
+	}
 	xpath = g_strdup_printf("component/releases/release[@version='%s']",
 				fu_device_get_version(device));
 	release = xb_silo_query_first(silo, xpath, error);
@@ -1485,6 +1492,7 @@ fu_engine_verify_from_system_metadata(FuEngine *self, FuDevice *device, GError *
 				continue;
 			}
 			g_propagate_error(error, g_steal_pointer(&error_local));
+			fwupd_error_convert(error);
 			return NULL;
 		}
 		for (guint j = 0; j < releases->len; j++) {
@@ -3678,23 +3686,31 @@ fu_engine_create_silo_index(FuEngine *self, GError **error)
 	g_clear_object(&self->query_tag_by_guid_version);
 
 	/* build the index */
-	if (!xb_silo_query_build_index(self->silo, "components/component", "type", error))
+	if (!xb_silo_query_build_index(self->silo, "components/component", "type", error)) {
+		fwupd_error_convert(error);
 		return FALSE;
+	}
 	if (!xb_silo_query_build_index(self->silo,
 				       "components/component[@type='firmware']/provides/firmware",
 				       "type",
-				       error))
+				       error)) {
+		fwupd_error_convert(error);
 		return FALSE;
+	}
 	if (!xb_silo_query_build_index(self->silo,
 				       "components/component/provides/firmware",
 				       NULL,
-				       error))
+				       error)) {
+		fwupd_error_convert(error);
 		return FALSE;
+	}
 	if (!xb_silo_query_build_index(self->silo,
 				       "components/component[@type='firmware']/tags/tag",
 				       "namespace",
-				       error))
+				       error)) {
+		fwupd_error_convert(error);
 		return FALSE;
+	}
 
 	/* create prepared queries to save time later */
 	self->query_component_by_guid =
@@ -3811,8 +3827,10 @@ fu_engine_create_metadata_builder_source(FuEngine *self, const gchar *fn, GError
 					 XB_BUILDER_SOURCE_FLAG_WATCH_FILE |
 					     XB_BUILDER_SOURCE_FLAG_WATCH_DIRECTORY,
 					 NULL,
-					 error))
+					 error)) {
+		fwupd_error_convert(error);
 		return NULL;
+	}
 	return g_steal_pointer(&source);
 }
 
@@ -3984,8 +4002,10 @@ fu_engine_load_metadata_store_local(FuEngine *self,
 						 file,
 						 XB_BUILDER_SOURCE_FLAG_NONE,
 						 NULL,
-						 error))
+						 error)) {
+			fwupd_error_convert(error);
 			return FALSE;
+		}
 		xb_builder_source_set_prefix(source, "local");
 		xb_builder_import_source(builder, source);
 	}
@@ -6270,7 +6290,7 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 		fu_device_convert_instance_ids(device);
 
 	/* device still has no GUIDs set! */
-	if (device_guids->len == 0) {
+	if (device_guids->len == 0 && fu_device_get_children(device)->len == 0) {
 		g_warning("no GUIDs for device %s [%s]",
 			  fu_device_get_name(device),
 			  fu_device_get_id(device));
@@ -6311,6 +6331,11 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 			if (rel != NULL) {
 				g_autoptr(FuRelease) release = fu_release_new();
 				g_autoptr(GError) error_local = NULL;
+				g_autoptr(FuEngineRequest) request = fu_engine_request_new(NULL);
+
+				fu_engine_request_add_flag(request,
+							   FU_ENGINE_REQUEST_FLAG_NO_REQUIREMENTS);
+				fu_release_set_request(release, request);
 				fu_release_set_device(release, device);
 				if (!fu_engine_load_release(self,
 							    release,
@@ -8752,8 +8777,6 @@ fu_engine_constructed(GObject *obj)
 	g_autofree gchar *pkidir_md = NULL;
 	g_autofree gchar *sysconfdir = NULL;
 
-	/* for debugging */
-	g_info("starting fwupd %s…", VERSION);
 	g_signal_connect(FU_CONTEXT(self->ctx),
 			 "security-changed",
 			 G_CALLBACK(fu_engine_context_security_changed_cb),

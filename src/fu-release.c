@@ -520,6 +520,15 @@ fu_release_verfmts_to_string(GPtrArray *verfmts)
 }
 
 static gboolean
+fu_release_check_verfmt_compatible(FuRelease *self, FwupdVersionFormat fmt_rel)
+{
+	FwupdVersionFormat fmt_dev = fu_device_get_version_format(self->device);
+	if (fmt_dev == FWUPD_VERSION_FORMAT_BCD && fmt_rel == FWUPD_VERSION_FORMAT_PAIR)
+		return TRUE;
+	return fmt_dev == fmt_rel;
+}
+
+static gboolean
 fu_release_check_verfmt(FuRelease *self,
 			GPtrArray *verfmts,
 			FwupdInstallFlags flags,
@@ -544,7 +553,7 @@ fu_release_check_verfmt(FuRelease *self,
 		XbNode *verfmt = g_ptr_array_index(verfmts, i);
 		const gchar *tmp = xb_node_get_text(verfmt);
 		FwupdVersionFormat fmt_rel = fwupd_version_format_from_string(tmp);
-		if (fmt_dev == fmt_rel)
+		if (fu_release_check_verfmt_compatible(self, fmt_rel))
 			return TRUE;
 	}
 	verfmts_str = fu_release_verfmts_to_string(verfmts);
@@ -568,20 +577,15 @@ fu_release_check_verfmt(FuRelease *self,
 static gboolean
 fu_release_check_requirements(FuRelease *self,
 			      XbNode *component,
-			      XbNode *rel,
 			      FwupdInstallFlags install_flags,
 			      GError **error)
 {
 	const gchar *branch_new;
 	const gchar *branch_old;
 	const gchar *protocol;
-	const gchar *version;
-	const gchar *version_lowest;
 	gboolean matches_guid = FALSE;
-	gint vercmp;
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GPtrArray) provides = NULL;
-	g_autoptr(GPtrArray) verfmts = NULL;
 
 	/* does this component provide a GUID the device has */
 	provides = xb_node_query(component, "provides/firmware[@type='flashed']", 0, &error_local);
@@ -677,7 +681,45 @@ fu_release_check_requirements(FuRelease *self,
 		return FALSE;
 	}
 
-	/* get device */
+	/* success */
+	return TRUE;
+}
+
+/**
+ * fu_release_check_version:
+ * @self: a #FuRelease
+ * @component: (not nullable): a #XbNode
+ * @install_flags: a #FwupdInstallFlags, e.g. %FWUPD_INSTALL_FLAG_FORCE
+ * @error: (nullable): optional return location for an error
+ *
+ * Checks the component against this release, specifically that the device can be upgraded with this
+ * new firmware version.
+ *
+ * Returns: %TRUE if the requirements passed
+ **/
+gboolean
+fu_release_check_version(FuRelease *self,
+			 XbNode *component,
+			 FwupdInstallFlags install_flags,
+			 GError **error)
+{
+	const gchar *version;
+	const gchar *version_lowest;
+	gint vercmp;
+
+	g_return_val_if_fail(FU_IS_RELEASE(self), FALSE);
+	g_return_val_if_fail(XB_IS_NODE(component), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* skip */
+	if (self->device == NULL)
+		return TRUE;
+	if (self->request != NULL &&
+	    fu_engine_request_has_flag(self->request, FU_ENGINE_REQUEST_FLAG_NO_REQUIREMENTS)) {
+		return TRUE;
+	}
+
+	/* ensure device has a version */
 	version = fu_device_get_version(self->device);
 	if (version == NULL) {
 		g_set_error(error,
@@ -692,7 +734,7 @@ fu_release_check_requirements(FuRelease *self,
 	/* check the version formats match if set in the release */
 	if ((install_flags & FWUPD_INSTALL_FLAG_FORCE) == 0 &&
 	    (install_flags & FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH) == 0) {
-		verfmts =
+		g_autoptr(GPtrArray) verfmts =
 		    xb_node_query(component, "custom/value[@key='LVFS::VersionFormat']", 0, NULL);
 		if (verfmts != NULL) {
 			if (!fu_release_check_verfmt(self, verfmts, install_flags, error))
@@ -1075,6 +1117,7 @@ fu_release_load(FuRelease *self,
 		if (!g_error_matches(error_hard, G_IO_ERROR, G_IO_ERROR_NOT_FOUND) &&
 		    !g_error_matches(error_hard, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT)) {
 			g_propagate_error(error, g_steal_pointer(&error_hard));
+			fwupd_error_convert(error);
 			return FALSE;
 		}
 	}
@@ -1083,6 +1126,7 @@ fu_release_load(FuRelease *self,
 		if (!g_error_matches(error_soft, G_IO_ERROR, G_IO_ERROR_NOT_FOUND) &&
 		    !g_error_matches(error_soft, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT)) {
 			g_propagate_error(error, g_steal_pointer(&error_soft));
+			fwupd_error_convert(error);
 			return FALSE;
 		}
 	}
@@ -1122,7 +1166,7 @@ fu_release_load(FuRelease *self,
 	/* check requirements for device */
 	if (self->device != NULL && self->request != NULL &&
 	    !fu_engine_request_has_flag(self->request, FU_ENGINE_REQUEST_FLAG_NO_REQUIREMENTS)) {
-		if (!fu_release_check_requirements(self, component, rel, install_flags, error))
+		if (!fu_release_check_requirements(self, component, install_flags, error))
 			return FALSE;
 	}
 

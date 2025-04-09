@@ -28,6 +28,7 @@
 #include "fu-device-progress.h"
 #include "fu-dummy-efivars.h"
 #include "fu-efi-lz77-decompressor.h"
+#include "fu-efi-x509-signature-private.h"
 #include "fu-efivars-private.h"
 #include "fu-kernel-search-path-private.h"
 #include "fu-lzma-common.h"
@@ -2224,7 +2225,7 @@ fu_device_event_func(void)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
-	json = fwupd_codec_to_json_string(FWUPD_CODEC(event1), FWUPD_CODEC_FLAG_NONE, &error);
+	json = fwupd_codec_to_json_string(FWUPD_CODEC(event1), FWUPD_CODEC_FLAG_COMPRESSED, &error);
 	g_assert_no_error(error);
 	g_assert_cmpstr(json,
 			==,
@@ -2260,6 +2261,25 @@ fu_device_event_func(void)
 	g_assert_error(error_copy, FWUPD_ERROR, FWUPD_ERROR_INVALID_DATA);
 	g_assert_cmpstr(error_copy->message, ==, "invalid event type for key Age");
 	g_assert_false(ret);
+}
+
+static void
+fu_device_event_uncompressed_func(void)
+{
+	g_autofree gchar *json = NULL;
+	g_autoptr(FuDeviceEvent) event = fu_device_event_new("foo:bar:baz");
+	g_autoptr(GError) error = NULL;
+
+	/* uncompressed */
+	fu_device_event_set_str(event, "Name", "Richard");
+	json = fwupd_codec_to_json_string(FWUPD_CODEC(event), FWUPD_CODEC_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_cmpstr(json,
+			==,
+			"{\n"
+			"  \"Id\" : \"foo:bar:baz\",\n"
+			"  \"Name\" : \"Richard\"\n"
+			"}");
 }
 
 static void
@@ -2762,6 +2782,7 @@ fu_backend_emulate_func(void)
 	g_autofree gchar *json3 = NULL;
 	g_autoptr(FuBackend) backend = NULL;
 	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuDevice) device2 = NULL;
 	g_autoptr(FuIoctl) ioctl = NULL;
 	g_autoptr(GError) error = NULL;
 	const gchar *json1 = "{"
@@ -2888,6 +2909,12 @@ fu_backend_emulate_func(void)
 	g_assert_nonnull(json3);
 	g_debug("%s", json3);
 	g_assert_cmpstr(json3, ==, json2);
+
+	/* missing event, new path */
+	fu_device_set_fwupd_version(device, PACKAGE_VERSION);
+	device2 = fu_device_get_backend_parent_with_subsystem(device, "usb", &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_FOUND);
+	g_assert_null(device2);
 }
 
 static void
@@ -6262,6 +6289,74 @@ fu_lzma_func(void)
 }
 
 static void
+fu_plugin_efi_x509_signature_func(void)
+{
+	gboolean ret;
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuEfiX509Signature) sig = fu_efi_x509_signature_new();
+	g_autoptr(FuEfiX509Device) device = fu_efi_x509_device_new(ctx, sig);
+	g_autoptr(GError) error = NULL;
+
+	fu_firmware_set_id(FU_FIRMWARE(sig), "0000000000000000000000000000000000000000");
+	fu_efi_x509_signature_set_issuer(sig, "C=UK,O=fwupd,CN=fwupd root CA 2012");
+	fu_efi_x509_signature_set_subject(sig, "C=UK,O=Hughski Ltd.,CN=Hughski Ltd. KEK CA 2012");
+
+	/* get issuer */
+	g_assert_cmpstr(fu_efi_x509_signature_get_issuer(sig),
+			==,
+			"C=UK,O=fwupd,CN=fwupd root CA 2012");
+	g_assert_cmpstr(fu_efi_x509_signature_get_subject(sig),
+			==,
+			"C=UK,O=Hughski Ltd.,CN=Hughski Ltd. KEK CA 2012");
+	g_assert_cmpstr(fu_efi_x509_signature_get_subject_name(sig), ==, "Hughski KEK CA");
+	g_assert_cmpstr(fu_efi_x509_signature_get_subject_vendor(sig), ==, "Hughski");
+	g_assert_cmpint(fu_firmware_get_version_raw(FU_FIRMWARE(sig)), ==, 2012);
+	g_assert_cmpstr(fu_firmware_get_version(FU_FIRMWARE(sig)), ==, "2012");
+
+	/* create a device from the certificate */
+	ret = fu_device_probe(FU_DEVICE(device), &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	g_assert_cmpint(fu_device_get_version_raw(FU_DEVICE(device)), ==, 2012);
+	g_assert_cmpstr(fu_device_get_version(FU_DEVICE(device)), ==, "2012");
+	g_assert_cmpstr(fu_device_get_name(FU_DEVICE(device)), ==, "KEK CA");
+	g_assert_cmpstr(fu_device_get_vendor(FU_DEVICE(device)), ==, "Hughski");
+	g_assert_true(fu_device_has_instance_id(FU_DEVICE(device),
+						"UEFI\\VENDOR_Hughski&NAME_Hughski-KEK-CA",
+						FU_DEVICE_INSTANCE_FLAG_VISIBLE));
+	g_assert_true(
+	    fu_device_has_instance_id(FU_DEVICE(device),
+				      "UEFI\\CRT_0000000000000000000000000000000000000000",
+				      FU_DEVICE_INSTANCE_FLAG_VISIBLE));
+}
+
+static void
+fu_plugin_efi_signature_list_func(void)
+{
+	FuEfiX509Signature *sig;
+	g_autoptr(FuEfiX509Signature) sig2022 = fu_efi_x509_signature_new();
+	g_autoptr(FuEfiX509Signature) sig2023 = fu_efi_x509_signature_new();
+	g_autoptr(FuEfiX509Signature) sig2024 = fu_efi_x509_signature_new();
+	g_autoptr(FuFirmware) siglist = fu_efi_signature_list_new();
+	g_autoptr(GPtrArray) sigs_newest = NULL;
+
+	fu_efi_x509_signature_set_subject(sig2022, "C=UK,O=Hughski,CN=Hughski Ltd. KEK CA 2022");
+	fu_efi_x509_signature_set_subject(sig2023, "C=UK,O=Hughski,CN=Hughski Ltd. KEK CA 2023");
+	fu_efi_x509_signature_set_subject(sig2024, "C=UK,O=Hughski,CN=Hughski Ltd. KEK CA 2024");
+
+	/* 2022 -> 2024 -> 2023 */
+	fu_firmware_add_image(siglist, FU_FIRMWARE(sig2022));
+	fu_firmware_add_image(siglist, FU_FIRMWARE(sig2024));
+	fu_firmware_add_image(siglist, FU_FIRMWARE(sig2023));
+
+	/* only one */
+	sigs_newest = fu_efi_signature_list_get_newest(FU_EFI_SIGNATURE_LIST(siglist));
+	g_assert_cmpint(sigs_newest->len, ==, 1);
+	sig = g_ptr_array_index(sigs_newest, 0);
+	g_assert_cmpint(fu_firmware_get_version_raw(FU_FIRMWARE(sig)), ==, 2024);
+}
+
+static void
 fu_cab_checksum_func(void)
 {
 	guint8 buf[] = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80};
@@ -6642,6 +6737,63 @@ fu_plugin_struct_wrapped_func(void)
 }
 
 static void
+fu_efi_load_option_path_func(void)
+{
+	const gchar *tmp;
+	g_autofree gchar *blobstr = NULL;
+	g_autoptr(FuEfiDevicePathList) devpathlist = fu_efi_device_path_list_new();
+	g_autoptr(FuEfiLoadOption) loadopt = fu_efi_load_option_new();
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	g_assert_cmpint(fu_efi_load_option_get_kind(loadopt), ==, FU_EFI_LOAD_OPTION_KIND_UNKNOWN);
+	fu_efi_load_option_set_metadata(loadopt, FU_EFI_LOAD_OPTION_METADATA_PATH, "/foo");
+	g_assert_cmpint(fu_efi_load_option_get_kind(loadopt), ==, FU_EFI_LOAD_OPTION_KIND_PATH);
+
+	tmp = fu_efi_load_option_get_metadata(loadopt, FU_EFI_LOAD_OPTION_METADATA_PATH, &error);
+	g_assert_no_error(error);
+	g_assert_cmpstr(tmp, ==, "/foo");
+
+	fu_firmware_set_id(FU_FIRMWARE(loadopt), "id");
+	fu_firmware_add_image(FU_FIRMWARE(loadopt), FU_FIRMWARE(devpathlist));
+	blob = fu_firmware_write(FU_FIRMWARE(loadopt), &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(blob);
+	blobstr = fu_bytes_to_string(blob);
+	g_assert_cmpstr(blobstr, ==, "0100000004006900640000007fff04005c002f0066006f006f000000");
+}
+
+static void
+fu_efi_load_option_hive_func(void)
+{
+	g_autofree gchar *blobstr = NULL;
+	g_autoptr(FuEfiDevicePathList) devpathlist = fu_efi_device_path_list_new();
+	g_autoptr(FuEfiLoadOption) loadopt = fu_efi_load_option_new();
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
+
+	g_assert_cmpint(fu_efi_load_option_get_kind(loadopt), ==, FU_EFI_LOAD_OPTION_KIND_UNKNOWN);
+	fu_efi_load_option_set_metadata(loadopt, FU_EFI_LOAD_OPTION_METADATA_PATH, "/foo");
+	fu_efi_load_option_set_metadata(loadopt, FU_EFI_LOAD_OPTION_METADATA_CMDLINE, "noacpi");
+	g_assert_cmpint(fu_efi_load_option_get_kind(loadopt), ==, FU_EFI_LOAD_OPTION_KIND_HIVE);
+
+	fu_firmware_set_id(FU_FIRMWARE(loadopt), "id");
+	fu_firmware_add_image(FU_FIRMWARE(loadopt), FU_FIRMWARE(devpathlist));
+	blob = fu_firmware_write(FU_FIRMWARE(loadopt), &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(blob);
+	g_assert_cmpint(g_bytes_get_size(blob), ==, 512);
+	blobstr = fu_bytes_to_string(blob);
+
+	/* get rid of extra NUL butes */
+	blobstr[120] = '\0';
+	g_assert_cmpstr(blobstr,
+			==,
+			"0100000004006900640000007fff04004849564501020b0f4a6ea20405000000706174685c"
+			"2f666f6f0706000000636d646c696e656e6f6163706900");
+}
+
+static void
 fu_efi_load_option_func(void)
 {
 	g_autoptr(FuEfivars) efivars = fu_efivars_new();
@@ -6777,6 +6929,10 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/msgpack{parse-binary}", fu_msgpack_parse_binary_func);
 	g_test_add_func("/fwupd/msgpack{lookup}", fu_msgpack_lookup_func);
 	g_test_add_func("/fwupd/efi-load-option", fu_efi_load_option_func);
+	g_test_add_func("/fwupd/efi-load-option{path}", fu_efi_load_option_path_func);
+	g_test_add_func("/fwupd/efi-load-option{hive}", fu_efi_load_option_hive_func);
+	g_test_add_func("/fwupd/efi-x509-signature", fu_plugin_efi_x509_signature_func);
+	g_test_add_func("/fwupd/efi-signature-list", fu_plugin_efi_signature_list_func);
 	g_test_add_func("/fwupd/efivar", fu_efivar_func);
 	g_test_add_func("/fwupd/efivar{bootxxxx}", fu_efivar_boot_func);
 	g_test_add_func("/fwupd/hwids", fu_hwids_func);
@@ -6823,6 +6979,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/archive{cab}", fu_archive_cab_func);
 	g_test_add_func("/fwupd/device", fu_device_func);
 	g_test_add_func("/fwupd/device{event}", fu_device_event_func);
+	g_test_add_func("/fwupd/device{event-uncompressed}", fu_device_event_uncompressed_func);
 	g_test_add_func("/fwupd/device{event-donor}", fu_device_event_donor_func);
 	g_test_add_func("/fwupd/device{vfuncs}", fu_device_vfuncs_func);
 	g_test_add_func("/fwupd/device{instance-ids}", fu_device_instance_ids_func);
