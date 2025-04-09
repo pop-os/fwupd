@@ -1,3 +1,13 @@
+fwupd (2.0.8-1) unstable; urgency=medium
+
+  * New upstream version (2.0.8)
+    - Fixes reboot issue (Closes: #1102318)
+    - Fixes json output for `fwupdmgr update --json` (Closes: #1095450)
+  * Drop 0001-trivial-motd-correct-fwupd-refresh.service-man-page-.patch
+    (upstream)
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 09 Apr 2025 11:29:23 -0500
+
 fwupd (2.0.7-4) unstable; urgency=medium
 
   * Fix FTBFS for 'all': Only make symlink if fwupd-tests is being built
