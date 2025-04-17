@@ -1,0 +1,28 @@
+From 15a1adfeb7c4010f38972fb0eb4ce2d2d040d9c6 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Wed, 16 Apr 2025 09:54:37 -0500
+Subject: [PATCH] trivial: require libusb 1.0.27
+
+This has libusb_init_context() support needed for binding to udev.
+
+Closes: https://github.com/fwupd/fwupd/issues/8701
+---
+ meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/meson.build b/meson.build
+index a3995479a..250e4307c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -242,7 +242,7 @@ endif
+ conf.set_quoted('FU_LVFS_METADATA_FORMAT', lvfs_metadata_format)
+ 
+ # FreeBSD is missing some libusb symbols
+-libusb = dependency('libusb-1.0', version : '>= 0.1.12')
++libusb = dependency('libusb-1.0', version : '>= 0.1.27')
+ conf.set_quoted('LIBUSB_VERSION', libusb.version())
+ if cc.has_header_symbol('libusb.h', 'libusb_set_option', dependencies: libusb)
+   conf.set('HAVE_LIBUSB_SET_OPTION', '1')
+-- 
+2.43.0
+
