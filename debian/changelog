@@ -1,3 +1,14 @@
+fwupd (2.0.8-2) unstable; urgency=medium
+
+  * Backport a patch to require libusb 1.0.27. This will help make
+    failures on backports to stable or old-stable clearer.
+  * Backport a patch that fixes functionality when not using systemd
+  * Backport a patch that fixes FTBFS on 32-bit archs (Closes: #1103371)
+  * Backport 2 patches that fix KEK and PK enumeration. This fixes secure
+    boot detection on some systems.
+
+ -- Mario Limonciello <superm1@gmail.com>  Wed, 16 Apr 2025 22:16:43 -0500
+
 fwupd (2.0.8-1) unstable; urgency=medium
 
   * New upstream version (2.0.8)
