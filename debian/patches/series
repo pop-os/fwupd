@@ -1,4 +1,4 @@
 flaky-p2p.patch
 0001-trivial-require-libusb-1.0.27.patch
 0001-Always-build-the-D-Bus-service.patch
-
+0001-trivial-Fix-the-debian-i686-build.patch
