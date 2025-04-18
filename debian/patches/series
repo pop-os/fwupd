@@ -4,3 +4,4 @@ flaky-p2p.patch
 0001-trivial-Fix-the-debian-i686-build.patch
 0001-Fix-PK-and-KEK-enumeration-failure-on-some-systems.patch
 0001-Fix-the-parents-and-grandparents-for-KEK-and-DBX-dev.patch
+0001-Fix-a-crash-when-paring-uevents-that-are-not-KEY-VAL.patch
