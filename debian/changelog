@@ -1,8 +1,9 @@
-fwupd (2.0.8-3) unreleased; urgency=medium
+fwupd (2.0.8-3) unstable; urgency=medium
 
   * Backport a patch fixing crashes from uevents without keys (LP: #2107540)
+  * Backport a patch to prevent Google Pixel devices from matching fastboot
 
- -- Mario Limonciello <superm1@gmail.com>  Thu, 17 Apr 2025 23:52:20 -0500
+ -- Mario Limonciello <superm1@gmail.com>  Sun, 27 Apr 2025 14:00:38 -0500
 
 fwupd (2.0.8-2) unstable; urgency=medium
 
