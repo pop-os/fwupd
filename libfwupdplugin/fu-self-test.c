@@ -38,6 +38,7 @@
 #include "fu-self-test-struct.h"
 #include "fu-smbios-private.h"
 #include "fu-test-device.h"
+#include "fu-udev-device-private.h"
 #include "fu-volume-private.h"
 
 static GMainLoop *_test_loop = NULL;
@@ -3436,13 +3437,15 @@ fu_firmware_raw_aligned_func(void)
 	g_autoptr(GBytes) blob = g_bytes_new_static("hello", 5);
 
 	/* no alignment */
-	ret = fu_firmware_parse_bytes(firmware1, blob, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret =
+	    fu_firmware_parse_bytes(firmware1, blob, 0x0, FU_FIRMWARE_PARSE_FLAG_NO_SEARCH, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
 	/* invalid alignment */
 	fu_firmware_set_alignment(firmware2, FU_FIRMWARE_ALIGNMENT_4K);
-	ret = fu_firmware_parse_bytes(firmware2, blob, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret =
+	    fu_firmware_parse_bytes(firmware2, blob, 0x0, FU_FIRMWARE_PARSE_FLAG_NO_SEARCH, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_INVALID_FILE);
 	g_assert_false(ret);
 }
@@ -3554,7 +3557,7 @@ fu_firmware_ihex_offset_func(void)
 	ret = fu_firmware_parse_bytes(firmware_verify,
 				      data_bin,
 				      0x0,
-				      FWUPD_INSTALL_FLAG_NO_SEARCH,
+				      FU_FIRMWARE_PARSE_FLAG_NO_SEARCH,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -3686,7 +3689,7 @@ fu_firmware_srec_tokenization_func(void)
 	g_assert_no_error(error);
 	g_assert_nonnull(data_srec);
 	stream = g_memory_input_stream_new_from_bytes(data_srec);
-	ret = fu_firmware_tokenize(firmware, stream, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_tokenize(firmware, stream, FU_FIRMWARE_PARSE_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -3892,7 +3895,7 @@ fu_firmware_new_from_gtypes_func(void)
 	/* dfu -> FuDfuFirmware */
 	firmware1 = fu_firmware_new_from_gtypes(stream,
 						0x0,
-						FWUPD_INSTALL_FLAG_NONE,
+						FU_FIRMWARE_PARSE_FLAG_NONE,
 						&error,
 						FU_TYPE_SREC_FIRMWARE,
 						FU_TYPE_DFUSE_FIRMWARE,
@@ -3905,7 +3908,7 @@ fu_firmware_new_from_gtypes_func(void)
 	/* dfu -> FuFirmware */
 	firmware2 = fu_firmware_new_from_gtypes(stream,
 						0x0,
-						FWUPD_INSTALL_FLAG_NONE,
+						FU_FIRMWARE_PARSE_FLAG_NONE,
 						&error,
 						FU_TYPE_SREC_FIRMWARE,
 						FU_TYPE_FIRMWARE,
@@ -3917,7 +3920,7 @@ fu_firmware_new_from_gtypes_func(void)
 	/* dfu -> error */
 	firmware3 = fu_firmware_new_from_gtypes(stream,
 						0x0,
-						FWUPD_INSTALL_FLAG_NONE,
+						FU_FIRMWARE_PARSE_FLAG_NONE,
 						&error,
 						FU_TYPE_SREC_FIRMWARE,
 						G_TYPE_INVALID);
@@ -3956,7 +3959,7 @@ fu_firmware_csv_func(void)
 	g_assert_cmpstr(fu_csv_firmware_get_column_id(FU_CSV_FIRMWARE(firmware), 6), ==, NULL);
 
 	blob = g_bytes_new(data, strlen(data));
-	ret = fu_firmware_parse_bytes(firmware, blob, 0x0, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(firmware, blob, 0x0, FU_FIRMWARE_PARSE_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	str = fu_firmware_to_string(firmware);
@@ -3994,7 +3997,7 @@ fu_firmware_archive_func(void)
 
 	fn = g_test_build_filename(G_TEST_BUILT, "tests", "firmware.zip", NULL);
 	file = g_file_new_for_path(fn);
-	ret = fu_firmware_parse_file(firmware, file, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_file(firmware, file, FU_FIRMWARE_PARSE_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	g_assert_cmpint(fu_archive_firmware_get_format(FU_ARCHIVE_FIRMWARE(firmware)),
@@ -4045,7 +4048,11 @@ fu_firmware_linear_func(void)
 	g_assert_cmpint(g_bytes_get_size(blob3), ==, 1024);
 
 	/* parse them back */
-	ret = fu_firmware_parse_bytes(firmware2, blob3, 0x0, FWUPD_INSTALL_FLAG_NO_SEARCH, &error);
+	ret = fu_firmware_parse_bytes(firmware2,
+				      blob3,
+				      0x0,
+				      FU_FIRMWARE_PARSE_FLAG_NO_SEARCH,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	str = fu_firmware_to_string(firmware2);
@@ -4167,7 +4174,11 @@ fu_firmware_oprom_func(void)
 	g_assert_cmpint(g_bytes_get_size(data_bin), ==, 1024);
 
 	/* re-parse to get the CPD image */
-	ret = fu_firmware_parse_bytes(firmware2, data_bin, 0x0, FWUPD_INSTALL_FLAG_NONE, &error);
+	ret = fu_firmware_parse_bytes(firmware2,
+				      data_bin,
+				      0x0,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_STREAM,
+				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 	img1 = fu_firmware_get_image_by_id(firmware2, "cpd", &error);
@@ -5277,6 +5288,12 @@ fu_firmware_builder_round_trip_func(void)
 		FU_FIRMWARE_BUILDER_FLAG_NONE,
 	    },
 	    {
+		FU_TYPE_EFI_VARIABLE_AUTHENTICATION2,
+		"efi-variable-authentication2.builder.xml",
+		"bd08e81e9c86490dc1ffb32b1e3332606eb0fa97",
+		FU_FIRMWARE_BUILDER_FLAG_NONE,
+	    },
+	    {
 		FU_TYPE_EFI_VOLUME,
 		"efi-volume.builder.xml",
 		"2aae6c35c94fcfb415dbe95f408b9ce91ee846ed",
@@ -5387,7 +5404,8 @@ fu_firmware_builder_round_trip_func(void)
 		ret = fu_firmware_parse_bytes(firmware3,
 					      blob,
 					      0x0,
-					      FWUPD_INSTALL_FLAG_NO_SEARCH,
+					      FU_FIRMWARE_PARSE_FLAG_NO_SEARCH |
+						  FU_FIRMWARE_PARSE_FLAG_CACHE_STREAM,
 					      &error);
 		if (!ret)
 			g_prefix_error(&error, "%s: ", map[i].xml_fn);
@@ -5793,17 +5811,17 @@ fu_partial_input_stream_closed_base_func(void)
 	gboolean ret;
 	gssize rc;
 	guint8 buf[2] = {0x0};
+	g_autoptr(GBytes) blob = g_bytes_new_static("12345678", 8);
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GInputStream) stream = NULL;
+	g_autoptr(GInputStream) base_stream = g_memory_input_stream_new_from_bytes(blob);
 
-	{
-		g_autoptr(GBytes) blob = g_bytes_new_static("12345678", 8);
-		g_autoptr(FuInputStreamLocker) base_stream =
-		    g_memory_input_stream_new_from_bytes(blob);
-		stream = fu_partial_input_stream_new(base_stream, 2, 4, &error);
-		g_assert_no_error(error);
-		g_assert_nonnull(stream);
-	}
+	stream = fu_partial_input_stream_new(base_stream, 2, 4, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(stream);
+	ret = g_input_stream_close(base_stream, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
 
 	ret = g_seekable_seek(G_SEEKABLE(stream), 0x0, G_SEEK_SET, NULL, &error);
 	g_assert_no_error(error);
@@ -6331,6 +6349,60 @@ fu_plugin_efi_x509_signature_func(void)
 }
 
 static void
+fu_plugin_efi_variable_authentication2_func(void)
+{
+	FuFirmware *signer;
+	gboolean ret;
+	g_autofree gchar *fn = NULL;
+	g_autofree gchar *str = NULL;
+	g_autoptr(FuFirmware) efi_x509 = NULL;
+	g_autoptr(FuFirmware) firmware = g_object_new(FU_TYPE_EFI_VARIABLE_AUTHENTICATION2, NULL);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GFile) file = NULL;
+	g_autoptr(GPtrArray) signers = NULL;
+
+	/* parse file */
+	fn = g_test_build_filename(G_TEST_DIST, "tests", "KEKUpdate.bin", NULL);
+	if (!g_file_test(fn, G_FILE_TEST_EXISTS)) {
+		g_test_skip("Missing KEKUpdate.bin");
+		return;
+	}
+	file = g_file_new_for_path(fn);
+	ret = fu_firmware_parse_file(firmware, file, FU_FIRMWARE_PARSE_FLAG_NONE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	str = fu_firmware_to_string(firmware);
+	g_debug("%s", str);
+
+	/* get EFI sig */
+	efi_x509 = fu_firmware_get_image_by_id(firmware,
+					       "dec64d7746d983db3774829a00bf829d9f19e9cf",
+					       &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(efi_x509);
+	g_assert_cmpstr("C=US,O=Microsoft Corporation,CN=Microsoft RSA Devices Root CA 2021",
+			==,
+			fu_efi_x509_signature_get_issuer(FU_EFI_X509_SIGNATURE(efi_x509)));
+	g_assert_cmpstr("C=US,O=Microsoft Corporation,CN=Microsoft Corporation KEK 2K CA 2023",
+			==,
+			fu_efi_x509_signature_get_subject(FU_EFI_X509_SIGNATURE(efi_x509)));
+
+	/* get signer */
+	signers =
+	    fu_efi_variable_authentication2_get_signers(FU_EFI_VARIABLE_AUTHENTICATION2(firmware));
+	g_assert_nonnull(signers);
+	g_assert_cmpint(signers->len, ==, 1);
+
+	signer = g_ptr_array_index(signers, 0);
+	g_assert_cmpstr("CN=DO NOT TRUST - AMI Test PK",
+			==,
+			fu_x509_certificate_get_issuer(FU_X509_CERTIFICATE(signer)));
+	g_assert_cmpstr("CN=DO NOT TRUST - AMI Test PK",
+			==,
+			fu_x509_certificate_get_subject(FU_X509_CERTIFICATE(signer)));
+}
+
+static void
 fu_plugin_efi_signature_list_func(void)
 {
 	FuEfiX509Signature *sig;
@@ -6354,6 +6426,27 @@ fu_plugin_efi_signature_list_func(void)
 	g_assert_cmpint(sigs_newest->len, ==, 1);
 	sig = g_ptr_array_index(sigs_newest, 0);
 	g_assert_cmpint(fu_firmware_get_version_raw(FU_FIRMWARE(sig)), ==, 2024);
+}
+
+static void
+fu_device_udev_func(void)
+{
+	g_autofree gchar *prop = NULL;
+	g_autofree gchar *sysfs_path = g_test_build_filename(G_TEST_DIST, "tests", NULL);
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuUdevDevice) udev_device = fu_udev_device_new(ctx, sysfs_path);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GPtrArray) attrs = NULL;
+
+	prop = fu_udev_device_read_property(udev_device, "MODALIAS", &error);
+	g_assert_no_error(error);
+	g_assert_cmpstr(prop, ==, "hdaudio:v10EC0298r00100103a01");
+
+	/* list all the files in the directory */
+	attrs = fu_udev_device_list_sysfs(udev_device, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(attrs);
+	g_assert_cmpint(attrs->len, >, 10);
 }
 
 static void
@@ -6412,7 +6505,7 @@ fu_efi_lz77_decompressor_func(void)
 	ret = fu_firmware_parse_bytes(lz77_decompressor_tiano,
 				      blob_tiano,
 				      0x0,
-				      FWUPD_INSTALL_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_NONE,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6435,7 +6528,7 @@ fu_efi_lz77_decompressor_func(void)
 	ret = fu_firmware_parse_bytes(lz77_decompressor_legacy,
 				      blob_tiano,
 				      0x0,
-				      FWUPD_INSTALL_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_NONE,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6933,6 +7026,8 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/efi-load-option{hive}", fu_efi_load_option_hive_func);
 	g_test_add_func("/fwupd/efi-x509-signature", fu_plugin_efi_x509_signature_func);
 	g_test_add_func("/fwupd/efi-signature-list", fu_plugin_efi_signature_list_func);
+	g_test_add_func("/fwupd/efi-variable-authentication2",
+			fu_plugin_efi_variable_authentication2_func);
 	g_test_add_func("/fwupd/efivar", fu_efivar_func);
 	g_test_add_func("/fwupd/efivar{bootxxxx}", fu_efivar_boot_func);
 	g_test_add_func("/fwupd/hwids", fu_hwids_func);
@@ -6978,6 +7073,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/archive{invalid}", fu_archive_invalid_func);
 	g_test_add_func("/fwupd/archive{cab}", fu_archive_cab_func);
 	g_test_add_func("/fwupd/device", fu_device_func);
+	g_test_add_func("/fwupd/device{udev}", fu_device_udev_func);
 	g_test_add_func("/fwupd/device{event}", fu_device_event_func);
 	g_test_add_func("/fwupd/device{event-uncompressed}", fu_device_event_uncompressed_func);
 	g_test_add_func("/fwupd/device{event-donor}", fu_device_event_donor_func);

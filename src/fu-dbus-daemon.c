@@ -52,11 +52,6 @@ struct _FuDbusDaemon {
 
 G_DEFINE_TYPE(FuDbusDaemon, fu_dbus_daemon, FU_TYPE_DAEMON)
 
-#define FU_DAEMON_INSTALL_FLAG_MASK_SAFE                                                           \
-	(FWUPD_INSTALL_FLAG_ALLOW_OLDER | FWUPD_INSTALL_FLAG_ALLOW_REINSTALL |                     \
-	 FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH | FWUPD_INSTALL_FLAG_FORCE |                       \
-	 FWUPD_INSTALL_FLAG_NO_HISTORY | FWUPD_INSTALL_FLAG_IGNORE_REQUIREMENTS)
-
 static void
 fu_dbus_daemon_engine_changed_cb(FuEngine *engine, FuDbusDaemon *self)
 {
@@ -226,6 +221,13 @@ fu_dbus_daemon_create_request(FuDbusDaemon *self, const gchar *sender, GError **
 	}
 
 	/* are we root and therefore trusted? */
+	if (self->proxy_uid == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INTERNAL,
+				    "org.freedesktop.DBus is not available");
+		return NULL;
+	}
 	value = g_dbus_proxy_call_sync(self->proxy_uid,
 				       "GetConnectionUnixUser",
 				       g_variant_new("(s)", sender),
@@ -1307,7 +1309,7 @@ fu_dbus_daemon_method_set_approved_firmware(FuDbusDaemon *self,
 	fu_dbus_daemon_set_status(self, FWUPD_STATUS_WAITING_FOR_AUTH);
 	helper = g_new0(FuMainAuthHelper, 1);
 	helper->self = self;
-	helper->flags = FWUPD_INSTALL_FLAG_NO_SEARCH;
+	helper->flags = FU_FIRMWARE_PARSE_FLAG_NO_SEARCH;
 	helper->request = g_object_ref(request);
 	helper->invocation = g_object_ref(invocation);
 	helper->checksums = g_ptr_array_new_with_free_func(g_free);
@@ -2216,19 +2218,6 @@ fu_dbus_daemon_method_install(FuDbusDaemon *self,
 		g_variant_unref(prop_value);
 	}
 
-	/* verify the client didn't send "internal" flags like no-search */
-	if (helper->flags & ~FU_DAEMON_INSTALL_FLAG_MASK_SAFE) {
-		FwupdInstallFlags flags_unsafe = helper->flags & ~FU_DAEMON_INSTALL_FLAG_MASK_SAFE;
-		g_set_error(&error,
-			    FWUPD_ERROR,
-			    FWUPD_ERROR_INTERNAL,
-			    "client sent unsupported flag: 0x%x [%s]",
-			    (guint)flags_unsafe,
-			    fwupd_install_flags_to_string(flags_unsafe));
-		fu_dbus_daemon_method_invocation_return_gerror(invocation, error);
-		return;
-	}
-
 	/* get stream */
 	helper->stream = fu_dbus_daemon_invocation_get_input_stream(invocation, &error);
 	if (helper->stream == NULL) {
@@ -2727,14 +2716,8 @@ fu_dbus_daemon_dbus_bus_acquired_cb(GDBusConnection *connection,
 	FuDbusDaemon *self = FU_DBUS_DAEMON(user_data);
 	g_autoptr(GError) error = NULL;
 
-	fu_dbus_daemon_set_connection(self, connection);
-	if (!fu_dbus_daemon_register_object(self, &error)) {
-		g_warning("cannot register object: %s", error->message);
-		return;
-	}
-
 	/* connect to D-Bus directly */
-	self->proxy_uid = g_dbus_proxy_new_sync(self->connection,
+	self->proxy_uid = g_dbus_proxy_new_sync(connection,
 						G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES |
 						    G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS,
 						NULL,
@@ -2745,6 +2728,12 @@ fu_dbus_daemon_dbus_bus_acquired_cb(GDBusConnection *connection,
 						&error);
 	if (self->proxy_uid == NULL) {
 		g_warning("cannot connect to DBus: %s", error->message);
+		return;
+	}
+
+	fu_dbus_daemon_set_connection(self, connection);
+	if (!fu_dbus_daemon_register_object(self, &error)) {
+		g_warning("cannot register object: %s", error->message);
 		return;
 	}
 }

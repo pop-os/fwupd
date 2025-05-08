@@ -45,7 +45,7 @@ struct _FuDeviceClass {
 	FuFirmware *(*prepare_firmware)(FuDevice *self,
 					GInputStream *stream,
 					FuProgress *progress,
-					FwupdInstallFlags flags,
+					FuFirmwareParseFlags flags,
 					GError **error)G_GNUC_WARN_UNUSED_RESULT;
 	gboolean (*set_quirk_kv)(FuDevice *self,
 				 const gchar *key,
@@ -264,6 +264,14 @@ typedef enum {
 	 * Since: 2.0.6
 	 **/
 	FU_DEVICE_INCORPORATE_FLAG_GTYPE = 1ull << 19,
+	/**
+	 * FU_DEVICE_INCORPORATE_FLAG_INSTANCE_KEYS:
+	 *
+	 * Set the device instance keys.
+	 *
+	 * Since: 2.0.9
+	 **/
+	FU_DEVICE_INCORPORATE_FLAG_INSTANCE_KEYS = 1ull << 20,
 	/*< private >*/
 	FU_DEVICE_INCORPORATE_FLAG_ALL = G_MAXUINT64,
 } FuDeviceIncorporateFlags;
@@ -1027,7 +1035,7 @@ FuFirmware *
 fu_device_prepare_firmware(FuDevice *self,
 			   GInputStream *stream,
 			   FuProgress *progress,
-			   FwupdInstallFlags flags,
+			   FuFirmwareParseFlags flags,
 			   GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2, 3);
 FuFirmware *
 fu_device_read_firmware(FuDevice *self,

@@ -2848,7 +2848,7 @@ fu_engine_prepare_firmware(FuEngine *self,
 			   const gchar *device_id,
 			   GInputStream *stream,
 			   FuProgress *progress,
-			   FwupdInstallFlags flags,
+			   FuFirmwareParseFlags flags,
 			   GError **error)
 {
 	g_autoptr(FuDevice) device = NULL;
@@ -3415,7 +3415,7 @@ fu_engine_install_loop(FuEngine *self,
 						      device_id,
 						      stream_fw,
 						      fu_progress_get_child(progress),
-						      flags,
+						      FU_FIRMWARE_PARSE_FLAG_CACHE_STREAM,
 						      error);
 		if (firmware == NULL)
 			return FALSE;
@@ -3438,7 +3438,7 @@ fu_engine_install_loop(FuEngine *self,
 						      device_id,
 						      stream_fw,
 						      fu_progress_get_child(progress),
-						      flags,
+						      FU_FIRMWARE_PARSE_FLAG_CACHE_STREAM,
 						      error);
 		if (firmware == NULL)
 			return FALSE;
@@ -4547,7 +4547,7 @@ fu_engine_build_cabinet_from_stream(FuEngine *self, GInputStream *stream, GError
 	if (!fu_firmware_parse_stream(FU_FIRMWARE(cabinet),
 				      stream,
 				      0x0,
-				      FWUPD_INSTALL_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_NONE,
 				      error))
 		return NULL;
 	return g_steal_pointer(&cabinet);
@@ -4644,7 +4644,7 @@ fu_engine_get_result_from_component(FuEngine *self,
 		cabinet,
 		component,
 		rel,
-		FWUPD_INSTALL_FLAG_IGNORE_VID_PID | FWUPD_INSTALL_FLAG_ALLOW_REINSTALL |
+		FU_FIRMWARE_PARSE_FLAG_IGNORE_VID_PID | FWUPD_INSTALL_FLAG_ALLOW_REINSTALL |
 		    FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH | FWUPD_INSTALL_FLAG_ALLOW_OLDER,
 		&error_reqs)) {
 		if (!fu_device_has_inhibit(dev, "not-found"))
@@ -5134,7 +5134,7 @@ fu_engine_add_releases_for_device_component(FuEngine *self,
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GPtrArray) releases_tmp = NULL;
 	FwupdInstallFlags install_flags =
-	    FWUPD_INSTALL_FLAG_IGNORE_VID_PID | FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH |
+	    FU_FIRMWARE_PARSE_FLAG_IGNORE_VID_PID | FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH |
 	    FWUPD_INSTALL_FLAG_ALLOW_REINSTALL | FWUPD_INSTALL_FLAG_ALLOW_OLDER;
 
 	/* get all releases */
@@ -6290,7 +6290,8 @@ fu_engine_add_device(FuEngine *self, FuDevice *device)
 		fu_device_convert_instance_ids(device);
 
 	/* device still has no GUIDs set! */
-	if (device_guids->len == 0 && fu_device_get_children(device)->len == 0) {
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_UPDATABLE) && device_guids->len == 0 &&
+	    fu_device_get_children(device)->len == 0) {
 		g_warning("no GUIDs for device %s [%s]",
 			  fu_device_get_name(device),
 			  fu_device_get_id(device));
@@ -8364,6 +8365,9 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 	fu_context_add_firmware_gtype(self->ctx, "efi-file", FU_TYPE_EFI_FILE);
 	fu_context_add_firmware_gtype(self->ctx, "efi-signature", FU_TYPE_EFI_SIGNATURE);
 	fu_context_add_firmware_gtype(self->ctx, "efi-signature-list", FU_TYPE_EFI_SIGNATURE_LIST);
+	fu_context_add_firmware_gtype(self->ctx,
+				      "efi-variable-authentication2",
+				      FU_TYPE_EFI_VARIABLE_AUTHENTICATION2);
 	fu_context_add_firmware_gtype(self->ctx, "efi-load-option", FU_TYPE_EFI_LOAD_OPTION);
 	fu_context_add_firmware_gtype(self->ctx,
 				      "efi-device-path-list",

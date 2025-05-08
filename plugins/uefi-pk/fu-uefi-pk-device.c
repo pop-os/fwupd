@@ -48,6 +48,9 @@ fu_uefi_pk_device_check(FuUefiPkDevice *self, const gchar *str, GError **error)
 static gboolean
 fu_uefi_pk_device_parse_certificate(FuUefiPkDevice *self, FuEfiX509Signature *sig, GError **error)
 {
+	const gchar *subject_name = fu_efi_x509_signature_get_subject_name(sig);
+	const gchar *subject_vendor = fu_efi_x509_signature_get_subject_vendor(sig);
+
 	/* look in issuer and subject */
 	if (fu_efi_x509_signature_get_issuer(sig) != NULL) {
 		if (!fu_uefi_pk_device_check(self, fu_efi_x509_signature_get_issuer(sig), error))
@@ -58,17 +61,12 @@ fu_uefi_pk_device_parse_certificate(FuUefiPkDevice *self, FuEfiX509Signature *si
 			return FALSE;
 	}
 
-	/* these have to exist */
-	fu_device_add_instance_strsafe(FU_DEVICE(self),
-				       "VENDOR",
-				       fu_efi_x509_signature_get_subject_vendor(sig));
-	fu_device_add_instance_strsafe(FU_DEVICE(self),
-				       "NAME",
-				       fu_efi_x509_signature_get_subject_name(sig));
-	if (!fu_device_build_instance_id(FU_DEVICE(self), error, "UEFI", "VENDOR", "NAME", NULL))
-		return FALSE;
-	fu_device_set_name(FU_DEVICE(self), fu_efi_x509_signature_get_subject_name(sig));
-	fu_device_set_vendor(FU_DEVICE(self), fu_efi_x509_signature_get_subject_vendor(sig));
+	/* the O= key may not exist */
+	fu_device_add_instance_strsafe(FU_DEVICE(self), "VENDOR", subject_vendor);
+	fu_device_add_instance_strsafe(FU_DEVICE(self), "NAME", subject_name);
+	fu_device_build_instance_id(FU_DEVICE(self), NULL, "UEFI", "VENDOR", "NAME", NULL);
+	fu_device_set_name(FU_DEVICE(self), subject_name != NULL ? subject_name : "Unknown");
+	fu_device_set_vendor(FU_DEVICE(self), subject_vendor != NULL ? subject_vendor : "Unknown");
 	fu_device_set_version_raw(FU_DEVICE(self), fu_firmware_get_version_raw(FU_FIRMWARE(sig)));
 
 	/* success, certificate was parsed correctly */
@@ -144,7 +142,7 @@ fu_uefi_pk_device_init(FuUefiPkDevice *self)
 {
 	fu_device_set_physical_id(FU_DEVICE(self), "pk");
 	fu_device_set_summary(FU_DEVICE(self), "UEFI Platform Key");
-	fu_device_add_parent_guid(FU_DEVICE(self), "main-system-firmware");
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE_CHILD);
 	fu_device_add_icon(FU_DEVICE(self), "application-certificate");
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_EFI_SIGNATURE_LIST);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_NUMBER);

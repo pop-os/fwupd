@@ -105,13 +105,13 @@ fu_uefi_db_device_add_security_attrs(FuDevice *device, FuSecurityAttrs *attrs)
 	for (guint i = 0; i < children->len; i++) {
 		FuDevice *child = g_ptr_array_index(children, i);
 		if (fu_device_has_instance_id(child,
-					      "UEFI\\CRT_A5B7C551CEDC06B94D0C5B920F473E03C2F142F2",
+					      "UEFI\\CRT_7CD7437C555F89E7C2B50E21937E420C4E583E80",
 					      FU_DEVICE_INSTANCE_FLAG_VISIBLE)) {
 			seen_new = TRUE;
 			break;
 		}
 		if (fu_device_has_instance_id(child,
-					      "UEFI\\CRT_03DE12BE14CA397DF20CEE646C7D9B727FCCE5F8",
+					      "UEFI\\CRT_E30CF09DABEAB32A6E3B07A7135245DE05FFB658",
 					      FU_DEVICE_INSTANCE_FLAG_VISIBLE)) {
 			seen_old = TRUE;
 			break;
@@ -146,7 +146,7 @@ fu_uefi_db_device_init(FuUefiDbDevice *self)
 {
 	fu_device_set_physical_id(FU_DEVICE(self), "db");
 	fu_device_set_name(FU_DEVICE(self), "UEFI Signature Database");
-	fu_device_add_parent_guid(FU_DEVICE(self), "main-system-firmware");
+	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE_CHILD);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_EFI_SIGNATURE_LIST);
 	fu_device_add_icon(FU_DEVICE(self), "application-certificate");
 }

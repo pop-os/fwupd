@@ -28,10 +28,6 @@
  * See also: [class@FuFirmware]
  */
 
-struct _FuEfiSignatureList {
-	FuFirmware parent_instance;
-};
-
 G_DEFINE_TYPE(FuEfiSignatureList, fu_efi_signature_list, FU_TYPE_FIRMWARE)
 
 const guint8 FU_EFI_SIGLIST_HEADER_MAGIC[] = {0x26, 0x16, 0xC4, 0xC1, 0x4C};
@@ -66,10 +62,7 @@ fu_efi_signature_list_get_newest(FuEfiSignatureList *self)
 		g_autofree gchar *key = NULL;
 
 		if (fu_efi_signature_get_kind(sig) == FU_EFI_SIGNATURE_KIND_X509) {
-			key = g_strdup_printf(
-			    "%s:%s",
-			    fu_efi_x509_signature_get_subject_vendor(FU_EFI_X509_SIGNATURE(sig)),
-			    fu_efi_x509_signature_get_subject_name(FU_EFI_X509_SIGNATURE(sig)));
+			key = fu_efi_x509_signature_build_dedupe_key(FU_EFI_X509_SIGNATURE(sig));
 		} else {
 			key = fu_firmware_get_checksum(FU_FIRMWARE(sig), G_CHECKSUM_SHA256, NULL);
 		}
@@ -90,7 +83,7 @@ fu_efi_signature_list_get_newest(FuEfiSignatureList *self)
 	sigs_newest = g_ptr_array_new_with_free_func((GDestroyNotify)g_object_unref);
 	sigs_values = g_hash_table_get_values(hash);
 	for (GList *l = sigs_values; l != NULL; l = l->next) {
-		FuEfiX509Signature *sig = FU_EFI_X509_SIGNATURE(l->data);
+		FuEfiSignature *sig = FU_EFI_SIGNATURE(l->data);
 		g_ptr_array_add(sigs_newest, g_object_ref(sig));
 	}
 
@@ -165,7 +158,7 @@ fu_efi_signature_list_parse_list(FuEfiSignatureList *self,
 		if (!fu_firmware_parse_stream(FU_FIRMWARE(sig),
 					      stream,
 					      offset_tmp,
-					      FWUPD_INSTALL_FLAG_NONE,
+					      FU_FIRMWARE_PARSE_FLAG_NONE,
 					      error))
 			return FALSE;
 		if (!fu_firmware_add_image_full(FU_FIRMWARE(self), FU_FIRMWARE(sig), error))
@@ -212,7 +205,7 @@ fu_efi_signature_list_validate(FuFirmware *firmware,
 static gboolean
 fu_efi_signature_list_parse(FuFirmware *firmware,
 			    GInputStream *stream,
-			    FwupdInstallFlags flags,
+			    FuFirmwareParseFlags flags,
 			    GError **error)
 {
 	FuEfiSignatureList *self = FU_EFI_SIGNATURE_LIST(firmware);

@@ -68,6 +68,7 @@ BuildRequires: systemd-devel
 BuildRequires: libarchive-devel
 BuildRequires: libcbor-devel
 BuildRequires: libblkid-devel
+BuildRequires: readline-devel
 %if 0%{?have_passim}
 BuildRequires: passim-devel
 %endif
@@ -259,7 +260,6 @@ fwupd wrapper for Qubes OS
     -Dqubes=true \
 %endif
     -Dman=true \
-    -Dplugin_qc_firehose=true \
     -Dsystemd_unit_user="" \
     -Dbluez=enabled
 

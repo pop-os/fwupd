@@ -78,6 +78,7 @@ struct FuUtilPrivate {
 	gboolean enable_json_state;
 	gboolean interactive;
 	FwupdInstallFlags flags;
+	FuFirmwareParseFlags parse_flags;
 	gboolean show_all;
 	gboolean disable_ssl_strict;
 	gint lock_fd;
@@ -1118,7 +1119,7 @@ fu_util_firmware_sign(FuUtilPrivate *priv, gchar **values, GError **error)
 	archive_file_old = g_file_new_for_path(values[0]);
 	if (!fu_firmware_parse_file(FU_FIRMWARE(cabinet),
 				    archive_file_old,
-				    FWUPD_INSTALL_FLAG_NONE,
+				    FU_FIRMWARE_PARSE_FLAG_NONE,
 				    error))
 		return FALSE;
 	if (!fu_cabinet_sign(cabinet, cert, privkey, FU_CABINET_SIGN_FLAG_NONE, error))
@@ -1496,13 +1497,28 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 }
 
 static gboolean
-fu_util_install_release(FuUtilPrivate *priv, FwupdRelease *rel, GError **error)
+fu_util_install_release(FuUtilPrivate *priv, FwupdDevice *dev, FwupdRelease *rel, GError **error)
 {
 	FwupdRemote *remote;
 	GPtrArray *locations;
 	const gchar *remote_id;
 	const gchar *uri_tmp;
 	g_auto(GStrv) argv = NULL;
+
+	if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE)) {
+		const gchar *name = fwupd_device_get_name(dev);
+		g_autofree gchar *str = NULL;
+
+		/* TRANSLATORS: the device has a reason it can't update, e.g. laptop lid closed */
+		str = g_strdup_printf(_("%s is not currently updatable"), name);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOTHING_TO_DO,
+			    "%s: %s",
+			    str,
+			    fwupd_device_get_update_error(dev));
+		return FALSE;
+	}
 
 	/* get the default release only until other parts of fwupd can cope */
 	locations = fwupd_release_get_locations(rel);
@@ -1658,7 +1674,7 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 				return FALSE;
 		}
 
-		if (!fu_util_install_release(priv, rel, &error_local)) {
+		if (!fu_util_install_release(priv, dev, rel, &error_local)) {
 			fu_console_print_literal(priv->console, error_local->message);
 			continue;
 		}
@@ -1779,7 +1795,7 @@ fu_util_reinstall(FuUtilPrivate *priv, gchar **values, GError **error)
 			 G_CALLBACK(fu_util_update_device_changed_cb),
 			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
-	if (!fu_util_install_release(priv, rel, error))
+	if (!fu_util_install_release(priv, FWUPD_DEVICE(dev), rel, error))
 		return FALSE;
 	fu_util_display_current_message(priv);
 
@@ -2852,7 +2868,7 @@ fu_util_firmware_parse(FuUtilPrivate *priv, gchar **values, GError **error)
 			if (!fu_firmware_parse_stream(firmware_tmp,
 						      stream,
 						      0x0,
-						      FWUPD_INSTALL_FLAG_NO_SEARCH,
+						      FU_FIRMWARE_PARSE_FLAG_NO_SEARCH,
 						      &error_local)) {
 				g_debug("failed to parse as %s: %s",
 					gtype_id,
@@ -2884,7 +2900,11 @@ fu_util_firmware_parse(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (fu_firmware_has_flag(firmware, FU_FIRMWARE_FLAG_HAS_STORED_SIZE)) {
 		g_autoptr(FuFirmware) firmware_linear = fu_linear_firmware_new(gtype);
 		g_autoptr(GPtrArray) imgs = NULL;
-		if (!fu_firmware_parse_stream(firmware_linear, stream, 0x0, priv->flags, error))
+		if (!fu_firmware_parse_stream(firmware_linear,
+					      stream,
+					      0x0,
+					      priv->parse_flags,
+					      error))
 			return FALSE;
 		imgs = fu_firmware_get_images(firmware_linear);
 		if (imgs->len == 1) {
@@ -2893,7 +2913,7 @@ fu_util_firmware_parse(FuUtilPrivate *priv, gchar **values, GError **error)
 			g_set_object(&firmware, firmware_linear);
 		}
 	} else {
-		if (!fu_firmware_parse_stream(firmware, stream, 0x0, priv->flags, error))
+		if (!fu_firmware_parse_stream(firmware, stream, 0x0, priv->parse_flags, error))
 			return FALSE;
 	}
 
@@ -2951,7 +2971,7 @@ fu_util_firmware_export(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 	firmware = g_object_new(gtype, NULL);
 	file = g_file_new_for_path(values[0]);
-	if (!fu_firmware_parse_file(firmware, file, priv->flags, error))
+	if (!fu_firmware_parse_file(firmware, file, priv->parse_flags, error))
 		return FALSE;
 	if (priv->show_all)
 		flags |= FU_FIRMWARE_EXPORT_FLAG_INCLUDE_DEBUG;
@@ -3010,7 +3030,7 @@ fu_util_firmware_extract(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 	firmware = g_object_new(gtype, NULL);
 	file = g_file_new_for_path(values[0]);
-	if (!fu_firmware_parse_file(firmware, file, priv->flags, error))
+	if (!fu_firmware_parse_file(firmware, file, priv->parse_flags, error))
 		return FALSE;
 	str = fu_firmware_to_string(firmware);
 	fu_console_print_literal(priv->console, str);
@@ -3141,7 +3161,7 @@ fu_util_firmware_build(FuUtilPrivate *priv, gchar **values, GError **error)
 
 	/* show what we wrote */
 	firmware_dst = g_object_new(gtype, NULL);
-	if (!fu_firmware_parse_bytes(firmware_dst, blob_dst, 0x0, priv->flags, error))
+	if (!fu_firmware_parse_bytes(firmware_dst, blob_dst, 0x0, priv->parse_flags, error))
 		return FALSE;
 	str = fu_firmware_to_string(firmware_dst);
 	fu_console_print_literal(priv->console, str);
@@ -3212,7 +3232,7 @@ fu_util_firmware_convert(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 	firmware_src = g_object_new(gtype_src, NULL);
 	file_src = g_file_new_for_path(values[0]);
-	if (!fu_firmware_parse_file(firmware_src, file_src, priv->flags, error))
+	if (!fu_firmware_parse_file(firmware_src, file_src, priv->parse_flags, error))
 		return FALSE;
 	gtype_dst = fu_context_get_firmware_gtype_by_id(ctx, firmware_type_dst);
 	if (gtype_dst == G_TYPE_INVALID) {
@@ -3352,7 +3372,7 @@ fu_util_firmware_patch(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 	firmware = g_object_new(gtype, NULL);
 	file_src = g_file_new_for_path(values[0]);
-	if (!fu_firmware_parse_file(firmware, file_src, priv->flags, error))
+	if (!fu_firmware_parse_file(firmware, file_src, priv->parse_flags, error))
 		return FALSE;
 
 	/* add patch */
@@ -4077,7 +4097,7 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH;
-	if (!fu_util_install_release(priv, rel, error))
+	if (!fu_util_install_release(priv, FWUPD_DEVICE(dev), rel, error))
 		return FALSE;
 	fu_util_display_current_message(priv);
 
@@ -4762,7 +4782,7 @@ fu_util_build_cabinet(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (!fu_firmware_parse_bytes(FU_FIRMWARE(cab_file),
 				     cab_blob,
 				     0x0,
-				     FWUPD_INSTALL_FLAG_NONE,
+				     FU_FIRMWARE_PARSE_FLAG_NONE,
 				     error))
 		return FALSE;
 
@@ -5642,11 +5662,11 @@ main(int argc, char *argv[])
 	if (force)
 		priv->flags |= FWUPD_INSTALL_FLAG_FORCE;
 	if (no_search)
-		priv->flags |= FWUPD_INSTALL_FLAG_NO_SEARCH;
+		priv->parse_flags |= FU_FIRMWARE_PARSE_FLAG_NO_SEARCH;
 	if (ignore_checksum)
-		priv->flags |= FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM;
+		priv->parse_flags |= FU_FIRMWARE_PARSE_FLAG_IGNORE_CHECKSUM;
 	if (ignore_vid_pid)
-		priv->flags |= FWUPD_INSTALL_FLAG_IGNORE_VID_PID;
+		priv->parse_flags |= FU_FIRMWARE_PARSE_FLAG_IGNORE_VID_PID;
 	if (ignore_requirements)
 		priv->flags |= FWUPD_INSTALL_FLAG_IGNORE_REQUIREMENTS;
 

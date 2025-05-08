@@ -938,7 +938,7 @@ fu_firmware_get_checksum(FuFirmware *self, GChecksumType csum_kind, GError **err
  * fu_firmware_tokenize:
  * @self: a #FuFirmware
  * @stream: a #GInputStream
- * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_FORCE
+ * @flags: #FuFirmwareParseFlags, e.g. %FWUPD_INSTALL_FLAG_FORCE
  * @error: (nullable): optional return location for an error
  *
  * Tokenizes a firmware, typically breaking the firmware into records.
@@ -953,7 +953,7 @@ fu_firmware_get_checksum(FuFirmware *self, GChecksumType csum_kind, GError **err
 gboolean
 fu_firmware_tokenize(FuFirmware *self,
 		     GInputStream *stream,
-		     FwupdInstallFlags flags,
+		     FuFirmwareParseFlags flags,
 		     GError **error)
 {
 	FuFirmwareClass *klass = FU_FIRMWARE_GET_CLASS(self);
@@ -972,7 +972,7 @@ fu_firmware_tokenize(FuFirmware *self,
  * fu_firmware_check_compatible:
  * @self: a #FuFirmware
  * @other: a #FuFirmware
- * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_FORCE
+ * @flags: #FuFirmwareParseFlags, e.g. %FWUPD_INSTALL_FLAG_FORCE
  * @error: (nullable): optional return location for an error
  *
  * Check a new firmware is compatible with the existing firmware.
@@ -984,7 +984,7 @@ fu_firmware_tokenize(FuFirmware *self,
 gboolean
 fu_firmware_check_compatible(FuFirmware *self,
 			     FuFirmware *other,
-			     FwupdInstallFlags flags,
+			     FuFirmwareParseFlags flags,
 			     GError **error)
 {
 	FuFirmwareClass *klass = FU_FIRMWARE_GET_CLASS(self);
@@ -1003,7 +1003,7 @@ static gboolean
 fu_firmware_validate_for_offset(FuFirmware *self,
 				GInputStream *stream,
 				gsize *offset,
-				FwupdInstallFlags flags,
+				FuFirmwareParseFlags flags,
 				GError **error)
 {
 	FuFirmwareClass *klass = FU_FIRMWARE_GET_CLASS(self);
@@ -1015,7 +1015,7 @@ fu_firmware_validate_for_offset(FuFirmware *self,
 
 	/* fuzzing */
 	if (!fu_firmware_has_flag(self, FU_FIRMWARE_FLAG_ALWAYS_SEARCH) &&
-	    (flags & FWUPD_INSTALL_FLAG_NO_SEARCH) > 0) {
+	    (flags & FU_FIRMWARE_PARSE_FLAG_NO_SEARCH) > 0) {
 		if (!klass->validate(self, stream, *offset, error))
 			return FALSE;
 		return TRUE;
@@ -1055,7 +1055,7 @@ fu_firmware_validate_for_offset(FuFirmware *self,
  * @self: a #FuFirmware
  * @stream: input stream
  * @offset: start offset
- * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_FORCE
+ * @flags: #FuFirmwareParseFlags, e.g. %FWUPD_INSTALL_FLAG_FORCE
  * @error: (nullable): optional return location for an error
  *
  * Parses a firmware from a stream, typically breaking the firmware into images.
@@ -1068,12 +1068,13 @@ gboolean
 fu_firmware_parse_stream(FuFirmware *self,
 			 GInputStream *stream,
 			 gsize offset,
-			 FwupdInstallFlags flags,
+			 FuFirmwareParseFlags flags,
 			 GError **error)
 {
 	FuFirmwareClass *klass = FU_FIRMWARE_GET_CLASS(self);
 	FuFirmwarePrivate *priv = GET_PRIVATE(self);
 	gsize streamsz = 0;
+	g_autoptr(GInputStream) partial_stream = NULL;
 
 	g_return_val_if_fail(FU_IS_FIRMWARE(self), FALSE);
 	g_return_val_if_fail(G_IS_INPUT_STREAM(stream), FALSE);
@@ -1136,26 +1137,36 @@ fu_firmware_parse_stream(FuFirmware *self,
 
 	/* save stream */
 	if (offset == 0) {
-		g_set_object(&priv->stream, stream);
+		partial_stream = g_object_ref(stream);
 	} else {
-		g_autoptr(GInputStream) partial_stream =
-		    fu_partial_input_stream_new(stream, offset, priv->streamsz, error);
+		partial_stream = fu_partial_input_stream_new(stream, offset, priv->streamsz, error);
 		if (partial_stream == NULL) {
 			g_prefix_error(error, "failed to cut firmware: ");
 			return FALSE;
 		}
+	}
+
+	/* cache */
+	if (flags & FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB) {
+		g_autoptr(GBytes) blob = NULL;
+		blob = fu_input_stream_read_bytes(partial_stream, 0x0, priv->streamsz, NULL, error);
+		if (blob == NULL)
+			return FALSE;
+		fu_firmware_set_bytes(self, blob);
+	}
+	if (flags & FU_FIRMWARE_PARSE_FLAG_CACHE_STREAM) {
 		g_set_object(&priv->stream, partial_stream);
 	}
 
 	/* optional */
 	if (klass->tokenize != NULL) {
-		if (!klass->tokenize(self, priv->stream, flags, error))
+		if (!klass->tokenize(self, partial_stream, flags, error))
 			return FALSE;
 	}
 
 	/* optional */
 	if (klass->parse != NULL)
-		return klass->parse(self, priv->stream, flags, error);
+		return klass->parse(self, partial_stream, flags, error);
 
 	/* verify alignment */
 	if (streamsz % (1ull << priv->alignment) != 0) {
@@ -1179,7 +1190,7 @@ fu_firmware_parse_stream(FuFirmware *self,
  * @self: a #FuFirmware
  * @fw: firmware blob
  * @offset: start offset, useful for ignoring a bootloader
- * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_FORCE
+ * @flags: #FuFirmwareParseFlags, e.g. %FWUPD_INSTALL_FLAG_FORCE
  * @error: (nullable): optional return location for an error
  *
  * Parses a firmware, typically breaking the firmware into images.
@@ -1192,7 +1203,7 @@ gboolean
 fu_firmware_parse_bytes(FuFirmware *self,
 			GBytes *fw,
 			gsize offset,
-			FwupdInstallFlags flags,
+			FuFirmwareParseFlags flags,
 			GError **error)
 {
 	g_autoptr(GInputStream) stream = NULL;
@@ -1515,7 +1526,7 @@ fu_firmware_build_from_filename(FuFirmware *self, const gchar *filename, GError 
  * fu_firmware_parse_file:
  * @self: a #FuFirmware
  * @file: a file
- * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_FORCE
+ * @flags: #FuFirmwareParseFlags, e.g. %FWUPD_INSTALL_FLAG_FORCE
  * @error: (nullable): optional return location for an error
  *
  * Parses a firmware file, typically breaking the firmware into images.
@@ -1525,7 +1536,7 @@ fu_firmware_build_from_filename(FuFirmware *self, const gchar *filename, GError 
  * Since: 1.3.3
  **/
 gboolean
-fu_firmware_parse_file(FuFirmware *self, GFile *file, FwupdInstallFlags flags, GError **error)
+fu_firmware_parse_file(FuFirmware *self, GFile *file, FuFirmwareParseFlags flags, GError **error)
 {
 	g_autoptr(GFileInputStream) stream = NULL;
 
@@ -2548,7 +2559,7 @@ fu_firmware_new_from_bytes(GBytes *fw)
  * fu_firmware_new_from_gtypes:
  * @stream: a #GInputStream
  * @offset: start offset, useful for ignoring a bootloader
- * @flags: install flags, e.g. %FWUPD_INSTALL_FLAG_IGNORE_CHECKSUM
+ * @flags: install flags, e.g. %FU_FIRMWARE_PARSE_FLAG_IGNORE_CHECKSUM
  * @error: (nullable): optional return location for an error
  * @...: an array of #GTypes, ending with %G_TYPE_INVALID
  *
@@ -2561,7 +2572,7 @@ fu_firmware_new_from_bytes(GBytes *fw)
 FuFirmware *
 fu_firmware_new_from_gtypes(GInputStream *stream,
 			    gsize offset,
-			    FwupdInstallFlags flags,
+			    FuFirmwareParseFlags flags,
 			    GError **error,
 			    ...)
 {
