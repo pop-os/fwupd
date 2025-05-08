@@ -1,3 +1,7 @@
+Description: Skip flaky tests
+Forwarded: not-needed
+Author: Mario Limonciello <superm1@gmail.com>
+
 Index: fwupd/data/tests/fwupdmgr-p2p.sh
 ===================================================================
 --- fwupd.orig/data/tests/fwupdmgr-p2p.sh
