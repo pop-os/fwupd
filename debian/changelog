@@ -1,3 +1,10 @@
+fwupd (2.0.9-1) experimental; urgency=medium
+
+  * New upstream version (2.0.9)
+    - Drop all upstream patches.
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 08 May 2025 10:51:51 -0500
+
 fwupd (2.0.8-3) unstable; urgency=medium
 
   * Backport a patch fixing crashes from uevents without keys (LP: #2107540)
