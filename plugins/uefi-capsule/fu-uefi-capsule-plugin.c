@@ -40,7 +40,8 @@ static void
 fu_uefi_capsule_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 {
 	FuUefiCapsulePlugin *self = FU_UEFI_CAPSULE_PLUGIN(plugin);
-	fu_backend_add_string(self->backend, idt, str);
+	if (self->backend != NULL)
+		fu_backend_add_string(self->backend, idt, str);
 	fwupd_codec_string_append_int(str, idt, "ScreenWidth", self->screen_width);
 	fwupd_codec_string_append_int(str, idt, "ScreenHeight", self->screen_height);
 	if (self->bgrt != NULL) {
@@ -59,6 +60,7 @@ fu_uefi_capsule_plugin_fwupd_efi_parse(FuUefiCapsulePlugin *self, GError **error
 	gsize offset = 0;
 	g_autofree gchar *fn = g_file_get_path(self->fwupd_efi_file);
 	g_autofree gchar *version = NULL;
+	g_autofree gchar *version_safe = NULL;
 	g_autoptr(GBytes) buf = NULL;
 	g_autoptr(GBytes) ubuf = NULL;
 
@@ -85,9 +87,10 @@ fu_uefi_capsule_plugin_fwupd_efi_parse(FuUefiCapsulePlugin *self, GError **error
 		g_prefix_error(error, "converting %s: ", fn);
 		return FALSE;
 	}
+	version_safe = fu_version_ensure_semver(version, FWUPD_VERSION_FORMAT_PAIR);
 
 	/* success */
-	fu_context_add_runtime_version(ctx, "org.freedesktop.fwupd-efi", version);
+	fu_context_add_runtime_version(ctx, "org.freedesktop.fwupd-efi", version_safe);
 	return TRUE;
 }
 
@@ -235,11 +238,13 @@ fu_uefi_capsule_plugin_add_security_attrs_bootservices(FuPlugin *plugin, FuSecur
 			}
 			if ((data_attr & FU_EFIVARS_ATTR_BOOTSERVICE_ACCESS) > 0 &&
 			    (data_attr & FU_EFIVARS_ATTR_RUNTIME_ACCESS) == 0) {
+				g_autofree gchar *flags =
+				    fu_uefi_capsule_plugin_efivars_attrs_to_string(data_attr);
 				g_debug("%s-%s attr of size 0x%x had flags %s",
 					name,
 					guids[j],
 					(guint)data_sz,
-					fu_uefi_capsule_plugin_efivars_attrs_to_string(data_attr));
+					flags);
 				fwupd_security_attr_add_metadata(attr, "guid", guids[j]);
 				fwupd_security_attr_add_metadata(attr, "name", name);
 				fwupd_security_attr_add_flag(
@@ -842,10 +847,6 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GError) error_acpi_uefi = NULL;
 
-	/* don't let user's environment influence test suite failures */
-	if (g_getenv("FWUPD_UEFI_TEST") != NULL)
-		return TRUE;
-
 	/* for the uploaded report */
 	if (fu_context_has_hwid_flag(ctx, "use-legacy-bootmgr-desc"))
 		fu_plugin_add_report_metadata(plugin, "BootMgrDesc", "legacy");
@@ -895,13 +896,8 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 
 	/* we use this both for quirking the CoD implementation sanity and the CoD filename */
 	self->acpi_uefi = fu_uefi_capsule_plugin_parse_acpi_uefi(self, &error_acpi_uefi);
-	if (self->acpi_uefi == NULL) {
+	if (self->acpi_uefi == NULL)
 		g_debug("failed to load ACPI UEFI table: %s", error_acpi_uefi->message);
-	} else {
-		/* we do not need to read from this again */
-		if (!fu_firmware_set_stream(self->acpi_uefi, NULL, error))
-			return FALSE;
-	}
 
 	/* test for invalid ESP in coldplug, and set the update-error rather
 	 * than showing no output if the plugin had self-disabled here */
@@ -911,9 +907,11 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 static gboolean
 fu_uefi_capsule_plugin_unlock(FuPlugin *plugin, FuDevice *device, GError **error)
 {
-	FuUefiCapsuleDevice *device_uefi = FU_UEFI_CAPSULE_DEVICE(device);
+	/* not us */
+	if (!FU_IS_UEFI_CAPSULE_DEVICE(device))
+		return TRUE;
 
-	if (fu_uefi_capsule_device_get_kind(device_uefi) !=
+	if (fu_uefi_capsule_device_get_kind(FU_UEFI_CAPSULE_DEVICE(device)) !=
 	    FU_UEFI_CAPSULE_DEVICE_KIND_DELL_TPM_FIRMWARE) {
 		g_set_error(error,
 			    FWUPD_ERROR,
@@ -1062,8 +1060,8 @@ fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 
 		if (!fu_uefi_capsule_plugin_coldplug_device(plugin, dev, &error_device)) {
 			if (g_error_matches(error_device, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
-				g_warning("skipping device that failed coldplug: %s",
-					  error_device->message);
+				g_debug("skipping device that failed coldplug: %s",
+					error_device->message);
 				continue;
 			}
 			g_propagate_error(error, g_steal_pointer(&error_device));
@@ -1176,8 +1174,8 @@ fu_uefi_capsule_plugin_cleanup_bootnext(FuUefiCapsulePlugin *self, GError **erro
 	g_debug("EFI LoadOption: %s", loadoptstr);
 	if (g_strcmp0(fu_firmware_get_id(FU_FIRMWARE(loadopt)), "Linux Firmware Updater") == 0 ||
 	    g_strcmp0(fu_firmware_get_id(FU_FIRMWARE(loadopt)), "Linux-Firmware-Updater") == 0) {
-		g_warning("BootNext was not deleted automatically, so removing: "
-			  "this normally indicates a BIOS bug");
+		g_debug("BootNext was not deleted automatically, so removing: "
+			"this normally indicates a BIOS bug");
 		if (!fu_efivars_delete(efivars, FU_EFIVARS_GUID_EFI_GLOBAL, "BootNext", error))
 			return FALSE;
 	}

@@ -25,6 +25,7 @@
 #include "fu-context-private.h"
 #include "fu-device-list.h"
 #include "fu-device-private.h"
+#include "fu-efivars-private.h"
 #include "fu-engine-config.h"
 #include "fu-engine-helper.h"
 #include "fu-engine-requirements.h"
@@ -1241,6 +1242,39 @@ fu_engine_plugin_gtypes_func(gconstpointer user_data)
 	for (guint i = 0; i < plugins->len; i++) {
 		FuPlugin *plugin = g_ptr_array_index(plugins, i);
 		fu_plugin_runner_add_security_attrs(plugin, attrs);
+	}
+
+	/* run the post-reboot action */
+	for (guint i = 0; i < plugins->len; i++) {
+		FuPlugin *plugin = g_ptr_array_index(plugins, i);
+		g_autoptr(FuDevice) device_nop = fu_device_new(self->ctx);
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_plugin_runner_reboot_cleanup(plugin, device_nop, &error_local))
+			g_debug("ignoring: %s", error_local->message);
+	}
+
+	/* run the device unlock action */
+	for (guint i = 0; i < plugins->len; i++) {
+		FuPlugin *plugin = g_ptr_array_index(plugins, i);
+		g_autoptr(FuDevice) device_nop = fu_device_new(self->ctx);
+		g_autoptr(GError) error_local = NULL;
+		if (!fu_plugin_runner_unlock(plugin, device_nop, &error_local))
+			g_debug("ignoring: %s", error_local->message);
+	}
+
+	/* run the backend-device-added action */
+	for (guint i = 0; i < plugins->len; i++) {
+		FuPlugin *plugin = g_ptr_array_index(plugins, i);
+		GArray *device_gtypes = fu_plugin_get_device_gtypes(plugin);
+		if (device_gtypes == NULL || device_gtypes->len == 0) {
+			g_autoptr(FuDevice) device_nop = fu_device_new(self->ctx);
+			g_autoptr(GError) error_local = NULL;
+			if (!fu_plugin_runner_backend_device_added(plugin,
+								   device_nop,
+								   progress,
+								   &error_local))
+				g_debug("ignoring: %s", error_local->message);
+		}
 	}
 
 	/* create each custom device with a context only */
@@ -4206,6 +4240,7 @@ fu_device_list_better_than_func(gconstpointer user_data)
 	fu_device_add_flag(device1, FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_instance_id(device1, "12345678-1234-1234-1234-123456789012");
 	fu_device_add_protocol(device1, "com.acme");
+	fu_device_set_remove_delay(device1, FU_DEVICE_REMOVE_DELAY_RE_ENUMERATE);
 	fu_plugin_device_add(plugin1, device1);
 
 	/* should be ignored */
@@ -7408,6 +7443,7 @@ main(int argc, char **argv)
 	(void)g_setenv("FWUPD_SYSFSDIR", sysfsdir, TRUE);
 	(void)g_setenv("FWUPD_SELF_TEST", "1", TRUE);
 	(void)g_setenv("FWUPD_MACHINE_ID", "test", TRUE);
+	(void)g_setenv("FWUPD_EFIVARS", "dummy", TRUE);
 
 	/* ensure empty tree */
 	fu_self_test_mkroot();
@@ -7415,6 +7451,14 @@ main(int argc, char **argv)
 	/* do not save silo */
 	self->ctx = fu_context_new();
 	ret = fu_context_load_quirks(self->ctx, FU_QUIRKS_LOAD_FLAG_NO_CACHE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* build a plausible EFI system */
+	ret = fu_efivars_set_secure_boot(fu_context_get_efivars(self->ctx), TRUE, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = fu_efivars_set_boot_current(fu_context_get_efivars(self->ctx), 0x0000, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 

@@ -6,6 +6,7 @@
 
 #include "config.h"
 
+#include "fu-legion-hid2-child-device.h"
 #include "fu-legion-hid2-device.h"
 #include "fu-legion-hid2-firmware.h"
 #include "fu-legion-hid2-struct.h"
@@ -117,6 +118,29 @@ fu_legion_hid2_device_probe(FuDevice *device, GError **error)
 	return TRUE;
 }
 
+/*
+ * older MCU firmware doesn't support TP child commands, so setup needs to
+ * to be non-fatal or the MCU won't enumerate.
+ */
+static void
+fu_legion_hid2_device_setup_child(FuLegionHid2Device *self)
+{
+	g_autoptr(FuDevice) child = fu_legion_hid2_child_device_new(FU_DEVICE(self));
+	g_autoptr(GError) error_child = NULL;
+
+	if (!fu_device_probe(child, &error_child)) {
+		g_info("%s", error_child->message);
+		return;
+	}
+
+	if (!fu_device_setup(child, &error_child)) {
+		g_info("%s", error_child->message);
+		return;
+	}
+
+	fu_device_add_child(FU_DEVICE(self), child);
+}
+
 static gboolean
 fu_legion_hid2_device_setup(FuDevice *device, GError **error)
 {
@@ -133,6 +157,8 @@ fu_legion_hid2_device_setup(FuDevice *device, GError **error)
 
 	if (!fu_legion_hid2_device_ensure_mcu_id(device, error))
 		return FALSE;
+
+	fu_legion_hid2_device_setup_child(FU_LEGION_HID2_DEVICE(device));
 
 	/* success */
 	return TRUE;
