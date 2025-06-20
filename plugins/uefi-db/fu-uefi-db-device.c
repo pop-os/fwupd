@@ -14,6 +14,8 @@ struct _FuUefiDbDevice {
 
 G_DEFINE_TYPE(FuUefiDbDevice, fu_uefi_db_device, FU_TYPE_UEFI_DEVICE)
 
+#define FU_UEFI_DB_DEVICE_DEFAULT_REQUIRED_FREE (16 * 1024) /* bytes */
+
 static gboolean
 fu_uefi_db_device_probe(FuDevice *device, GError **error)
 {
@@ -27,7 +29,10 @@ fu_uefi_db_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* add each subdevice */
-	siglist = fu_device_read_firmware(device, progress, error);
+	siglist = fu_device_read_firmware(device,
+					  progress,
+					  FU_FIRMWARE_PARSE_FLAG_IGNORE_CHECKSUM,
+					  error);
 	if (siglist == NULL) {
 		g_prefix_error(error, "failed to parse db: ");
 		return FALSE;
@@ -39,15 +44,11 @@ fu_uefi_db_device_probe(FuDevice *device, GError **error)
 		if (fu_efi_signature_get_kind(sig) != FU_EFI_SIGNATURE_KIND_X509)
 			continue;
 		x509_device = fu_efi_x509_device_new(ctx, FU_EFI_X509_SIGNATURE(sig));
+		fu_device_add_flag(FU_DEVICE(x509_device), FWUPD_DEVICE_FLAG_AFFECTS_FDE);
 		fu_device_set_physical_id(FU_DEVICE(x509_device), "db");
 		fu_device_set_proxy(FU_DEVICE(x509_device), device);
 		fu_device_add_child(device, FU_DEVICE(x509_device));
 	}
-
-	/* set in the subdevice */
-	fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG);
-	fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
-	fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY);
 
 	/* success */
 	return TRUE;
@@ -149,6 +150,7 @@ fu_uefi_db_device_init(FuUefiDbDevice *self)
 	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE_CHILD);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_EFI_SIGNATURE_LIST);
 	fu_device_add_icon(FU_DEVICE(self), FU_DEVICE_ICON_APPLICATION_CERTIFICATE);
+	fu_device_set_required_free(FU_DEVICE(self), FU_UEFI_DB_DEVICE_DEFAULT_REQUIRED_FREE);
 }
 
 static void

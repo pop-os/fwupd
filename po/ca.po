@@ -683,6 +683,10 @@ msgid "Changed"
 msgstr "S'ha canviat"
 
 #. TRANSLATORS: command description
+msgid "Check if any devices are pending a reboot to complete update"
+msgstr "Comprova si hi ha dispositius pendents de reiniciar per a completar l'actualització"
+
+#. TRANSLATORS: command description
 msgid "Checks cryptographic hash matches firmware"
 msgstr "Comprova que la suma criptogràfica coincideix amb el microprogramari."
 
@@ -1525,8 +1529,8 @@ msgid "Gets the list of blocked firmware"
 msgstr "Obté la llista del microprogramari bloquejat."
 
 #. TRANSLATORS: command description
-msgid "Gets the list of updates for connected hardware"
-msgstr "Obté la llista d'actualitzacions per al maquinari connectat."
+msgid "Gets the list of updates for all specified devices, or all devices if unspecified"
+msgstr "Obtén la llista d'actualitzacions per a tots els dispositius especificats, o de tots els dispositius si no s'especifica"
 
 #. TRANSLATORS: command description
 msgid "Gets the releases for a device"
@@ -2104,6 +2108,10 @@ msgstr "No s'ha trobat cap microprogramari"
 msgid "No hardware detected with firmware update capability"
 msgstr "No s'ha detectat cap maquinari amb capacitat per a l'actualització del microprogramari"
 
+#. TRANSLATORS: no rebooting needed
+msgid "No reboot is necessary"
+msgstr "No cal reiniciar"
+
 #. TRANSLATORS: no repositories to download from
 msgid "No releases available"
 msgstr "No hi ha cap llançament disponible"
@@ -2157,6 +2165,10 @@ msgid "Old version"
 msgstr "Versió antiga"
 
 #. TRANSLATORS: command line option
+msgid "Only install onto emulated devices"
+msgstr "Instal·la només en els dispositius emulats"
+
+#. TRANSLATORS: command line option
 msgid "Only show single PCR value"
 msgstr "Mostra només un únic valor de PCR"
 
@@ -2168,6 +2180,10 @@ msgstr "Usa només la xarxa d'igual a igual per a baixar els fitxers"
 #. * be downgraded or reinstalled with the existing version
 msgid "Only version upgrades are allowed"
 msgstr "Només es permeten actualitzacions de la versió"
+
+#. TRANSLATORS: command line option
+msgid "Output in JSON format (disables all interactive prompts)"
+msgstr "Sortida en el format JSON (desactiva totes les indicacions interactives)"
 
 #. TRANSLATORS: command line option
 msgid "Override the default ESP path"

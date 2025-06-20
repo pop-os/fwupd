@@ -22,7 +22,6 @@
 #include "fu-common-private.h"
 #include "fu-config-private.h"
 #include "fu-context-private.h"
-#include "fu-coswid-firmware.h"
 #include "fu-device-event-private.h"
 #include "fu-device-private.h"
 #include "fu-device-progress.h"
@@ -806,6 +805,22 @@ fu_smbios3_func(void)
 	str = fu_smbios_get_string(smbios, FU_SMBIOS_STRUCTURE_TYPE_BIOS, 0x18, 0x04, &error);
 	g_assert_no_error(error);
 	g_assert_cmpstr(str, ==, "Dell Inc.");
+}
+
+static void
+fu_context_efivars_func(void)
+{
+	gboolean ret;
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(GError) error = NULL;
+
+	ret = fu_context_efivars_check_free_space(ctx, 10240, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	ret = fu_context_efivars_check_free_space(ctx, 10241, &error);
+	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_BROKEN_SYSTEM);
+	g_assert_false(ret);
 }
 
 static void
@@ -2166,7 +2181,12 @@ fu_device_poll_func(void)
 static void
 fu_device_func(void)
 {
-	g_autoptr(FuDevice) device = fu_device_new(NULL);
+	g_autofree gchar *fn = NULL;
+	g_autofree gchar *str = NULL;
+	g_autoptr(FuContext) ctx = fu_context_new();
+	g_autoptr(FuDevice) device = fu_device_new(ctx);
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) possible_plugins = NULL;
 
 	/* only add one plugin name of the same type */
@@ -2174,6 +2194,15 @@ fu_device_func(void)
 	fu_device_add_possible_plugin(device, "test");
 	possible_plugins = fu_device_get_possible_plugins(device);
 	g_assert_cmpint(possible_plugins->len, ==, 1);
+
+	fn = g_test_build_filename(G_TEST_DIST, "tests", "sys_vendor", NULL);
+	str = fu_device_get_contents(device, fn, G_MAXSIZE, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_cmpstr(str, ==, "FwupdTest\n");
+
+	blob = fu_device_get_contents_bytes(device, fn, 5, NULL, &error);
+	g_assert_no_error(error);
+	g_assert_cmpint(g_bytes_get_size(blob), ==, 5);
 }
 
 static void
@@ -2310,7 +2339,7 @@ fu_device_vfuncs_func(void)
 	g_assert_false(ret);
 	g_clear_error(&error);
 
-	firmware = fu_device_read_firmware(device, progress, &error);
+	firmware = fu_device_read_firmware(device, progress, FU_FIRMWARE_PARSE_FLAG_NONE, &error);
 	g_assert_error(error, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED);
 	g_assert_null(firmware);
 	g_clear_error(&error);
@@ -4500,6 +4529,11 @@ fu_efivar_func(void)
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
+	/* check free space */
+	total = fu_efivars_space_free(efivars, &error);
+	g_assert_no_error(error);
+	g_assert_cmpint(total, ==, 10240);
+
 	/* write and read a key */
 	ret = fu_efivars_set_data(efivars,
 				  FU_EFIVARS_GUID_EFI_GLOBAL,
@@ -4522,6 +4556,11 @@ fu_efivar_func(void)
 	g_assert_cmpint(sz, ==, 1);
 	g_assert_cmpint(attr, ==, FU_EFIVARS_ATTR_NON_VOLATILE | FU_EFIVARS_ATTR_RUNTIME_ACCESS);
 	g_assert_cmpint(data[0], ==, '1');
+
+	/* check free space again */
+	total = fu_efivars_space_free(efivars, &error);
+	g_assert_no_error(error);
+	g_assert_cmpint(total, ==, 10203);
 
 	/* check existing keys */
 	g_assert_false(fu_efivars_exists(efivars, FU_EFIVARS_GUID_EFI_GLOBAL, "NotGoingToExist"));
@@ -4569,6 +4608,11 @@ fu_efivar_func(void)
 	g_assert_true(ret);
 	g_assert_false(fu_efivars_exists(efivars, FU_EFIVARS_GUID_EFI_GLOBAL, "Test1"));
 	g_assert_false(fu_efivars_exists(efivars, FU_EFIVARS_GUID_EFI_GLOBAL, "Test2"));
+
+	/* check free space again */
+	total = fu_efivars_space_free(efivars, &error);
+	g_assert_no_error(error);
+	g_assert_cmpint(total, ==, 10240);
 
 	/* read a key that doesn't exist */
 	ret = fu_efivars_get_data(efivars,
@@ -5418,6 +5462,8 @@ fu_firmware_builder_round_trip_func(void)
 			g_assert_nonnull(blob2);
 			g_assert_no_error(error);
 			ret = fu_bytes_compare(blob2, blob, &error);
+			if (!ret)
+				g_prefix_error(&error, "%s: ", map[i].xml_fn);
 			g_assert_no_error(error);
 			g_assert_true(ret);
 		}
@@ -7033,6 +7079,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/hwids", fu_hwids_func);
 	g_test_add_func("/fwupd/context{flags}", fu_context_flags_func);
 	g_test_add_func("/fwupd/context{backends}", fu_context_backends_func);
+	g_test_add_func("/fwupd/context{efivars}", fu_context_efivars_func);
 	g_test_add_func("/fwupd/context{hwids-dmi}", fu_context_hwids_dmi_func);
 	g_test_add_func("/fwupd/context{hwids-fdt}", fu_context_hwids_fdt_func);
 	g_test_add_func("/fwupd/context{firmware-gtypes}", fu_context_firmware_gtypes_func);

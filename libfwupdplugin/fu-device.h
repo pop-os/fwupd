@@ -839,6 +839,14 @@ fu_device_new(FuContext *ctx);
  * Since: 2.0.7
  */
 #define FU_DEVICE_PRIVATE_FLAG_INSTALL_LOOP_RESTART "install-loop-restart"
+/**
+ * FU_DEVICE_PRIVATE_FLAG_MD_SET_REQUIRED_FREE:
+ *
+ * Set the device required free size from the metadata if available.
+ *
+ * Since: 2.0.12
+ */
+#define FU_DEVICE_PRIVATE_FLAG_MD_SET_REQUIRED_FREE "md-set-required-free"
 
 /* standard icons */
 
@@ -1229,6 +1237,10 @@ guint64
 fu_device_get_firmware_size_min(FuDevice *self) G_GNUC_NON_NULL(1);
 guint64
 fu_device_get_firmware_size_max(FuDevice *self) G_GNUC_NON_NULL(1);
+guint64
+fu_device_get_required_free(FuDevice *self) G_GNUC_NON_NULL(1);
+void
+fu_device_set_required_free(FuDevice *self, guint64 required_free) G_GNUC_NON_NULL(1);
 guint
 fu_device_get_battery_level(FuDevice *self) G_GNUC_NON_NULL(1);
 void
@@ -1295,6 +1307,7 @@ fu_device_prepare_firmware(FuDevice *self,
 FuFirmware *
 fu_device_read_firmware(FuDevice *self,
 			FuProgress *progress,
+			FuFirmwareParseFlags flags,
 			GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 GBytes *
 fu_device_dump_firmware(FuDevice *self,
@@ -1407,9 +1420,16 @@ fu_device_set_contents_bytes(FuDevice *self,
 			     GBytes *blob,
 			     FuProgress *progress,
 			     GError **error) G_GNUC_NON_NULL(1, 2, 3);
+gchar *
+fu_device_get_contents(FuDevice *self,
+		       const gchar *filename,
+		       gsize count,
+		       FuProgress *progress,
+		       GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 GBytes *
 fu_device_get_contents_bytes(FuDevice *self,
 			     const gchar *filename,
+			     gsize count,
 			     FuProgress *progress,
 			     GError **error) G_GNUC_WARN_UNUSED_RESULT G_GNUC_NON_NULL(1, 2);
 gboolean

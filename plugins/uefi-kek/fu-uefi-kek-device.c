@@ -14,6 +14,8 @@ struct _FuUefiKekDevice {
 
 G_DEFINE_TYPE(FuUefiKekDevice, fu_uefi_kek_device, FU_TYPE_UEFI_DEVICE)
 
+#define FU_UEFI_KEK_DEVICE_DEFAULT_REQUIRED_FREE (4 * 1024) /* bytes */
+
 static gboolean
 fu_uefi_kek_device_probe(FuDevice *device, GError **error)
 {
@@ -27,7 +29,10 @@ fu_uefi_kek_device_probe(FuDevice *device, GError **error)
 		return FALSE;
 
 	/* add each subdevice */
-	siglist = fu_device_read_firmware(device, progress, error);
+	siglist = fu_device_read_firmware(device,
+					  progress,
+					  FU_FIRMWARE_PARSE_FLAG_IGNORE_CHECKSUM,
+					  error);
 	if (siglist == NULL) {
 		g_prefix_error(error, "failed to parse kek: ");
 		return FALSE;
@@ -40,14 +45,11 @@ fu_uefi_kek_device_probe(FuDevice *device, GError **error)
 			continue;
 		x509_device = fu_efi_x509_device_new(ctx, FU_EFI_X509_SIGNATURE(sig));
 		fu_device_set_physical_id(FU_DEVICE(x509_device), "kek");
+		fu_device_add_flag(FU_DEVICE(x509_device), FWUPD_DEVICE_FLAG_AFFECTS_FDE);
+		fu_device_add_flag(FU_DEVICE(x509_device), FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
 		fu_device_set_proxy(FU_DEVICE(x509_device), device);
 		fu_device_add_child(device, FU_DEVICE(x509_device));
 	}
-
-	/* set in the subdevice */
-	fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_CAN_EMULATION_TAG);
-	fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
-	fu_device_remove_flag(device, FWUPD_DEVICE_FLAG_CAN_VERIFY);
 
 	/* success */
 	return TRUE;
@@ -106,6 +108,7 @@ fu_uefi_kek_device_init(FuUefiKekDevice *self)
 	fu_device_add_private_flag(FU_DEVICE(self), FU_DEVICE_PRIVATE_FLAG_HOST_FIRMWARE_CHILD);
 	fu_device_set_firmware_gtype(FU_DEVICE(self), FU_TYPE_EFI_SIGNATURE_LIST);
 	fu_device_add_icon(FU_DEVICE(self), FU_DEVICE_ICON_APPLICATION_CERTIFICATE);
+	fu_device_set_required_free(FU_DEVICE(self), FU_UEFI_KEK_DEVICE_DEFAULT_REQUIRED_FREE);
 }
 
 static void

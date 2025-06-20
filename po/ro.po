@@ -691,6 +691,10 @@ msgid "Changed"
 msgstr "Modificat"
 
 #. TRANSLATORS: command description
+msgid "Check if any devices are pending a reboot to complete update"
+msgstr "Verifică dacă există dispozitive care așteaptă o repornire pentru a finaliza actualizarea"
+
+#. TRANSLATORS: command description
 msgid "Checks cryptographic hash matches firmware"
 msgstr "Verifică dacă suma de control criptografică corespunde firmware-ului"
 
@@ -1535,8 +1539,8 @@ msgid "Gets the list of blocked firmware"
 msgstr "Obține lista firmware-ului blocat"
 
 #. TRANSLATORS: command description
-msgid "Gets the list of updates for connected hardware"
-msgstr "Obține lista de actualizări pentru hardware-ul conectat"
+msgid "Gets the list of updates for all specified devices, or all devices if unspecified"
+msgstr "Obține lista de actualizări pentru toate dispozitivele specificate sau pentru toate dispozitivele dacă nu este specificat niciunul"
 
 #. TRANSLATORS: command description
 msgid "Gets the releases for a device"
@@ -2115,6 +2119,10 @@ msgstr "Nu s-a găsit firmware"
 msgid "No hardware detected with firmware update capability"
 msgstr "Nu a fost detectat niciun hardware cu capacitate de actualizare a firmware-ului"
 
+#. TRANSLATORS: no rebooting needed
+msgid "No reboot is necessary"
+msgstr "Nu este necesară repornirea"
+
 #. TRANSLATORS: no repositories to download from
 msgid "No releases available"
 msgstr "Nu există versiuni disponibile"
@@ -2168,6 +2176,10 @@ msgid "Old version"
 msgstr "Versiunea veche"
 
 #. TRANSLATORS: command line option
+msgid "Only install onto emulated devices"
+msgstr "Se instalează numai pe dispozitive emulate"
+
+#. TRANSLATORS: command line option
 msgid "Only show single PCR value"
 msgstr "Afișează doar o singură valoare PCR"
 
@@ -2179,6 +2191,10 @@ msgstr "Utilizează numai rețele „peer-to-peer” atunci când descarcă fiș
 #. * be downgraded or reinstalled with the existing version
 msgid "Only version upgrades are allowed"
 msgstr "Sunt permise numai actualizările de versiune"
+
+#. TRANSLATORS: command line option
+msgid "Output in JSON format (disables all interactive prompts)"
+msgstr "Ieșire în format JSON (dezactivează toate solicitările interactive)"
 
 #. TRANSLATORS: command line option
 msgid "Override the default ESP path"

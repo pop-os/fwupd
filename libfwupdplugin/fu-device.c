@@ -22,6 +22,7 @@
 #include "fu-device-event-private.h"
 #include "fu-device-private.h"
 #include "fu-input-stream.h"
+#include "fu-output-stream.h"
 #include "fu-quirks.h"
 #include "fu-security-attr.h"
 #include "fu-string.h"
@@ -83,6 +84,7 @@ typedef struct {
 	gboolean device_id_valid;
 	guint64 size_min;
 	guint64 size_max;
+	guint64 required_free; /* bytes */
 	gint open_refcount; /* atomic */
 	GType specialized_gtype;
 	GType proxy_gtype;
@@ -133,6 +135,7 @@ enum {
 	PROP_PRIVATE_FLAGS,
 	PROP_VID,
 	PROP_PID,
+	PROP_REQUIRED_FREE,
 	PROP_LAST
 };
 
@@ -189,6 +192,9 @@ fu_device_get_property(GObject *object, guint prop_id, GValue *value, GParamSpec
 	case PROP_PID:
 		g_value_set_uint(value, priv->pid);
 		break;
+	case PROP_REQUIRED_FREE:
+		g_value_set_uint64(value, priv->required_free);
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
 		break;
@@ -235,6 +241,9 @@ fu_device_set_property(GObject *object, guint prop_id, const GValue *value, GPar
 		break;
 	case PROP_PID:
 		fu_device_set_pid(self, g_value_get_uint(value));
+		break;
+	case PROP_REQUIRED_FREE:
+		fu_device_set_required_free(self, g_value_get_uint64(value));
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -309,6 +318,7 @@ fu_device_register_flags(FuDevice *self)
 	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_DETACH_PREPARE_FIRMWARE);
 	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_EMULATED_REQUIRE_SETUP);
 	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_INSTALL_LOOP_RESTART);
+	fu_device_register_private_flag_safe(self, FU_DEVICE_PRIVATE_FLAG_MD_SET_REQUIRED_FREE);
 }
 
 static void
@@ -847,7 +857,6 @@ fu_device_set_contents(FuDevice *self,
 	fu_progress_set_id(progress, G_STRLOC);
 	fu_progress_set_steps(progress, fu_chunk_array_length(chunks));
 	for (guint i = 0; i < fu_chunk_array_length(chunks); i++) {
-		gssize wrote;
 		g_autoptr(FuChunk) chk = NULL;
 		g_autoptr(GBytes) blob = NULL;
 
@@ -855,19 +864,8 @@ fu_device_set_contents(FuDevice *self,
 		if (chk == NULL)
 			return FALSE;
 		blob = fu_chunk_get_bytes(chk);
-
-		wrote = g_output_stream_write_bytes(ostr, blob, NULL, error);
-		if (wrote < 0)
+		if (!fu_output_stream_write_bytes(ostr, blob, NULL, error))
 			return FALSE;
-		if ((gsize)wrote != g_bytes_get_size(blob)) {
-			g_set_error(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "only wrote 0x%x bytes of 0x%x",
-				    (guint)wrote,
-				    (guint)g_bytes_get_size(blob));
-			return FALSE;
-		}
 
 		/* save */
 		if (event != NULL)
@@ -922,10 +920,11 @@ fu_device_set_contents_bytes(FuDevice *self,
  * fu_device_get_contents_bytes:
  * @self: a #FuDevice
  * @filename: full path to a file
+ * @count: maximum number of bytes to read
  * @progress: (nullable): optional #FuProgress
  * @error: (nullable): optional return location for an error
  *
- * Writes @blob to @filename, emulating if required.
+ * Reads a blob of data from the file, emulating if required.
  *
  * Returns: (transfer full): a #GBytes, or %NULL on error
  *
@@ -934,6 +933,7 @@ fu_device_set_contents_bytes(FuDevice *self,
 GBytes *
 fu_device_get_contents_bytes(FuDevice *self,
 			     const gchar *filename,
+			     gsize count,
 			     FuProgress *progress,
 			     GError **error)
 {
@@ -970,7 +970,7 @@ fu_device_get_contents_bytes(FuDevice *self,
 	istr = fu_input_stream_from_path(filename, error);
 	if (istr == NULL)
 		return NULL;
-	blob = fu_input_stream_read_bytes(istr, 0, G_MAXSIZE, progress, error);
+	blob = fu_input_stream_read_bytes(istr, 0, count, progress, error);
 	if (blob == NULL)
 		return NULL;
 
@@ -980,6 +980,81 @@ fu_device_get_contents_bytes(FuDevice *self,
 
 	/* success */
 	return g_steal_pointer(&blob);
+}
+
+/**
+ * fu_device_get_contents:
+ * @self: a #FuDevice
+ * @filename: full path to a file
+ * @count: maximum number of bytes to read
+ * @progress: (nullable): optional #FuProgress
+ * @error: (nullable): optional return location for an error
+ *
+ * Reads a blob of ASCII text from the file, emulating if required.
+ *
+ * Returns: (transfer full): a #GBytes, or %NULL on error
+ *
+ * Since: 2.0.12
+ **/
+gchar *
+fu_device_get_contents(FuDevice *self,
+		       const gchar *filename,
+		       gsize count,
+		       FuProgress *progress,
+		       GError **error)
+{
+	FuDeviceEvent *event = NULL;
+	g_autofree gchar *event_id = NULL;
+	g_autofree gchar *str = NULL;
+	g_autoptr(GBytes) blob = NULL;
+	g_autoptr(GInputStream) istr = NULL;
+
+	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
+	g_return_val_if_fail(filename != NULL, NULL);
+	g_return_val_if_fail(progress == NULL || FU_IS_PROGRESS(progress), NULL);
+	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
+
+	/* need event ID */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED) ||
+	    fu_context_has_flag(fu_device_get_context(FU_DEVICE(self)),
+				FU_CONTEXT_FLAG_SAVE_EVENTS)) {
+		event_id = g_strdup_printf("GetContents:Filename=%s", filename);
+	}
+
+	/* emulated */
+	if (fu_device_has_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_EMULATED)) {
+		event = fu_device_load_event(FU_DEVICE(self), event_id, error);
+		if (event == NULL)
+			return NULL;
+		return g_strdup(fu_device_event_get_str(event, "Data", error));
+	}
+
+	/* save */
+	if (event_id != NULL)
+		event = fu_device_save_event(FU_DEVICE(self), event_id);
+
+	/* open for reading */
+	istr = fu_input_stream_from_path(filename, error);
+	if (istr == NULL)
+		return NULL;
+	blob = fu_input_stream_read_bytes(istr, 0, count, progress, error);
+	if (blob == NULL)
+		return NULL;
+	str = fu_strsafe_bytes(blob, G_MAXSIZE);
+	if (str == NULL) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_DATA,
+				    "invalid ASCII data");
+		return NULL;
+	}
+
+	/* save response */
+	if (event != NULL)
+		fu_device_event_set_str(event, "Data", str);
+
+	/* success */
+	return g_steal_pointer(&str);
 }
 
 /**
@@ -2586,6 +2661,49 @@ fu_device_get_firmware_size_max(FuDevice *self)
 	FuDevicePrivate *priv = GET_PRIVATE(self);
 	g_return_val_if_fail(FU_IS_DEVICE(self), 0);
 	return priv->size_max;
+}
+
+/**
+ * fu_device_get_required_free:
+ * @self: a #FuDevice
+ *
+ * Returns the required amount of free firmware space.
+ *
+ * Returns: size in bytes
+ *
+ * Since: 2.0.12
+ **/
+guint64
+fu_device_get_required_free(FuDevice *self)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_val_if_fail(FU_IS_DEVICE(self), 0);
+	return priv->required_free;
+}
+
+/**
+ * fu_device_set_required_free:
+ * @self: a #FuDevice
+ * @required_free: size in bytes
+ *
+ * Sets the required amount of free firmware size.
+ *
+ * NOTE: What we really want to do for EFI devices is check if a *contiguous* block of the right
+ * size can be written, but on most machines this causes an SMI which causes all cores to halt.
+ * On my desktop this causes **ALL** CPU processes to stop for ~1s, which is clearly unacceptable
+ * at every boot. Instead, check for free space at least as big as needed, plus a little extra.
+ *
+ * Since: 2.0.12
+ **/
+void
+fu_device_set_required_free(FuDevice *self, guint64 required_free)
+{
+	FuDevicePrivate *priv = GET_PRIVATE(self);
+	g_return_if_fail(FU_IS_DEVICE(self));
+	if (priv->required_free == required_free)
+		return;
+	priv->required_free = required_free;
+	g_object_notify(G_OBJECT(self), "required-free");
 }
 
 /**
@@ -4963,6 +5081,7 @@ fu_device_to_string_impl(FuDevice *self, guint idt, GString *str)
 	}
 	fwupd_codec_string_append_size(str, idt, "FirmwareSizeMin", priv->size_min);
 	fwupd_codec_string_append_size(str, idt, "FirmwareSizeMax", priv->size_max);
+	fwupd_codec_string_append_int(str, idt, "RequiredFree", priv->required_free);
 	if (priv->order != G_MAXINT) {
 		g_autofree gchar *order = g_strdup_printf("%i", priv->order);
 		fwupd_codec_string_append(str, idt, "Order", order);
@@ -5352,6 +5471,7 @@ fu_device_prepare_firmware(FuDevice *self,
  * fu_device_read_firmware:
  * @self: a #FuDevice
  * @progress: a #FuProgress
+ * @flags: #FuFirmwareParseFlags, e.g. %FU_FIRMWARE_PARSE_FLAG_NONE
  * @error: (nullable): optional return location for an error
  *
  * Reads firmware from the device by calling a plugin-specific vfunc.
@@ -5363,10 +5483,13 @@ fu_device_prepare_firmware(FuDevice *self,
  *
  * Returns: (transfer full): a #FuFirmware, or %NULL for error
  *
- * Since: 1.0.8
+ * Since: 2.0.11, although a simpler version was added in 1.0.8
  **/
 FuFirmware *
-fu_device_read_firmware(FuDevice *self, FuProgress *progress, GError **error)
+fu_device_read_firmware(FuDevice *self,
+			FuProgress *progress,
+			FuFirmwareParseFlags flags,
+			GError **error)
 {
 	FuDeviceClass *device_class = FU_DEVICE_GET_CLASS(self);
 	FuDevicePrivate *priv = GET_PRIVATE(self);
@@ -5375,15 +5498,6 @@ fu_device_read_firmware(FuDevice *self, FuProgress *progress, GError **error)
 	g_return_val_if_fail(FU_IS_DEVICE(self), NULL);
 	g_return_val_if_fail(FU_IS_PROGRESS(progress), NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
-
-	/* device does not support reading for verification CRCs */
-	if (!fu_device_has_flag(self, FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE)) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOT_SUPPORTED,
-				    "reading firmware is not supported by device");
-		return NULL;
-	}
 
 	/* call vfunc */
 	g_set_object(&priv->progress, progress);
@@ -5396,7 +5510,7 @@ fu_device_read_firmware(FuDevice *self, FuProgress *progress, GError **error)
 		return NULL;
 	if (priv->firmware_gtype != G_TYPE_INVALID) {
 		g_autoptr(FuFirmware) firmware = g_object_new(priv->firmware_gtype, NULL);
-		if (!fu_firmware_parse_bytes(firmware, fw, 0x0, FU_FIRMWARE_PARSE_FLAG_NONE, error))
+		if (!fu_firmware_parse_bytes(firmware, fw, 0x0, flags, error))
 			return NULL;
 		return g_steal_pointer(&firmware);
 	}
@@ -6585,6 +6699,8 @@ fu_device_incorporate(FuDevice *self, FuDevice *donor, FuDeviceIncorporateFlags 
 			fu_device_set_equivalent_id(self, fu_device_get_equivalent_id(donor));
 		if (priv->fwupd_version == NULL && fu_device_get_fwupd_version(donor) != NULL)
 			fu_device_set_fwupd_version(self, fu_device_get_fwupd_version(donor));
+		if (priv_donor->required_free > 0)
+			fu_device_set_required_free(self, priv_donor->required_free);
 		if (priv->update_request_id == NULL && priv_donor->update_request_id != NULL)
 			fu_device_set_update_request_id(self, priv_donor->update_request_id);
 		if (fu_device_has_private_flag(self, FU_DEVICE_PRIVATE_FLAG_REFCOUNTED_PROXY) &&
@@ -6973,6 +7089,19 @@ fu_device_ensure_from_release(FuDevice *self, XbNode *rel)
 {
 	g_return_if_fail(FU_IS_DEVICE(self));
 	g_return_if_fail(XB_IS_NODE(rel));
+
+	/* set the required free */
+	if (fu_device_has_private_flag(self, FU_DEVICE_PRIVATE_FLAG_MD_SET_REQUIRED_FREE)) {
+		guint64 size;
+		size = xb_node_query_text_as_uint(rel,
+						  "artifacts/artifact/size[@type='installed']",
+						  NULL);
+		if (size != G_MAXUINT64) {
+			fu_device_set_required_free(self, size);
+			fu_device_remove_private_flag(self,
+						      FU_DEVICE_PRIVATE_FLAG_MD_SET_REQUIRED_FREE);
+		}
+	}
 
 	/* optionally filter by device checksum */
 	if (fu_device_has_private_flag(self, FU_DEVICE_PRIVATE_FLAG_MD_ONLY_CHECKSUM)) {
@@ -8061,6 +8190,22 @@ fu_device_class_init(FuDeviceClass *klass)
 				  0,
 				  G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
 	g_object_class_install_property(object_class, PROP_PID, pspec);
+
+	/**
+	 * FuDevice:required-free:
+	 *
+	 * The required amount of free firmware space.
+	 *
+	 * Since: 2.0.12
+	 */
+	pspec = g_param_spec_uint64("required-free",
+				    NULL,
+				    NULL,
+				    0,
+				    G_MAXUINT64,
+				    0,
+				    G_PARAM_READWRITE | G_PARAM_STATIC_NAME);
+	g_object_class_install_property(object_class, PROP_REQUIRED_FREE, pspec);
 }
 
 static void

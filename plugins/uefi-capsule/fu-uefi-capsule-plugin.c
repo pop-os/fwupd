@@ -53,7 +53,7 @@ fu_uefi_capsule_plugin_to_string(FuPlugin *plugin, guint idt, GString *str)
 }
 
 static gboolean
-fu_uefi_capsule_plugin_fwupd_efi_parse(FuUefiCapsulePlugin *self, GError **error)
+fu_uefi_capsule_plugin_fwupd_efi_parse_fallback(FuUefiCapsulePlugin *self, GError **error)
 {
 	FuContext *ctx = fu_plugin_get_context(FU_PLUGIN(self));
 	const guint8 needle[] = "f\0w\0u\0p\0d\0-\0e\0f\0i\0 \0v\0e\0r\0s\0i\0o\0n\0 ";
@@ -91,6 +91,64 @@ fu_uefi_capsule_plugin_fwupd_efi_parse(FuUefiCapsulePlugin *self, GError **error
 
 	/* success */
 	fu_context_add_runtime_version(ctx, "org.freedesktop.fwupd-efi", version_safe);
+	return TRUE;
+}
+
+static void
+fu_uefi_capsule_plugin_fwupd_efi_add_sbom(FuUefiCapsulePlugin *self,
+					  const gchar *product,
+					  const gchar *version)
+{
+	FuContext *ctx = fu_plugin_get_context(FU_PLUGIN(self));
+	if (g_strcmp0(product, "fwupdx64") == 0) {
+		fu_context_add_runtime_version(ctx, "org.freedesktop.fwupd-efi", version);
+		return;
+	}
+	if (g_strcmp0(product, "gnu-efi") == 0) {
+		fu_context_add_runtime_version(ctx, "com.github.ncroxon.gnu-efi", version);
+		return;
+	}
+}
+
+static gboolean
+fu_uefi_capsule_plugin_fwupd_efi_parse_sbom(FuUefiCapsulePlugin *self, GError **error)
+{
+	g_autoptr(FuFirmware) fw = fu_pefile_firmware_new();
+	g_autoptr(FuFirmware) fw_sbom = NULL;
+	g_autoptr(GPtrArray) fw_coswids = NULL;
+
+	if (!fu_firmware_parse_file(fw, self->fwupd_efi_file, FU_FIRMWARE_PARSE_FLAG_NONE, error))
+		return FALSE;
+	fw_sbom = fu_firmware_get_image_by_id(fw, ".sbom", error);
+	if (fw_sbom == NULL)
+		return FALSE;
+	fw_coswids = fu_firmware_get_images(fw_sbom);
+	for (guint i = 0; i < fw_coswids->len; i++) {
+		FuFirmware *fw_coswid = g_ptr_array_index(fw_coswids, i);
+		if (!FU_IS_COSWID_FIRMWARE(fw_coswid))
+			continue;
+		fu_uefi_capsule_plugin_fwupd_efi_add_sbom(
+		    self,
+		    fu_coswid_firmware_get_product(FU_COSWID_FIRMWARE(fw_coswid)),
+		    fu_firmware_get_version(fw_coswid));
+	}
+
+	/* success */
+	return TRUE;
+}
+
+static gboolean
+fu_uefi_capsule_plugin_fwupd_efi_parse(FuUefiCapsulePlugin *self, GError **error)
+{
+	g_autoptr(GError) error_local = NULL;
+
+	/* try parsing the SBOM, then fall back to a well-known token */
+	if (!fu_uefi_capsule_plugin_fwupd_efi_parse_sbom(self, &error_local)) {
+		g_debug("failed to parse SBOM, using fallback: %s", error_local->message);
+		return fu_uefi_capsule_plugin_fwupd_efi_parse_fallback(self, error);
+	}
+
+	/* success */
 	return TRUE;
 }
 
@@ -333,7 +391,6 @@ fu_uefi_capsule_plugin_write_splash_data(FuUefiCapsulePlugin *self,
 	g_autoptr(FuBitmapImage) bmp_image = fu_bitmap_image_new();
 	g_autoptr(GByteArray) st_cap = fu_struct_efi_capsule_header_new();
 	g_autoptr(GByteArray) st_uxh = fu_struct_efi_ux_capsule_header_new();
-	g_autoptr(GFile) ofile = NULL;
 	g_autoptr(GOutputStream) ostream = NULL;
 
 	/* get screen dimensions */
@@ -355,9 +412,7 @@ fu_uefi_capsule_plugin_write_splash_data(FuUefiCapsulePlugin *self,
 	fn = g_build_filename(esp_path, capsule_path, NULL);
 	if (!fu_path_mkdir_parent(fn, error))
 		return FALSE;
-	ofile = g_file_new_for_path(fn);
-	ostream =
-	    G_OUTPUT_STREAM(g_file_replace(ofile, NULL, FALSE, G_FILE_CREATE_NONE, NULL, error));
+	ostream = fu_output_stream_from_path(fn, error);
 	if (ostream == NULL)
 		return FALSE;
 
@@ -398,8 +453,7 @@ fu_uefi_capsule_plugin_write_splash_data(FuUefiCapsulePlugin *self,
 	size = g_output_stream_write(ostream, st_uxh->data, st_uxh->len, NULL, error);
 	if (size < 0)
 		return FALSE;
-	size = g_output_stream_write_bytes(ostream, blob, NULL, error);
-	if (size < 0)
+	if (!fu_output_stream_write_bytes(ostream, blob, NULL, error))
 		return FALSE;
 
 	/* write display capsule location as UPDATE_INFO */
@@ -842,8 +896,6 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 	FuUefiCapsulePlugin *self = FU_UEFI_CAPSULE_PLUGIN(plugin);
 	FuContext *ctx = fu_plugin_get_context(plugin);
 	FuEfivars *efivars = fu_context_get_efivars(ctx);
-	guint64 nvram_total;
-	g_autofree gchar *nvram_total_str = NULL;
 	g_autoptr(GError) error_local = NULL;
 	g_autoptr(GError) error_acpi_uefi = NULL;
 
@@ -888,11 +940,6 @@ fu_uefi_capsule_plugin_startup(FuPlugin *plugin, FuProgress *progress, GError **
 	/* are the EFI dirs set up so we can update each device */
 	if (!fu_efivars_supported(efivars, error))
 		return FALSE;
-	nvram_total = fu_efivars_space_used(efivars, error);
-	if (nvram_total == G_MAXUINT64)
-		return FALSE;
-	nvram_total_str = g_strdup_printf("%" G_GUINT64_FORMAT, nvram_total);
-	fu_plugin_add_report_metadata(plugin, "EfivarsNvramUsed", nvram_total_str);
 
 	/* we use this both for quirking the CoD implementation sanity and the CoD filename */
 	self->acpi_uefi = fu_uefi_capsule_plugin_parse_acpi_uefi(self, &error_acpi_uefi);

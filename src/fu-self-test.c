@@ -1175,6 +1175,72 @@ fu_engine_plugin_firmware_gtype(FuTest *self, GType gtype)
 }
 
 static void
+fu_engine_test_plugin_mutable_enumeration(gconstpointer user_data)
+{
+	const gchar *fake_localconf_fn = "/tmp/fwupd-self-test/var/etc/fwupd/fwupd.conf";
+	FuTest *self = (FuTest *)user_data;
+	g_autoptr(FuEngine) engine = NULL;
+	g_autoptr(FuPlugin) plugin = fu_plugin_new(NULL);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	gboolean ret;
+
+	/* ensure empty tree */
+	fu_self_test_mkroot();
+
+	(void)g_unsetenv("CONFIGURATION_DIRECTORY");
+	(void)g_setenv("FWUPD_SYSCONFDIR", "/tmp/fwupd-self-test", TRUE);
+
+	ret = fu_path_mkdir_parent(fake_localconf_fn, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+	ret = g_file_set_contents(fake_localconf_fn,
+				  "# use `man 5 fwupd.conf` for documentation\n"
+				  "[fwupd]\n"
+				  "RequireImmutableEnumeration=true\n",
+				  -1,
+				  &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	engine = fu_engine_new(self->ctx);
+	g_assert_nonnull(engine);
+
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* engine requires, plugin doesn't have */
+	ret = fu_engine_plugin_allows_enumeration(engine, plugin);
+	g_assert_true(ret);
+
+	/* engine requires, plugin does have */
+	fu_plugin_add_flag(plugin, FWUPD_PLUGIN_FLAG_MUTABLE_ENUMERATION);
+	ret = fu_engine_plugin_allows_enumeration(engine, plugin);
+	g_assert_false(ret);
+
+	/* clear config and reload engine */
+	fu_self_test_mkroot();
+	g_clear_object(&engine);
+
+	engine = fu_engine_new(self->ctx);
+	g_assert_nonnull(engine);
+
+	ret = fu_engine_load(engine, FU_ENGINE_LOAD_FLAG_NO_CACHE, progress, &error);
+	g_assert_no_error(error);
+	g_assert_true(ret);
+
+	/* engine requires, plugin does have */
+	ret = fu_engine_plugin_allows_enumeration(engine, plugin);
+	g_assert_true(ret);
+
+	/* drop flag, engine shouldn't care */
+	fu_plugin_remove_flag(plugin, FWUPD_PLUGIN_FLAG_MUTABLE_ENUMERATION);
+	ret = fu_engine_plugin_allows_enumeration(engine, plugin);
+	g_assert_true(ret);
+}
+
+static void
 fu_engine_plugin_gtypes_func(gconstpointer user_data)
 {
 	FuTest *self = (FuTest *)user_data;
@@ -2641,6 +2707,12 @@ fu_engine_md_verfmt_func(gconstpointer user_data)
 	    "type=\"md5\">deadbeefdeadbeefdeadbeefdeadbeef</checksum>"
 	    "        <checksum filename=\"firmware.bin\" target=\"content\" "
 	    "type=\"md5\">deadbeefdeadbeefdeadbeefdeadbeef</checksum>"
+	    "        <artifacts>"
+	    "          <artifact type=\"binary\">"
+	    "            <size type=\"installed\">1024</size>"
+	    "            <size type=\"download\">2048</size>"
+	    "          </artifact>"
+	    "        </artifacts>"
 	    "      </release>"
 	    "    </releases>"
 	    "    <custom>"
@@ -2677,6 +2749,7 @@ fu_engine_md_verfmt_func(gconstpointer user_data)
 	fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_SET_SIGNED);
 	fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_SET_VERFMT);
 	fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_SET_FLAGS);
+	fu_device_add_private_flag(device, FU_DEVICE_PRIVATE_FLAG_MD_SET_REQUIRED_FREE);
 	fu_device_set_id(device, "test_device");
 	fu_device_build_vendor_id_u16(device, "USB", 0xFFFF);
 	fu_device_add_protocol(device, "com.acme");
@@ -2693,6 +2766,7 @@ fu_engine_md_verfmt_func(gconstpointer user_data)
 	g_assert_true(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_SIGNED_PAYLOAD));
 	g_assert_true(fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN));
 	g_assert_true(fu_device_has_private_flag(device, FU_DEVICE_PRIVATE_FLAG_HOST_CPU));
+	g_assert_cmpint(fu_device_get_required_free(device), ==, 1024);
 
 	/* ensure the device was added */
 	devices = fu_engine_get_devices(engine, &error);
@@ -3101,6 +3175,7 @@ fu_engine_install_loop_restart_func(gconstpointer user_data)
 	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
 	g_autoptr(FuPlugin) plugin = fu_plugin_new_from_gtype(fu_test_plugin_get_type(), self->ctx);
 	g_autoptr(FuProgress) progress = fu_progress_new(G_STRLOC);
+	g_autoptr(FuRelease) release = fu_release_new();
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GInputStream) stream_fw = NULL;
 	g_autoptr(XbSilo) silo_empty = xb_silo_new();
@@ -3141,14 +3216,15 @@ fu_engine_install_loop_restart_func(gconstpointer user_data)
 	fu_device_set_metadata_integer(device, "nr-attach", 0);
 
 	stream_fw = g_memory_input_stream_new_from_data((const guint8 *)"1.2.3", 5, NULL);
-	ret =
-	    fu_engine_install_blob(engine,
-				   device,
-				   stream_fw,
-				   progress,
-				   FWUPD_INSTALL_FLAG_NO_HISTORY | FU_FIRMWARE_PARSE_FLAG_CACHE_STREAM,
-				   FWUPD_FEATURE_FLAG_NONE,
-				   &error);
+	fu_release_set_stream(release, stream_fw);
+	ret = fu_engine_install_blob(engine,
+				     device,
+				     release,
+				     progress,
+				     FWUPD_INSTALL_FLAG_NO_HISTORY |
+					 FU_FIRMWARE_PARSE_FLAG_CACHE_STREAM,
+				     FWUPD_FEATURE_FLAG_NONE,
+				     &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
 
@@ -3619,6 +3695,7 @@ fu_engine_install_request(gconstpointer user_data)
 	ret = fu_release_load(release, cabinet, component, NULL, FWUPD_INSTALL_FLAG_NONE, &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
+	g_assert_cmpstr(fu_release_get_firmware_basename(release), ==, "firmware.bin");
 
 	g_signal_connect(FU_ENGINE(engine),
 			 "device-request",
@@ -5124,7 +5201,7 @@ fu_plugin_composite_func(gconstpointer user_data)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
 				      blob,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -5890,7 +5967,7 @@ fu_common_store_cab_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
 				      blob,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -5960,7 +6037,7 @@ fu_common_store_cab_artifact_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet1),
 				      blob1,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -5991,7 +6068,7 @@ fu_common_store_cab_artifact_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet2),
 				      blob2,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6025,7 +6102,7 @@ fu_common_store_cab_artifact_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet3),
 				      blob3,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6054,7 +6131,7 @@ fu_common_store_cab_artifact_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet4),
 				      blob4,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6088,7 +6165,7 @@ fu_common_store_cab_unsigned_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
 				      blob,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6141,7 +6218,7 @@ fu_common_store_cab_sha256_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
 				      blob,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -6174,7 +6251,7 @@ fu_common_store_cab_folder_func(void)
 	ret = fu_firmware_parse_bytes(FU_FIRMWARE(cabinet),
 				      blob,
 				      0x0,
-				      FU_FIRMWARE_PARSE_FLAG_NONE,
+				      FU_FIRMWARE_PARSE_FLAG_CACHE_BLOB,
 				      &error);
 	g_assert_no_error(error);
 	g_assert_true(ret);
@@ -7034,6 +7111,43 @@ fu_config_migrate_1_7_func(void)
 }
 
 static void
+fu_engine_report_metadata_func(gconstpointer user_data)
+{
+	FuTest *self = (FuTest *)user_data;
+	g_autoptr(FuEngine) engine = fu_engine_new(self->ctx);
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GHashTable) metadata = NULL;
+	g_autoptr(GList) keys = NULL;
+	const gchar *keys_exist[] = {
+	    "BatteryLevel",
+	    "BatteryThreshold",
+	    "CompileVersion(org.freedesktop.fwupd)",
+	    "CpuArchitecture",
+	    "DistroId",
+	    "FwupdSupported",
+	    "RuntimeVersion(org.freedesktop.fwupd)",
+	    "SELinux",
+	};
+
+	/* check report metadata */
+	metadata = fu_engine_get_report_metadata(engine, &error);
+	g_assert_no_error(error);
+	g_assert_nonnull(metadata);
+
+	keys = g_list_sort(g_hash_table_get_keys(metadata), (GCompareFunc)g_strcmp0);
+	for (GList *l = keys; l != NULL; l = l->next) {
+		const gchar *key = l->data;
+		const gchar *value = g_hash_table_lookup(metadata, key);
+		g_debug("%s=%s", key, value);
+	}
+	for (guint i = 0; i < G_N_ELEMENTS(keys_exist); i++) {
+		const gchar *value = g_hash_table_lookup(metadata, keys_exist[i]);
+		if (value == NULL)
+			g_warning("no %s in metadata", keys_exist[i]);
+	}
+}
+
+static void
 fu_engine_machine_hash_func(void)
 {
 	gsize sz = 0;
@@ -7579,6 +7693,9 @@ main(int argc, char **argv)
 			     self,
 			     fu_device_list_replug_user_func);
 	g_test_add_func("/fwupd/engine{machine-hash}", fu_engine_machine_hash_func);
+	g_test_add_data_func("/fwupd/engine{report-metadata}",
+			     self,
+			     fu_engine_report_metadata_func);
 	g_test_add_data_func("/fwupd/engine{require-hwid}", self, fu_engine_require_hwid_func);
 	g_test_add_data_func("/fwupd/engine{requires-reboot}",
 			     self,
@@ -7662,6 +7779,9 @@ main(int argc, char **argv)
 			     self,
 			     fu_engine_requirements_sibling_device_func);
 	g_test_add_data_func("/fwupd/engine{plugin-gtypes}", self, fu_engine_plugin_gtypes_func);
+	g_test_add_data_func("/fwupd/plugin/mutable",
+			     self,
+			     fu_engine_test_plugin_mutable_enumeration);
 	g_test_add_data_func("/fwupd/plugin{composite}", self, fu_plugin_composite_func);
 	g_test_add_data_func("/fwupd/plugin{composite-multistep}",
 			     self,

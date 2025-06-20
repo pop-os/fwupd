@@ -7,24 +7,22 @@
 
 #include "config.h"
 
+#include "fu-dell-kestrel-ec.h"
 #include "fu-dell-kestrel-hid-device.h"
 #include "fu-dell-kestrel-hid-struct.h"
 
 G_DEFINE_TYPE(FuDellKestrelHidDevice, fu_dell_kestrel_hid_device, FU_TYPE_HID_DEVICE)
 
 /* Used for EC HID communication */
-#define FU_DELL_KESTREL_HID_TIMEOUT	     300
+#define FU_DELL_KESTREL_HID_TIMEOUT	     3000
 #define FU_DELL_KESTREL_HID_CMD_FWUPDATE     0xAB
 #define FU_DELL_KESTREL_HID_EXT_FWUPDATE     0x80
 #define FU_DELL_KESTREL_HID_SUBCMD_FWUPDATE  0x00
-#define FU_DELL_KESTREL_HID_DEV_EC_CHUNK_SZ  160000
-#define FU_DELL_KESTREL_HID_DEV_PD_CHUNK_SZ  190000
-#define FU_DELL_KESTREL_HID_DEV_ANY_CHUNK_SZ 180000
+#define FU_DELL_KESTREL_HID_DEV_ANY_CHUNK_SZ 120000
 #define FU_DELL_KESTREL_HID_DEV_NO_CHUNK_SZ  G_MAXSIZE
 #define FU_DELL_KESTREL_HID_DATA_PAGE_SZ     192
 #define FU_DELL_KESTREL_HID_RESPONSE_LENGTH  0x03
 #define FU_DELL_KESTREL_HID_I2C_ADDRESS	     0xec
-#define FU_DELL_KESTREL_HID_MAX_RETRIES	     8
 
 #define FU_DELL_KESTREL_HID_I2C_MAX_READ  192
 #define FU_DELL_KESTREL_HID_I2C_MAX_WRITE 128
@@ -82,7 +80,7 @@ fu_dell_kestrel_hid_device_hid_set_report_cb(FuDevice *self, gpointer user_data,
 					0x0,
 					outbuffer,
 					192,
-					FU_DELL_KESTREL_HID_TIMEOUT * 3,
+					FU_DELL_KESTREL_HID_TIMEOUT,
 					FU_HID_DEVICE_FLAG_NONE,
 					error);
 }
@@ -94,7 +92,7 @@ fu_dell_kestrel_hid_device_hid_set_report(FuDellKestrelHidDevice *self,
 {
 	return fu_device_retry(FU_DEVICE(self),
 			       fu_dell_kestrel_hid_device_hid_set_report_cb,
-			       FU_DELL_KESTREL_HID_MAX_RETRIES,
+			       DELL_KESTREL_MAX_RETRIES,
 			       outbuffer,
 			       error);
 }
@@ -119,7 +117,7 @@ fu_dell_kestrel_hid_device_get_report(FuDellKestrelHidDevice *self,
 {
 	return fu_device_retry_full(FU_DEVICE(self),
 				    fu_dell_kestrel_hid_device_get_report_cb,
-				    FU_DELL_KESTREL_HID_MAX_RETRIES,
+				    DELL_KESTREL_MAX_RETRIES,
 				    2000,
 				    inbuffer,
 				    error);
@@ -192,19 +190,17 @@ fu_dell_kestrel_hid_device_get_chunk_delaytime(FuDellKestrelEcDevType dev_type)
 }
 
 static gsize
-fu_dell_kestrel_hid_device_get_chunk_size(FuDellKestrelEcDevType dev_type)
+fu_dell_kestrel_hid_device_get_chunk_size(FuDellKestrelHidDevice *self,
+					  FuDellKestrelEcDevType dev_type)
 {
-	/* return the max chunk size in bytes */
-	switch (dev_type) {
-	case FU_DELL_KESTREL_EC_DEV_TYPE_MAIN_EC:
-		return FU_DELL_KESTREL_HID_DEV_EC_CHUNK_SZ;
-	case FU_DELL_KESTREL_EC_DEV_TYPE_PD:
-		return FU_DELL_KESTREL_HID_DEV_PD_CHUNK_SZ;
-	case FU_DELL_KESTREL_EC_DEV_TYPE_RMM:
+	if (dev_type == FU_DELL_KESTREL_EC_DEV_TYPE_RMM)
 		return FU_DELL_KESTREL_HID_DEV_NO_CHUNK_SZ;
-	default:
+
+	if (FU_IS_DELL_KESTREL_EC(self) &&
+	    fu_dell_kestrel_ec_is_chunk_supported(FU_DELL_KESTREL_EC(self), dev_type))
 		return FU_DELL_KESTREL_HID_DEV_ANY_CHUNK_SZ;
-	}
+
+	return FU_DELL_KESTREL_HID_DEV_NO_CHUNK_SZ;
 }
 
 static gboolean
@@ -213,6 +209,7 @@ fu_dell_kestrel_hid_device_write_firmware_pages(FuDellKestrelHidDevice *self,
 						FuProgress *progress,
 						FuDellKestrelEcDevType dev_type,
 						guint chunk_idx,
+						guint chunks_num,
 						GError **error)
 {
 	/* progress */
@@ -229,8 +226,9 @@ fu_dell_kestrel_hid_device_write_firmware_pages(FuDellKestrelHidDevice *self,
 		if (page == NULL)
 			return FALSE;
 
-		g_debug("sending chunk: %u, page: %u/%u.",
+		g_debug("sending chunk: %u/%u, page: %u/%u.",
 			chunk_idx,
+			chunks_num - 1,
 			j,
 			fu_chunk_array_length(pages) - 1);
 
@@ -312,7 +310,7 @@ fu_dell_kestrel_hid_device_write_firmware(FuDellKestrelHidDevice *self,
 					  GError **error)
 {
 	gsize fw_sz = 0;
-	gsize chunk_sz = fu_dell_kestrel_hid_device_get_chunk_size(dev_type);
+	gsize chunk_sz = fu_dell_kestrel_hid_device_get_chunk_size(self, dev_type);
 	guint chunk_delay = fu_dell_kestrel_hid_device_get_chunk_delaytime(dev_type);
 	g_autoptr(GBytes) fw = NULL;
 	g_autoptr(FuChunkArray) chunks = NULL;
@@ -370,6 +368,7 @@ fu_dell_kestrel_hid_device_write_firmware(FuDellKestrelHidDevice *self,
 			fu_progress_get_child(progress),
 			dev_type,
 			i,
+			fu_chunk_array_length(chunks),
 			error))
 			return FALSE;
 

@@ -129,7 +129,6 @@ fwupdplugin_src = [
   'fu-hwids-smbios.c', # fuzzing
   'fu-i2c-device.c',
   'fu-ifd-bios.c', # fuzzing
-  'fu-ifd-common.c', # fuzzing
   'fu-ifd-firmware.c', # fuzzing
   'fu-ifd-image.c', # fuzzing
   'fu-ifwi-cpd-firmware.c', # fuzzing
@@ -143,7 +142,7 @@ fwupdplugin_src = [
   'fu-kenv.c', # fuzzing
   'fu-kernel.c', # fuzzing
   'fu-kernel-search-path.c', # fuzzing
-  'fu-linear-firmware.c',
+  'fu-linear-firmware.c', # fuzzing
   'fu-lzma-common.c', # fuzzing
   'fu-mei-device.c',
   'fu-mem.c', # fuzzing
@@ -157,6 +156,7 @@ fwupdplugin_src = [
   'fu-pci-device.c',
   'fu-pkcs7.c',
   'fu-oprom-device.c',
+  'fu-output-stream.c', # fuzzing
   'fu-plugin.c',
   'fu-progress.c', # fuzzing
   'fu-quirks.c', # fuzzing
@@ -275,7 +275,6 @@ fwupdplugin_headers = [
   'fu-hwids.h',
   'fu-i2c-device.h',
   'fu-ifd-bios.h',
-  'fu-ifd-common.h',
   'fu-ifd-firmware.h',
   'fu-ifd-image.h',
   'fu-ifwi-cpd-firmware.h',
@@ -296,6 +295,7 @@ fwupdplugin_headers = [
   'fu-msgpack-item.h',
   'fu-oprom-device.h',
   'fu-oprom-firmware.h',
+  'fu-output-stream.h',
   'fu-partial-input-stream.h',
   'fu-partial-input-stream-private.h',
   'fu-path.h',
