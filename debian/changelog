@@ -1,3 +1,9 @@
+fwupd (2.0.12-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 19 Jun 2025 23:04:37 -0500
+
 fwupd (2.0.10-1) experimental; urgency=medium
 
   * New upstream version.
