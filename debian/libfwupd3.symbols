@@ -74,6 +74,8 @@ libfwupd.so.3 libfwupd3 #MINVER#
  LIBFWUPD_1.9.6@LIBFWUPD_1.9.6 1.9.6
  LIBFWUPD_1.9.8@LIBFWUPD_1.9.8 1.9.8
  LIBFWUPD_2.0.0@LIBFWUPD_2.0.0 2.0.0
+ LIBFWUPD_2.0.10@LIBFWUPD_2.0.10 2.0.10
+ LIBFWUPD_2.0.11@LIBFWUPD_2.0.11 2.0.11
  LIBFWUPD_2.0.1@LIBFWUPD_2.0.1 2.0.1
  LIBFWUPD_2.0.2@LIBFWUPD_2.0.2 2.0.2
  LIBFWUPD_2.0.4@LIBFWUPD_2.0.4 2.0.4
@@ -298,6 +300,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_codec_json_append@LIBFWUPD_2.0.0 2.0.0
  fwupd_codec_json_append_bool@LIBFWUPD_2.0.0 2.0.0
  fwupd_codec_json_append_int@LIBFWUPD_2.0.0 2.0.0
+ fwupd_codec_json_append_map@LIBFWUPD_2.0.10 2.0.10
  fwupd_codec_json_append_strv@LIBFWUPD_2.0.0 2.0.0
  fwupd_codec_string_append@LIBFWUPD_2.0.0 2.0.0
  fwupd_codec_string_append_bool@LIBFWUPD_2.0.0 2.0.0
@@ -699,6 +702,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_security_attr_set_url@LIBFWUPD_1.5.0 1.5.0
  fwupd_status_from_string@LIBFWUPD_0.1.1 1.0.0
  fwupd_status_to_string@LIBFWUPD_0.1.1 1.0.0
+ fwupd_strerror@LIBFWUPD_2.0.11 2.0.11
  fwupd_update_state_from_string@LIBFWUPD_0.7.0 1.0.0
  fwupd_update_state_to_string@LIBFWUPD_0.7.0 1.0.0
  fwupd_version_format_from_string@LIBFWUPD_1.2.9 1.2.9
