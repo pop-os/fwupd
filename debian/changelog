@@ -1,3 +1,9 @@
+fwupd (2.0.13-2) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Mario Limonciello <superm1@gmail.com>  Sun, 10 Aug 2025 12:28:15 -0500
+
 fwupd (2.0.13-1) experimental; urgency=medium
 
   * New upstream version.
