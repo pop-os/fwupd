@@ -1,3 +1,9 @@
+fwupd (2.0.14-1) unstable; urgency=medium
+
+  * New upstream version (2.0.14)
+
+ -- Mario Limonciello <superm1@debian.org>  Fri, 29 Aug 2025 11:28:00 -0500
+
 fwupd (2.0.13-2) unstable; urgency=medium
 
   * Upload to unstable
@@ -1377,7 +1383,7 @@ fwupd (0.9.6-1) unstable; urgency=medium
   * trivial: Never compare a string against zero to avoid warnings
   * unifying: Don't log a warning when an unknown report is parsed
   * trivial: Include all the GTypes in the generated docs
-  * Check all the device GUIDs against the blacklist when added
+  * Check all the device GUIDs against the blocklist when added
   * Fix a hang on 32 bit computers
   * trivial: Fix a -Wsign-compare warning on 32 bit
   * trivial: Fix spelling of delimiter
