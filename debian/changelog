@@ -1,3 +1,9 @@
+fwupd (2.0.15-1) unstable; urgency=medium
+
+  * New upstream version (2.0.15)
+
+ -- Mario Limonciello <superm1@debian.org>  Wed, 10 Sep 2025 12:57:57 -0500
+
 fwupd (2.0.14-1) unstable; urgency=medium
 
   * New upstream version (2.0.14)
