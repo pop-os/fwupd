@@ -1,0 +1,35 @@
+From 2eee151f6f721ac91201d14437d4cd11f33172cc Mon Sep 17 00:00:00 2001
+From: "Mario Limonciello (AMD)" <superm1@kernel.org>
+Date: Sun, 14 Sep 2025 23:43:44 -0500
+Subject: [PATCH] trivial: ci: drop python3-toml for Debian and Ubuntu
+
+They're no longer needed per https://wiki.debian.org/Python/Backports
+Closes: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1110022
+---
+ contrib/ci/dependencies.xml | 9 ---------
+ 1 file changed, 9 deletions(-)
+
+Index: fwupd/contrib/ci/dependencies.xml
+===================================================================
+--- fwupd.orig/contrib/ci/dependencies.xml
++++ fwupd/contrib/ci/dependencies.xml
+@@ -1465,19 +1465,10 @@
+     </distro>
+   </dependency>
+   <dependency id="python3-toml">
+-    <distro id="debian">
+-      <control />
+-      <package variant="x86_64" />
+-      <package variant="i386" />
+-    </distro>
+     <distro id="fedora">
+       <package variant="x86_64" />
+       <package variant="aarch64" />
+     </distro>
+-    <distro id="ubuntu">
+-      <package variant="x86_64" />
+-      <package variant="aarch64" />
+-    </distro>
+   </dependency>
+   <dependency id="python3-markdown">
+     <distro id="centos">
