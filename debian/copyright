@@ -3,7 +3,8 @@ Upstream-Name: fwupd
 Source: https://github.com/fwupd/fwupd
 
 Files: *
-Copyright: 
+Copyright:
+	   1991, 1999 Free Software Foundation, Inc.
 	   2006, 2008 Junio C Hamano
 	   3mdeb Embedded Systems Consulting
 	   9elements Agency GmbH <patrick.rudolph@9elements.com>
@@ -12,17 +13,20 @@ Copyright:
 	   Advanced Micro Devices Inc.
 	   Aleix Pol <aleixpol@kde.org>
 	   Aleksander Morgado <aleksander@aleksander.es>
-	   Algoltek <Algoltek, Inc.>
 	   Algoltek, Inc.
 	   Andrew Duggan
 	   Andrii Dushko <andrii.dushko@developex.net>
 	   Apollo Ling <apollo.ling@synaptics.com>
 	   Apple Inc
+	   Arno Dubois <arno.du@orange.fr>
+	   B&R Industrial Automation GmbH
 	   Ben Chuang <benchuanggli@gmail.com>
 	   Benson Leung <bleung@chromium.org>
 	   Canonical Ltd
 	   Canonical Ltd.
+	   Chris Hofstaedtler <ch@zeha.at>
 	   Christian J. Kellner <christian@kellner.me>
+	   Chun-wei Fan <fanc999@yahoo.com.tw>
 	   Collabora Ltd
 	   Collabora Ltd.
 	   Cypress Semiconductor Corporation.
@@ -34,6 +38,7 @@ Copyright:
 	   Denis Pynkin <denis.pynkin@collabora.com>
 	   Dylan Van Assche <me@dylanvanassche.be>
 	   Emmanuel Pacaud <emmanuel@gnome.org>
+	   Endless OS Foundation LLC
 	   Evan Lojewski
 	   Framework Computer Inc
 	   Fresco Logic
@@ -45,6 +50,7 @@ Copyright:
 	   Google LLC
 	   Google, Inc.
 	   H.J. Lu <hjl.tools@gmail.com>
+	   HP Development Company, L.P.
 	   Hai Su <hsu@kinet-ic.com>
 	   Hans de Goede <hdegoede@redhat.com>
 	   Haowei Lo <haowei.lo@fingerprints.com>
@@ -58,10 +64,12 @@ Copyright:
 	   Jarvis Jiang <jarvis.w.jiang@gmail.com>
 	   Jason Gerecke <jason.gerecke@wacom.com>
 	   Jason Gerecke <killertofu@gmail.com>
+	   Jason Huang <jason.huang@egistec.com>
 	   Jeffrey Lin <jlin@kinet-ic.com>
 	   Jeremy Soller <jeremy@system76.com>
 	   Jimmy Yu <Jimmy_yu@pixart.com>
 	   Jingle Wu <jingle.wu@emc.com.tw>
+	   Joe Hong <joe_hung@ilitek.com>
 	   Joshua Dickens <joshua.dickens@wacom.com>
 	   Kai Michaelis <kai.michaelis@immu.ne>
 	   Kevin Chen <hsinfu.chen@qsitw.com>
@@ -69,6 +77,7 @@ Copyright:
 	   Lennart Poettering <lennart@poettering.net>
 	   Logitech, Inc.
 	   LongSoft
+	   Maciej Borzecki <maciej.borzecki@canonical.com>
 	   Marek Marczykowski-Górecki <marmarek@invisiblethingslab.com>
 	   Mario Limonciello
 	   Matthias Klumpp <matthias@tenstral.net>
@@ -78,12 +87,12 @@ Copyright:
 	   Michał Kopeć <michal.kopec@3mdeb.com>
 	   Mike Chang <Mike.chang@telink-semi.com>
 	   Mike Chang <mike.chang@telink-semi.com>
+	   NVIDIA Corporation & Affiliates
 	   Norbert Kaminski <norbert.kaminski@3mdeb.com>
 	   Norbert Kamiński <norbert.kaminski@3mdeb.com>
 	   Parade Technology, Ltd
 	   Peichen Huang <peichenhuang@tw.kinetic.com>
 	   Peichen Huang <peichenhuang@tw.synaptics.com>
-	   Pena Christian <christian.a.pena@hp.com>
 	   Peter Jones <pjones@redhat.com>
 	   Peter Marheine <pmarheine@chromium.org>
 	   Philip Withnall <philip@tecnocode.co.uk>
@@ -93,12 +102,14 @@ Copyright:
 	   Rafal Wojtczuk <rafal@invisiblethingslab.com>
 	   Realtek Corporation
 	   Realtek Semiconductor Corporation
+	   Red Hat, Inc.
 	   Ricardo Cañuelo <ricardo.canuelo@collabora.com>
-	   Richard hughes <Richard@hughsie.com>
+	   Richard Hughes <richard@hughsie.com>
 	   Ricky Wu <ricky_wu@realtek.com> <spring1527@gmail.com>
 	   Ryan Chang <ryan.chang@synaptics.com>
 	   Sean Rhodes <sean@starlabs.systems>
 	   Sergii Dmytruk <sergii.dmytruk@3mdeb.com>
+	   Shaun McCance <shaunm@gnome.org>
 	   Shihwei Huang <shihwei.huang@focaltech-electronics.com>
 	   Simon McVittie
 	   Synaptics
@@ -109,6 +120,7 @@ Copyright:
 	   Synaptics Incorporated.
 	   TDT AG <development@tdt.de>
 	   Texas Instruments Incorporated
+	   Thomas Mühlbacher <tmuehlbacher@posteo.net>
 	   Twain Byrnes <binarynewts@google.com>
 	   VIA Corporation
 	   Victor Cheng <victor_cheng@usiglobal.com>
