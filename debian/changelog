@@ -1,3 +1,9 @@
+fwupd (2.0.16-2pop1) noble; urgency=medium
+
+  * Backport to Pop!_OS
+
+ -- Jacob Kauffmann <jacob@system76.com>  Thu, 25 Sep 2025 11:01:53 -0600
+
 fwupd (2.0.16-2) unstable; urgency=medium
 
   * Backport a patch from upstream to drop python3-toml b-d
