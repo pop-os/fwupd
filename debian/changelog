@@ -1,3 +1,10 @@
+fwupd (1.9.32-1pop0) noble; urgency=medium
+
+  * Update latest Debian 1.9.x packaging to upstream 1.9.32
+  * Apply Pop!_OS patches
+
+ -- Jacob Kauffmann <jacob@system76.com>  Mon, 29 Sep 2025 12:41:35 -0600
+
 fwupd (1.9.26-1) unstable; urgency=medium
 
   * New upstream version (1.9.26)
