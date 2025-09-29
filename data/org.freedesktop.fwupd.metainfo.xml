@@ -38,6 +38,148 @@
     <binary>fwupdtool</binary>
   </provides>
   <releases>
+    <release version="1.9.32" date="2025-09-08">
+      <description>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Disable time checks when verifying firmware</li>
+          <li>Enforce a requirement for the default PS5512 devboard</li>
+          <li>Ensure Lexar NVMe drives use a valid version</li>
+          <li>Remove HwID match for Dell capsule-on-disk hardware</li>
+          <li>Require a full system shutdown for Micron NVMe drives</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.9.31" date="2025-07-10">
+      <description>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Add a config option to ignore the efivars free space</li>
+          <li>Add support for new Dell dock ownership command</li>
+        </ul>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Add two more dbx checksums for offline detection</li>
+          <li>Check for 30kB of free NVRAM space before offering the dbx update</li>
+          <li>Do not allow dbx updates on more several more models</li>
+          <li>Do not copy the vendor name for Intel reference ME firmware</li>
+          <li>Never include systemd.machine_id in the uploaded report if set</li>
+          <li>Never write a UX capsule when using Capsule-On-Disk</li>
+          <li>Only check for fwupdx64.efi when NOT using CoD</li>
+          <li>Probe Synaptics VMM9 devices in a more relaxed way</li>
+          <li>Reduce lzma compression level from 9 to default 6</li>
+          <li>Refactor firmware child deduping to speed up startup</li>
+          <li>Reset RTS5G2 correctly on the Dell dock</li>
+          <li>Support loading multiple coSWID blobs from PE files</li>
+          <li>Wait for the logitech-scribe device to replug after updating</li>
+        </ul>
+        <p>This release adds support for the following hardware:</p>
+        <ul>
+          <li>A new Elan fingerprint reader</li>
+          <li>Poly Studio V72 and V12</li>
+          <li>Several new MediaTek scaler models</li>
+          <li>Thunderbolt 5 Smart Dock</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.9.30" date="2025-05-07">
+      <description>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Add several devices with broken firmware to the UEFI dbx blocklist</li>
+          <li>Add /sys/firmware/efi/efivars to ReadWritePaths</li>
+          <li>Do not export Redfish backup partitions as devices</li>
+          <li>Do not show messages or prompt for answers in `fwupdtool --json` mode</li>
+          <li>Fix a crash when installing some Wacom firmware types</li>
+          <li>Fix deploying RMM updates on the Dell Kestrel dock</li>
+          <li>Fix SMBIOS parsing for SPI ROM size >= 16MiB</li>
+          <li>Never allow updating updatable-hidden devices with fwupdtool</li>
+          <li>Recognize a very old dbx hash to allow upgrades to continue</li>
+          <li>Reduce the Dell dock HID timeout, as retries already cover it</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.9.29" date="2025-03-18">
+      <description>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Prepend the missing capsule header also when using CoD</li>
+          <li>Support cabinet archives greater in size than 2GB</li>
+        </ul>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Do not add a Redfish release date if set to 00:00:00Z</li>
+          <li>Do not add invalid CoSWID entities</li>
+          <li>Fix creating the Redfish user when the ETAG is set</li>
+          <li>Fix dbx deployment by ignoring missing PE/COFF sections</li>
+          <li>Fix writing EFI variables on new kernel versions</li>
+          <li>Include a SHA-256 checksum when using fwupdtool self-sign</li>
+          <li>Include the length in Wacom USB scaler update for future hardware support</li>
+          <li>Increase the timeout for RMM ack when updating Dell Kestrel docks</li>
+          <li>Mark the Redfish progress as finished even if the update never got to 100%</li>
+          <li>Set the Redfish MIME form-data filename correctly</li>
+          <li>Use the metadata version format to set the lowest possible version</li>
+        </ul>
+        <p>This release adds support for the following hardware:</p>
+        <ul>
+          <li>Lenovo USB-C Dual Display Travel Dock</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.9.28" date="2025-01-28">
+      <description>
+        <p>
+          This release adds the following features:
+        </p>
+        <ul>
+          <li>Add support for intel-csme19 version format</li>
+        </ul>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Avoid downstream port resets of Parade USB hubs</li>
+          <li>Cleanup Dell dock devices when disconnected</li>
+          <li>Correctly parse PE files with zero sized sections</li>
+          <li>Correctly set the package version of the Dell dock</li>
+          <li>Run the FwupdClient::changed callback in the correct thread</li>
+          <li>Run the UEFI capsule reboot cleanup action when required</li>
+          <li>Split up the AMD GPU VBIOS P/N for the version</li>
+          <li>Use the ISO date as a dbx version number</li>
+        </ul>
+        <p>This release adds support for the following hardware:</p>
+        <ul>
+          <li>HP 400/405</li>
+          <li>More ELAN fingerprint readers</li>
+        </ul>
+      </description>
+    </release>
+    <release version="1.9.27" date="2024-12-05">
+      <description>
+        <p>This release fixes the following bugs:</p>
+        <ul>
+          <li>Add a power quirk for Framework systems</li>
+          <li>Allow cros-ec repair the device after flush failure</li>
+          <li>Check the VLI USB3 firmware size before erasing</li>
+          <li>Disallow DBX updates on the Samsung Galaxy Book2 360</li>
+          <li>Do not show 'Device has been removed' as a dock error</li>
+          <li>Do not use a CMSE11 function when using CSME18</li>
+          <li>Fix an unlikely memory leak when using ModemManger Sahara devices</li>
+          <li>Fix a tiny memory leak in algoltek-usb when checking status</li>
+          <li>Mark UEFI dbx updates as affecting full disk encryption</li>
+          <li>Parse FDTs with missing END tokens</li>
+          <li>Rename the dell-k2 plugin to dell-kestrel and rework the update flow</li>
+        </ul>
+        <p>This release adds support for the following hardware:</p>
+        <ul>
+          <li>Google GID8 Headset</li>
+          <li>Parade PS188</li>
+          <li>Primax Ryder Mouse</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.9.26" date="2024-10-14">
       <description>
         <p>This release fixes the following bugs:</p>
@@ -70,7 +212,7 @@
         <p>This release adds support for the following hardware:</p>
         <ul>
           <li>Algoltek devices supporting sector erase</li>
-          <li>Dell K2 dock</li>
+          <li>Dell kestrel dock</li>
           <li>Intel USB4 hub 5787</li>
           <li>More MediaTek scaler devices</li>
           <li>Nordic HID devices supporting DFUv1</li>
@@ -496,7 +638,7 @@
           <li>Rename 'fwupdmgr sync-bkc' to 'fwupdmgr sync' and also consider the branch</li>
           <li>Require additional requirements for devices using non-OEM USB VIDs</li>
           <li>Set the waiting-for-user status when sending a request</li>
-          <li>Support uSWID SBoM data with LZMA compressed payloads</li>
+          <li>Support uSWID SBOM data with LZMA compressed payloads</li>
         </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
@@ -908,14 +1050,14 @@
           This release adds the following features:
         </p>
         <ul>
-          <li>Add a PE/COFF firmware parser to allow reading coSWID SBoM data</li>
+          <li>Add a PE/COFF firmware parser to allow reading coSWID SBOM data</li>
           <li>Allow dumping CFI SPI chips using devices like CH341a</li>
           <li>Refactor the HWIDs functionality to include FDT data</li>
         </ul>
         <p>This release fixes the following bugs:</p>
         <ul>
           <li>Add back a legacy eMMC GUID to fix a regression</li>
-          <li>Always search for uSWID SBoM data in the image</li>
+          <li>Always search for uSWID SBOM data in the image</li>
           <li>Do not allow LZX compressed cabinet archives</li>
           <li>Fallback to the checksum if the metadata artifact is invalid</li>
           <li>Improve FDT parsing compatibility with new OpenBMC images</li>
@@ -1274,7 +1416,7 @@
         </p>
         <ul>
           <li>Add a new attribute for CPUs supported by HSI</li>
-          <li>Add coSWID and uSWID parsers to libfwupdplugin for initial SBoM support</li>
+          <li>Add coSWID and uSWID parsers to libfwupdplugin for initial SBOM support</li>
           <li>Add new HSI attributes for the AMD PSP and various other system protections</li>
           <li>Add the runtime fwupd-efi version as a firmware requirement</li>
           <li>Allow 'fwupdmgr install' to install a specified firmware version</li>

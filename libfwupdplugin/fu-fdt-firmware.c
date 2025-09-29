@@ -164,6 +164,13 @@ fu_fdt_firmware_parse_dt_struct(FuFdtFirmware *self, GBytes *fw, GBytes *strtab,
 
 		/* read tag from aligned offset */
 		offset = fu_common_align_up(offset, FU_FIRMWARE_ALIGNMENT_4);
+		if (offset > G_MAXUINT32) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_DATA,
+					    "offset bigger than 4GB");
+			return FALSE;
+		}
 		if (!fu_memread_uint32_safe(buf, bufsz, offset, &token, G_BIG_ENDIAN, error))
 			return FALSE;
 		g_debug("token: 0x%x", token);
@@ -283,13 +290,8 @@ fu_fdt_firmware_parse_dt_struct(FuFdtFirmware *self, GBytes *fw, GBytes *strtab,
 	}
 
 	/* did not see FDT_END */
-	if (!has_end) {
-		g_set_error_literal(error,
-				    G_IO_ERROR,
-				    G_IO_ERROR_INVALID_DATA,
-				    "did not see FDT_END");
-		return FALSE;
-	}
+	if (!has_end)
+		g_warning("did not see FDT_END, perhaps size_dt_struct is invalid?");
 
 	/* success */
 	return TRUE;

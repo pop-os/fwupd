@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 #[derive(ValidateBytes)]
-struct ParadeUsbhubHdr {
+struct FuStructParadeUsbhubHdr {
     signature: u16be == 0x55AA,
 }
 
-enum ParadeUsbhubDeviceRequest {
+enum FuParadeUsbhubDeviceRequest {
     Read = 0x40,
     Write = 0x41,
 }
 
-enum ParadeUsbhubDeviceAddr {
+enum FuParadeUsbhubDeviceAddr {
     Status      = 0x5000,
     Data        = 0x5001, // u32
     SpiAddr     = 0x5005, // u24
@@ -27,12 +27,20 @@ enum ParadeUsbhubDeviceAddr {
     VersionB    = 0x5C0F,
     VersionC    = 0x5C11,
     VersionD    = 0x5C12,
+    SpiMasterAcquire2 = 0xE2B3, // for PS188
 }
 
-enum ParadeUsbhubDeviceStatusFlag {
+enum FuParadeUsbhubDeviceStatusFlag {
     Write       = 0b00000001,
     TriggerSpi  = 0b00000010,
     TriggerDbi  = 0b00000100,
     Checksum    = 0b00001000,
     SpiDone     = 0b10000000,
+}
+
+#[derive(FromString, ToString)]
+enum FuParadeUsbhubChip {
+    Unknown,
+    Ps5512,
+    Ps188,
 }

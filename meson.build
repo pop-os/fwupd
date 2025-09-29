@@ -1,5 +1,5 @@
 project('fwupd', 'c',
-  version: '1.9.26',
+  version: '1.9.32',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=0.62.0',
   default_options: ['warning_level=2', 'c_std=c11'],
@@ -83,6 +83,7 @@ warning_flags = [
   '-Wmissing-prototypes',
   '-Wnested-externs',
   '-Wno-cast-function-type',
+  '-Wno-deprecated-declarations',
   '-Wno-address-of-packed-member',  # incompatible with g_autoptr()
   '-Wno-unknown-pragmas',
   '-Wno-missing-field-initializers',
@@ -90,6 +91,7 @@ warning_flags = [
   '-Wno-suggest-attribute=format',
   '-Wno-typedef-redefinition',
   '-Wno-unknown-warning-option',
+  '-Wno-unterminated-string-initialization', # all moved to rustgen in main
   '-Wno-unused-parameter',
   '-Wno-nonnull-compare',
   '-Wno-analyzer-use-of-uninitialized-value', # incompatible with g_autoptr()
@@ -126,6 +128,17 @@ endif
 if cc.get_id() == 'msvc'
   error('MSVC is not supported as it does not support __attribute__((cleanup))')
 endif
+
+# ensure tests do not fail because of locale specific decimal separators (e.g. when comparing
+# outputs with `diff`)
+add_test_setup(
+  'default',
+  env: {
+    'LANG': 'C.UTF-8',
+    'LC_ALL': 'C.UTF-8',
+  },
+  is_default: true,
+)
 
 # enable full RELRO where possible
 # FIXME: until https://github.com/mesonbuild/meson/issues/1140 is fixed
@@ -241,7 +254,7 @@ sqlite = dependency('sqlite3', required: get_option('sqlite'))
 if sqlite.found()
   conf.set('HAVE_SQLITE', '1')
 endif
-passim = dependency('passim', version: '>= 0.1.5', required: get_option('passim'), fallback: ['passim', 'passim_dep'])
+passim = dependency('passim', version: '>= 0.1.2', required: get_option('passim'), fallback: ['passim', 'passim_dep'])
 if passim.found()
   conf.set('HAVE_PASSIM', '1')
 endif
@@ -253,7 +266,7 @@ if libarchive.found()
   endif
 endif
 endif
-libjcat = dependency('jcat', version: '>= 0.2.0', fallback: ['libjcat', 'libjcat_dep'])
+libjcat = dependency('jcat', version: '>= 0.1.4', fallback: ['libjcat', 'libjcat_dep'])
 libjsonglib = dependency('json-glib-1.0', version: '>= 1.6.0')
 valgrind = dependency('valgrind', required: false)
 libcurl = dependency('libcurl', version: '>= 7.62.0', required: get_option('curl'))
@@ -371,6 +384,9 @@ endif
 if cc.has_header('sys/mman.h')
   conf.set('HAVE_MMAN_H', '1')
 endif
+if cc.has_header('sys/vfs.h')
+  conf.set('HAVE_SYS_VFS_H', '1')
+endif
 if cc.has_header('poll.h')
   conf.set('HAVE_POLL_H', '1')
 endif
@@ -468,8 +484,8 @@ endif
 umockdev = dependency('umockdev-1.0', required: false)
 
 if build_standalone
-  libflashrom = dependency('flashrom', 
-                            fallback: ['flashrom', 'flashrom_dep'], 
+  libflashrom = dependency('flashrom',
+                            fallback: ['flashrom', 'flashrom_dep'],
                             required: get_option('plugin_flashrom').disable_auto_if(host_machine.system() != 'linux'))
 endif
 

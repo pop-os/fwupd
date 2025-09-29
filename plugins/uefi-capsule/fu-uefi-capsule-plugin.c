@@ -1173,8 +1173,8 @@ fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 			fu_uefi_device_set_esp(dev, self->esp);
 		if (!fu_uefi_capsule_plugin_coldplug_device(plugin, dev, &error_device)) {
 			if (g_error_matches(error_device, FWUPD_ERROR, FWUPD_ERROR_NOT_SUPPORTED)) {
-				g_warning("skipping device that failed coldplug: %s",
-					  error_device->message);
+				g_debug("skipping device that failed coldplug: %s",
+					error_device->message);
 				continue;
 			}
 			g_propagate_error(error, g_steal_pointer(&error_device));
@@ -1183,7 +1183,7 @@ fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 		fu_device_add_flag(FU_DEVICE(dev), FWUPD_DEVICE_FLAG_UPDATABLE);
 		fu_device_add_flag(FU_DEVICE(dev), FWUPD_DEVICE_FLAG_USABLE_DURING_UPDATE);
 
-		/* only system firmware "BIOS" can change the PCRx registers */
+		/* system firmware "BIOS" can change the PCRx registers */
 		if (fu_uefi_device_get_kind(dev) == FU_UEFI_DEVICE_KIND_SYSTEM_FIRMWARE && has_fde)
 			fu_device_add_flag(FU_DEVICE(dev), FWUPD_DEVICE_FLAG_AFFECTS_FDE);
 
@@ -1215,7 +1215,6 @@ fu_uefi_capsule_plugin_coldplug(FuPlugin *plugin, FuProgress *progress, GError *
 static gboolean
 fu_uefi_capsule_plugin_cleanup_esp(FuUefiCapsulePlugin *self, GError **error)
 {
-	g_autofree gchar *esp_os_base = NULL;
 	g_autofree gchar *esp_path = NULL;
 	g_autofree gchar *pattern = NULL;
 	g_autoptr(FuDeviceLocker) esp_locker = NULL;
@@ -1236,8 +1235,7 @@ fu_uefi_capsule_plugin_cleanup_esp(FuUefiCapsulePlugin *self, GError **error)
 	files = fu_path_get_files(esp_path, error);
 	if (files == NULL)
 		return FALSE;
-	esp_os_base = fu_uefi_get_esp_path_for_os(esp_path);
-	pattern = g_build_filename(esp_path, esp_os_base, "fw", "fwupd*.cap", NULL);
+	pattern = g_build_filename("*", "fw", "fwupd*.cap", NULL);
 	for (guint i = 0; i < files->len; i++) {
 		const gchar *fn = g_ptr_array_index(files, i);
 		if (g_pattern_match_simple(pattern, fn)) {
@@ -1292,8 +1290,8 @@ fu_uefi_capsule_plugin_cleanup_bootnext(FuUefiCapsulePlugin *self, GError **erro
 	g_debug("EFI LoadOption: %s", loadoptstr);
 	if (g_strcmp0(fu_firmware_get_id(FU_FIRMWARE(loadopt)), "Linux Firmware Updater") == 0 ||
 	    g_strcmp0(fu_firmware_get_id(FU_FIRMWARE(loadopt)), "Linux-Firmware-Updater") == 0) {
-		g_warning("BootNext was not deleted automatically, so removing: "
-			  "this normally indicates a BIOS bug");
+		g_debug("BootNext was not deleted automatically, so removing: "
+			"this normally indicates a BIOS bug");
 		if (!fu_efivar_delete(FU_EFIVAR_GUID_EFI_GLOBAL, "BootNext", error))
 			return FALSE;
 	}

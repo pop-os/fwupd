@@ -20,7 +20,6 @@
 #include "fu-common-private.h"
 #include "fu-config-private.h"
 #include "fu-context-private.h"
-#include "fu-coswid-firmware.h"
 #include "fu-device-private.h"
 #include "fu-device-progress.h"
 #include "fu-plugin-private.h"
@@ -249,6 +248,25 @@ fu_device_version_format_func(void)
 	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_TRIPLET);
 	fu_device_set_version(device, "Ver1.2.3 RELEASE");
 	g_assert_cmpstr(fu_device_get_version(device), ==, "1.2.3");
+}
+
+static void
+fu_device_version_format_raw_func(void)
+{
+	g_autoptr(FuDevice) device = g_object_new(FU_TYPE_DPAUX_DEVICE, NULL);
+
+	/* like normal */
+	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_PAIR);
+	fu_device_set_version_raw(device, 256);
+	fu_device_set_version_lowest_raw(device, 257);
+
+	g_assert_cmpstr(fu_device_get_version(device), ==, "0.256");
+	g_assert_cmpstr(fu_device_get_version_lowest(device), ==, "0.257");
+
+	/* ensure both are changed */
+	fu_device_set_version_format(device, FWUPD_VERSION_FORMAT_PLAIN);
+	g_assert_cmpstr(fu_device_get_version(device), ==, "256");
+	g_assert_cmpstr(fu_device_get_version_lowest(device), ==, "257");
 }
 
 static void
@@ -1953,7 +1971,11 @@ fu_chunk_func(void)
 	chunked5 = fu_chunk_array_new(NULL, 0, 0x0, 0x0, 4);
 	g_assert_cmpint(chunked5->len, ==, 0);
 	chunked5_str = fu_chunk_array_to_string(chunked5);
+#if LIBXMLB_CHECK_VERSION(0, 3, 22)
+	g_assert_cmpstr(chunked5_str, ==, "<chunks />\n");
+#else
 	g_assert_cmpstr(chunked5_str, ==, "<chunks>\n</chunks>\n");
+#endif
 
 	chunked1 = fu_chunk_array_new((const guint8 *)"0123456789abcdef", 16, 0x0, 10, 4);
 	chunked1_str = fu_chunk_array_to_string(chunked1);
@@ -2152,6 +2174,7 @@ fu_common_version_func(void)
 	    {0xffffffff, "18.31.255.65535", FWUPD_VERSION_FORMAT_INTEL_ME},
 	    {0x0b32057a, "11.11.50.1402", FWUPD_VERSION_FORMAT_INTEL_ME},
 	    {0xb8320d84, "11.8.50.3460", FWUPD_VERSION_FORMAT_INTEL_ME2},
+	    {0x00000741, "19.0.0.1857", FWUPD_VERSION_FORMAT_INTEL_CSME19},
 	    {0x226a4b00, "137.2706.768", FWUPD_VERSION_FORMAT_SURFACE_LEGACY},
 	    {0x6001988, "6.25.136", FWUPD_VERSION_FORMAT_SURFACE},
 	    {0x00ff0001, "255.0.1", FWUPD_VERSION_FORMAT_DELL_BIOS},
@@ -2684,7 +2707,7 @@ fu_firmware_build_func(void)
 	g_assert_cmpstr(fu_firmware_get_version(firmware), ==, "1.2.3");
 
 	/* verify image */
-	img = fu_firmware_get_image_by_id(firmware, "header", &error);
+	img = fu_firmware_get_image_by_id(firmware, "xxx|h?ad*", &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(img);
 	g_assert_cmpstr(fu_firmware_get_version(img), ==, "4.5.6");
@@ -3435,6 +3458,7 @@ fu_efivar_func(void)
 	guint32 attr = 0;
 	guint64 total;
 	g_autofree gchar *sysfsfwdir = NULL;
+	g_autofree gchar *sysfsfwdir_mut = NULL;
 	g_autofree guint8 *data = NULL;
 	g_autoptr(GError) error = NULL;
 	g_autoptr(GPtrArray) names = NULL;
@@ -3445,7 +3469,7 @@ fu_efivar_func(void)
 #endif
 
 	/* these tests will write */
-	sysfsfwdir = g_test_build_filename(G_TEST_BUILT, "tests", NULL);
+	sysfsfwdir = g_test_build_filename(G_TEST_DIST, "tests", NULL);
 	(void)g_setenv("FWUPD_SYSFSFWDIR", sysfsfwdir, TRUE);
 
 	/* check supported */
@@ -3456,7 +3480,7 @@ fu_efivar_func(void)
 	/* check we can get the space used */
 	total = fu_efivar_space_used(&error);
 	g_assert_no_error(error);
-	g_assert_cmpint(total, >=, 0x2000);
+	g_assert_cmpint(total, >=, 0x100);
 
 	/* check existing keys */
 	g_assert_false(fu_efivar_exists(FU_EFIVAR_GUID_EFI_GLOBAL, "NotGoingToExist"));
@@ -3466,7 +3490,11 @@ fu_efivar_func(void)
 	names = fu_efivar_get_names(FU_EFIVAR_GUID_EFI_GLOBAL, &error);
 	g_assert_no_error(error);
 	g_assert_nonnull(names);
-	g_assert_cmpint(names->len, ==, 2);
+	g_assert_cmpint(names->len, ==, 5);
+
+	/* now mutable */
+	sysfsfwdir_mut = g_test_build_filename(G_TEST_BUILT, "tests", NULL);
+	(void)g_setenv("FWUPD_SYSFSFWDIR", sysfsfwdir_mut, TRUE);
 
 	/* write and read a key */
 	ret = fu_efivar_set_data(FU_EFIVAR_GUID_EFI_GLOBAL,
@@ -4497,6 +4525,42 @@ fu_plugin_struct_bits_func(void)
 }
 
 static void
+fu_plugin_struct_list_func(void)
+{
+	g_autofree gchar *str = NULL;
+	g_autoptr(FuStructSelfTestList) st = fu_struct_self_test_list_new();
+
+	for (guint i = 0; i < FU_STRUCT_SELF_TEST_LIST_N_ELEMENTS_BASIC; i++) {
+		fu_struct_self_test_list_set_basic(st, i, i * 16);
+		g_assert_cmpint(fu_struct_self_test_list_get_basic(st, i), ==, i * 16);
+	}
+
+	for (guint i = 0; i < FU_STRUCT_SELF_TEST_LIST_N_ELEMENTS_MEMBERS; i++) {
+		gboolean ret;
+		g_autoptr(FuStructSelfTestListMember) st2 = fu_struct_self_test_list_member_new();
+		g_autoptr(FuStructSelfTestListMember) st3 = NULL;
+		g_autoptr(GError) error = NULL;
+
+		fu_struct_self_test_list_member_set_data1(st2, i * 16);
+		fu_struct_self_test_list_member_set_data2(st2, i * 32);
+		ret = fu_struct_self_test_list_set_members(st, i, st2, &error);
+		g_assert_no_error(error);
+		g_assert_true(ret);
+
+		st3 = fu_struct_self_test_list_get_members(st, i);
+		g_assert_cmpint(fu_struct_self_test_list_member_get_data1(st3), ==, i * 16);
+		g_assert_cmpint(fu_struct_self_test_list_member_get_data2(st3), ==, i * 32);
+	}
+
+	/* size */
+	str = fu_byte_array_to_string(st);
+	g_assert_cmpstr(
+	    str,
+	    ==,
+	    "000000001000000020000000300000004000000050000000600000007000000000001020204030604080");
+}
+
+static void
 fu_plugin_struct_func(void)
 {
 	gboolean ret;
@@ -4540,7 +4604,7 @@ fu_plugin_struct_func(void)
 	str2 = fu_struct_self_test_to_string(st);
 	g_assert_cmpstr(str2,
 			==,
-			"SelfTest:\n"
+			"FuStructSelfTest:\n"
 			"  length: 0xdead\n"
 			"  revision: 0xff [all]\n"
 			"  owner: 00000000-0000-0000-0000-000000000000\n"
@@ -4608,11 +4672,12 @@ fu_plugin_struct_wrapped_func(void)
 
 	/* to string */
 	str2 = fu_struct_self_test_wrapped_to_string(st);
+	g_debug("%s", str2);
 	g_assert_cmpstr(str2,
 			==,
-			"SelfTestWrapped:\n"
+			"FuStructSelfTestWrapped:\n"
 			"  less: 0x99\n"
-			"  base: SelfTest:\n"
+			"  base: FuStructSelfTest:\n"
 			"  length: 0x33\n"
 			"  revision: 0xfe\n"
 			"  owner: 00000000-0000-0000-0000-000000000000\n"
@@ -4686,6 +4751,7 @@ main(int argc, char **argv)
 
 	g_test_add_func("/fwupd/struct", fu_plugin_struct_func);
 	g_test_add_func("/fwupd/struct{bits}", fu_plugin_struct_bits_func);
+	g_test_add_func("/fwupd/struct{list}", fu_plugin_struct_list_func);
 	g_test_add_func("/fwupd/struct{wrapped}", fu_plugin_struct_wrapped_func);
 	g_test_add_func("/fwupd/plugin{quirks-append}", fu_plugin_quirks_append_func);
 	g_test_add_func("/fwupd/string{password-mask}", fu_strpassmask_func);
@@ -4789,6 +4855,7 @@ main(int argc, char **argv)
 	g_test_add_func("/fwupd/device{metadata}", fu_device_metadata_func);
 	g_test_add_func("/fwupd/device{open-refcount}", fu_device_open_refcount_func);
 	g_test_add_func("/fwupd/device{version-format}", fu_device_version_format_func);
+	g_test_add_func("/fwupd/device{version-format-raw}", fu_device_version_format_raw_func);
 	g_test_add_func("/fwupd/device{retry-success}", fu_device_retry_success_func);
 	g_test_add_func("/fwupd/device{retry-failed}", fu_device_retry_failed_func);
 	g_test_add_func("/fwupd/device{retry-hardware}", fu_device_retry_hardware_func);

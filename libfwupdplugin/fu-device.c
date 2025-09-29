@@ -1492,6 +1492,10 @@ fu_device_add_child(FuDevice *self, FuDevice *child)
 	g_return_if_fail(FU_IS_DEVICE(self));
 	g_return_if_fail(FU_IS_DEVICE(child));
 
+	/* if parent is emulated, child must be too */
+	if (fu_device_has_flag(self, FWUPD_DEVICE_FLAG_EMULATED))
+		fu_device_add_flag(child, FWUPD_DEVICE_FLAG_EMULATED);
+
 	/* add if the child does not already exist */
 	fwupd_device_add_child(FWUPD_DEVICE(self), FWUPD_DEVICE(child));
 
@@ -2928,11 +2932,17 @@ fu_device_set_version_format(FuDevice *self, FwupdVersionFormat fmt)
 	fwupd_device_set_version_format(FWUPD_DEVICE(self), fmt);
 
 	/* convert this, now we know */
-	if (klass->convert_version != NULL && fu_device_get_version(self) != NULL &&
-	    fu_device_get_version_raw(self) != 0) {
-		g_autofree gchar *version =
-		    klass->convert_version(self, fu_device_get_version_raw(self));
-		fu_device_set_version(self, version);
+	if (klass->convert_version != NULL) {
+		if (fu_device_get_version_raw(self) != 0) {
+			g_autofree gchar *version =
+			    klass->convert_version(self, fu_device_get_version_raw(self));
+			fu_device_set_version(self, version);
+		}
+		if (fu_device_get_version_lowest_raw(self) != 0) {
+			g_autofree gchar *version =
+			    klass->convert_version(self, fu_device_get_version_lowest_raw(self));
+			fu_device_set_version_lowest(self, version);
+		}
 	}
 }
 
@@ -3088,6 +3098,29 @@ fu_device_set_version_raw(FuDevice *self, guint64 version_raw)
 		g_autofree gchar *version = klass->convert_version(self, version_raw);
 		if (version != NULL)
 			fu_device_set_version(self, version);
+	}
+}
+
+/**
+ * fu_device_set_version_lowest_raw:
+ * @self: a #FuDevice
+ * @version_raw: an integer
+ *
+ * Sets the raw device version from a integer value and the device version format.
+ *
+ * Since: 2.0.7, but backported to 1.9.29
+ **/
+void
+fu_device_set_version_lowest_raw(FuDevice *self, guint64 version_raw)
+{
+	FuDeviceClass *device_class = FU_DEVICE_GET_CLASS(self);
+	g_return_if_fail(FU_IS_DEVICE(self));
+
+	fwupd_device_set_version_lowest_raw(FWUPD_DEVICE(self), version_raw);
+	if (device_class->convert_version != NULL) {
+		g_autofree gchar *version = device_class->convert_version(self, version_raw);
+		if (version != NULL)
+			fu_device_set_version_lowest(self, version);
 	}
 }
 
@@ -5986,6 +6019,51 @@ fu_device_ensure_from_component(FuDevice *self, XbNode *component)
 		fu_device_ensure_from_component_verfmt(self, component);
 	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_MD_SET_FLAGS))
 		fu_device_ensure_from_component_flags(self, component);
+}
+
+/**
+ * fu_device_ensure_from_release:
+ * @self: a #FuDevice
+ * @rel: (not nullable): a #XbNode
+ *
+ * Ensure all properties from the donor AppStream release as required.
+ *
+ * Since: 2.0.5, and backported to 1.9.28
+ **/
+void
+fu_device_ensure_from_release(FuDevice *self, XbNode *rel)
+{
+	g_return_if_fail(FU_IS_DEVICE(self));
+	g_return_if_fail(XB_IS_NODE(rel));
+
+	/* optionally filter by device checksum */
+	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM)) {
+		gboolean valid = FALSE;
+		g_autoptr(GPtrArray) device_checksums = NULL;
+
+		if (fu_device_get_checksums(self)->len == 0)
+			return;
+		device_checksums = xb_node_query(rel, "checksum[@target='device']", 0, NULL);
+		for (guint i = 0; device_checksums != NULL && i < device_checksums->len; i++) {
+			XbNode *device_checksum = g_ptr_array_index(device_checksums, i);
+			if (fu_device_has_checksum(self, xb_node_get_text(device_checksum))) {
+				valid = TRUE;
+				break;
+			}
+		}
+		if (!valid)
+			return;
+	}
+
+	/* set the version */
+	if (fu_device_has_internal_flag(self, FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION)) {
+		const gchar *version = xb_node_get_attr(rel, "version");
+		if (version != NULL) {
+			fu_device_set_version(self, version);
+			fu_device_remove_internal_flag(self,
+						       FU_DEVICE_INTERNAL_FLAG_MD_SET_VERSION);
+		}
+	}
 }
 
 /**

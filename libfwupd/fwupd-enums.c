@@ -219,8 +219,8 @@ fwupd_device_flag_to_string(FwupdDeviceFlags device_flag)
 		return "emulation-tag";
 	if (device_flag == FWUPD_DEVICE_FLAG_ONLY_EXPLICIT_UPDATES)
 		return "only-explicit-updates";
-	if (device_flag == FWUPD_DEVICE_FLAG_UNKNOWN)
-		return "unknown";
+	if (device_flag == FWUPD_DEVICE_FLAG_INSTALL_SKIP_VERSION_CHECK)
+		return "install-skip-version-check";
 	return NULL;
 }
 
@@ -344,6 +344,8 @@ fwupd_device_flag_from_string(const gchar *device_flag)
 		return FWUPD_DEVICE_FLAG_EMULATION_TAG;
 	if (g_strcmp0(device_flag, "only-explicit-updates") == 0)
 		return FWUPD_DEVICE_FLAG_ONLY_EXPLICIT_UPDATES;
+	if (g_strcmp0(device_flag, "install-skip-version-check") == 0)
+		return FWUPD_DEVICE_FLAG_INSTALL_SKIP_VERSION_CHECK;
 	return FWUPD_DEVICE_FLAG_UNKNOWN;
 }
 
@@ -918,6 +920,8 @@ fwupd_version_format_from_string(const gchar *str)
 		return FWUPD_VERSION_FORMAT_INTEL_ME;
 	if (g_strcmp0(str, "intel-me2") == 0)
 		return FWUPD_VERSION_FORMAT_INTEL_ME2;
+	if (g_strcmp0(str, "intel-csme19") == 0)
+		return FWUPD_VERSION_FORMAT_INTEL_CSME19;
 	if (g_strcmp0(str, "surface-legacy") == 0)
 		return FWUPD_VERSION_FORMAT_SURFACE_LEGACY;
 	if (g_strcmp0(str, "surface") == 0)
@@ -960,6 +964,8 @@ fwupd_version_format_to_string(FwupdVersionFormat kind)
 		return "intel-me";
 	if (kind == FWUPD_VERSION_FORMAT_INTEL_ME2)
 		return "intel-me2";
+	if (kind == FWUPD_VERSION_FORMAT_INTEL_CSME19)
+		return "intel-csme19";
 	if (kind == FWUPD_VERSION_FORMAT_SURFACE_LEGACY)
 		return "surface-legacy";
 	if (kind == FWUPD_VERSION_FORMAT_SURFACE)

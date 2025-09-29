@@ -245,7 +245,7 @@ fu_util_perhaps_show_unreported(FuUtilPrivate *priv, GError **error)
 	gboolean all_automatic = FALSE;
 
 	/* we don't want to ask anything */
-	if (priv->no_unreported_check) {
+	if (priv->no_unreported_check || priv->as_json) {
 		g_debug("skipping unreported check");
 		return TRUE;
 	}
@@ -1934,6 +1934,14 @@ fu_util_get_device_or_prompt(FuUtilPrivate *priv, gchar **values, GError **error
 		return fu_util_get_device_by_id(priv, values[0], error);
 	}
 
+	if (priv->as_json) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_INVALID_ARGS,
+				    "device ID required");
+		return NULL;
+	}
+
 	/* get all devices from daemon */
 	devices = fwupd_client_get_devices(priv->client, priv->cancellable, error);
 	if (devices == NULL)
@@ -2393,7 +2401,7 @@ fu_util_perhaps_refresh_remotes(FuUtilPrivate *priv, GError **error)
 	const guint64 age_limit_days = 30;
 
 	/* we don't want to ask anything */
-	if (priv->no_metadata_check) {
+	if (priv->no_metadata_check || priv->as_json) {
 		g_debug("skipping metadata check");
 		return TRUE;
 	}
@@ -3118,6 +3126,9 @@ fu_util_remote_enable(FuUtilPrivate *priv, gchar **values, GError **error)
 					error))
 		return FALSE;
 
+	if (priv->as_json)
+		return TRUE;
+
 	/* ask for permission to refresh */
 	if (priv->no_remote_check || fwupd_remote_get_kind(remote) != FWUPD_REMOTE_KIND_DOWNLOAD) {
 		/* TRANSLATORS: success message */
@@ -3173,6 +3184,9 @@ fu_util_remote_disable(FuUtilPrivate *priv, gchar **values, GError **error)
 					priv->cancellable,
 					error))
 		return FALSE;
+
+	if (priv->as_json)
+		return TRUE;
 
 	/* TRANSLATORS: success message */
 	fu_console_print_literal(priv->console, _("Successfully disabled remote"));
@@ -4455,6 +4469,9 @@ fu_util_show_plugin_warnings(FuUtilPrivate *priv)
 	FwupdPluginFlags flags = FWUPD_PLUGIN_FLAG_NONE;
 	g_autoptr(GPtrArray) plugins = NULL;
 
+	if (priv->as_json)
+		return;
+
 	/* get plugins from daemon, ignoring if the daemon is too old */
 	plugins = fwupd_client_get_plugins(priv->client, priv->cancellable, NULL);
 	if (plugins == NULL)
@@ -4634,27 +4651,37 @@ fu_util_report_devices(FuUtilPrivate *priv, gchar **values, GError **error)
 	if (data == NULL)
 		return FALSE;
 
-	/* show the user the entire data blob */
-	fu_console_print_kv(priv->console, _("Target"), report_uri);
-	fu_console_print_kv(priv->console, _("Payload"), data);
-	fu_console_print(priv->console,
-			 /* TRANSLATORS: explain why we want to upload */
-			 _("Uploading a device list allows the %s team to know what hardware "
-			   "exists, and allows us to put pressure on vendors that do not upload "
-			   "firmware updates for their hardware."),
-			 fwupd_remote_get_title(remote));
-	if (!fu_console_input_bool(priv->console,
-				   TRUE,
-				   "%s (%s)",
-				   /* TRANSLATORS: ask the user to upload */
-				   _("Upload data now?"),
-				   /* TRANSLATORS: metadata is downloaded */
-				   _("Requires internet connection"))) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_NOTHING_TO_DO,
-				    "Declined upload");
-		return FALSE;
+	if (priv->as_json) {
+		if (!priv->assume_yes) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_INVALID_ARGS,
+					    "pass --yes to enable uploads");
+			return FALSE;
+		}
+	} else {
+		/* show the user the entire data blob */
+		fu_console_print_kv(priv->console, _("Target"), report_uri);
+		fu_console_print_kv(priv->console, _("Payload"), data);
+		fu_console_print(priv->console,
+				 /* TRANSLATORS: explain why we want to upload */
+				 _("Uploading a device list allows the %s team to know what hardware "
+				   "exists, and allows us to put pressure on vendors that do not upload "
+				   "firmware updates for their hardware."),
+				 fwupd_remote_get_title(remote));
+		if (!fu_console_input_bool(priv->console,
+					   TRUE,
+					   "%s (%s)",
+					   /* TRANSLATORS: ask the user to upload */
+					   _("Upload data now?"),
+					   /* TRANSLATORS: metadata is downloaded */
+					   _("Requires internet connection"))) {
+			g_set_error_literal(error,
+					    FWUPD_ERROR,
+					    FWUPD_ERROR_NOTHING_TO_DO,
+					    "Declined upload");
+			return FALSE;
+		}
 	}
 
 	/* send to the LVFS */
@@ -4669,9 +4696,12 @@ fu_util_report_devices(FuUtilPrivate *priv, gchar **values, GError **error)
 		return FALSE;
 
 	/* success */
-	fu_console_print_literal(priv->console,
-				 /* TRANSLATORS: success, so say thank you to the user */
-				 _("Device list uploaded successfully, thanks!"));
+	if (!priv->as_json) {
+		fu_console_print_literal(priv->console,
+					 /* TRANSLATORS: success, so say thank you to the user */
+					 _("Device list uploaded successfully, thanks!"));
+	}
+
 	return TRUE;
 }
 

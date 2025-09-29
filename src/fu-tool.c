@@ -113,6 +113,9 @@ fu_util_show_plugin_warnings(FuUtilPrivate *priv)
 	FwupdPluginFlags flags = FWUPD_PLUGIN_FLAG_NONE;
 	GPtrArray *plugins;
 
+	if (priv->as_json)
+		return;
+
 	/* get a superset so we do not show the same message more than once */
 	plugins = fu_engine_get_plugins(priv->engine);
 	for (guint i = 0; i < plugins->len; i++) {
@@ -1434,17 +1437,32 @@ fu_util_install(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	/* success */
-	return fu_util_prompt_complete(priv->console, priv->completion_flags, TRUE, error);
+	return TRUE;
 }
 
 static gboolean
-fu_util_install_release(FuUtilPrivate *priv, FwupdRelease *rel, GError **error)
+fu_util_install_release(FuUtilPrivate *priv, FwupdDevice *dev, FwupdRelease *rel, GError **error)
 {
 	FwupdRemote *remote;
 	GPtrArray *locations;
 	const gchar *remote_id;
 	const gchar *uri_tmp;
 	g_auto(GStrv) argv = NULL;
+
+	if (!fwupd_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE)) {
+		const gchar *name = fwupd_device_get_name(dev);
+		g_autofree gchar *str = NULL;
+
+		/* TRANSLATORS: the device has a reason it can't update, e.g. laptop lid closed */
+		str = g_strdup_printf(_("%s is not currently updatable"), name);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOTHING_TO_DO,
+			    "%s: %s",
+			    str,
+			    fwupd_device_get_update_error(dev));
+		return FALSE;
+	}
 
 	/* get the default release only until other parts of fwupd can cope */
 	locations = fwupd_release_get_locations(rel);
@@ -1531,10 +1549,6 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 	}
 
 	priv->current_operation = FU_UTIL_OPERATION_UPDATE;
-	g_signal_connect(FU_ENGINE(priv->engine),
-			 "device-changed",
-			 G_CALLBACK(fu_util_update_device_changed_cb),
-			 priv);
 
 	devices = fu_engine_get_devices(priv->engine, error);
 	if (devices == NULL)
@@ -1609,7 +1623,7 @@ fu_util_update(FuUtilPrivate *priv, gchar **values, GError **error)
 				return FALSE;
 		}
 
-		if (!fu_util_install_release(priv, rel, &error_local)) {
+		if (!fu_util_install_release(priv, dev, rel, &error_local)) {
 			fu_console_print_literal(priv->console, error_local->message);
 			continue;
 		}
@@ -1685,7 +1699,7 @@ fu_util_reinstall(FuUtilPrivate *priv, gchar **values, GError **error)
 			 G_CALLBACK(fu_util_update_device_changed_cb),
 			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
-	if (!fu_util_install_release(priv, rel, error))
+	if (!fu_util_install_release(priv, FWUPD_DEVICE(dev), rel, error))
 		return FALSE;
 	fu_util_display_current_message(priv);
 
@@ -2020,6 +2034,9 @@ fu_util_remote_disable(FuUtilPrivate *priv, gchar **values, GError **error)
 				     error))
 		return FALSE;
 
+	if (priv->as_json)
+		return TRUE;
+
 	fu_console_print_literal(priv->console, _("Successfully disabled remote"));
 	return TRUE;
 }
@@ -2053,6 +2070,9 @@ fu_util_remote_enable(FuUtilPrivate *priv, gchar **values, GError **error)
 				     "true",
 				     error))
 		return FALSE;
+
+	if (priv->as_json)
+		return TRUE;
 
 	fu_console_print_literal(priv->console, _("Successfully enabled remote"));
 	return TRUE;
@@ -3430,7 +3450,7 @@ fu_util_security(FuUtilPrivate *priv, gchar **values, GError **error)
 	events = fu_engine_get_host_security_events(priv->engine, 10, error);
 	if (events == NULL)
 		return FALSE;
-	events_array = fu_security_attrs_get_all(attrs);
+	events_array = fu_security_attrs_get_all(events);
 	if (events_array->len > 0) {
 		g_autofree gchar *estr = fu_util_security_events_to_string(events_array, flags);
 		if (estr != NULL)
@@ -3676,7 +3696,7 @@ fu_util_switch_branch(FuUtilPrivate *priv, gchar **values, GError **error)
 			 priv);
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_REINSTALL;
 	priv->flags |= FWUPD_INSTALL_FLAG_ALLOW_BRANCH_SWITCH;
-	if (!fu_util_install_release(priv, rel, error))
+	if (!fu_util_install_release(priv, FWUPD_DEVICE(dev), rel, error))
 		return FALSE;
 	fu_util_display_current_message(priv);
 

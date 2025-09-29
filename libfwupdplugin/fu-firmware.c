@@ -1511,15 +1511,18 @@ fu_firmware_add_image_full(FuFirmware *self, FuFirmware *img, GError **error)
 	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
 
 	/* dedupe */
-	for (guint i = 0; i < priv->images->len; i++) {
-		FuFirmware *img_tmp = g_ptr_array_index(priv->images, i);
-		if (priv->flags & FU_FIRMWARE_FLAG_DEDUPE_ID) {
+	if (priv->flags & FU_FIRMWARE_FLAG_DEDUPE_ID) {
+		for (guint i = 0; i < priv->images->len; i++) {
+			FuFirmware *img_tmp = g_ptr_array_index(priv->images, i);
 			if (g_strcmp0(fu_firmware_get_id(img_tmp), fu_firmware_get_id(img)) == 0) {
 				g_ptr_array_remove_index(priv->images, i);
 				break;
 			}
 		}
-		if (priv->flags & FU_FIRMWARE_FLAG_DEDUPE_IDX) {
+	}
+	if (priv->flags & FU_FIRMWARE_FLAG_DEDUPE_IDX) {
+		for (guint i = 0; i < priv->images->len; i++) {
+			FuFirmware *img_tmp = g_ptr_array_index(priv->images, i);
 			if (fu_firmware_get_idx(img_tmp) == fu_firmware_get_idx(img)) {
 				g_ptr_array_remove_index(priv->images, i);
 				break;
@@ -1726,7 +1729,7 @@ fu_firmware_get_images(FuFirmware *self)
 /**
  * fu_firmware_get_image_by_id:
  * @self: a #FuPlugin
- * @id: (nullable): image ID, e.g. `config`
+ * @id: (nullable): image ID, e.g. `config` or `*.mfg|*.elf`
  * @error: (nullable): optional return location for an error
  *
  * Gets the firmware image using the image ID.
@@ -1743,16 +1746,27 @@ fu_firmware_get_image_by_id(FuFirmware *self, const gchar *id, GError **error)
 	g_return_val_if_fail(FU_IS_FIRMWARE(self), NULL);
 	g_return_val_if_fail(error == NULL || *error == NULL, NULL);
 
-	for (guint i = 0; i < priv->images->len; i++) {
-		FuFirmware *img = g_ptr_array_index(priv->images, i);
-		if (g_strcmp0(fu_firmware_get_id(img), id) == 0)
-			return g_object_ref(img);
+	if (id == NULL) {
+		for (guint i = 0; i < priv->images->len; i++) {
+			FuFirmware *img = g_ptr_array_index(priv->images, i);
+			if (fu_firmware_get_id(img) == NULL)
+				return g_object_ref(img);
+		}
+	} else {
+		g_auto(GStrv) split = g_strsplit(id, "|", 0);
+		for (guint i = 0; i < priv->images->len; i++) {
+			FuFirmware *img = g_ptr_array_index(priv->images, i);
+			for (guint j = 0; split[j] != NULL; j++) {
+				if (g_pattern_match_simple(split[j], fu_firmware_get_id(img)))
+					return g_object_ref(img);
+			}
+		}
 	}
 	g_set_error(error,
 		    FWUPD_ERROR,
 		    FWUPD_ERROR_NOT_FOUND,
 		    "no image id %s found in firmware",
-		    id);
+		    id != NULL ? id : "NULL");
 	return NULL;
 }
 

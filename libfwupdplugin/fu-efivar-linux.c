@@ -15,6 +15,10 @@
 #include <string.h>
 #include <sys/ioctl.h>
 
+#ifdef HAVE_SYS_VFS_H
+#include <sys/vfs.h>
+#endif
+
 #include "fwupd-error.h"
 
 #include "fu-common.h"
@@ -108,6 +112,10 @@ fu_efivar_set_immutable(const gchar *fn, gboolean value, gboolean *value_old, GE
 {
 	gint fd;
 	g_autoptr(GInputStream) istr = NULL;
+
+	/* not bare-metal */
+	if (!g_str_has_prefix(fn, "/sys"))
+		return TRUE;
 
 	/* open file readonly */
 	fd = open(fn, O_RDONLY);
@@ -376,6 +384,52 @@ fu_efivar_space_used_impl(GError **error)
 	return total;
 }
 
+guint64
+fu_efivar_space_free_impl(GError **error)
+{
+	guint64 total = 0;
+	g_autofree gchar *path = fu_efivar_get_path();
+	g_autoptr(GFile) file_fs = g_file_new_for_path(path);
+	g_autoptr(GFileInfo) info_fs = NULL;
+
+	/* try GIO first */
+	info_fs = g_file_query_info(file_fs,
+				    G_FILE_ATTRIBUTE_FILESYSTEM_FREE,
+				    G_FILE_QUERY_INFO_NONE,
+				    NULL,
+				    error);
+	if (info_fs == NULL)
+		return G_MAXUINT64;
+	total = g_file_info_get_attribute_uint64(info_fs, G_FILE_ATTRIBUTE_FILESYSTEM_FREE);
+
+#ifdef HAVE_SYS_VFS_H
+	/* fall back to standard C library */
+	if (total == 0) {
+		struct statfs sfs = {0};
+		int rc = statfs(path, &sfs);
+		if (rc != 0) {
+			g_set_error(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "failed to get filesystem statistics: %s",
+				    strerror(errno));
+			return G_MAXUINT64;
+		}
+		total = sfs.f_bsize * sfs.f_bfree;
+	}
+#endif
+	if (total == 0 || total == G_MAXUINT64) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "getting efivars free space is not supported");
+		return G_MAXUINT64;
+	}
+
+	/* success */
+	return total;
+}
+
 gboolean
 fu_efivar_set_data_impl(const gchar *guid,
 			const gchar *name,
@@ -385,34 +439,24 @@ fu_efivar_set_data_impl(const gchar *guid,
 			GError **error)
 {
 	int fd;
-	int open_wflags;
-	gboolean was_immutable;
+	int open_wflags = O_WRONLY;
+	gboolean was_immutable = TRUE;
 	g_autofree gchar *fn = fu_efivar_get_filename(guid, name);
 	g_autofree guint8 *buf = g_malloc0(sizeof(guint32) + sz);
-	g_autoptr(GFile) file = g_file_new_for_path(fn);
 	g_autoptr(GOutputStream) ostr = NULL;
 
-	/* create empty file so we can clear the immutable bit before writing */
-	if (!g_file_query_exists(file, NULL)) {
-		g_autoptr(GFileOutputStream) ostr_tmp = NULL;
-		ostr_tmp = g_file_create(file, G_FILE_CREATE_NONE, NULL, error);
-		if (ostr_tmp == NULL)
-			return FALSE;
-		if (!g_output_stream_close(G_OUTPUT_STREAM(ostr_tmp), NULL, error)) {
-			g_prefix_error(error, "failed to touch efivarfs: ");
+	/* clear the immutable bit before writing if required */
+	if (g_file_test(fn, G_FILE_TEST_EXISTS)) {
+		if (!fu_efivar_set_immutable(fn, FALSE, &was_immutable, error)) {
+			g_prefix_error(error, "failed to set %s as mutable: ", fn);
 			return FALSE;
 		}
+	} else {
+		open_wflags |= O_CREAT;
 	}
-	if (!fu_efivar_set_immutable(fn, FALSE, &was_immutable, error)) {
-		g_prefix_error(error, "failed to set %s as mutable: ", fn);
-		return FALSE;
-	}
-
-	/* open file for writing, optionally append */
-	open_wflags = O_WRONLY;
 	if (attr & FU_EFIVAR_ATTR_APPEND_WRITE)
 		open_wflags |= O_APPEND;
-	fd = open(fn, open_wflags);
+	fd = open(fn, open_wflags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 	if (fd < 0) {
 		g_set_error(error,
 			    G_IO_ERROR,

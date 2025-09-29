@@ -12,6 +12,7 @@
 #include "fu-common-private.h"
 #include "fu-config-private.h"
 #include "fu-context-private.h"
+#include "fu-efivar.h"
 #include "fu-fdt-firmware.h"
 #include "fu-hwids-private.h"
 #include "fu-path.h"
@@ -133,6 +134,47 @@ fu_context_get_fdt(FuContext *self, GError **error)
 
 	/* success */
 	return g_object_ref(priv->fdt);
+}
+
+/**
+ * fu_context_efivars_check_free_space:
+ * @self: a #FuContext
+ * @count: size in bytes
+ * @error: (nullable): optional return location for an error
+ *
+ * Checks for a given amount of free space in the EFI NVRAM variable store.
+ *
+ * Returns: %TRUE for success
+ *
+ * Since: 1.9.31, backported from 2.0.12
+ **/
+gboolean
+fu_context_efivars_check_free_space(FuContext *self, gsize count, GError **error)
+{
+	guint64 total;
+
+	g_return_val_if_fail(FU_IS_CONTEXT(self), FALSE);
+	g_return_val_if_fail(error == NULL || *error == NULL, FALSE);
+
+	/* escape hatch */
+	if (fu_context_has_flag(self, FU_CONTEXT_FLAG_IGNORE_EFIVARS_FREE_SPACE))
+		return TRUE;
+
+	total = fu_efivar_space_free(error);
+	if (total == G_MAXUINT64)
+		return FALSE;
+	if (total < count) {
+		g_autofree gchar *countstr = g_format_size(count);
+		g_autofree gchar *totalstr = g_format_size(total);
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_BROKEN_SYSTEM,
+			    "Not enough efivarfs space, requested %s and got %s",
+			    countstr,
+			    totalstr);
+		return FALSE;
+	}
+	return TRUE;
 }
 
 /**
@@ -1114,6 +1156,16 @@ fu_context_set_power_state(FuContext *self, FuPowerState power_state)
 {
 	FuContextPrivate *priv = GET_PRIVATE(self);
 	g_return_if_fail(FU_IS_CONTEXT(self));
+
+	/* quirk for behavior on Framework systems where the EC reports as discharging
+	 * while on AC but at 100% */
+	if (power_state == FU_POWER_STATE_BATTERY_DISCHARGING && priv->battery_level == 100 &&
+	    fu_context_has_hwid_flag(self, "discharging-when-fully-changed")) {
+		power_state = FU_POWER_STATE_AC_FULLY_CHARGED;
+		g_debug("quirking power state to %s", fu_power_state_to_string(power_state));
+	}
+
+	/* is the same */
 	if (priv->power_state == power_state)
 		return;
 	priv->power_state = power_state;

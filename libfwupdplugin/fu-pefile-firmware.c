@@ -11,6 +11,7 @@
 #include "fu-bytes.h"
 #include "fu-coswid-firmware.h"
 #include "fu-csv-firmware.h"
+#include "fu-linear-firmware.h"
 #include "fu-mem.h"
 #include "fu-pefile-firmware.h"
 #include "fu-pefile-struct.h"
@@ -38,32 +39,26 @@ fu_pefile_firmware_check_magic(FuFirmware *firmware, GBytes *fw, gsize offset, G
 static gboolean
 fu_pefile_firmware_parse_section(FuFirmware *firmware,
 				 GBytes *fw,
+				 guint idx,
 				 gsize hdr_offset,
 				 gsize strtab_offset,
 				 FwupdInstallFlags flags,
 				 GError **error)
 {
 	gsize bufsz = 0;
-	guint32 sect_offset;
 	const guint8 *buf = g_bytes_get_data(fw, &bufsz);
 	g_autofree gchar *sect_id = NULL;
 	g_autofree gchar *sect_id_tmp = NULL;
 	g_autoptr(FuFirmware) img = NULL;
 	g_autoptr(GByteArray) st = NULL;
-	g_autoptr(GBytes) blob = NULL;
 
 	st = fu_struct_pe_coff_section_parse_bytes(fw, hdr_offset, error);
 	if (st == NULL)
 		return FALSE;
 	sect_id_tmp = fu_struct_pe_coff_section_get_name(st);
 	if (sect_id_tmp == NULL) {
-		g_set_error_literal(error,
-				    FWUPD_ERROR,
-				    FWUPD_ERROR_INVALID_FILE,
-				    "invalid section name");
-		return FALSE;
-	}
-	if (sect_id_tmp[0] == '/') {
+		sect_id = g_strdup_printf(".nul%04x", idx);
+	} else if (sect_id_tmp[0] == '/') {
 		guint64 str_idx = 0x0;
 		if (!fu_strtoull(sect_id_tmp + 1, &str_idx, 0, G_MAXUINT32, error))
 			return FALSE;
@@ -78,7 +73,7 @@ fu_pefile_firmware_parse_section(FuFirmware *firmware,
 
 	/* create new firmware */
 	if (g_strcmp0(sect_id, ".sbom") == 0) {
-		img = fu_coswid_firmware_new();
+		img = fu_linear_firmware_new(FU_TYPE_COSWID_FIRMWARE);
 	} else if (g_strcmp0(sect_id, ".sbat") == 0 || g_strcmp0(sect_id, ".sbata") == 0 ||
 		   g_strcmp0(sect_id, ".sbatl") == 0) {
 		img = fu_csv_firmware_new();
@@ -94,22 +89,36 @@ fu_pefile_firmware_parse_section(FuFirmware *firmware,
 		img = fu_firmware_new();
 	}
 	fu_firmware_set_id(img, sect_id);
+	fu_firmware_set_idx(img, idx);
 
 	/* add data */
-	sect_offset = fu_struct_pe_coff_section_get_pointer_to_raw_data(st);
-	fu_firmware_set_offset(img, sect_offset);
-	blob = fu_bytes_new_offset(fw,
-				   sect_offset,
-				   fu_struct_pe_coff_section_get_virtual_size(st),
-				   error);
-	if (blob == NULL) {
-		g_prefix_error(error, "failed to get raw data for %s: ", sect_id);
-		return FALSE;
+	if (fu_struct_pe_coff_section_get_virtual_size(st) > 0) {
+		guint32 sect_offset = fu_struct_pe_coff_section_get_pointer_to_raw_data(st);
+		guint32 sect_size = fu_struct_pe_coff_section_get_virtual_size(st);
+		g_autoptr(GBytes) blob = NULL;
+
+		/* use the raw data size if the section is compressed */
+		if (fu_struct_pe_coff_section_get_virtual_size(st) >
+		    fu_struct_pe_coff_section_get_size_of_raw_data(st)) {
+			g_debug("virtual size 0x%x bigger than raw data, truncating to 0x%x",
+				sect_size,
+				fu_struct_pe_coff_section_get_size_of_raw_data(st));
+			sect_size = fu_struct_pe_coff_section_get_size_of_raw_data(st);
+		}
+
+		fu_firmware_set_offset(img, sect_offset);
+		blob = fu_bytes_new_offset(fw, sect_offset, sect_size, error);
+		if (blob == NULL) {
+			g_prefix_error(error, "failed to cut raw PE data %s: ", sect_id);
+			return FALSE;
+		}
+		if (!fu_firmware_parse(img, blob, flags, error)) {
+			g_prefix_error(error, "failed to parse %s: ", sect_id);
+			return FALSE;
+		}
 	}
-	if (!fu_firmware_parse(img, blob, flags, error)) {
-		g_prefix_error(error, "failed to parse %s: ", sect_id);
-		return FALSE;
-	}
+
+	/* success */
 	return fu_firmware_add_image_full(firmware, img, error);
 }
 
@@ -161,6 +170,7 @@ fu_pefile_firmware_parse(FuFirmware *firmware,
 	for (guint idx = 0; idx < nr_sections; idx++) {
 		if (!fu_pefile_firmware_parse_section(firmware,
 						      fw,
+						      idx,
 						      offset,
 						      strtab_offset,
 						      flags,

@@ -85,8 +85,18 @@ fu_synaptics_vmm9_device_command_cb(FuDevice *self, gpointer user_data, GError *
 	if (st == NULL)
 		return FALSE;
 
-	/* sanity check */
+	/* check if RC mode is already enabled */
 	st_payload = fu_struct_hid_get_command_get_payload(st);
+	if (fu_struct_hid_payload_get_sts(st_payload) == FU_SYNAPTICS_VMM9_RC_STS_INVALID &&
+	    fu_struct_hid_payload_get_ctrl(st_payload) == FU_SYNAPTICS_VMM9_RC_CTRL_ENABLE_RC) {
+		g_debug(
+		    "RC already enabled, sts is %s [0x%x]",
+		    fu_synaptics_vmm9_rc_sts_to_string(fu_struct_hid_payload_get_sts(st_payload)),
+		    fu_struct_hid_payload_get_sts(st_payload));
+		return TRUE;
+	}
+
+	/* sanity check */
 	if (fu_struct_hid_payload_get_sts(st_payload) != FU_SYNAPTICS_VMM9_RC_STS_SUCCESS) {
 		g_set_error(
 		    error,
@@ -331,6 +341,7 @@ fu_synaptics_vmm9_device_open(FuDevice *device, GError **error)
 		g_prefix_error(error, "failed to DISABLE_RC before ENABLE_RC: ");
 		return FALSE;
 	}
+	fu_device_sleep(device, 10);
 	if (!fu_synaptics_vmm9_device_command(self,
 					      FU_SYNAPTICS_VMM9_RC_CTRL_ENABLE_RC,
 					      0x0, /* offset */
@@ -583,6 +594,13 @@ fu_synaptics_vmm9_device_write_firmware(FuDevice *device,
 		return FALSE;
 	}
 	fu_progress_step_done(progress);
+
+	/* if device reboot is not required */
+	if (fu_device_has_flag(device, FWUPD_DEVICE_FLAG_SKIPS_RESTART)) {
+		fu_device_add_flag(device, FWUPD_DEVICE_FLAG_INSTALL_SKIP_VERSION_CHECK);
+		g_debug("skipped device reboot intentionally.");
+		return TRUE;
+	}
 
 	/* generic request */
 	if (fu_device_has_private_flag(device,

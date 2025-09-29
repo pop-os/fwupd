@@ -36,7 +36,7 @@ fu_ccgx_dmc_devx_device_version_dmc_bfw(FuCcgxDmcDevxDevice *self, gsize offset)
 {
 	const guint8 *fw_version = fu_ccgx_dmc_devx_device_get_fw_version(self);
 	return g_strdup_printf("%u.%u.%u.%u",
-			       fw_version[offset + 3] >> 4,
+			       (guint)(fw_version[offset + 3] >> 4),
 			       fw_version[offset + 3] & 0xFu,
 			       fw_version[offset + 2],
 			       fu_memread_uint16(fw_version + offset, G_LITTLE_ENDIAN));
@@ -47,7 +47,7 @@ fu_ccgx_dmc_devx_device_version_dmc_app(FuCcgxDmcDevxDevice *self, gsize offset)
 {
 	const guint8 *fw_version = fu_ccgx_dmc_devx_device_get_fw_version(self);
 	return g_strdup_printf("%u.%u.%u",
-			       fw_version[offset + 4 + 3] >> 4,
+			       (guint)(fw_version[offset + 4 + 3] >> 4),
 			       fw_version[offset + 4 + 3] & 0xFu,
 			       fw_version[offset + 4 + 2]);
 }
@@ -110,7 +110,12 @@ fu_ccgx_dmc_devx_device_version_type(FuCcgxDmcDevxDevice *self)
 	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_DMC ||
 	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG3 ||
 	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG4 ||
-	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG5 || device_type == 0x0B)
+	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG5 ||
+	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG6 ||
+	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG8 ||
+	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG6SF ||
+	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG7SC ||
+	    device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_PMG1S3 || device_type == 0x0B)
 		return FU_CCGX_DMC_DEVX_DEVICE_TYPE_DMC;
 	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_HX3)
 		return FU_CCGX_DMC_DEVX_DEVICE_TYPE_HX3;
@@ -215,6 +220,16 @@ fu_ccgx_dmc_devx_device_type_to_name(FuCcgxDmcDevxDeviceType device_type)
 		return "HX3 PD";
 	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_DMC_PD)
 		return "DMC PD";
+	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG6)
+		return "CCG6";
+	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG6SF)
+		return "CCG6SF";
+	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG7SC)
+		return "CCG7SC";
+	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_CCG8)
+		return "CCG8";
+	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_PMG1S3)
+		return "PMG1S3";
 	if (device_type == FU_CCGX_DMC_DEVX_DEVICE_TYPE_SPI)
 		return "SPI";
 	return "Unknown";
@@ -317,7 +332,7 @@ fu_ccgx_dmc_devx_device_finalize(GObject *object)
 {
 	FuCcgxDmcDevxDevice *self = FU_CCGX_DMC_DEVX_DEVICE(object);
 	if (self->status != NULL)
-		g_byte_array_unref(self->status);
+		fu_struct_ccgx_dmc_devx_status_unref(self->status);
 	G_OBJECT_CLASS(fu_ccgx_dmc_devx_device_parent_class)->finalize(object);
 }
 

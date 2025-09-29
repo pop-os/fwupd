@@ -45,7 +45,6 @@
 #include "fu-cabinet.h"
 #include "fu-config-private.h"
 #include "fu-context-private.h"
-#include "fu-coswid-firmware.h"
 #include "fu-debug.h"
 #include "fu-device-list.h"
 #include "fu-device-private.h"
@@ -103,6 +102,8 @@ static gboolean
 fu_engine_backends_save_phase(FuEngine *self, GError **error);
 static gboolean
 fu_engine_emulation_load_phase(FuEngine *self, GError **error);
+static void
+fu_engine_md_refresh_device(FuEngine *self, FuDevice *device);
 
 struct _FuEngine {
 	GObject parent_instance;
@@ -110,7 +111,6 @@ struct _FuEngine {
 	FuEngineConfig *config;
 	FuRemoteList *remote_list;
 	FuDeviceList *device_list;
-	gboolean only_trusted;
 	gboolean write_history;
 	gboolean host_emulation;
 	guint percentage;
@@ -121,7 +121,6 @@ struct _FuEngine {
 	XbQuery *query_container_checksum1;
 	XbQuery *query_container_checksum2;
 	XbQuery *query_tag_by_guid_version;
-	guint coldplug_id;
 	FuPluginList *plugin_list;
 	GPtrArray *plugin_filter;
 	FuContext *ctx;
@@ -648,6 +647,16 @@ fu_engine_load_release(FuEngine *self,
 	/* additional requirements */
 	if (!fu_engine_requirements_check(self, release, install_flags, error))
 		return FALSE;
+
+	/* match component properties */
+	if (fu_release_has_flag(release, FWUPD_RELEASE_FLAG_TRUSTED_METADATA)) {
+		FuDevice *device = fu_release_get_device(release);
+		if (device != NULL) {
+			fu_device_ensure_from_component(device, component);
+			if (rel != NULL)
+				fu_device_ensure_from_release(device, rel);
+		}
+	}
 
 	/* add any client-side BKC tags */
 	if (!fu_engine_add_local_release_metadata(self, release, error))
@@ -1916,6 +1925,7 @@ fu_engine_install_release_version_check(FuEngine *self,
 	const gchar *version_old = fu_release_get_device_version_old(release);
 	if (version_rel != NULL && fu_version_compare(version_old, version_rel, fmt) != 0 &&
 	    fu_version_compare(version_old, fu_device_get_version(device), fmt) == 0 &&
+	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_INSTALL_SKIP_VERSION_CHECK) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_REBOOT) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_SHUTDOWN) &&
 	    !fu_device_has_flag(device, FWUPD_DEVICE_FLAG_NEEDS_ACTIVATION)) {
@@ -3002,8 +3012,10 @@ fu_engine_prepare(FuEngine *self,
 	}
 	fu_device_add_problem(device, FWUPD_DEVICE_PROBLEM_UPDATE_IN_PROGRESS);
 
-	if (!fu_engine_device_check_power(self, device, flags, error))
+	if (!fu_engine_device_check_power(self, device, flags, error)) {
+		fu_device_set_update_state(device, FWUPD_UPDATE_STATE_FAILED_TRANSIENT);
 		return FALSE;
+	}
 
 	str = fu_device_to_string(device);
 	g_info("prepare -> %s", str);
@@ -3274,6 +3286,9 @@ fu_engine_reload(FuEngine *self, const gchar *device_id, GError **error)
 		g_prefix_error(error, "failed to reload device: ");
 		return FALSE;
 	}
+
+	/* match again any metadata-provided values */
+	fu_engine_md_refresh_device(self, device);
 
 	/* save to emulated phase */
 	if (fu_context_has_flag(self->ctx, FU_CONTEXT_FLAG_SAVE_EVENTS) &&
@@ -3951,20 +3966,26 @@ fu_engine_ensure_device_supported(FuEngine *self, FuDevice *device)
 }
 
 static void
+fu_engine_md_refresh_device(FuEngine *self, FuDevice *device)
+{
+	g_autoptr(XbNode) component = fu_engine_get_component_by_guids(self, device);
+
+	/* set or clear the SUPPORTED flag */
+	fu_engine_ensure_device_supported(self, device);
+
+	/* fixup the name and format as needed */
+	if (component != NULL &&
+	    !fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM))
+		fu_device_ensure_from_component(device, component);
+}
+
+static void
 fu_engine_md_refresh_devices(FuEngine *self)
 {
 	g_autoptr(GPtrArray) devices = fu_device_list_get_active(self->device_list);
 	for (guint i = 0; i < devices->len; i++) {
 		FuDevice *device = g_ptr_array_index(devices, i);
-		g_autoptr(XbNode) component = fu_engine_get_component_by_guids(self, device);
-
-		/* set or clear the SUPPORTED flag */
-		fu_engine_ensure_device_supported(self, device);
-
-		/* fixup the name and format as needed */
-		if (component != NULL &&
-		    !fu_device_has_internal_flag(device, FU_DEVICE_INTERNAL_FLAG_MD_ONLY_CHECKSUM))
-			fu_device_ensure_from_component(device, component);
+		fu_engine_md_refresh_device(self, device);
 	}
 }
 
@@ -4014,8 +4035,10 @@ fu_engine_load_metadata_store(FuEngine *self, FuEngineLoadFlags flags, GError **
 	/* clear existing silo */
 	g_clear_object(&self->silo);
 
+#ifdef SOURCE_VERSION
 	/* invalidate the cache if the fwupd version changes */
 	xb_builder_append_guid(builder, SOURCE_VERSION);
+#endif
 
 	/* verbose profiling */
 	if (g_getenv("FWUPD_XMLB_VERBOSE") != NULL) {
@@ -4262,7 +4285,8 @@ fu_engine_get_system_jcat_result(FuEngine *self, FwupdRemote *remote, GError **e
 	results = jcat_context_verify_item(self->jcat_context,
 					   blob,
 					   jcat_item,
-					   JCAT_VERIFY_FLAG_REQUIRE_CHECKSUM |
+					   JCAT_VERIFY_FLAG_DISABLE_TIME_CHECKS |
+					       JCAT_VERIFY_FLAG_REQUIRE_CHECKSUM |
 					       JCAT_VERIFY_FLAG_REQUIRE_SIGNATURE,
 					   error);
 	if (results == NULL)
@@ -7295,6 +7319,8 @@ fu_engine_load_plugins_builtins(FuEngine *self, FuProgress *progress)
 	/* count possible steps */
 	for (guint i = 0; fu_plugin_externals[i] != NULL; i++)
 		steps++;
+	if (steps == 0)
+		return;
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -8320,6 +8346,10 @@ fu_engine_load(FuEngine *self, FuEngineLoadFlags flags, FuProgress *progress, GE
 		g_warning("Failed to load quirks: %s", error_quirks->message);
 	fu_progress_step_done(progress);
 
+	/* required on Linux kernel < 6.4, or when `RT->QueryVariableInfo` is not supported */
+	if (fu_engine_config_get_ignore_efivars_free_space(self->config))
+		fu_context_add_flag(self->ctx, FU_CONTEXT_FLAG_IGNORE_EFIVARS_FREE_SPACE);
+
 	/* load SMBIOS and the hwids */
 	if (flags & FU_ENGINE_LOAD_FLAG_HWINFO) {
 		if (!fu_context_load_hwinfo(self->ctx,
@@ -8750,8 +8780,6 @@ fu_engine_constructed(GObject *obj)
 	g_autofree gchar *pkidir_md = NULL;
 	g_autofree gchar *sysconfdir = NULL;
 
-	/* for debugging */
-	g_info("starting fwupd %s…", VERSION);
 	g_signal_connect(FU_CONTEXT(self->ctx),
 			 "security-changed",
 			 G_CALLBACK(fu_engine_context_security_changed_cb),
@@ -8953,8 +8981,6 @@ fu_engine_finalize(GObject *obj)
 		g_object_unref(self->query_container_checksum2);
 	if (self->query_tag_by_guid_version != NULL)
 		g_object_unref(self->query_tag_by_guid_version);
-	if (self->coldplug_id != 0)
-		g_source_remove(self->coldplug_id);
 	if (self->approved_firmware != NULL)
 		g_hash_table_unref(self->approved_firmware);
 	if (self->blocked_firmware != NULL)

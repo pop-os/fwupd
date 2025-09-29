@@ -443,7 +443,7 @@ fu_redfish_device_probe(FuDevice *dev, GError **error)
 	/* ReleaseDate may or may not have a timezone */
 	if (json_object_has_member(member, "ReleaseDate")) {
 		const gchar *tmp = json_object_get_string_member(member, "ReleaseDate");
-		if (tmp != NULL && tmp[0] != '\0') {
+		if (tmp != NULL && tmp[0] != '\0' && g_strcmp0(tmp, "00:00:00Z") != 0) {
 			g_autoptr(GDateTime) dt = NULL;
 			g_autoptr(GTimeZone) tz = g_time_zone_new_utc();
 			dt = g_date_time_new_from_iso8601(tmp, tz);
@@ -480,7 +480,13 @@ fu_redfish_device_probe(FuDevice *dev, GError **error)
 	}
 
 	/* used for quirking and parenting */
-	fu_device_build_instance_id(dev, NULL, "REDFISH", "VENDOR", "ID", NULL);
+	fu_device_build_instance_id_full(dev,
+					 FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					 NULL,
+					 "REDFISH",
+					 "VENDOR",
+					 "ID",
+					 NULL);
 
 	if (json_object_has_member(member, "Name")) {
 		const gchar *tmp = json_object_get_string_member(member, "Name");
@@ -503,10 +509,16 @@ fu_redfish_device_probe(FuDevice *dev, GError **error)
 		if (json_object_get_boolean_member(member, "Updateable"))
 			fu_device_add_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE);
 	}
-	if (fu_device_has_private_flag(dev, FU_REDFISH_DEVICE_FLAG_IS_BACKUP))
-		fu_device_inhibit(dev, "is-backup", "Is a backup partition");
-	else
-		fu_device_uninhibit(dev, "is-backup");
+
+	/* not useful to export */
+	if (fu_device_has_private_flag(dev, FU_REDFISH_DEVICE_FLAG_IS_BACKUP)) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "%s is a backup partition",
+			    fu_device_get_backend_id(dev));
+		return FALSE;
+	}
 
 	/* use related items to set extra instance IDs */
 	if (fu_device_has_flag(dev, FWUPD_DEVICE_FLAG_UPDATABLE) &&
@@ -758,8 +770,10 @@ fu_redfish_device_poll_task(FuRedfishDevice *self,
 		fu_device_sleep(FU_DEVICE(self), 1000); /* ms */
 		if (!fu_redfish_device_poll_task_once(self, ctx, error))
 			return FALSE;
-		if (ctx->completed)
+		if (ctx->completed) {
+			fu_progress_finished(progress);
 			return TRUE;
+		}
 	} while (g_timer_elapsed(timer, NULL) < timeout);
 
 	/* success */

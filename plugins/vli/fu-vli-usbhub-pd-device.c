@@ -74,7 +74,7 @@ fu_vli_usbhub_pd_device_setup(FuDevice *device, GError **error)
 			g_prefix_error(error, "failed to read PD header: ");
 			return FALSE;
 		}
-		g_byte_array_unref(st);
+		fu_struct_vli_pd_hdr_unref(st);
 		st = fu_struct_vli_pd_hdr_parse(buf, bufsz, 0x0, error);
 		if (st == NULL)
 			return FALSE;
@@ -282,6 +282,7 @@ fu_vli_usbhub_pd_device_init(FuVliUsbhubPdDevice *self)
 	fu_device_add_icon(FU_DEVICE(self), "usb-hub");
 	fu_device_add_protocol(FU_DEVICE(self), "com.vli.usbhub");
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UPDATABLE);
+	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_UNSIGNED_PAYLOAD);
 	fu_device_add_flag(FU_DEVICE(self), FWUPD_DEVICE_FLAG_CAN_VERIFY_IMAGE);
 	fu_device_set_version_format(FU_DEVICE(self), FWUPD_VERSION_FORMAT_QUAD);
 	fu_device_set_install_duration(FU_DEVICE(self), 15); /* seconds */

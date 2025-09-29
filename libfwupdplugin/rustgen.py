@@ -7,6 +7,7 @@
 
 import os
 import sys
+import uuid
 import argparse
 
 from enum import Enum
@@ -22,6 +23,7 @@ class Endian(Enum):
 
 
 class Type(Enum):
+    NONE = None
     U8 = "u8"
     U16 = "u16"
     U24 = "u24"
@@ -75,19 +77,15 @@ class EnumObj:
         }
 
     def c_method(self, suffix: str):
-        return f"fu_{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
+        return f"{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
 
     @property
     def c_type(self):
-        if self.name.startswith("Fu"):
-            return self.name
-        return f"Fu{self.name}"
+        return f"{self.name}"
 
     @property
     def c_define_last(self) -> str:
-        if self.name.startswith("Fu"):
-            return f"{_camel_to_snake(self.name).upper()}_LAST"
-        return f"FU_{_camel_to_snake(self.name).upper()}_LAST"
+        return f"{_camel_to_snake(self.name).upper()}_LAST"
 
     @property
     def items_any_defaults(self) -> bool:
@@ -127,9 +125,7 @@ class EnumItem:
     @property
     def c_define(self) -> str:
         name_snake = _camel_to_snake(self.obj.name)
-        if self.obj.name.startswith("Fu"):
-            return f"{name_snake.upper()}_{_camel_to_snake(self.name).replace('-', '_').upper()}"
-        return f"FU_{name_snake.upper()}_{_camel_to_snake(self.name).replace('-', '_').upper()}"
+        return f"{name_snake.upper()}_{_camel_to_snake(self.name).replace('-', '_').upper()}"
 
     def parse_default(self, val: str) -> None:
 
@@ -164,17 +160,14 @@ class StructObj:
             "ParseBytes": Export.NONE,
             "New": Export.NONE,
             "ToString": Export.NONE,
+            "Default": Export.NONE,
         }
 
     def c_method(self, suffix: str):
-        if self.name.startswith("Fu"):
-            return f"{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
-        return f"fu_struct_{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
+        return f"{_camel_to_snake(self.name)}_{_camel_to_snake(suffix)}"
 
     def c_define(self, suffix: str):
-        if self.name.startswith("Fu"):
-            return f"{_camel_to_snake(self.name).upper()}_{suffix.upper()}"
-        return f"FU_STRUCT_{_camel_to_snake(self.name).upper()}_{suffix.upper()}"
+        return f"{_camel_to_snake(self.name).upper()}_{suffix.upper()}"
 
     @property
     def _has_bits(self) -> bool:
@@ -208,7 +201,7 @@ class StructObj:
                 if (
                     item.constant
                     and item.type != Type.STRING
-                    and not (item.type == Type.U8 and item.multiplier)
+                    and not (item.type == Type.U8 and item.n_elements)
                 ):
                     item.add_private_export("Getters")
                 if item.struct_obj:
@@ -229,15 +222,17 @@ class StructObj:
                 if (
                     item.constant
                     and item.type != Type.STRING
-                    and not (item.type == Type.U8 and item.multiplier)
+                    and not (item.type == Type.U8 and item.n_elements)
                 ):
                     item.add_private_export("Getters")
                 if item.struct_obj:
                     item.struct_obj.add_private_export("Validate")
         elif derive == "New":
             for item in self.items:
-                if item.constant and not (item.type == Type.U8 and item.multiplier):
+                if item.constant and not (item.type == Type.U8 and item.n_elements):
                     item.add_private_export("Setters")
+                if item.struct_obj:
+                    item.struct_obj.add_private_export("New")
 
     def add_public_export(self, derive: str) -> None:
 
@@ -270,14 +265,15 @@ class StructItem:
     def __init__(self, obj: StructObj) -> None:
         self.obj: StructObj = obj
         self.element_id: str = ""
-        self.type: Type = Type.U8
+        self.type: Type = Type.NONE
+        self.is_packed: bool = False
         self.enum_obj: Optional[EnumObj] = None
         self.struct_obj: Optional[StructObj] = None
         self.default: Optional[str] = None
         self.constant: Optional[str] = None
         self.padding: Optional[str] = None
         self.endian: Endian = Endian.NATIVE
-        self.multiplier: int = 0
+        self.n_elements: int = 0
         self._bits_size: int = 0
         self._bits_offset: int = 0
         self.offset: int = 0
@@ -315,19 +311,23 @@ class StructItem:
 
     @property
     def size(self) -> int:
-        multiplier = self.multiplier
-        if not multiplier:
-            multiplier = 1
-        if self.type in [Type.U8, Type.I8, Type.STRING, Type.GUID]:
-            return multiplier
+        n_elements = self.n_elements
+        if not n_elements:
+            n_elements = 1
+        if self.struct_obj:
+            return n_elements * self.struct_obj.size
+        if self.type in [Type.U8, Type.I8, Type.STRING]:
+            return n_elements
+        if self.type in [Type.GUID]:
+            return n_elements * 16
         if self.type in [Type.U16, Type.I16]:
-            return multiplier * 2
+            return n_elements * 2
         if self.type == Type.U24:
-            return multiplier * 3
+            return n_elements * 3
         if self.type in [Type.U32, Type.I32]:
-            return multiplier * 4
+            return n_elements * 4
         if self.type in [Type.U64, Type.I64]:
-            return multiplier * 8
+            return n_elements * 8
         return 0
 
     @property
@@ -419,7 +419,18 @@ class StructItem:
             if val.startswith('"') and val.endswith('"'):
                 return val[1:-1]
             raise ValueError(f"string default {val} needs double quotes")
-        if self.type == Type.GUID or (self.type == Type.U8 and self.multiplier):
+        if self.type == Type.GUID:
+            if val.startswith("0x"):
+                guid = uuid.UUID(bytes_le=bytes.fromhex(val[2:]))
+                raise ValueError(f"integer {val} expected, expected: {guid}")
+            if not val.startswith('"'):
+                raise ValueError(f"string expected, got: {val}")
+            uuid2 = uuid.UUID(val[1:-1])
+            val_hex = ""
+            for value in uuid2.bytes_le:
+                val_hex += f"\\x{value:x}"
+            return val_hex
+        if self.type == Type.U8 and self.n_elements:
             if not val.startswith("0x"):
                 raise ValueError(f"0x prefix for hex number expected, got: {val}")
             if len(val) != (self.size * 2) + 2:
@@ -445,7 +456,7 @@ class StructItem:
 
         if (
             self.type == Type.U8
-            and self.multiplier
+            and self.n_elements
             and val.startswith("0x")
             and len(val) == 4
         ):
@@ -464,19 +475,17 @@ class StructItem:
 
         # is array
         if val.startswith("[") and val.endswith("]"):
-            typestr, multiplier = val[1:-1].split(";", maxsplit=1)
-            if multiplier.startswith("0x"):
-                self.multiplier = int(multiplier[2:], 16)
+            typestr, n_elements = val[1:-1].split(";", maxsplit=1)
+            if n_elements.startswith("0x"):
+                self.n_elements = int(n_elements[2:], 16)
             else:
-                self.multiplier = int(multiplier)
+                self.n_elements = int(n_elements)
         else:
             typestr = val
 
         # nested struct
         if typestr in struct_objs:
             self.struct_obj = struct_objs[typestr]
-            self.multiplier = self.struct_obj.size
-            self.type = Type.U8
             return
 
         # find the type
@@ -509,15 +518,23 @@ class StructItem:
         # defined types
         try:
             self.type = Type(typestr)
-            if self.type == Type.GUID:
-                self.multiplier = 16
         except ValueError as e:
             raise ValueError(f"invalid type: {typestr}") from e
 
+        # sanity check
+        if (
+            self.enabled
+            and self.is_packed
+            and self.endian == Endian.NATIVE
+            and self.type
+            in [Type.U16, Type.U24, Type.U32, Type.U64, Type.I16, Type.I32, Type.I64]
+        ):
+            raise ValueError(f"endian not specified for packed struct: {typestr}")
+
     def __str__(self) -> str:
         tmp = f"{self.element_id}: "
-        if self.multiplier:
-            tmp += str(self.multiplier)
+        if self.n_elements:
+            tmp += str(self.n_elements)
         tmp += self.type.value
         if self.endian != Endian.NATIVE:
             tmp += self.endian.value
@@ -570,6 +587,7 @@ class Generator:
         repr_type: Optional[str] = None
         derives: List[str] = []
         offset: int = 0
+        struct_seen_b32: bool = False
         bits_offset: int = 0
         struct_cur: Optional[StructObj] = None
         enum_cur: Optional[EnumObj] = None
@@ -637,6 +655,7 @@ class Generator:
                 derives.clear()
                 offset = 0
                 bits_offset = 0
+                struct_seen_b32 = False
                 continue
 
             # check for trailing comma
@@ -668,6 +687,8 @@ class Generator:
                 item._bits_offset = bits_offset
                 item.offset = offset
                 item.element_id = parts[0]
+                if repr_type == "C, packed":
+                    item.is_packed = True
 
                 type_parts = parts[1].split("=", maxsplit=3)
                 try:
@@ -682,7 +703,10 @@ class Generator:
                     item.parse_constant(type_parts[2])
                 elif len(type_parts) == 2:
                     item.parse_default(type_parts[1])
-                offset += item.size
+                if item.size == 0:
+                    struct_seen_b32 = True
+                if not struct_seen_b32:
+                    offset += item.size
                 bits_offset += item.bits_size
                 struct_cur.items.append(item)
 
