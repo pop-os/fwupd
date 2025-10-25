@@ -34,6 +34,13 @@ endif
 
 CONFARGS += -Dplugin_modem_manager=enabled
 
+ifeq (yes,$(shell dpkg-vendor --derives-from Ubuntu && echo yes))
+	CONFARGS += -Defi_os_dir=ubuntu
+
+else ifeq (yes,$(shell dpkg-vendor --derives-from Debian && echo yes))
+	CONFARGS += -Defi_os_dir=debian
+endif
+
 %:
 	dh $@ --with gir
 
