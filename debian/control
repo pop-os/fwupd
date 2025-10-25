@@ -28,7 +28,9 @@ Build-Depends:
 	libflashrom-dev [!ia64],
 	libfreetype-dev,
 	libftdi1-dev,
-	libgirepository1.0-dev,
+	gir1.2-gio-2.0-dev,
+	gir1.2-gobject-2.0-dev,
+	gobject-introspection (>= 1.80),
 	libglib2.0-dev (>= 2.45.8),
 	libjaylink-dev [!ia64],
 	libjcat-dev,
@@ -105,12 +107,13 @@ Recommends: python3,
 	    fwupd-signed,
 	    jq
 Suggests: gir1.2-fwupd-2.0
-Provides: fwupdate
+Provides: fwupdate,
+	  ${gir:Provides}
 Conflicts: fwupdate-amd64-signed,
 	   fwupdate-i386-signed,
 	   fwupdate-arm64-signed,
 	   fwupdate-armhf-signed
-Breaks: gir1.2-dfu-1.0 (<< 0.9.7-1),
+Breaks: ${gir:Depends},
 	libdfu1 (<< 0.9.7-1),
 	fwupdate (<< 12-7),
 	libdfu-dev (<< 0.9.7-1)
@@ -171,12 +174,13 @@ Description: Firmware update daemon documentation (HTML format)
 Package: libfwupd-dev
 Architecture: linux-any
 Depends: libfwupd3 (= ${binary:Version}),
-         gir1.2-fwupd-2.0 (= ${binary:Version}),
+         ${gir:Depends},
          libcurl4-gnutls-dev,
          libglib2.0-dev (>= 2.45.8),
          libjcat-dev,
          libjson-glib-dev (>= 1.1.1),
          ${misc:Depends}
+Provides: ${gir:Provides}
 Breaks: fwupd-dev (<< 0.5.4-2~)
 Replaces: fwupd-dev (<< 0.5.4-2~)
 Section: libdevel
@@ -194,6 +198,7 @@ Architecture: linux-any
 Multi-Arch: same
 Depends: ${misc:Depends},
          ${gir:Depends}
+Provides: ${gir:Provides}
 Section: introspection
 Description: GObject introspection data for libfwupd
  This package provides the introspection data for libfwupd.
