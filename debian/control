@@ -60,7 +60,6 @@ Build-Depends:
 	python3-packaging,
 	python3-pefile,
 	python3-requests,
-	python3-typogrify,
 	shared-mime-info,
 	systemd-dev,
 	udev,
