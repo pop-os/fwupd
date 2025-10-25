@@ -1,3 +1,15 @@
+fwupd (2.0.16-3) unstable; urgency=medium
+
+  * d/rules: Explicitly set efi_os_dir
+    (Closes: #1105176) (Closes: #1112464)
+  * d/control: Drop b-d on python3-typogrify
+    (Closes: #1105777)
+  * Changes for build-dependency on libgirepository1.0-dev
+    (Closes: #1118817)
+  * Backport a patch to fix a segfault with flashrom (Closes: #1118449)
+
+ -- Mario Limonciello <superm1@debian.org>  Sat, 25 Oct 2025 14:57:03 -0500
+
 fwupd (2.0.16-2) unstable; urgency=medium
 
   * Backport a patch from upstream to drop python3-toml b-d
