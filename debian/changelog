@@ -1,3 +1,9 @@
+fwupd (2.0.16-4) unstable; urgency=medium
+
+  * Enable passim support in Debian (disabled in Ubuntu right now).
+
+ -- Mario Limonciello <superm1@gmail.com>  Thu, 30 Oct 2025 10:15:26 -0500
+
 fwupd (2.0.16-3) unstable; urgency=medium
 
   * d/rules: Explicitly set efi_os_dir
