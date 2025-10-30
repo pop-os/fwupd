@@ -39,6 +39,7 @@ Build-Depends:
 	libmbim-glib-dev,
 	libmm-glib-dev,
 	libmnl-dev,
+	libpassim-dev,
 	libpci-dev,
 	libpolkit-gobject-1-dev,
 	libprotobuf-c-dev,
