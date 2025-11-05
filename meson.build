@@ -1,7 +1,7 @@
 project(
   'fwupd',
   'c',
-  version: '2.0.16',
+  version: '2.0.17',
   license: 'LGPL-2.1-or-later',
   meson_version: '>=0.63.0', # limited by RHEL-9
   default_options: ['warning_level=2', 'c_std=c17'],
@@ -413,7 +413,7 @@ libm = cc.find_library(
 zlib = dependency('zlib')
 libmnl = dependency(
   'libmnl',
-  required: false,
+  required: get_option('libmnl'),
 )
 
 fs = import('fs')
@@ -437,6 +437,9 @@ if vendor_ids_dir == ''
   endif
   if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
     vendor_ids_dir = '/usr/local/var/homebrew/linked/usb.ids/share/misc'
+  endif
+  if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
+    vendor_ids_dir = '/opt/homebrew/share/misc'
   endif
   if not fs.is_file(join_paths(vendor_ids_dir, 'usb.ids'))
     error('could not auto-detect -Dvendor_ids_dir=')
@@ -484,6 +487,10 @@ if get_option('default_library') != 'static'
   endif
   if host_machine.system() == 'freebsd'
     platform_deps += dependency('efivar')
+    platform_deps += dependency(
+      'libinotify',
+      required: false,
+    )
   endif
 endif
 
@@ -662,12 +669,6 @@ if build_standalone
   )
     conf.set('HAVE_FLASHROM_SET_PROGRESS_CALLBACK_V2' , '1')
   endif
-  if libflashrom.type_name() == 'pkgconfig' and cc.has_function(
-    'flashrom_flash_probe_v2',
-    dependencies: libflashrom,
-  )
-    conf.set('HAVE_FLASHROM_FLASH_PROBE_V2' , '1')
-  endif
 endif
 
 if libsystemd.found()
@@ -832,6 +833,21 @@ endif
 rustgen = generator(
   python3,
   output: ['@BASENAME@-struct.c', '@BASENAME@-struct.h'],
+  # fake custom target to ensure the generator reruns if these input files change
+  depends: custom_target(
+    'rustgen-files-timestamp',
+    input: files(
+      'libfwupdplugin/fu-rustgen-enum.c.in',
+      'libfwupdplugin/fu-rustgen-enum.h.in',
+      'libfwupdplugin/fu-rustgen-struct.c.in',
+      'libfwupdplugin/fu-rustgen-struct.h.in',
+      'libfwupdplugin/fu-rustgen.c.in',
+      'libfwupdplugin/fu-rustgen.h.in',
+      'libfwupdplugin/rustgen.py',
+    ),
+    output: 'rustgen-files-timestamp',
+    command: [python3, '-c', 'from pathlib import Path\nPath("@OUTPUT@").touch()'],
+  ),
   arguments: [
     join_paths(meson.project_source_root(), 'libfwupdplugin', 'rustgen.py'),
     '@INPUT@',
