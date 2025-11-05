@@ -77,6 +77,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  LIBFWUPD_2.0.10@LIBFWUPD_2.0.10 2.0.10
  LIBFWUPD_2.0.11@LIBFWUPD_2.0.11 2.0.11
  LIBFWUPD_2.0.16@LIBFWUPD_2.0.16 2.0.16
+ LIBFWUPD_2.0.17@LIBFWUPD_2.0.17 2.0.17
  LIBFWUPD_2.0.1@LIBFWUPD_2.0.1 2.0.1
  LIBFWUPD_2.0.2@LIBFWUPD_2.0.2 2.0.2
  LIBFWUPD_2.0.4@LIBFWUPD_2.0.4 2.0.4
@@ -120,6 +121,9 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_client_build_report_devices@LIBFWUPD_1.9.20 1.9.20
  fwupd_client_build_report_history@LIBFWUPD_2.0.0 2.0.0
  fwupd_client_build_report_security@LIBFWUPD_2.0.0 2.0.0
+ fwupd_client_clean_remote@LIBFWUPD_2.0.17 2.0.17
+ fwupd_client_clean_remote_async@LIBFWUPD_2.0.17 2.0.17
+ fwupd_client_clean_remote_finish@LIBFWUPD_2.0.17 2.0.17
  fwupd_client_clear_results@LIBFWUPD_0.7.0 1.0.0
  fwupd_client_clear_results_async@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_clear_results_finish@LIBFWUPD_1.5.0 1.5.0
@@ -187,6 +191,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_client_get_host_security_events_finish@LIBFWUPD_1.7.1 1.7.1
  fwupd_client_get_host_security_id@LIBFWUPD_1.5.0 1.5.0
  fwupd_client_get_host_vendor@LIBFWUPD_1.8.2 1.8.2
+ fwupd_client_get_hwids@LIBFWUPD_2.0.17 2.0.17
  fwupd_client_get_main_context@LIBFWUPD_1.5.3 1.5.3
  fwupd_client_get_only_trusted@LIBFWUPD_1.8.0 1.8.0
  fwupd_client_get_percentage@LIBFWUPD_0.7.3 1.0.0
@@ -539,6 +544,8 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_remote_build_metadata_sig_uri@LIBFWUPD_1.9.8 1.9.8
  fwupd_remote_build_metadata_uri@LIBFWUPD_1.9.8 1.9.8
  fwupd_remote_build_report_uri@LIBFWUPD_1.9.1 1.9.1
+ fwupd_remote_ensure_checksum_sig@LIBFWUPD_2.0.17 2.0.17
+ fwupd_remote_ensure_mtime@LIBFWUPD_2.0.17 2.0.17
  fwupd_remote_flag_from_string@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_flag_to_string@LIBFWUPD_1.9.4 1.9.4
  fwupd_remote_get_age@LIBFWUPD_0.9.5 1.0.0
@@ -554,6 +561,7 @@ libfwupd.so.3 libfwupd3 #MINVER#
  fwupd_remote_get_kind@LIBFWUPD_0.9.6 1.0.0
  fwupd_remote_get_metadata_uri@LIBFWUPD_0.9.7 1.0.0
  fwupd_remote_get_metadata_uri_sig@LIBFWUPD_0.9.7 1.0.0
+ fwupd_remote_get_mtime@LIBFWUPD_2.0.17 2.0.17
  fwupd_remote_get_order_after@LIBFWUPD_0.9.5 1.0.0
  fwupd_remote_get_order_before@LIBFWUPD_0.9.5 1.0.0
  fwupd_remote_get_password@LIBFWUPD_0.9.5 1.0.0
