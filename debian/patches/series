@@ -1,3 +1,1 @@
 flaky-p2p.patch
-0001-trivial-ci-drop-python3-toml-for-Debian-and-Ubuntu.patch
-0001-Revert-flashrom-Do-not-use-deprecated-API.patch
