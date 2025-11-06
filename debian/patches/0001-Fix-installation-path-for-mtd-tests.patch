@@ -1,0 +1,25 @@
+From 7ded10f22875da9b0f5f21cb41f8663049da6311 Mon Sep 17 00:00:00 2001
+From: Mario Limonciello <mario.limonciello@amd.com>
+Date: Thu, 6 Nov 2025 09:30:17 -0600
+Subject: [PATCH] Fix installation path for mtd tests
+
+Closes: https://github.com/fwupd/fwupd/issues/9514
+---
+ plugins/mtd/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/plugins/mtd/meson.build b/plugins/mtd/meson.build
+index d723ded12..82e33450a 100644
+--- a/plugins/mtd/meson.build
++++ b/plugins/mtd/meson.build
+@@ -49,6 +49,6 @@ if get_option('tests')
+   test('mtd-self-test', e, env: env)  # added to installed-tests
+   install_data(
+     ['tests/mtd-fmap.builder.xml', 'tests/mtd-ifd.builder.xml', 'tests/mtd-uswid.builder.xml'],
+-    install_dir: installed_test_datadir,
++    install_dir: join_paths(installed_test_datadir, 'tests'),
+   )
+ endif
+-- 
+2.43.0
+
