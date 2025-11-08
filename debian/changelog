@@ -1,3 +1,9 @@
+fwupd (2.0.17-3) unstable; urgency=medium
+
+  * d/t/control: Add missing depends for autopkgtest
+
+ -- Mario Limonciello <superm1@debian.org>  Sat, 08 Nov 2025 08:26:36 -0600
+
 fwupd (2.0.17-2) unstable; urgency=medium
 
   * Backport a fix for installed tests failures with mtdram
