@@ -900,7 +900,7 @@ fwupd (1.3.10-1) unstable; urgency=medium
     - Parse the CSR firmware as a DFU file
     - Prevent dell-dock updates to occur via synaptics-mst plugin
     - Rather than hardcoding thunderbolt to PCI slot numbers, use domain in GUID
-    - Remove a dock device from the whitelist that is never going to be updated
+    - Remove a dock device from the allowlist that is never going to be updated
     - Validate that gpgme_op_verify_result() returned at least one signature
     - Wait for the cxaudio device to reboot after writing firmware
   * Drop following patches, now incorporated upstream:
@@ -1497,7 +1497,7 @@ fwupd (0.9.6-1) unstable; urgency=medium
   * Add capability to enable test suite via /etc/fwupd.conf
   * rpm: enable test suite via /etc/fwupd.conf
   * debian: enable test suite via /etc/fwupd.conf
-  * trivial: clarify delimitter in use for fwupd.conf is a semicolon
+  * trivial: clarify delimiter in use for fwupd.conf is a semicolon
   * trivial: adjust get-details and get-devices output Display Name output
   * trivial: set engine back to idle
   * Correct a memory leak in Dell plugin (Fixes #158)
