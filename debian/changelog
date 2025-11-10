@@ -1,3 +1,9 @@
+fwupd (2.0.17-4) unstable; urgency=medium
+
+  * d/t/control: Explicitly add fwupd to depends
+
+ -- Mario Limonciello <superm1@debian.org>  Sun, 09 Nov 2025 20:22:43 -0600
+
 fwupd (2.0.17-3) unstable; urgency=medium
 
   * d/t/control: Add missing depends for autopkgtest
