@@ -1,3 +1,9 @@
+fwupd (2.0.17-5) unstable; urgency=medium
+
+  * d/tests/control: depends on fwupd-tests instead of fwupd
+
+ -- Mario Limonciello <superm1@gmail.com>  Mon, 10 Nov 2025 09:48:40 -0600
+
 fwupd (2.0.17-4) unstable; urgency=medium
 
   * d/t/control: Explicitly add fwupd to depends
