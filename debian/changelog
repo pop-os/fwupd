@@ -1,3 +1,9 @@
+fwupd (2.0.17-6) unstable; urgency=medium
+
+  * Backport a patch to fix x86 32 bit installed tests
+
+ -- Mario Limonciello <superm1@debian.org>  Mon, 10 Nov 2025 23:02:48 -0600
+
 fwupd (2.0.17-5) unstable; urgency=medium
 
   * d/tests/control: depends on fwupd-tests instead of fwupd
