@@ -1,2 +1,3 @@
 flaky-p2p.patch
 0001-Fix-installation-path-for-mtd-tests.patch
+0001-trivial-fix-a-test-failure-on-32-bit-x86.patch
