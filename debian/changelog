@@ -1,3 +1,10 @@
+fwupd (2.0.18-1) unstable; urgency=medium
+
+  * New upstream version (2.0.18)
+  * Drop upstream patches
+
+ -- Mario Limonciello <superm1@debian.org>  Mon, 01 Dec 2025 08:08:20 -0600
+
 fwupd (2.0.17-6) unstable; urgency=medium
 
   * Backport a patch to fix x86 32 bit installed tests
