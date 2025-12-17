@@ -1,3 +1,9 @@
+fwupd (1.9.32-1pop0) jammy; urgency=medium
+
+  * Lower build dependencies (backport to Pop!_OS 22.04)
+
+ -- Jacob Kauffmann <jacob@system76.com>  Wed, 17 Dec 2025 13:07:43 -0700
+
 fwupd (1.9.32-1pop0) noble; urgency=medium
 
   * Update latest Debian 1.9.x packaging to upstream 1.9.32
