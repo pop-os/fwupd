@@ -1,9 +1,15 @@
+fwupd (2.0.19-1) unstable; urgency=medium
+
+  * New upstream version (2.0.19)
+
+ -- Mario Limonciello <superm1@debian.org>  Sat, 20 Dec 2025 22:13:58 -0600
+
 fwupd (2.0.18-1) unstable; urgency=medium
 
   * New upstream version (2.0.18)
   * Drop upstream patches
 
- -- Mario Limonciello <superm1@debian.org>  Mon, 01 Dec 2025 08:08:20 -0600
+ -- Mario Limonciello <superm1@debian.org>  Sat, 20 Dec 2025 22:06:57 -0600
 
 fwupd (2.0.17-6) unstable; urgency=medium
 
